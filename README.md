@@ -11,6 +11,8 @@ This build provides a browser-local, editable CRM intake module for a consulting
 - PIE, Financial Services and Public Sector IEQR quality gate
 - Audit sign-off block until the IEQR assignment is complete
 - Tax, SASRA, branch-routing and cross-selling workflow task generation
+- Conditional tax-compliance work packs for VAT and eTIMS, payroll statutory deductions, WHT, tax credits, income tax, PPE, stock, instalment tax and client reporting
+- Tax-credit posting gate requiring iTax verification and reviewer approval
 - Potential duplicate warning based on legal or trading name
 - Client notes and engagement-letter reference fields
 
