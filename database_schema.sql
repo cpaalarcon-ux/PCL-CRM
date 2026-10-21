@@ -3628,3 +3628,266 @@ CREATE INDEX IF NOT EXISTS active_engagement_tasks_workspace_position_due
 CREATE INDEX IF NOT EXISTS tax_period_project_tasks_workspace_position_due
   ON tax_period_project_tasks (assigned_role_name, due_date)
   WHERE status NOT IN ('COMPLETED','CANCELLED');
+
+-- Receivables Centre --------------------------------------------------------
+-- Odoo is the authoritative invoice and payment reference source.  This ERP
+-- stores a controlled operational copy for client communication, reconciliation,
+-- aging and statement production.  There is deliberately no eTIMS integration
+-- in this module.
+ALTER TABLE invoices
+  ADD COLUMN IF NOT EXISTS source_system TEXT NOT NULL DEFAULT 'ODOO'
+    CHECK (source_system IN ('ODOO','LEGACY','ERP')),
+  ADD COLUMN IF NOT EXISTS external_invoice_id TEXT,
+  ADD COLUMN IF NOT EXISTS source_synced_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS ledger_state TEXT NOT NULL DEFAULT 'POSTED'
+    CHECK (ledger_state IN ('DRAFT','POSTED','CANCELLED'));
+
+ALTER TABLE invoice_payments
+  ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'BANK_TRANSFER'
+    CHECK (payment_method IN ('CASH','MPESA','BANK_TRANSFER','CHEQUE')),
+  ADD COLUMN IF NOT EXISTS source_system TEXT NOT NULL DEFAULT 'ODOO'
+    CHECK (source_system IN ('ODOO','LEGACY','ERP')),
+  ADD COLUMN IF NOT EXISTS external_payment_id TEXT,
+  ADD COLUMN IF NOT EXISTS source_synced_at TIMESTAMPTZ;
+
+CREATE UNIQUE INDEX IF NOT EXISTS invoices_odoo_external_reference_unique
+  ON invoices (handling_firm_id, external_invoice_id)
+  WHERE source_system = 'ODOO' AND external_invoice_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS invoice_payments_odoo_external_reference_unique
+  ON invoice_payments (external_payment_id)
+  WHERE source_system = 'ODOO' AND external_payment_id IS NOT NULL;
+
+-- Every receipt carries the originating Odoo invoice number first, followed by
+-- its cash receipt, M-Pesa, bank or cheque reference.
+CREATE OR REPLACE FUNCTION enforce_invoice_payment_reference_prefix()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  source_invoice_number TEXT;
+BEGIN
+  SELECT invoice_number INTO source_invoice_number
+  FROM invoices WHERE invoice_id = NEW.invoice_id;
+
+  IF source_invoice_number IS NULL THEN
+    RAISE EXCEPTION 'A payment requires an existing invoice';
+  END IF;
+  IF upper(trim(NEW.payment_reference)) NOT LIKE upper(trim(source_invoice_number)) || '%' THEN
+    RAISE EXCEPTION 'Payment reference must begin with invoice number %', source_invoice_number;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS invoice_payments_reference_prefix_guard ON invoice_payments;
+CREATE TRIGGER invoice_payments_reference_prefix_guard
+BEFORE INSERT OR UPDATE OF invoice_id, payment_reference ON invoice_payments
+FOR EACH ROW EXECUTE FUNCTION enforce_invoice_payment_reference_prefix();
+
+-- An immutable statement is a dated snapshot.  Re-issuing a statement creates
+-- a new version; it never rewrites its financial lines or prior PDF evidence.
+CREATE TABLE IF NOT EXISTS customer_statements (
+  customer_statement_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  engagement_id BIGINT REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  statement_reference TEXT NOT NULL UNIQUE,
+  version_no SMALLINT NOT NULL DEFAULT 1 CHECK (version_no > 0),
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  statement_date DATE NOT NULL,
+  currency_code CHAR(3) NOT NULL DEFAULT 'KES',
+  opening_balance NUMERIC(16,2) NOT NULL DEFAULT 0,
+  closing_balance NUMERIC(16,2) NOT NULL DEFAULT 0,
+  snapshot_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'GENERATED'
+    CHECK (status IN ('GENERATED','PDF_SAVED','EMAILED','VOIDED')),
+  vault_document_id BIGINT REFERENCES documents(document_id) ON DELETE RESTRICT,
+  issued_communication_id BIGINT REFERENCES communication_hub(hub_communication_id) ON DELETE RESTRICT,
+  generated_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  delivered_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (period_end >= period_start),
+  UNIQUE (handling_firm_id, client_id, period_start, period_end, version_no)
+);
+
+CREATE TABLE IF NOT EXISTS customer_statement_lines (
+  customer_statement_line_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  customer_statement_id BIGINT NOT NULL REFERENCES customer_statements(customer_statement_id) ON DELETE RESTRICT,
+  line_sequence INTEGER NOT NULL CHECK (line_sequence > 0),
+  line_date DATE NOT NULL,
+  line_type TEXT NOT NULL CHECK (line_type IN ('OPENING_BALANCE','INVOICE','CREDIT_NOTE','PAYMENT')),
+  invoice_id BIGINT REFERENCES invoices(invoice_id) ON DELETE RESTRICT,
+  invoice_payment_id BIGINT REFERENCES invoice_payments(invoice_payment_id) ON DELETE RESTRICT,
+  source_reference TEXT NOT NULL,
+  description TEXT NOT NULL,
+  debit_amount NUMERIC(16,2) NOT NULL DEFAULT 0 CHECK (debit_amount >= 0),
+  credit_amount NUMERIC(16,2) NOT NULL DEFAULT 0 CHECK (credit_amount >= 0),
+  running_balance NUMERIC(16,2) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (NOT (debit_amount > 0 AND credit_amount > 0)),
+  CHECK (
+    (line_type = 'OPENING_BALANCE' AND invoice_id IS NULL AND invoice_payment_id IS NULL)
+    OR (line_type IN ('INVOICE','CREDIT_NOTE') AND invoice_id IS NOT NULL AND invoice_payment_id IS NULL)
+    OR (line_type = 'PAYMENT' AND invoice_payment_id IS NOT NULL)
+  ),
+  UNIQUE (customer_statement_id, line_sequence)
+);
+
+CREATE OR REPLACE FUNCTION enforce_customer_statement_line_provenance()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  statement_firm_id BIGINT;
+  statement_client_id BIGINT;
+  source_firm_id BIGINT;
+  source_client_id BIGINT;
+  payment_invoice_id BIGINT;
+BEGIN
+  SELECT handling_firm_id, client_id INTO statement_firm_id, statement_client_id
+  FROM customer_statements WHERE customer_statement_id = NEW.customer_statement_id;
+
+  IF NEW.invoice_id IS NOT NULL THEN
+    SELECT invoice.handling_firm_id, engagement.client_id
+      INTO source_firm_id, source_client_id
+    FROM invoices invoice
+    JOIN engagements engagement ON engagement.engagement_id = invoice.engagement_id
+    WHERE invoice.invoice_id = NEW.invoice_id;
+    IF source_firm_id IS DISTINCT FROM statement_firm_id OR source_client_id IS DISTINCT FROM statement_client_id THEN
+      RAISE EXCEPTION 'Statement line invoice must belong to the statement client and firm';
+    END IF;
+  END IF;
+
+  IF NEW.invoice_payment_id IS NOT NULL THEN
+    SELECT payment.invoice_id, invoice.handling_firm_id, engagement.client_id
+      INTO payment_invoice_id, source_firm_id, source_client_id
+    FROM invoice_payments payment
+    JOIN invoices invoice ON invoice.invoice_id = payment.invoice_id
+    JOIN engagements engagement ON engagement.engagement_id = invoice.engagement_id
+    WHERE payment.invoice_payment_id = NEW.invoice_payment_id;
+    IF source_firm_id IS DISTINCT FROM statement_firm_id OR source_client_id IS DISTINCT FROM statement_client_id THEN
+      RAISE EXCEPTION 'Statement line payment must belong to the statement client and firm';
+    END IF;
+    IF NEW.invoice_id IS NOT NULL AND NEW.invoice_id IS DISTINCT FROM payment_invoice_id THEN
+      RAISE EXCEPTION 'Statement payment line invoice does not match its payment';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS customer_statement_line_provenance_guard ON customer_statement_lines;
+CREATE TRIGGER customer_statement_line_provenance_guard
+BEFORE INSERT OR UPDATE ON customer_statement_lines
+FOR EACH ROW EXECUTE FUNCTION enforce_customer_statement_line_provenance();
+
+CREATE OR REPLACE FUNCTION prevent_customer_statement_mutation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Customer statements are immutable; void and issue a new version instead';
+  END IF;
+  IF OLD.handling_firm_id IS DISTINCT FROM NEW.handling_firm_id
+     OR OLD.client_id IS DISTINCT FROM NEW.client_id
+     OR OLD.engagement_id IS DISTINCT FROM NEW.engagement_id
+     OR OLD.statement_reference IS DISTINCT FROM NEW.statement_reference
+     OR OLD.version_no IS DISTINCT FROM NEW.version_no
+     OR OLD.period_start IS DISTINCT FROM NEW.period_start
+     OR OLD.period_end IS DISTINCT FROM NEW.period_end
+     OR OLD.statement_date IS DISTINCT FROM NEW.statement_date
+     OR OLD.currency_code IS DISTINCT FROM NEW.currency_code
+     OR OLD.opening_balance IS DISTINCT FROM NEW.opening_balance
+     OR OLD.closing_balance IS DISTINCT FROM NEW.closing_balance
+     OR OLD.snapshot_hash IS DISTINCT FROM NEW.snapshot_hash THEN
+    RAISE EXCEPTION 'Customer statement financial snapshot is immutable; issue a new version instead';
+  END IF;
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS customer_statements_immutable_guard ON customer_statements;
+CREATE TRIGGER customer_statements_immutable_guard
+BEFORE UPDATE OR DELETE ON customer_statements
+FOR EACH ROW EXECUTE FUNCTION prevent_customer_statement_mutation();
+
+CREATE OR REPLACE FUNCTION prevent_customer_statement_line_mutation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'Customer statement lines are immutable; issue a new statement version instead';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS customer_statement_lines_immutable_guard ON customer_statement_lines;
+CREATE TRIGGER customer_statement_lines_immutable_guard
+BEFORE UPDATE OR DELETE ON customer_statement_lines
+FOR EACH ROW EXECUTE FUNCTION prevent_customer_statement_line_mutation();
+
+CREATE OR REPLACE FUNCTION app_can_manage_receivables()
+RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM users user_record
+    JOIN roles role_record ON role_record.role_id = user_record.role_id
+    WHERE user_record.user_id = app_user_id()
+      AND user_record.is_active
+      AND (role_record.can_view_fees OR role_record.role_name IN ('Practice Administration','Engagement Partner','Manager'))
+  );
+$$;
+
+ALTER TABLE invoice_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_statements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_statement_lines ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS invoice_payments_by_firm_receivables_access ON invoice_payments;
+CREATE POLICY invoice_payments_by_firm_receivables_access ON invoice_payments FOR ALL
+USING (
+  app_can_manage_receivables()
+  AND EXISTS (SELECT 1 FROM invoices invoice WHERE invoice.invoice_id = invoice_payments.invoice_id AND app_has_firm_access(invoice.handling_firm_id))
+)
+WITH CHECK (
+  app_can_manage_receivables()
+  AND EXISTS (SELECT 1 FROM invoices invoice WHERE invoice.invoice_id = invoice_payments.invoice_id AND app_has_firm_access(invoice.handling_firm_id))
+);
+
+DROP POLICY IF EXISTS customer_statements_by_firm_receivables_access ON customer_statements;
+CREATE POLICY customer_statements_by_firm_receivables_access ON customer_statements FOR ALL
+USING (app_can_manage_receivables() AND app_has_firm_access(handling_firm_id))
+WITH CHECK (app_can_manage_receivables() AND app_has_firm_access(handling_firm_id));
+
+DROP POLICY IF EXISTS customer_statement_lines_by_firm_receivables_access ON customer_statement_lines;
+CREATE POLICY customer_statement_lines_by_firm_receivables_access ON customer_statement_lines FOR ALL
+USING (
+  app_can_manage_receivables()
+  AND EXISTS (SELECT 1 FROM customer_statements statement WHERE statement.customer_statement_id = customer_statement_lines.customer_statement_id AND app_has_firm_access(statement.handling_firm_id))
+)
+WITH CHECK (
+  app_can_manage_receivables()
+  AND EXISTS (SELECT 1 FROM customer_statements statement WHERE statement.customer_statement_id = customer_statement_lines.customer_statement_id AND app_has_firm_access(statement.handling_firm_id))
+);
+
+CREATE OR REPLACE VIEW v_receivables_invoice_register
+WITH (security_invoker = true) AS
+SELECT
+  invoice.invoice_id,
+  invoice.handling_firm_id,
+  engagement.client_id,
+  invoice.invoice_number AS odoo_invoice_number,
+  invoice.external_invoice_id AS odoo_invoice_id,
+  invoice.invoice_type,
+  invoice.ledger_state,
+  invoice.invoice_status,
+  invoice.date_issued,
+  invoice.due_date,
+  invoice.amount_billed + invoice.vat_amount AS invoice_total,
+  COALESCE(SUM(payment.amount_received) FILTER (WHERE payment.match_status = 'MATCHED'), 0) AS matched_receipts,
+  (invoice.amount_billed + invoice.vat_amount) - COALESCE(SUM(payment.amount_received) FILTER (WHERE payment.match_status = 'MATCHED'), 0) AS open_balance
+FROM invoices invoice
+JOIN engagements engagement ON engagement.engagement_id = invoice.engagement_id
+LEFT JOIN invoice_payments payment ON payment.invoice_id = invoice.invoice_id AND payment.match_status <> 'REJECTED'
+WHERE app_has_firm_access(invoice.handling_firm_id)
+GROUP BY invoice.invoice_id, engagement.client_id;
+
+CREATE INDEX IF NOT EXISTS customer_statements_firm_client_date
+  ON customer_statements (handling_firm_id, client_id, statement_date DESC);
+CREATE INDEX IF NOT EXISTS customer_statement_lines_statement_sequence
+  ON customer_statement_lines (customer_statement_id, line_sequence);
