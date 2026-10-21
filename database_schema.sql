@@ -1020,7 +1020,7 @@ BEGIN
   IF NEW.document_type = 'BRS_ACKNOWLEDGMENT' AND NOT category_locks THEN
     RAISE EXCEPTION 'BRS acknowledgement receipts must be stored in the locked BRS Acknowledgment Receipts category';
   END IF;
-  IF category_locks THEN NEW.is_locked := TRUE; END IF;
+  IF category_locks OR NEW.document_type = 'KYC' THEN NEW.is_locked := TRUE; END IF;
   RETURN NEW;
 END;
 $$;
@@ -2451,3 +2451,209 @@ DROP POLICY IF EXISTS client_statutory_tasks_by_client_access ON client_statutor
 CREATE POLICY client_statutory_tasks_by_client_access ON client_statutory_compliance_tasks FOR ALL
 USING (EXISTS (SELECT 1 FROM clients c WHERE c.client_id = client_statutory_compliance_tasks.client_id AND app_has_branch_access(c.default_firm_id, c.branch_location)))
 WITH CHECK (EXISTS (SELECT 1 FROM clients c WHERE c.client_id = client_statutory_compliance_tasks.client_id AND app_has_branch_access(c.default_firm_id, c.branch_location)));
+
+-- AML/CFT client due-diligence controls. These records contain sensitive personal
+-- data and are deliberately server-side only; do not store them in browser localStorage.
+CREATE TABLE compliance_policy_settings (
+  compliance_policy_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  firm_id BIGINT NOT NULL UNIQUE REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  cdd_retention_years SMALLINT NOT NULL DEFAULT 7 CHECK (cdd_retention_years BETWEEN 1 AND 20),
+  suspicious_activity_escalation_hours SMALLINT NOT NULL DEFAULT 48 CHECK (suspicious_activity_escalation_hours BETWEEN 1 AND 168),
+  high_risk_refresh_months SMALLINT NOT NULL DEFAULT 12 CHECK (high_risk_refresh_months BETWEEN 1 AND 60),
+  approved_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  approved_at TIMESTAMPTZ,
+  policy_version TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE client_kyc_profiles (
+  client_id BIGINT PRIMARY KEY REFERENCES clients(client_id) ON DELETE RESTRICT,
+  risk_rating TEXT NOT NULL DEFAULT 'Medium' CHECK (risk_rating IN ('Low','Medium','High')),
+  kyc_complete BOOLEAN NOT NULL DEFAULT FALSE,
+  pep_flag BOOLEAN NOT NULL DEFAULT FALSE,
+  edd_required BOOLEAN NOT NULL DEFAULT FALSE,
+  edd_partner_approved_by BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  edd_partner_approved_at TIMESTAMPTZ,
+  sanctions_screened_at TIMESTAMPTZ,
+  sanctions_screening_result TEXT NOT NULL DEFAULT 'NOT_SCREENED' CHECK (sanctions_screening_result IN ('NOT_SCREENED','CLEAR','POTENTIAL_MATCH','CONFIRMED_MATCH')),
+  kyc_last_refreshed_at TIMESTAMPTZ,
+  kyc_next_refresh_due_at DATE,
+  client_contact_hold BOOLEAN NOT NULL DEFAULT FALSE,
+  relationship_ended_at TIMESTAMPTZ,
+  retention_until DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (NOT pep_flag OR edd_required)
+);
+
+CREATE TABLE beneficial_owners (
+  beneficial_owner_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  full_name_ciphertext TEXT NOT NULL,
+  national_id_ciphertext TEXT,
+  kra_pin_ciphertext TEXT,
+  ownership_percentage NUMERIC(5,2) NOT NULL CHECK (ownership_percentage > 0 AND ownership_percentage <= 100),
+  ownership_or_control_basis TEXT NOT NULL,
+  pep_flag BOOLEAN NOT NULL DEFAULT FALSE,
+  sanctions_screening_result TEXT NOT NULL DEFAULT 'NOT_SCREENED' CHECK (sanctions_screening_result IN ('NOT_SCREENED','CLEAR','POTENTIAL_MATCH','CONFIRMED_MATCH')),
+  verified_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  verified_at TIMESTAMPTZ,
+  ceased_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE client_kyc_document_checks (
+  kyc_document_check_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  document_id BIGINT NOT NULL REFERENCES documents(document_id) ON DELETE RESTRICT,
+  document_requirement TEXT NOT NULL CHECK (document_requirement IN ('CERTIFICATE_OF_INCORPORATION','KRA_PIN','CR12','REGISTER_OF_MEMBERS','BENEFICIAL_OWNERSHIP_EVIDENCE')),
+  verified_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  verified_at TIMESTAMPTZ,
+  expires_at DATE,
+  is_current BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, document_requirement, document_id)
+);
+
+CREATE TABLE compliance_alerts (
+  compliance_alert_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  alert_type TEXT NOT NULL CHECK (alert_type IN ('KYC_INCOMPLETE','KYC_REFRESH_DUE','PAYMENT_PATTERN','SANCTIONS_MATCH','PEP_EDD','SUSPICION_REPORTED')),
+  risk_level TEXT NOT NULL CHECK (risk_level IN ('Low','Medium','High','Critical')),
+  details_ciphertext TEXT NOT NULL,
+  recipient_role TEXT NOT NULL DEFAULT 'Money Laundering Reporting Officer',
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','UNDER_REVIEW','RESOLVED','DISMISSED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at TIMESTAMPTZ
+);
+
+CREATE TABLE suspicion_reports (
+  suspicion_report_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  report_reference TEXT NOT NULL UNIQUE,
+  suspicion_ciphertext TEXT NOT NULL,
+  submitted_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  status TEXT NOT NULL DEFAULT 'SUBMITTED' CHECK (status IN ('SUBMITTED','MLRO_REVIEW','MLRO_APPROVED','REPORTED','CLOSED')),
+  mlro_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  mlro_decision_at TIMESTAMPTZ,
+  goaml_export_status TEXT NOT NULL DEFAULT 'NOT_READY' CHECK (goaml_export_status IN ('NOT_READY','READY','EXPORTED','CONFIRMED')),
+  goaml_reference_ciphertext TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION client_kyc_can_activate(p_client_id BIGINT)
+RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM client_kyc_profiles profile
+    WHERE profile.client_id = p_client_id
+      AND profile.kyc_complete
+      AND profile.sanctions_screening_result = 'CLEAR'
+      AND (NOT profile.pep_flag OR (profile.edd_partner_approved_by IS NOT NULL AND profile.edd_partner_approved_at IS NOT NULL))
+      AND NOT EXISTS (
+        SELECT 1 FROM (VALUES ('CERTIFICATE_OF_INCORPORATION'),('KRA_PIN'),('CR12'),('REGISTER_OF_MEMBERS')) required(requirement)
+        WHERE NOT EXISTS (
+          SELECT 1 FROM client_kyc_document_checks check_row
+          WHERE check_row.client_id = p_client_id AND check_row.document_requirement = required.requirement
+            AND check_row.is_current AND check_row.verified_at IS NOT NULL
+        )
+      )
+      AND EXISTS (SELECT 1 FROM beneficial_owners owner_row WHERE owner_row.client_id = p_client_id AND owner_row.ceased_at IS NULL AND owner_row.verified_at IS NOT NULL)
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION enforce_engagement_kyc_gate()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.lifecycle_stage = 'Active Engagement' AND NOT client_kyc_can_activate(NEW.client_id) THEN
+    RAISE EXCEPTION 'KYC Incomplete: Cannot activate engagement under the client due-diligence policy.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS engagements_kyc_activation_guard ON engagements;
+CREATE TRIGGER engagements_kyc_activation_guard
+BEFORE INSERT OR UPDATE OF lifecycle_stage, client_id ON engagements
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_kyc_gate();
+
+CREATE OR REPLACE FUNCTION apply_suspicion_contact_hold()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.status IN ('MLRO_APPROVED','REPORTED') AND (TG_OP = 'INSERT' OR OLD.status NOT IN ('MLRO_APPROVED','REPORTED')) THEN
+    UPDATE client_kyc_profiles SET client_contact_hold = TRUE, updated_at = now() WHERE client_id = NEW.client_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER suspicion_reports_contact_hold
+AFTER INSERT OR UPDATE OF status ON suspicion_reports
+FOR EACH ROW EXECUTE FUNCTION apply_suspicion_contact_hold();
+
+CREATE OR REPLACE FUNCTION current_user_has_mlro_or_partner_access()
+RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users u JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = app_user_id() AND r.role_name IN ('Engagement Partner','Money Laundering Reporting Officer')
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION prevent_tipping_off_communications()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.direction = 'OUTBOUND' AND NEW.communication_type <> 'INTERNAL_NOTE'
+     AND EXISTS (SELECT 1 FROM client_kyc_profiles WHERE client_id = NEW.client_id AND client_contact_hold)
+     AND NOT current_user_has_mlro_or_partner_access() THEN
+    RAISE EXCEPTION 'Client-facing communications are restricted by a confidential compliance hold.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS communication_hub_tipping_off_guard ON communication_hub;
+CREATE TRIGGER communication_hub_tipping_off_guard
+BEFORE INSERT ON communication_hub
+FOR EACH ROW EXECUTE FUNCTION prevent_tipping_off_communications();
+
+CREATE OR REPLACE FUNCTION prevent_tipping_off_invoices()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE invoice_client_id BIGINT;
+BEGIN
+  SELECT client_id INTO invoice_client_id FROM engagements WHERE engagement_id = NEW.engagement_id;
+  IF EXISTS (SELECT 1 FROM client_kyc_profiles WHERE client_id = invoice_client_id AND client_contact_hold)
+     AND NOT current_user_has_mlro_or_partner_access() THEN
+    RAISE EXCEPTION 'Invoice generation is restricted by a confidential compliance hold.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS invoices_tipping_off_guard ON invoices;
+CREATE TRIGGER invoices_tipping_off_guard
+BEFORE INSERT ON invoices
+FOR EACH ROW EXECUTE FUNCTION prevent_tipping_off_invoices();
+
+ALTER TABLE client_kyc_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE beneficial_owners ENABLE ROW LEVEL SECURITY;
+ALTER TABLE client_kyc_document_checks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compliance_alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE suspicion_reports ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS kyc_profiles_restricted ON client_kyc_profiles;
+DROP POLICY IF EXISTS beneficial_owners_restricted ON beneficial_owners;
+DROP POLICY IF EXISTS kyc_document_checks_restricted ON client_kyc_document_checks;
+DROP POLICY IF EXISTS compliance_alerts_restricted ON compliance_alerts;
+DROP POLICY IF EXISTS suspicion_reports_restricted ON suspicion_reports;
+CREATE POLICY kyc_profiles_restricted ON client_kyc_profiles FOR ALL
+USING (current_user_has_mlro_or_partner_access()) WITH CHECK (current_user_has_mlro_or_partner_access());
+CREATE POLICY beneficial_owners_restricted ON beneficial_owners FOR ALL
+USING (current_user_has_mlro_or_partner_access()) WITH CHECK (current_user_has_mlro_or_partner_access());
+CREATE POLICY kyc_document_checks_restricted ON client_kyc_document_checks FOR ALL
+USING (current_user_has_mlro_or_partner_access()) WITH CHECK (current_user_has_mlro_or_partner_access());
+CREATE POLICY compliance_alerts_restricted ON compliance_alerts FOR ALL
+USING (current_user_has_mlro_or_partner_access()) WITH CHECK (current_user_has_mlro_or_partner_access());
+CREATE POLICY suspicion_reports_restricted ON suspicion_reports FOR ALL
+USING (current_user_has_mlro_or_partner_access()) WITH CHECK (current_user_has_mlro_or_partner_access());
