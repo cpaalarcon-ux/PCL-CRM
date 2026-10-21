@@ -1,6 +1,7 @@
 (function () {
   const tabs = Array.from(document.querySelectorAll('.tab'));
-  if (!tabs.length) return;
+  const tabBar = document.querySelector('.tabs');
+  if (!tabs.length || !tabBar) return;
 
   const validTabs = tabs
     .map((tab) => tab.dataset.tab)
@@ -36,13 +37,18 @@
     });
   });
 
-  const openCurrentModuleButton = document.getElementById('openCurrentModule');
-  if (openCurrentModuleButton) {
-    openCurrentModuleButton.addEventListener('click', () => {
-      const activeTab = document.querySelector('.tab.active')?.dataset.tab || validTabs[0];
-      const url = new URL(window.location.href);
-      url.searchParams.set('tab', activeTab);
-      window.open(url.toString(), '_blank', 'noopener,noreferrer');
-    });
-  }
+  const openCurrentModuleButton = document.createElement('button');
+  openCurrentModuleButton.type = 'button';
+  openCurrentModuleButton.className = 'btn secondary';
+  openCurrentModuleButton.id = 'openCurrentModule';
+  openCurrentModuleButton.textContent = 'Open in new tab';
+
+  openCurrentModuleButton.addEventListener('click', () => {
+    const activeTab = document.querySelector('.tab.active')?.dataset.tab || validTabs[0];
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', activeTab);
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
+  });
+
+  tabBar.appendChild(openCurrentModuleButton);
 })();
