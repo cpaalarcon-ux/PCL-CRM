@@ -143,8 +143,8 @@ CREATE TABLE invoices (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Tax invoices use explicit client-contact, lead and QR relationships. The QR token
--- is opaque: names, phone numbers, tax values and PINs must never be encoded in it.
+-- Tax invoices use explicit client-contact and lead relationships. Billing references
+-- remain on the invoice; controlled QR references belong to the Communication Hub.
 CREATE TABLE client_contacts (
   contact_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
@@ -204,19 +204,6 @@ ALTER TABLE invoices
   ADD CONSTRAINT invoices_tax_period_dates CHECK (tax_period_end IS NULL OR tax_period_start IS NULL OR tax_period_end >= tax_period_start),
   ADD CONSTRAINT invoices_due_date CHECK (due_date IS NULL OR due_date >= date_issued);
 
-CREATE TABLE invoice_qr_codes (
-  invoice_qr_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  invoice_id BIGINT NOT NULL UNIQUE REFERENCES invoices(invoice_id) ON DELETE RESTRICT,
-  lead_id BIGINT NOT NULL REFERENCES leads(lead_id) ON DELETE RESTRICT,
-  contact_id BIGINT NOT NULL REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
-  qr_reference TEXT NOT NULL UNIQUE,
-  opaque_token TEXT NOT NULL UNIQUE,
-  payload_version SMALLINT NOT NULL DEFAULT 1 CHECK (payload_version > 0),
-  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','SUPERSEDED','REVOKED')),
-  generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  revoked_at TIMESTAMPTZ
-);
-
 CREATE TABLE invoice_payments (
   invoice_payment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   invoice_id BIGINT NOT NULL REFERENCES invoices(invoice_id) ON DELETE RESTRICT,
@@ -231,7 +218,7 @@ CREATE TABLE invoice_communications (
   communication_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   invoice_id BIGINT NOT NULL REFERENCES invoices(invoice_id) ON DELETE RESTRICT,
   contact_id BIGINT NOT NULL REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
-  channel TEXT NOT NULL CHECK (channel IN ('EMAIL','WHATSAPP','SMS','QR_TOKEN_COPIED','PORTAL')),
+  channel TEXT NOT NULL CHECK (channel IN ('EMAIL','WHATSAPP','SMS','PORTAL')),
   recipient_address TEXT,
   delivery_status TEXT NOT NULL DEFAULT 'COMPOSED' CHECK (delivery_status IN ('COMPOSED','SENT','DELIVERED','FAILED')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -244,15 +231,19 @@ CREATE INDEX invoice_communications_invoice ON invoice_communications (invoice_i
 
 -- Centralized communication hub. This is the relational equivalent of the
 -- x_pcl_communication_hub model: one history across leads, contacts,
--- engagements, invoices and QR events. QR payloads remain in invoice_qr_codes;
--- they must never be copied to message text or contact fields.
+-- engagements and invoices. Formal-letter QR payloads remain in the dedicated
+-- communication QR register; they must never be copied to message text or contact fields.
 CREATE TABLE communication_hub (
   hub_communication_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   subject TEXT NOT NULL,
+  communication_reference TEXT UNIQUE,
   communication_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   communication_type TEXT NOT NULL CHECK (communication_type IN ('EMAIL','PHONE_CALL','MEETING','WHATSAPP','INTERNAL_NOTE','FORMAL_LETTER','QR_EVENT')),
   direction TEXT NOT NULL DEFAULT 'OUTBOUND' CHECK (direction IN ('INBOUND','OUTBOUND','INTERNAL')),
   body TEXT,
+  firm_name TEXT,
+  purpose TEXT,
+  signatory_reference TEXT,
   logged_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
   follow_up_date DATE,
   follow_up_assigned_to_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
@@ -269,10 +260,22 @@ CREATE TABLE communication_hub (
   CHECK ((follow_up_date IS NULL AND follow_up_assigned_to_user_id IS NULL) OR (follow_up_date IS NOT NULL AND follow_up_assigned_to_user_id IS NOT NULL))
 );
 
+CREATE TABLE communication_qr_codes (
+  communication_qr_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  hub_communication_id BIGINT NOT NULL UNIQUE REFERENCES communication_hub(hub_communication_id) ON DELETE RESTRICT,
+  communication_reference TEXT NOT NULL UNIQUE,
+  opaque_token TEXT NOT NULL UNIQUE,
+  payload_version SMALLINT NOT NULL DEFAULT 1 CHECK (payload_version > 0),
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','SUPERSEDED','REVOKED')),
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ
+);
+
 CREATE INDEX communication_hub_follow_up_open ON communication_hub (follow_up_date, follow_up_assigned_to_user_id) WHERE status = 'OPEN';
 CREATE INDEX communication_hub_client_time ON communication_hub (client_id, communication_at DESC);
 CREATE INDEX communication_hub_engagement_time ON communication_hub (engagement_id, communication_at DESC);
 CREATE INDEX communication_hub_invoice_time ON communication_hub (invoice_id, communication_at DESC);
+CREATE INDEX communication_qr_codes_status ON communication_qr_codes (status, generated_at DESC);
 
 -- Normalise all links to one client chain before writing a communication.
 CREATE OR REPLACE FUNCTION enforce_communication_hub_links()
@@ -306,13 +309,48 @@ BEGIN
   IF NEW.contact_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM client_contacts WHERE contact_id = NEW.contact_id AND client_id = NEW.client_id AND is_active) THEN
     RAISE EXCEPTION 'Communication contact must be an active contact of the linked client';
   END IF;
+  IF NEW.communication_reference IS NOT NULL AND (
+    NEW.client_id IS NULL OR
+    NULLIF(trim(COALESCE(NEW.firm_name, '')), '') IS NULL OR
+    NULLIF(trim(COALESCE(NEW.purpose, '')), '') IS NULL OR
+    NULLIF(trim(COALESCE(NEW.signatory_reference, '')), '') IS NULL
+  ) THEN
+    RAISE EXCEPTION 'A QR communication reference requires a linked client, firm, purpose and approved signatory reference';
+  END IF;
   RETURN NEW;
 END;
 $$;
 
 CREATE TRIGGER communication_hub_link_guard
-BEFORE INSERT OR UPDATE OF lead_id, client_id, contact_id, engagement_id, invoice_id ON communication_hub
+BEFORE INSERT OR UPDATE OF lead_id, client_id, contact_id, engagement_id, invoice_id, communication_reference, firm_name, purpose, signatory_reference ON communication_hub
 FOR EACH ROW EXECUTE FUNCTION enforce_communication_hub_links();
+
+CREATE OR REPLACE FUNCTION enforce_communication_qr_links()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  hub_reference TEXT;
+  hub_client_id BIGINT;
+  hub_firm TEXT;
+  hub_purpose TEXT;
+  hub_signatory TEXT;
+BEGIN
+  SELECT communication_reference, client_id, firm_name, purpose, signatory_reference
+    INTO hub_reference, hub_client_id, hub_firm, hub_purpose, hub_signatory
+  FROM communication_hub
+  WHERE hub_communication_id = NEW.hub_communication_id;
+  IF hub_reference IS DISTINCT FROM NEW.communication_reference OR hub_client_id IS NULL OR
+     NULLIF(trim(COALESCE(hub_firm, '')), '') IS NULL OR
+     NULLIF(trim(COALESCE(hub_purpose, '')), '') IS NULL OR
+     NULLIF(trim(COALESCE(hub_signatory, '')), '') IS NULL THEN
+    RAISE EXCEPTION 'Communication QR must match a fully controlled communication reference.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER communication_qr_link_guard
+BEFORE INSERT OR UPDATE OF hub_communication_id, communication_reference ON communication_qr_codes
+FOR EACH ROW EXECUTE FUNCTION enforce_communication_qr_links();
 
 -- Keep lead, contact and tax-project links in the same client chain. API role checks
 -- remain required before a tax invoice can be created, sent or cancelled.
