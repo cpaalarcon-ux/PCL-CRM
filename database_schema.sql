@@ -52,6 +52,10 @@ CREATE TABLE clients (
   primary_sector TEXT NOT NULL,
   branch_location TEXT NOT NULL CHECK (branch_location IN ('Nairobi','Bungoma','Kisii','Other')),
   is_pie BOOLEAN NOT NULL DEFAULT FALSE,
+  incorporation_date DATE,
+  sme_audit_exempt BOOLEAN NOT NULL DEFAULT FALSE,
+  sme_audit_exemption_basis TEXT,
+  etims_onboarding_required BOOLEAN NOT NULL DEFAULT FALSE,
   status TEXT NOT NULL CHECK (status IN ('Lead','Active','Archived')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   archived_at TIMESTAMPTZ
@@ -94,6 +98,40 @@ CREATE TABLE template_tasks (
   is_hard_gate BOOLEAN NOT NULL DEFAULT FALSE,
   UNIQUE (template_id, sequence_no)
 );
+
+-- Client-level statutory work is scheduled independently from an engagement:
+-- it can therefore be managed even where an SME audit exemption is active.
+CREATE TABLE statutory_compliance_task_templates (
+  statutory_template_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  task_code TEXT NOT NULL UNIQUE CHECK (task_code IN ('BRS_ANNUAL_RETURN_FILING','ETIMS_ONBOARDING')),
+  task_name TEXT NOT NULL UNIQUE,
+  assigned_position TEXT NOT NULL,
+  requires_locked_evidence BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE client_statutory_compliance_tasks (
+  statutory_task_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  statutory_template_id BIGINT NOT NULL REFERENCES statutory_compliance_task_templates(statutory_template_id) ON DELETE RESTRICT,
+  compliance_year SMALLINT NOT NULL,
+  due_date DATE NOT NULL,
+  activation_date DATE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Scheduled' CHECK (status IN ('Scheduled','Open','In Progress','Completed','Blocked','Cancelled')),
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (client_id, statutory_template_id, compliance_year)
+);
+
+INSERT INTO statutory_compliance_task_templates (task_code, task_name, assigned_position, requires_locked_evidence)
+VALUES
+  ('BRS_ANNUAL_RETURN_FILING','BRS Annual Return Filing','Practice Administration',TRUE),
+  ('ETIMS_ONBOARDING','eTIMS Onboarding','Tax Manager',FALSE)
+ON CONFLICT (task_code) DO UPDATE SET
+  task_name = EXCLUDED.task_name,
+  assigned_position = EXCLUDED.assigned_position,
+  requires_locked_evidence = EXCLUDED.requires_locked_evidence;
 
 CREATE TABLE active_engagement_tasks (
   task_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -505,8 +543,15 @@ FOR EACH ROW EXECUTE FUNCTION refresh_tax_invoice_payment_status();
 CREATE TABLE vault_categories (
   category_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   category_name TEXT NOT NULL UNIQUE,
-  is_restricted BOOLEAN NOT NULL DEFAULT FALSE
+  is_restricted BOOLEAN NOT NULL DEFAULT FALSE,
+  force_lock_documents BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+INSERT INTO vault_categories (category_name, is_restricted, force_lock_documents)
+VALUES ('BRS Acknowledgment Receipts', TRUE, TRUE)
+ON CONFLICT (category_name) DO UPDATE SET
+  is_restricted = EXCLUDED.is_restricted,
+  force_lock_documents = EXCLUDED.force_lock_documents;
 
 CREATE TABLE documents (
   document_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -514,6 +559,7 @@ CREATE TABLE documents (
   client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
   engagement_id BIGINT REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
   category_id BIGINT NOT NULL REFERENCES vault_categories(category_id) ON DELETE RESTRICT,
+  document_type TEXT NOT NULL DEFAULT 'GENERAL' CHECK (document_type IN ('GENERAL','BRS_ACKNOWLEDGMENT','KYC','ENGAGEMENT_LETTER','FINAL_AUDIT_REPORT')),
   file_name TEXT NOT NULL,
   storage_key TEXT NOT NULL UNIQUE,
   file_size_mb NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (file_size_mb >= 0),
@@ -961,6 +1007,27 @@ FOR EACH ROW EXECUTE FUNCTION enforce_document_lock();
 CREATE TRIGGER documents_no_overwrite_locked
 BEFORE UPDATE ON documents
 FOR EACH ROW EXECUTE FUNCTION enforce_document_lock();
+
+-- Policy folders lock their contents on entry. A BRS receipt cannot be filed
+-- elsewhere, and an acknowledgement cannot subsequently be deleted or altered.
+CREATE OR REPLACE FUNCTION enforce_document_category_controls()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  category_locks BOOLEAN := FALSE;
+BEGIN
+  SELECT force_lock_documents INTO category_locks
+  FROM vault_categories WHERE category_id = NEW.category_id;
+  IF NEW.document_type = 'BRS_ACKNOWLEDGMENT' AND NOT category_locks THEN
+    RAISE EXCEPTION 'BRS acknowledgement receipts must be stored in the locked BRS Acknowledgment Receipts category';
+  END IF;
+  IF category_locks THEN NEW.is_locked := TRUE; END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER documents_category_control_guard
+BEFORE INSERT OR UPDATE OF category_id, document_type ON documents
+FOR EACH ROW EXECUTE FUNCTION enforce_document_category_controls();
 
 -- Production WIP query. Rate is frozen at approval and used for historical accuracy.
 CREATE VIEW v_engagement_wip AS
@@ -2267,3 +2334,120 @@ WITH CHECK (EXISTS (SELECT 1 FROM engagement_channels c WHERE c.channel_id = eng
 CREATE POLICY engagement_channel_messages_by_channel_access ON engagement_channel_messages FOR ALL
 USING (EXISTS (SELECT 1 FROM engagement_channels c WHERE c.channel_id = engagement_channel_messages.channel_id AND app_has_firm_access(c.handling_firm_id)))
 WITH CHECK (EXISTS (SELECT 1 FROM engagement_channels c WHERE c.channel_id = engagement_channel_messages.channel_id AND app_has_firm_access(c.handling_firm_id)));
+
+-- Statutory-compliance automation and the optional SME audit exemption.
+ALTER TABLE service_templates ADD COLUMN IF NOT EXISTS is_audit_workflow BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE active_engagement_tasks ADD COLUMN IF NOT EXISTS workflow_family TEXT NOT NULL DEFAULT 'GENERAL';
+
+CREATE OR REPLACE FUNCTION validate_sme_audit_exemption()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.sme_audit_exempt AND NEW.is_pie THEN
+    RAISE EXCEPTION 'A PIE client cannot be marked SME Audit Exempt';
+  END IF;
+  IF NEW.sme_audit_exempt AND COALESCE(trim(NEW.sme_audit_exemption_basis), '') = '' THEN
+    RAISE EXCEPTION 'Record the approved SME audit-exemption basis before enabling the exemption';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS clients_sme_audit_exemption_guard ON clients;
+CREATE TRIGGER clients_sme_audit_exemption_guard
+BEFORE INSERT OR UPDATE OF sme_audit_exempt, sme_audit_exemption_basis, is_pie ON clients
+FOR EACH ROW EXECUTE FUNCTION validate_sme_audit_exemption();
+
+CREATE OR REPLACE FUNCTION prevent_exempt_audit_workflow()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE exempt_client BOOLEAN := FALSE;
+DECLARE audit_template BOOLEAN := FALSE;
+BEGIN
+  SELECT c.sme_audit_exempt INTO exempt_client
+  FROM engagements e JOIN clients c ON c.client_id = e.client_id
+  WHERE e.engagement_id = NEW.engagement_id;
+  SELECT st.is_audit_workflow INTO audit_template
+  FROM template_tasks tt JOIN service_templates st ON st.template_id = tt.template_id
+  WHERE tt.template_task_id = NEW.template_task_id;
+  IF COALESCE(exempt_client, FALSE) AND (NEW.workflow_family = 'AUDIT' OR COALESCE(audit_template, FALSE)) THEN
+    RAISE EXCEPTION 'Statutory-audit workflow creation is blocked while the client has an active SME audit exemption';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS active_tasks_sme_audit_exemption_guard ON active_engagement_tasks;
+CREATE TRIGGER active_tasks_sme_audit_exemption_guard
+BEFORE INSERT OR UPDATE OF engagement_id, template_task_id, workflow_family ON active_engagement_tasks
+FOR EACH ROW EXECUTE FUNCTION prevent_exempt_audit_workflow();
+
+CREATE OR REPLACE FUNCTION incorporation_anniversary(p_incorporation_date DATE, p_as_of DATE DEFAULT CURRENT_DATE)
+RETURNS DATE LANGUAGE plpgsql STABLE AS $$
+DECLARE
+  target_year INTEGER;
+  target_month INTEGER;
+  target_day INTEGER;
+  last_day INTEGER;
+  anniversary DATE;
+BEGIN
+  IF p_incorporation_date IS NULL THEN RETURN NULL; END IF;
+  target_year := EXTRACT(YEAR FROM p_as_of);
+  target_month := EXTRACT(MONTH FROM p_incorporation_date);
+  target_day := EXTRACT(DAY FROM p_incorporation_date);
+  last_day := EXTRACT(DAY FROM (date_trunc('month', make_date(target_year, target_month, 1)) + INTERVAL '1 month - 1 day'));
+  anniversary := make_date(target_year, target_month, LEAST(target_day, last_day));
+  IF anniversary < p_as_of THEN
+    target_year := target_year + 1;
+    last_day := EXTRACT(DAY FROM (date_trunc('month', make_date(target_year, target_month, 1)) + INTERVAL '1 month - 1 day'));
+    anniversary := make_date(target_year, target_month, LEAST(target_day, last_day));
+  END IF;
+  RETURN anniversary;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION generate_due_brs_annual_return_tasks(p_run_date DATE DEFAULT CURRENT_DATE)
+RETURNS INTEGER LANGUAGE plpgsql AS $$
+DECLARE created_count INTEGER;
+BEGIN
+  INSERT INTO client_statutory_compliance_tasks (client_id, statutory_template_id, compliance_year, due_date, activation_date, status)
+  SELECT c.client_id, template.statutory_template_id, EXTRACT(YEAR FROM schedule.due_date)::SMALLINT,
+         schedule.due_date, schedule.due_date - 30,
+         CASE WHEN p_run_date >= schedule.due_date - 30 THEN 'Open' ELSE 'Scheduled' END
+  FROM clients c
+  CROSS JOIN (SELECT statutory_template_id FROM statutory_compliance_task_templates WHERE task_code = 'BRS_ANNUAL_RETURN_FILING' AND is_active) template
+  CROSS JOIN LATERAL (SELECT incorporation_anniversary(c.incorporation_date, p_run_date) AS due_date) schedule
+  WHERE c.incorporation_date IS NOT NULL
+    AND c.status = 'Active'
+    AND c.deleted_at IS NULL
+    AND p_run_date BETWEEN schedule.due_date - 30 AND schedule.due_date
+  ON CONFLICT (client_id, statutory_template_id, compliance_year) DO NOTHING;
+  GET DIAGNOSTICS created_count = ROW_COUNT;
+  RETURN created_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION queue_etims_onboarding_task()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE template_id_value BIGINT;
+BEGIN
+  IF NEW.etims_onboarding_required THEN
+    SELECT statutory_template_id INTO template_id_value FROM statutory_compliance_task_templates WHERE task_code = 'ETIMS_ONBOARDING' AND is_active;
+    IF template_id_value IS NOT NULL THEN
+      INSERT INTO client_statutory_compliance_tasks (client_id, statutory_template_id, compliance_year, due_date, activation_date, status)
+      VALUES (NEW.client_id, template_id_value, EXTRACT(YEAR FROM CURRENT_DATE)::SMALLINT, CURRENT_DATE, CURRENT_DATE, 'Open')
+      ON CONFLICT (client_id, statutory_template_id, compliance_year) DO NOTHING;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS clients_queue_etims_onboarding ON clients;
+CREATE TRIGGER clients_queue_etims_onboarding
+AFTER INSERT OR UPDATE OF etims_onboarding_required ON clients
+FOR EACH ROW EXECUTE FUNCTION queue_etims_onboarding_task();
+
+ALTER TABLE client_statutory_compliance_tasks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS client_statutory_tasks_by_client_access ON client_statutory_compliance_tasks;
+CREATE POLICY client_statutory_tasks_by_client_access ON client_statutory_compliance_tasks FOR ALL
+USING (EXISTS (SELECT 1 FROM clients c WHERE c.client_id = client_statutory_compliance_tasks.client_id AND app_has_branch_access(c.default_firm_id, c.branch_location)))
+WITH CHECK (EXISTS (SELECT 1 FROM clients c WHERE c.client_id = client_statutory_compliance_tasks.client_id AND app_has_branch_access(c.default_firm_id, c.branch_location)));
