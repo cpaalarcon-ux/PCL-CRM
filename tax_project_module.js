@@ -187,7 +187,55 @@
     localStorage.setItem(storage.taskEvidence, JSON.stringify(taskEvidence));
     saveClients();
     saveLifecycleRecords();
+    window.dispatchEvent(new CustomEvent("pcl:tax-projects-updated"));
   }
+
+  // A read-only summary bridge for the personal dashboard. It carries no
+  // workbook rows, KRA PINs, evidence files or QR content. The production
+  // equivalent is a server-side query constrained by the signed-in user.
+  window.pclTaxProjectWorkspace = {
+    dashboardSnapshot({firmId = ""} = {}) {
+      const scopedProjects = projects.filter(project => !firmId || project.firmId === firmId);
+      const scopedProjectIds = new Set(scopedProjects.map(project => project.id));
+      const projectFor = id => scopedProjects.find(project => project.id === id);
+      const projectTasks = tasks.filter(task => scopedProjectIds.has(task.projectId)).map(task => {
+        const project = projectFor(task.projectId);
+        return {
+          id: task.id,
+          engagementId: project?.engagementId || null,
+          firmId: project?.firmId || null,
+          clientName: project?.clientName || "Archived tax client",
+          projectReference: project?.projectReference || "",
+          projectStatus: project?.status || "",
+          title: task.title,
+          assignedPosition: task.assignedPosition,
+          dueDate: task.dueDate,
+          status: task.status
+        };
+      });
+      const obligations = scopedProjects.flatMap(project => (project.obligations || []).map(obligation => ({
+        firmId: project.firmId,
+        projectId: project.id,
+        projectReference: project.projectReference,
+        clientName: project.clientName,
+        code: obligation.code,
+        status: obligation.status
+      })));
+      const pendingUploads = projectTasks.filter(task => /upload|collect|gather/i.test(String(task.title || "")) && !["Completed", "Filed", "Cancelled"].includes(task.status));
+      const activities = [
+        ...scopedProjects.map(project => ({kind: "tax", at: project.createdAt, label: "Tax Project opened for " + project.clientName})),
+        ...batches.filter(batch => scopedProjectIds.has(batch.projectId)).map(batch => {
+          const project = projectFor(batch.projectId);
+          return {kind: "tax", at: batch.createdAt, label: (batch.recordCount || 0) + " new tax item(s) accepted for " + (project?.clientName || "a tax project")};
+        }),
+        ...filings.filter(filing => scopedProjectIds.has(filing.projectId)).map(filing => {
+          const project = projectFor(filing.projectId);
+          return {kind: "tax", at: filing.filedAt, label: "Tax filing recorded for " + (project?.clientName || "a tax project")};
+        })
+      ];
+      return {tasks: projectTasks, obligations, pendingUploads, activities};
+    }
+  };
 
   function notice(message, isError = false) {
     const target = document.getElementById("taxProjectNotice");
@@ -711,7 +759,7 @@
       if (action === "amend") amendProject(project);
       render();
       if (typeof renderDashboard === "function") renderDashboard();
-      notice(action === "file" ? "Filing reference and locked receipt reference recorded." : "Tax Project action completed.");
+      notice(action === "file" ? "iTax reference and actual filing date recorded. A filing PDF is not required." : "Tax Project action completed.");
     } catch (error) {notice(error.message, true);}
   }
 
@@ -733,7 +781,7 @@
       <div class="intro"><div><h2>Tax Projects</h2><p>Controlled tax work by engagement, statutory obligation and reporting period. Select the verified client through its Tax Compliance engagement; no source batch, approval or filing can move to another client or firm.</p></div><label class="tax-role-switch">Preview position<select id="taxProjectPreviewRole">${positions.map(position => `<option>${position}</option>`).join("")}</select></label></div>
       <div class="notice" id="taxProjectNotice" role="status"></div>
       <div class="metric-grid"><div class="card metric-card"><b id="taxProjectActive">0</b><span>Open Tax Projects</span></div><div class="card metric-card"><b id="taxProjectReview">0</b><span>Awaiting approval</span></div><div class="card metric-card"><b id="taxProjectReady">0</b><span>Ready for filing</span></div><div class="card metric-card"><b id="taxProjectLocked">0</b><span>Filed and locked</span></div></div>
-      <div class="operations-layout"><form id="taxProjectForm" class="card form-card"><div class="section-heading"><h3>Open Tax Project</h3><span class="hint">Client and firm are inherited, never typed independently</span></div><div class="grid"><label class="full">Verified Tax Compliance engagement <span>*</span><select required name="engagementId" id="taxProjectEngagement"></select></label><div class="full tax-project-identity" id="taxProjectIdentityPreview"></div><label>Period type <select name="periodKind" id="taxProjectPeriodKind"><option value="Monthly">Monthly VAT / PAYE / WHT</option><option value="Annual">Annual Income Tax</option></select></label><label data-tax-period-input="Monthly">Reporting month <span>*</span><input required type="month" name="periodMonth" id="taxProjectMonth" /></label><label data-tax-period-input="Annual" hidden>Financial year start <span>*</span><input type="date" name="annualPeriodStart" id="taxProjectAnnualStart" /></label><label data-tax-period-input="Annual" hidden>Financial year end <span>*</span><input type="date" name="annualPeriodEnd" id="taxProjectAnnualEnd" /></label><label>Verified KRA PIN <span>*</span><input required name="taxpayerPin" id="taxProjectTaxpayerPin" placeholder="P000000000A" /></label><label>Confirm legal name exactly <span>*</span><input required name="confirmedLegalName" id="taxProjectConfirmName" placeholder="Legal registered name" /></label><div class="full"><label>Obligations in this period <span>*</span></label><div class="choice-list" id="taxProjectObligations"></div></div><label class="checkbox-line full"><input type="checkbox" name="requiresClientConfirmation" />Client confirmation required before filing</label><label class="checkbox-line full"><input type="checkbox" name="requiresPartnerApproval" />High-risk / PEP escalation requires Engagement Partner approval</label></div><div class="actions"><button class="btn primary" type="submit">Create controlled Tax Project</button></div></form><div class="card side-card"><div class="section-heading"><h3>Approval policy</h3><span class="hint">No self-approval</span></div><ol class="tax-project-policy"><li>Tax Assistant creates and collects controlled batches.</li><li>Tax Manager verifies the client, KRA PIN, engagement and obligation scope.</li><li>Tax Supervisor approves technical review.</li><li>Tax Manager authorises filing; Partner approval is added for high-risk work.</li><li>Authorized Tax Filer records iTax acknowledgement and locked receipt.</li></ol><p class="hint">The role switch is a browser-preview demonstration. Production uses authenticated position-based permissions.</p></div></div>
+      <div class="operations-layout"><form id="taxProjectForm" class="card form-card"><div class="section-heading"><h3>Open Tax Project</h3><span class="hint">Client and firm are inherited, never typed independently</span></div><div class="grid"><label class="full">Verified Tax Compliance engagement <span>*</span><select required name="engagementId" id="taxProjectEngagement"></select></label><div class="full tax-project-identity" id="taxProjectIdentityPreview"></div><label>Period type <select name="periodKind" id="taxProjectPeriodKind"><option value="Monthly">Monthly VAT / PAYE / WHT</option><option value="Annual">Annual Income Tax</option></select></label><label data-tax-period-input="Monthly">Reporting month <span>*</span><input required type="month" name="periodMonth" id="taxProjectMonth" /></label><label data-tax-period-input="Annual" hidden>Financial year start <span>*</span><input type="date" name="annualPeriodStart" id="taxProjectAnnualStart" /></label><label data-tax-period-input="Annual" hidden>Financial year end <span>*</span><input type="date" name="annualPeriodEnd" id="taxProjectAnnualEnd" /></label><label>Verified KRA PIN <span>*</span><input required name="taxpayerPin" id="taxProjectTaxpayerPin" placeholder="P000000000A" /></label><label>Confirm legal name exactly <span>*</span><input required name="confirmedLegalName" id="taxProjectConfirmName" placeholder="Legal registered name" /></label><div class="full"><label>Obligations in this period <span>*</span></label><div class="choice-list" id="taxProjectObligations"></div></div><label class="checkbox-line full"><input type="checkbox" name="requiresClientConfirmation" />Client confirmation required before filing</label><label class="checkbox-line full"><input type="checkbox" name="requiresPartnerApproval" />High-risk / PEP escalation requires Engagement Partner approval</label></div><div class="actions"><button class="btn primary" type="submit">Create controlled Tax Project</button></div></form><div class="card side-card"><div class="section-heading"><h3>Approval policy</h3><span class="hint">No self-approval</span></div><ol class="tax-project-policy"><li>Tax Assistant creates and collects controlled batches.</li><li>Tax Manager verifies the client, KRA PIN, engagement and obligation scope.</li><li>Tax Supervisor approves technical review.</li><li>Tax Manager authorises filing; Partner approval is added for high-risk work.</li><li>Authorized Tax Filer records the iTax acknowledgement reference and actual filing date. A filing PDF is optional and never blocks the filing record.</li></ol><p class="hint">The role switch is a browser-preview demonstration. Production uses authenticated position-based permissions.</p></div></div>
       <div class="operations-layout"><form id="taxBatchForm" class="card form-card"><div class="section-heading"><h3>Upload source workbook</h3><span class="hint">Reads rows, accepts new items only, staging never posts to the TB or return</span></div><div class="grid"><label class="full">Tax Project <span>*</span><select required name="projectId" id="taxBatchProject"></select></label><label>Obligation <span>*</span><select required name="obligationCode" id="taxBatchObligation"></select></label><label>Source <span>*</span><select required name="sourceType" id="taxBatchSource"></select></label><label>Week start / period key <span>*</span><input required type="date" name="batchPeriodKey" id="taxBatchPeriodKey" /></label><label class="full">Excel working paper / schedule <span>*</span><input type="file" name="workingPaperFile" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12" /></label><label class="full">Vault reference <input name="fileReference" placeholder="Optional controlled Vault reference; filename is recorded automatically" /></label><label class="full">File hash <input name="fileHash" placeholder="Optional; calculated automatically if blank" /></label><label class="checkbox-line full"><input type="checkbox" name="noActivity" />No activity for this source/week — record the controlled reason above; no workbook is required</label></div><div class="actions"><button class="btn primary" type="submit">Read workbook and accept new items</button></div></form><div class="card side-card"><div class="section-heading"><h3>Row-level import rules</h3><span class="hint">Duplicate rows are skipped automatically</span></div><ul class="tax-project-policy"><li>Upload an <b>.xlsx</b> or <b>.xlsm</b> workbook with a header row. Legacy <b>.xls</b> must first be saved as .xlsx.</li><li>The importer uses transaction/reference fields where available, otherwise the normalised row values, to identify duplicates.</li><li>Only new rows are accepted. The result shows total rows read, new rows and duplicates skipped.</li><li>Client support and other documentary evidence remains PDF-only and separate from the workbook import.</li></ul></div></div>
       <div class="operations-layout"><form id="taxTaskEvidenceForm" class="card form-card"><div class="section-heading"><h3>Attach task evidence</h3><span class="hint">PDF evidence is linked to a specific tax task</span></div><div class="grid"><label class="full">Tax Project <span>*</span><select required name="projectId" id="taxTaskEvidenceProject"></select></label><label class="full">Task <span>*</span><select required name="taskId" id="taxTaskEvidenceTask"></select></label><label class="full">PDF documentary evidence <span>*</span><input required type="file" name="taskEvidenceFile" accept=".pdf,application/pdf" /></label></div><div class="actions"><button class="btn primary" type="submit">Attach PDF evidence</button></div></form><div class="card side-card"><div class="section-heading"><h3>Evidence controls</h3><span class="hint">Audit-ready, task-specific records</span></div><ul class="tax-project-policy"><li>The assigned position or Tax Manager attaches evidence.</li><li>Each PDF is SHA-256 hashed before it is registered.</li><li>Filed project evidence stays locked; corrections use an amendment.</li></ul></div></div>
       <div class="section"><div class="section-heading"><h3>Tax Project register</h3><span class="hint">The client identity, firm and period remain visible at every approval stage</span></div><div id="taxProjectRegister" class="tax-project-register"></div></div>
@@ -761,4 +809,8 @@
   }
 
   inject();
+  // The main dashboard may initialise before this deferred Tax Project module.
+  // Notify it once the read-only workspace bridge is available so the logged-in
+  // user's task, filing and pending-upload cards immediately include tax work.
+  window.dispatchEvent(new CustomEvent("pcl:tax-projects-updated"));
 })();

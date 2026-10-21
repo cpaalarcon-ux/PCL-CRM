@@ -3508,3 +3508,123 @@ WITH CHECK (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_
 CREATE POLICY tax_project_task_evidence_by_firm_access ON tax_project_task_evidence FOR ALL
 USING (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_project_task_evidence.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)))
 WITH CHECK (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_project_task_evidence.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)));
+
+-- ---------------------------------------------------------------------------
+-- Personal workspace dashboard
+-- ---------------------------------------------------------------------------
+-- A dashboard preference is a presentation filter only.  It never grants
+-- access: all underlying reads remain subject to firm and role record rules.
+CREATE TABLE IF NOT EXISTS user_workspace_preferences (
+  user_id BIGINT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+  dashboard_firm_id BIGINT REFERENCES firms(firm_id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE user_workspace_preferences ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS user_workspace_preferences_own_record ON user_workspace_preferences;
+CREATE POLICY user_workspace_preferences_own_record ON user_workspace_preferences FOR ALL
+USING (
+  user_id = app_user_id()
+  AND (dashboard_firm_id IS NULL OR app_has_firm_access(dashboard_firm_id))
+)
+WITH CHECK (
+  user_id = app_user_id()
+  AND (dashboard_firm_id IS NULL OR app_has_firm_access(dashboard_firm_id))
+);
+
+-- The signed-in user's actionable work.  A task is visible when it is
+-- directly assigned to the user or to the user's current position.  The API
+-- applies an optional firm filter from user_workspace_preferences.
+CREATE OR REPLACE VIEW v_my_workspace_tasks
+WITH (security_invoker = true) AS
+WITH current_user_role AS (
+  SELECT user_record.user_id, role_record.role_name
+  FROM users user_record
+  JOIN roles role_record ON role_record.role_id = user_record.role_id
+  WHERE user_record.user_id = app_user_id()
+    AND user_record.is_active = TRUE
+)
+SELECT
+  'ENGAGEMENT_TASK'::TEXT AS task_source,
+  task.task_id AS source_task_id,
+  engagement.handling_firm_id,
+  engagement.engagement_id,
+  client.client_id,
+  client.company_name,
+  task.task_name,
+  task.assigned_to,
+  task.assigned_role_name,
+  COALESCE(task.due_at, task.due_date::TIMESTAMPTZ) AS due_at,
+  task.status,
+  task.is_overdue,
+  NULL::BIGINT AS tax_period_project_id
+FROM active_engagement_tasks task
+JOIN engagements engagement ON engagement.engagement_id = task.engagement_id
+JOIN clients client ON client.client_id = engagement.client_id
+CROSS JOIN current_user_role current_role
+WHERE app_has_firm_access(engagement.handling_firm_id)
+  AND (task.assigned_to = current_role.user_id OR task.assigned_role_name = current_role.role_name)
+
+UNION ALL
+
+SELECT
+  'TAX_PROJECT_TASK'::TEXT AS task_source,
+  tax_task.tax_period_project_task_id AS source_task_id,
+  project.handling_firm_id,
+  project.engagement_id,
+  client.client_id,
+  client.company_name,
+  tax_task.task_name,
+  NULL::BIGINT AS assigned_to,
+  tax_task.assigned_role_name,
+  tax_task.due_date::TIMESTAMPTZ AS due_at,
+  tax_task.status,
+  (tax_task.due_date < CURRENT_DATE AND tax_task.status NOT IN ('COMPLETED','CANCELLED')) AS is_overdue,
+  project.tax_period_project_id
+FROM tax_period_project_tasks tax_task
+JOIN tax_project_obligations obligation ON obligation.tax_project_obligation_id = tax_task.tax_project_obligation_id
+JOIN tax_period_projects project ON project.tax_period_project_id = obligation.tax_period_project_id
+JOIN clients client ON client.client_id = project.client_id
+CROSS JOIN current_user_role current_role
+WHERE app_has_firm_access(project.handling_firm_id)
+  AND tax_task.assigned_role_name = current_role.role_name;
+
+-- Aggregated radar for the firm's next seven days.  It intentionally returns
+-- counts only, so normal staff can understand workload without exposing other
+-- teams' client detail or fee data.
+CREATE OR REPLACE VIEW v_workspace_firm_deadline_radar
+WITH (security_invoker = true) AS
+SELECT
+  engagement.handling_firm_id,
+  task.due_date,
+  COUNT(*) FILTER (WHERE task.status NOT IN ('Completed','Cancelled')) AS open_task_count,
+  COUNT(*) FILTER (WHERE task.status NOT IN ('Completed','Cancelled') AND task.is_overdue) AS overdue_task_count
+FROM active_engagement_tasks task
+JOIN engagements engagement ON engagement.engagement_id = task.engagement_id
+WHERE app_has_firm_access(engagement.handling_firm_id)
+  AND task.due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7
+GROUP BY engagement.handling_firm_id, task.due_date;
+
+-- Tax filing progress for the Filed x/y metric.  NOT_APPLICABLE obligations
+-- are excluded from the denominator and do not reduce a firm's compliance
+-- progress.
+CREATE OR REPLACE VIEW v_workspace_tax_filing_progress
+WITH (security_invoker = true) AS
+SELECT
+  project.handling_firm_id,
+  COUNT(*) FILTER (WHERE obligation.status = 'FILED') AS filed_obligation_count,
+  COUNT(*) FILTER (WHERE obligation.status <> 'NOT_APPLICABLE') AS applicable_obligation_count
+FROM tax_period_projects project
+JOIN tax_project_obligations obligation ON obligation.tax_period_project_id = project.tax_period_project_id
+WHERE app_has_firm_access(project.handling_firm_id)
+GROUP BY project.handling_firm_id;
+
+CREATE INDEX IF NOT EXISTS active_engagement_tasks_workspace_assignee_due
+  ON active_engagement_tasks (assigned_to, due_date)
+  WHERE status NOT IN ('Completed','Cancelled');
+CREATE INDEX IF NOT EXISTS active_engagement_tasks_workspace_position_due
+  ON active_engagement_tasks (assigned_role_name, due_date)
+  WHERE status NOT IN ('Completed','Cancelled');
+CREATE INDEX IF NOT EXISTS tax_period_project_tasks_workspace_position_due
+  ON tax_period_project_tasks (assigned_role_name, due_date)
+  WHERE status NOT IN ('COMPLETED','CANCELLED');

@@ -60,3 +60,9 @@ The channel API must authenticate and enforce firm access plus active channel me
 ### Email connection
 
 Run IMAP retrieval in a server worker every two to five minutes (or use IMAP IDLE where supported), with duplicate prevention on the internet `Message-ID`. Route each received email through a configured alias such as `tax@…` to the selected Communication Hub, Help Desk, Tax or Audit queue. Only the Email Manager role may administer the connection, aliases or global inbox. All other roles may only read their routed queue and reply to email linked to their assigned client work. SMTP replies must preserve `In-Reply-To` and `References`; keep credentials only in a managed secret store, never in browser storage or the ERP database.
+
+### My Workspace dashboard
+
+The home dashboard now combines the selected firm view with a personal work area. It contains today's assigned or overdue work, work that is waiting for a client or reviewer, the user's next seven days, an aggregated firm deadline radar, personal pending uploads, quick actions and a recent activity feed. The **View** selector filters all cards to one handling firm or all firms the signed-in user may access. Firm selection is a view preference only: it never changes the immutable firm on a lead, engagement, tax project, invoice or communication.
+
+In the browser preview, the **My Workspace position** selector is a role-preview control. In production, remove that selector for ordinary users and obtain the position from the authenticated session. The API should source the cards from `v_my_workspace_tasks`, `v_workspace_firm_deadline_radar` and `v_workspace_tax_filing_progress`, with PostgreSQL row-level security enforced before any response is returned. The tax-project dashboard bridge carries task and progress summaries only; it never exposes workbook rows, KRA PINs, payment references, evidence files or QR-reference secrets.
