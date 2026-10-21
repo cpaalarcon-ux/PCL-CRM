@@ -1172,6 +1172,154 @@ FROM audit_files af
 JOIN engagements e ON e.engagement_id = af.engagement_id
 LEFT JOIN audit_trial_balances tb ON tb.audit_file_id = af.audit_file_id;
 
+-- CRM qualification, opportunity, routing and contract-renewal extension.
+-- The terms below deliberately distinguish legal firms from branches: a firm owns
+-- the engagement, a branch delivers it, a service line describes the work and a
+-- specialist queue performs controlled routing.
+ALTER TABLE leads
+  ADD COLUMN lead_source TEXT CHECK (lead_source IN ('Referral','Website','Networking','Existing Client (Cross-sell)','Tender')),
+  ADD COLUMN lead_temperature TEXT NOT NULL DEFAULT 'Cold' CHECK (lead_temperature IN ('Cold','Warm','Hot')),
+  ADD COLUMN expected_close_date DATE,
+  ADD COLUMN opportunity_owner_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  ADD COLUMN next_activity_type TEXT,
+  ADD COLUMN next_activity_due_date DATE;
+
+CREATE TABLE routing_rules (
+  routing_rule_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  branch_location TEXT NOT NULL CHECK (branch_location IN ('Nairobi','Bungoma','Kisii','Other')),
+  primary_sector TEXT,
+  service_line TEXT NOT NULL CHECK (service_line IN ('Audit','Tax','Accounting','Advisory')),
+  requested_service TEXT,
+  branch_owner_role_name TEXT NOT NULL,
+  specialist_team_name TEXT NOT NULL,
+  priority SMALLINT NOT NULL DEFAULT 100 CHECK (priority BETWEEN 1 AND 999),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX routing_rules_match ON routing_rules (handling_firm_id, branch_location, primary_sector, service_line, priority)
+WHERE is_active;
+
+ALTER TABLE leads
+  ADD COLUMN routing_rule_id BIGINT REFERENCES routing_rules(routing_rule_id) ON DELETE SET NULL;
+
+CREATE TABLE opportunities (
+  opportunity_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  source_lead_id BIGINT NOT NULL UNIQUE REFERENCES leads(lead_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  routing_rule_id BIGINT REFERENCES routing_rules(routing_rule_id) ON DELETE SET NULL,
+  opportunity_status TEXT NOT NULL CHECK (opportunity_status IN ('QUALIFIED','QUOTATION_SENT','CONTRACT_ACCEPTED','CONVERTED_TO_ENGAGEMENT','LOST','CLOSED')),
+  probability_percent NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (probability_percent BETWEEN 0 AND 100),
+  estimated_fee NUMERIC(16,2) CHECK (estimated_fee >= 0),
+  expected_close_date DATE,
+  owner_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  qualified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  converted_engagement_id BIGINT UNIQUE REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  lost_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX opportunities_firm_status ON opportunities (handling_firm_id, opportunity_status, expected_close_date);
+
+CREATE OR REPLACE FUNCTION enforce_opportunity_lead_chain()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE lead_firm_id BIGINT; lead_client_id BIGINT;
+BEGIN
+  SELECT handling_firm_id, client_id INTO lead_firm_id, lead_client_id FROM leads WHERE lead_id = NEW.source_lead_id;
+  IF lead_firm_id IS DISTINCT FROM NEW.handling_firm_id OR lead_client_id IS DISTINCT FROM NEW.client_id THEN
+    RAISE EXCEPTION 'Opportunity must inherit both handling firm and client from its source lead';
+  END IF;
+  IF TG_OP = 'UPDATE' AND NEW.handling_firm_id IS DISTINCT FROM OLD.handling_firm_id THEN
+    RAISE EXCEPTION 'Opportunity firm is immutable. Create a separate lead and opportunity for another firm.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER opportunities_lead_chain_guard
+BEFORE INSERT OR UPDATE OF source_lead_id, handling_firm_id, client_id ON opportunities
+FOR EACH ROW EXECUTE FUNCTION enforce_opportunity_lead_chain();
+
+ALTER TABLE engagements
+  ADD COLUMN renewal_of_engagement_id BIGINT REFERENCES engagements(engagement_id) ON DELETE RESTRICT;
+
+CREATE TABLE engagement_contracts (
+  contract_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  engagement_id BIGINT NOT NULL UNIQUE REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  contract_type TEXT NOT NULL CHECK (contract_type IN ('ONE_OFF','ANNUAL_AUDIT','RECURRING_RETAINER')),
+  contract_status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (contract_status IN ('DRAFT','ACCEPTED','SUPERSEDED','EXPIRED','CANCELLED')),
+  signed_el_document_id BIGINT REFERENCES documents(document_id) ON DELETE RESTRICT,
+  effective_date DATE,
+  expiry_date DATE,
+  renewal_opportunity_id BIGINT REFERENCES opportunities(opportunity_id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  accepted_at TIMESTAMPTZ,
+  superseded_at TIMESTAMPTZ,
+  CHECK (expiry_date IS NULL OR effective_date IS NULL OR expiry_date >= effective_date),
+  CHECK (contract_type = 'ONE_OFF' OR (effective_date IS NOT NULL AND expiry_date IS NOT NULL))
+);
+
+CREATE INDEX engagement_contracts_renewal ON engagement_contracts (handling_firm_id, expiry_date)
+WHERE contract_status = 'ACCEPTED';
+
+CREATE OR REPLACE FUNCTION enforce_contract_engagement_chain()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE engagement_firm_id BIGINT;
+BEGIN
+  SELECT handling_firm_id INTO engagement_firm_id FROM engagements WHERE engagement_id = NEW.engagement_id;
+  IF engagement_firm_id IS DISTINCT FROM NEW.handling_firm_id THEN
+    RAISE EXCEPTION 'Contract handling firm must match its engagement handling firm';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.contract_status = 'ACCEPTED' AND NEW.signed_el_document_id IS DISTINCT FROM OLD.signed_el_document_id THEN
+    RAISE EXCEPTION 'A signed Engagement Letter is immutable. Create a renewal or superseding contract instead.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER engagement_contracts_chain_guard
+BEFORE INSERT OR UPDATE ON engagement_contracts
+FOR EACH ROW EXECUTE FUNCTION enforce_contract_engagement_chain();
+
+ALTER TABLE communication_hub
+  ADD COLUMN activity_type TEXT CHECK (activity_type IN ('QUALIFYING_CALL','SCOPING_MEETING','PROPOSAL_FOLLOW_UP','CLIENT_VISIT','FIELDWORK_VISIT','EL_NEGOTIATION','PBC_REQUEST','GENERAL'));
+
+INSERT INTO notification_templates (alert_code, channel, subject_template, body_template, is_mandatory) VALUES
+  ('OPPORTUNITY_NEXT_ACTIVITY_MISSING','IN_APP','Opportunity next activity missing','A Warm or Hot opportunity requires a controlled next activity and due date.',TRUE),
+  ('OPPORTUNITY_FOLLOW_UP_DUE','EMAIL','Opportunity follow-up due','The recorded next activity is due or overdue.',TRUE),
+  ('CONTRACT_RENEWAL_60','EMAIL','Contract renewal planning required','Contract expiry is within 60 days. Plan renewal, KYC refresh and acceptance checks.',TRUE),
+  ('CONTRACT_RENEWAL_30','EMAIL','Contract renewal action required','Contract expiry is within 30 days. Start a separate renewal opportunity and new EL cycle.',TRUE)
+ON CONFLICT (alert_code) DO NOTHING;
+
+CREATE OR REPLACE VIEW v_crm_pipeline_analytics AS
+SELECT l.handling_firm_id, l.branch_location, c.primary_sector, l.requested_service,
+       l.lead_source, l.lead_temperature, l.stage,
+       o.opportunity_status, o.probability_percent, o.expected_close_date,
+       (l.stage IN ('Active Engagement','WIP / Billing','Closed / Archived')) AS converted_to_engagement
+FROM leads l
+JOIN clients c ON c.client_id = l.client_id
+LEFT JOIN opportunities o ON o.source_lead_id = l.lead_id;
+
+ALTER TABLE opportunities ENABLE ROW LEVEL SECURITY;
+CREATE POLICY opportunities_by_firm_access ON opportunities
+USING (EXISTS (
+  SELECT 1 FROM user_firm_access ufa
+  WHERE ufa.firm_id = opportunities.handling_firm_id
+    AND ufa.user_id = NULLIF(current_setting('app.user_id', true), '')::BIGINT
+));
+
+ALTER TABLE engagement_contracts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY engagement_contracts_by_firm_access ON engagement_contracts
+USING (EXISTS (
+  SELECT 1 FROM user_firm_access ufa
+  WHERE ufa.firm_id = engagement_contracts.handling_firm_id
+    AND ufa.user_id = NULLIF(current_setting('app.user_id', true), '')::BIGINT
+));
+
 -- All engagement-linked operational records carry a denormalised firm key for
 -- fast row-level security and reporting. The trigger stops cross-firm children
 -- even if a caller tampers with an API payload.
