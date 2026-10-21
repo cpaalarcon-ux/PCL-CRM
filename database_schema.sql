@@ -3304,6 +3304,26 @@ CREATE TRIGGER tax_task_evidence_chain_guard
 BEFORE INSERT OR UPDATE OF tax_period_project_task_id, tax_period_project_id, vault_document_id ON tax_project_task_evidence
 FOR EACH ROW EXECUTE FUNCTION enforce_tax_task_evidence_chain();
 
+CREATE OR REPLACE FUNCTION enforce_tax_filing_acknowledgement_format()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  original_file_name TEXT;
+  original_mime_type TEXT;
+BEGIN
+  SELECT lower(file_name), lower(COALESCE(mime_type, '')) INTO original_file_name, original_mime_type
+  FROM documents WHERE document_id = NEW.acknowledgement_document_id;
+  IF original_file_name !~ '\\.pdf$' OR (original_mime_type <> '' AND original_mime_type <> 'application/pdf') THEN
+    RAISE EXCEPTION 'An iTax acknowledgement or tax payment receipt must be stored as a PDF document.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tax_filing_acknowledgement_pdf_only ON tax_filing_submissions;
+CREATE TRIGGER tax_filing_acknowledgement_pdf_only
+BEFORE INSERT OR UPDATE OF acknowledgement_document_id ON tax_filing_submissions
+FOR EACH ROW EXECUTE FUNCTION enforce_tax_filing_acknowledgement_format();
+
 CREATE OR REPLACE FUNCTION enforce_tax_period_project_chain()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE parent_engagement_id BIGINT;
