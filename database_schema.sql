@@ -853,3 +853,190 @@ GROUP BY e.engagement_id, c.company_name, c.primary_sector, c.branch_location, e
 -- The API must apply role checks before exposing this view. Hide fee/cost/rate fields
 -- for Audit Supervisors, Audit Assistants and Interns. Use signed object-storage URLs
 -- with a maximum 60-second expiry for approved document downloads.
+
+-- ICPAK-aligned audit workspace. These are annual client files built only for
+-- activated Statutory Audit engagements. They record audit evidence metadata;
+-- the actual evidence remains in the secured document-vault object store.
+CREATE TABLE audit_files (
+  audit_file_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  reporting_year_end DATE NOT NULL,
+  audit_file_type TEXT NOT NULL CHECK (audit_file_type IN ('FIRST_TIME','SUBSEQUENT')),
+  file_status TEXT NOT NULL DEFAULT 'PLANNING' CHECK (file_status IN ('PLANNING','FIELDWORK','MANAGER_REVIEW','PARTNER_REVIEW','ARCHIVED')),
+  previous_audit_file_id BIGINT REFERENCES audit_files(audit_file_id) ON DELETE RESTRICT,
+  file_reference TEXT,
+  archived_by_user_id BIGINT REFERENCES users(user_id) ON DELETE RESTRICT,
+  archived_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (engagement_id, reporting_year_end),
+  CHECK ((file_status = 'ARCHIVED') = (archived_at IS NOT NULL)),
+  CHECK (previous_audit_file_id IS NULL OR previous_audit_file_id <> audit_file_id)
+);
+
+CREATE TABLE audit_planning_controls (
+  audit_planning_control_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  audit_file_id BIGINT NOT NULL REFERENCES audit_files(audit_file_id) ON DELETE RESTRICT,
+  planning_area TEXT NOT NULL CHECK (planning_area IN ('Overall audit strategy and plan','Client acceptance and continuance','Time budgets','Materiality','Analytical review','Understanding the entity and environment','Internal controls','Risk assessment and response','Fraud risk','Brought-forward points','Permanent-file review')),
+  status TEXT NOT NULL DEFAULT 'NOT_STARTED' CHECK (status IN ('NOT_STARTED','IN_PROGRESS','COMPLETE','REVIEWED')),
+  conclusion TEXT NOT NULL,
+  planned_response_or_evidence_reference TEXT,
+  prepared_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  reviewed_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (audit_file_id, planning_area)
+);
+
+CREATE TABLE audit_trial_balances (
+  audit_trial_balance_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  audit_file_id BIGINT NOT NULL UNIQUE REFERENCES audit_files(audit_file_id) ON DELETE RESTRICT,
+  total_debit NUMERIC(18,2) NOT NULL DEFAULT 0,
+  total_credit NUMERIC(18,2) NOT NULL DEFAULT 0,
+  difference NUMERIC(18,2) NOT NULL DEFAULT 0,
+  is_balanced BOOLEAN NOT NULL DEFAULT FALSE,
+  imported_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  replacement_requested_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  replacement_reason TEXT
+);
+
+CREATE TABLE audit_trial_balance_lines (
+  audit_trial_balance_line_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  audit_trial_balance_id BIGINT NOT NULL REFERENCES audit_trial_balances(audit_trial_balance_id) ON DELETE RESTRICT,
+  account_number TEXT NOT NULL,
+  account_description TEXT NOT NULL,
+  current_year_debit NUMERIC(18,2) NOT NULL DEFAULT 0 CHECK (current_year_debit >= 0),
+  current_year_credit NUMERIC(18,2) NOT NULL DEFAULT 0 CHECK (current_year_credit >= 0),
+  prior_year_debit NUMERIC(18,2),
+  prior_year_credit NUMERIC(18,2),
+  mapped_audit_area TEXT CHECK (mapped_audit_area IN ('Intangible Assets','Property, Plant & Equipment','Inventories','Trade & Other Receivables','Cash & Bank Balances','Related Party Disclosures','Trade & Other Payables','Borrowings','Current Tax','Deferred Tax','Capital & Reserves','Commitments & Contingencies','Directors'' Emoluments & Transactions','Cash Flow Statement','Income','Expenditure')),
+  mapped_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (audit_trial_balance_id, account_number)
+);
+
+CREATE TABLE audit_workpapers (
+  audit_workpaper_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  audit_file_id BIGINT NOT NULL REFERENCES audit_files(audit_file_id) ON DELETE RESTRICT,
+  audit_area TEXT NOT NULL CHECK (audit_area IN ('Intangible Assets','Property, Plant & Equipment','Inventories','Trade & Other Receivables','Cash & Bank Balances','Related Party Disclosures','Trade & Other Payables','Borrowings','Current Tax','Deferred Tax','Capital & Reserves','Commitments & Contingencies','Directors'' Emoluments & Transactions','Cash Flow Statement','Income','Expenditure')),
+  status TEXT NOT NULL DEFAULT 'NOT_STARTED' CHECK (status IN ('NOT_STARTED','IN_PROGRESS','PREPARED','REVIEWED')),
+  work_performed TEXT NOT NULL,
+  observations_and_conclusion TEXT NOT NULL,
+  evidence_reference TEXT,
+  prepared_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  reviewed_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (audit_file_id, audit_area)
+);
+
+CREATE TABLE audit_completion_items (
+  audit_completion_item_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  audit_file_id BIGINT NOT NULL REFERENCES audit_files(audit_file_id) ON DELETE RESTRICT,
+  item_type TEXT NOT NULL CHECK (item_type IN ('Overall audit conclusion','Calling-over checklist','Partner review','Team debrief','Senior attention points','Client meeting agenda','Unadjusted errors','Carry-forward points','Subsequent events','Going concern','Draft financial statements','Management letter','Signed representation letter','Management letter cover letter')),
+  status TEXT NOT NULL DEFAULT 'NOT_STARTED' CHECK (status IN ('NOT_STARTED','PREPARED','REVIEWED','COMPLETE')),
+  note TEXT NOT NULL,
+  document_reference TEXT,
+  prepared_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  reviewed_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (audit_file_id, item_type)
+);
+
+CREATE TABLE audit_file_attachments (
+  audit_file_attachment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  audit_file_id BIGINT NOT NULL REFERENCES audit_files(audit_file_id) ON DELETE RESTRICT,
+  document_id BIGINT REFERENCES documents(document_id) ON DELETE RESTRICT,
+  file_name TEXT NOT NULL,
+  vault_reference TEXT NOT NULL,
+  is_permanent BOOLEAN NOT NULL DEFAULT FALSE,
+  rolled_forward_from_attachment_id BIGINT REFERENCES audit_file_attachments(audit_file_attachment_id) ON DELETE RESTRICT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (audit_file_id, vault_reference)
+);
+
+CREATE INDEX audit_files_engagement_period ON audit_files (engagement_id, reporting_year_end DESC);
+CREATE INDEX audit_tb_lines_mapping ON audit_trial_balance_lines (audit_trial_balance_id, mapped_audit_area);
+CREATE INDEX audit_file_attachments_roll_forward ON audit_file_attachments (audit_file_id, is_permanent);
+
+-- Recalculate the balancing state after every line change. The API must permit
+-- financial-statement generation and ICPAK export only when is_balanced is true
+-- and no account remains unmapped.
+CREATE OR REPLACE FUNCTION refresh_audit_trial_balance_totals()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  target_tb_id BIGINT;
+BEGIN
+  IF TG_OP = 'DELETE' THEN target_tb_id := OLD.audit_trial_balance_id;
+  ELSE target_tb_id := NEW.audit_trial_balance_id;
+  END IF;
+  UPDATE audit_trial_balances tb
+  SET total_debit = COALESCE((SELECT SUM(current_year_debit) FROM audit_trial_balance_lines WHERE audit_trial_balance_id = target_tb_id), 0),
+      total_credit = COALESCE((SELECT SUM(current_year_credit) FROM audit_trial_balance_lines WHERE audit_trial_balance_id = target_tb_id), 0)
+  WHERE tb.audit_trial_balance_id = target_tb_id;
+  UPDATE audit_trial_balances
+  SET difference = total_debit - total_credit,
+      is_balanced = abs(total_debit - total_credit) < 0.01
+  WHERE audit_trial_balance_id = target_tb_id;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+CREATE TRIGGER audit_tb_lines_refresh_totals
+AFTER INSERT OR UPDATE OR DELETE ON audit_trial_balance_lines
+FOR EACH ROW EXECUTE FUNCTION refresh_audit_trial_balance_totals();
+
+-- Archive is a hard close. It is restricted to the Engagement Partner and only
+-- after mandatory planning, a balanced/mapped TB, prepared workpapers, required
+-- completion evidence and PIE EQR clearance. Production middleware must also
+-- assert that each child record belongs to an open audit file before edits.
+CREATE OR REPLACE FUNCTION enforce_audit_file_archive()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  missing_planning BOOLEAN;
+  missing_completion BOOLEAN;
+  tb_ready BOOLEAN;
+  workpaper_ready BOOLEAN;
+  eqr_ready BOOLEAN;
+BEGIN
+  IF OLD.file_status = 'ARCHIVED' THEN
+    RAISE EXCEPTION 'Archived audit files are immutable. Create a subsequent annual audit file.';
+  END IF;
+  IF NEW.file_status <> 'ARCHIVED' THEN RETURN NEW; END IF;
+  IF NEW.archived_by_user_id IS NULL OR NOT EXISTS (
+    SELECT 1 FROM users u JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.archived_by_user_id AND r.role_name = 'Engagement Partner'
+  ) THEN RAISE EXCEPTION 'Only the Engagement Partner can archive an audit file.'; END IF;
+  SELECT EXISTS (
+    SELECT 1 FROM (VALUES ('Overall audit strategy and plan'),('Client acceptance and continuance'),('Materiality'),('Risk assessment and response'),('Fraud risk')) required(area)
+    WHERE NOT EXISTS (SELECT 1 FROM audit_planning_controls p WHERE p.audit_file_id = NEW.audit_file_id AND p.planning_area = required.area AND p.status IN ('COMPLETE','REVIEWED'))
+  ) INTO missing_planning;
+  SELECT EXISTS (
+    SELECT 1 FROM (VALUES ('Overall audit conclusion'),('Calling-over checklist'),('Partner review'),('Subsequent events'),('Going concern'),('Signed representation letter')) required(item_type)
+    WHERE NOT EXISTS (SELECT 1 FROM audit_completion_items c WHERE c.audit_file_id = NEW.audit_file_id AND c.item_type = required.item_type AND c.status IN ('COMPLETE','REVIEWED'))
+  ) INTO missing_completion;
+  SELECT EXISTS (SELECT 1 FROM audit_trial_balances tb WHERE tb.audit_file_id = NEW.audit_file_id AND tb.is_balanced)
+         AND NOT EXISTS (SELECT 1 FROM audit_trial_balance_lines l JOIN audit_trial_balances tb ON tb.audit_trial_balance_id = l.audit_trial_balance_id WHERE tb.audit_file_id = NEW.audit_file_id AND l.mapped_audit_area IS NULL)
+  INTO tb_ready;
+  SELECT EXISTS (SELECT 1 FROM audit_workpapers w WHERE w.audit_file_id = NEW.audit_file_id AND w.status IN ('PREPARED','REVIEWED')) INTO workpaper_ready;
+  SELECT NOT e.potential_pie OR e.eqr_status = 'Cleared' FROM engagements e WHERE e.engagement_id = NEW.engagement_id INTO eqr_ready;
+  IF missing_planning OR missing_completion OR NOT tb_ready OR NOT workpaper_ready OR NOT COALESCE(eqr_ready, FALSE) THEN
+    RAISE EXCEPTION 'Audit file cannot be archived until all closure controls are complete.';
+  END IF;
+  NEW.archived_at := COALESCE(NEW.archived_at, now());
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER audit_files_archive_gate
+BEFORE UPDATE OF file_status ON audit_files
+FOR EACH ROW EXECUTE FUNCTION enforce_audit_file_archive();
+
+CREATE VIEW v_audit_file_readiness AS
+SELECT af.audit_file_id, af.engagement_id, af.reporting_year_end, af.file_status,
+       tb.is_balanced AS trial_balance_balanced,
+       COALESCE((SELECT bool_and(l.mapped_audit_area IS NOT NULL) FROM audit_trial_balance_lines l WHERE l.audit_trial_balance_id = tb.audit_trial_balance_id), FALSE) AS trial_balance_fully_mapped,
+       EXISTS (SELECT 1 FROM audit_workpapers w WHERE w.audit_file_id = af.audit_file_id AND w.status IN ('PREPARED','REVIEWED')) AS has_prepared_workpaper,
+       e.eqr_status
+FROM audit_files af
+JOIN engagements e ON e.engagement_id = af.engagement_id
+LEFT JOIN audit_trial_balances tb ON tb.audit_file_id = af.audit_file_id;
