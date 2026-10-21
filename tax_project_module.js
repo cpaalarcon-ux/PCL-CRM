@@ -475,6 +475,16 @@
     }).join("") : '<tr><td colspan="5" class="hint">Tasks are generated when a Tax Manager verifies the client identity and obligation scope.</td></tr>';
   }
 
+  function renderTaskEvidenceRegister() {
+    const target = document.getElementById("taxTaskEvidenceTable");
+    if (!target) return;
+    target.innerHTML = taskEvidence.length ? taskEvidence.slice().sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)).map(evidence => {
+      const project = projectById(evidence.projectId);
+      const task = tasks.find(item => item.id === evidence.taskId);
+      return `<tr><td><b>${escapeHtml(project?.clientName || "Archived client")}</b><br><span class="hint">${escapeHtml(project?.projectReference || "—")}</span></td><td>${escapeHtml(task?.title || "Archived task")}</td><td>${escapeHtml(evidence.fileName)}<br><span class="hint">${escapeHtml(evidence.fileHash.slice(0, 20))}…</span></td><td>${escapeHtml(evidence.uploadedByRole)}<br><span class="hint">${new Date(evidence.uploadedAt).toLocaleString("en-KE")}</span></td></tr>`;
+    }).join("") : '<tr><td colspan="4" class="hint">No PDF task evidence has been attached.</td></tr>';
+  }
+
   function setMetric(id, value) {
     const target = document.getElementById(id);
     if (target) target.textContent = value;
@@ -565,6 +575,7 @@
     renderProjectRegister();
     renderBatchRegister();
     renderTaskRegister();
+    renderTaskEvidenceRegister();
   }
 
   function handleAction(button) {
@@ -609,7 +620,8 @@
       <div class="operations-layout"><form id="taxTaskEvidenceForm" class="card form-card"><div class="section-heading"><h3>Attach task evidence</h3><span class="hint">PDF evidence is linked to a specific tax task</span></div><div class="grid"><label class="full">Tax Project <span>*</span><select required name="projectId" id="taxTaskEvidenceProject"></select></label><label class="full">Task <span>*</span><select required name="taskId" id="taxTaskEvidenceTask"></select></label><label class="full">PDF documentary evidence <span>*</span><input required type="file" name="taskEvidenceFile" accept=".pdf,application/pdf" /></label></div><div class="actions"><button class="btn primary" type="submit">Attach PDF evidence</button></div></form><div class="card side-card"><div class="section-heading"><h3>Evidence controls</h3><span class="hint">Audit-ready, task-specific records</span></div><ul class="tax-project-policy"><li>The assigned position or Tax Manager attaches evidence.</li><li>Each PDF is SHA-256 hashed before it is registered.</li><li>Filed project evidence stays locked; corrections use an amendment.</li></ul></div></div>
       <div class="section"><div class="section-heading"><h3>Tax Project register</h3><span class="hint">The client identity, firm and period remain visible at every approval stage</span></div><div id="taxProjectRegister" class="tax-project-register"></div></div>
       <div class="section"><div class="section-heading"><h3>Controlled source batches</h3><span class="hint">Accepted batches feed the working-paper review; they are not live postings</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Client / project</th><th>Obligation / source</th><th>Week / period</th><th>Evidence</th><th>Status</th></tr></thead><tbody id="taxProjectBatchTable"></tbody></table></div></div>
-      <div class="section"><div class="section-heading"><h3>Obligation-driven task plan</h3><span class="hint">Task recurrence is generated from each obligation, not from one generic engagement status</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Client / obligation</th><th>Task</th><th>Assigned position</th><th>Due date</th><th>Status</th></tr></thead><tbody id="taxProjectTaskTable"></tbody></table></div></div>`;
+      <div class="section"><div class="section-heading"><h3>Obligation-driven task plan</h3><span class="hint">Task recurrence is generated from each obligation, not from one generic engagement status</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Client / obligation</th><th>Task</th><th>Assigned position</th><th>Due date</th><th>Status</th></tr></thead><tbody id="taxProjectTaskTable"></tbody></table></div></div>
+      <div class="section"><div class="section-heading"><h3>PDF task evidence register</h3><span class="hint">Evidence is retained separately from Excel calculations and schedules</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Client / project</th><th>Task</th><th>PDF evidence</th><th>Uploaded by</th></tr></thead><tbody id="taxTaskEvidenceTable"></tbody></table></div></div>`;
     if (before) nav.insertBefore(tab, before); else nav.append(tab);
     shell.append(section);
     tab.addEventListener("click", () => {document.querySelectorAll(".tab").forEach(button => button.classList.toggle("active", button === tab));document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.toggle("active", panel === section));render();});
