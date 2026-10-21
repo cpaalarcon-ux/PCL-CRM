@@ -76,16 +76,6 @@
     return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
   }
 
-  function choosePdfFile() {
-    return new Promise(resolve => {
-      const picker = document.createElement("input");
-      picker.type = "file";
-      picker.accept = ".pdf,application/pdf";
-      picker.addEventListener("change", () => resolve(picker.files?.[0] || null), {once: true});
-      picker.click();
-    });
-  }
-
   function persist() {
     localStorage.setItem(storage.projects, JSON.stringify(projects));
     localStorage.setItem(storage.batches, JSON.stringify(batches));
@@ -381,7 +371,7 @@
     } else {
       project.status = "Ready for Filing";
       project.obligations.forEach(obligation => obligation.status = "Ready for Filing");
-      alertPosition("TAX_PROJECT_READY_FOR_FILING", project, "Authorized Tax Filer", "the project is ready for iTax filing and receipt upload.");
+      alertPosition("TAX_PROJECT_READY_FOR_FILING", project, "Authorized Tax Filer", "the project is ready for iTax filing; record the iTax reference and actual filing date.");
     }
     persist();
   }
@@ -392,28 +382,27 @@
     approvalRecord(project, "PARTNER_ESCALATION", "Engagement Partner", "High-risk or PEP escalation cleared for filing.");
     project.status = "Ready for Filing";
     project.obligations.forEach(obligation => obligation.status = "Ready for Filing");
-    alertPosition("TAX_PROJECT_READY_FOR_FILING", project, "Authorized Tax Filer", "the project is ready for iTax filing and receipt upload.");
+    alertPosition("TAX_PROJECT_READY_FOR_FILING", project, "Authorized Tax Filer", "the project is ready for iTax filing; record the iTax reference and actual filing date.");
     persist();
   }
 
-  async function recordFiling(project, obligationCode) {
+  function recordFiling(project, obligationCode) {
     if (currentRole() !== "Authorized Tax Filer") throw new Error("Only Authorized Tax Filer may record a submission.");
     if (project.status !== "Ready for Filing") throw new Error("The Tax Project is not authorised for filing.");
     const obligation = project.obligations.find(item => item.code === obligationCode);
     if (!obligation || obligation.status === "Filed") throw new Error("This obligation is unavailable for filing.");
     const filingReference = window.prompt(`Enter the iTax acknowledgement reference for ${obligations[obligationCode].label}:`);
     if (!filingReference) return;
-    const acknowledgement = await choosePdfFile();
-    if (!acknowledgement) return;
-    if (!isPdfEvidence(acknowledgement)) throw new Error("The iTax acknowledgement or payment receipt must be uploaded as a PDF document.");
-    const receiptHash = await hashUpload(acknowledgement);
-    if (filings.some(item => item.projectId === project.id && item.receiptHash === receiptHash)) throw new Error("This acknowledgement PDF is already recorded for the Tax Project.");
-    filings.push({id: crypto.randomUUID(), projectId: project.id, obligationCode, filingReference: filingReference.trim(), receiptReference: acknowledgement.name, receiptHash, filedByRole: currentRole(), filedAt: new Date().toISOString()});
+    const filingDate = dateKey(window.prompt("Enter the actual filing date (YYYY-MM-DD):", isoToday()));
+    const filingDateValue = new Date(`${filingDate}T00:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(filingDate) || Number.isNaN(filingDateValue.getTime()) || filingDateValue.toISOString().slice(0, 10) !== filingDate) throw new Error("Enter a valid filing date in YYYY-MM-DD format.");
+    if (filingDate > isoToday()) throw new Error("The filing date cannot be in the future.");
+    filings.push({id: crypto.randomUUID(), projectId: project.id, obligationCode, filingReference: filingReference.trim(), filingDate, filedByRole: currentRole(), filedAt: new Date().toISOString()});
     obligation.status = "Filed";
     if (project.obligations.every(item => item.status === "Filed")) {
       project.status = "Filed";
       project.lockedAt = new Date().toISOString();
-      approvalRecord(project, "FILING_EVIDENCE", "Authorized Tax Filer", "All selected obligations have an iTax acknowledgement PDF and locked receipt evidence.");
+      approvalRecord(project, "FILING_EVIDENCE", "Authorized Tax Filer", "All selected obligations have an iTax reference and actual filing date recorded.");
       alertPosition("TAX_PROJECT_PERIOD_LOCKED", project, "Tax Manager", "all selected obligations are filed and the period is locked.");
     }
     persist();
@@ -462,7 +451,7 @@
       const obligationCards = project.obligations.map(obligation => {
         const filing = projectFilings(project).find(item => item.obligationCode === obligation.code);
         const fileControl = role === "Authorized Tax Filer" && project.status === "Ready for Filing" && obligation.status !== "Filed" ? `<button data-tax-project-action="file" data-id="${project.id}" data-obligation="${obligation.code}">Record filing</button>` : "";
-        return `<li><b>${escapeHtml(obligation.label)}</b> <span class="status-pill ${obligation.status === "Filed" ? "" : "review"}">${escapeHtml(obligation.status)}</span>${filing ? `<br><span class="hint">iTax: ${escapeHtml(filing.filingReference)} · Receipt: ${escapeHtml(filing.receiptReference)}</span>` : ""}${fileControl}</li>`;
+        return `<li><b>${escapeHtml(obligation.label)}</b> <span class="status-pill ${obligation.status === "Filed" ? "" : "review"}">${escapeHtml(obligation.status)}</span>${filing ? `<br><span class="hint">iTax: ${escapeHtml(filing.filingReference)} · Filed: ${escapeHtml(filing.filingDate || dateKey(filing.filedAt))}</span>` : ""}${fileControl}</li>`;
       }).join("");
       const approvals = (project.approvals || []).map(item => `<li>${escapeHtml(item.stage.replace(/_/g, " "))} · ${escapeHtml(item.position)} · ${escapeHtml(item.approvedAt.slice(0, 10))}</li>`).join("") || "<li>Awaiting first approval</li>";
       const missing = control.ready ? "All expected source batches are accepted." : `Outstanding: ${escapeHtml(control.missing.slice(0, 3).join("; "))}${control.missing.length > 3 ? "…" : ""}`;
