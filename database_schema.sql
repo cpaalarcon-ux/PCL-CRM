@@ -242,6 +242,78 @@ CREATE INDEX invoices_tax_project_status ON invoices (tax_project_id, invoice_st
 CREATE INDEX invoice_payments_invoice ON invoice_payments (invoice_id, date_received);
 CREATE INDEX invoice_communications_invoice ON invoice_communications (invoice_id, created_at);
 
+-- Centralized communication hub. This is the relational equivalent of the
+-- x_pcl_communication_hub model: one history across leads, contacts,
+-- engagements, invoices and QR events. QR payloads remain in invoice_qr_codes;
+-- they must never be copied to message text or contact fields.
+CREATE TABLE communication_hub (
+  hub_communication_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  subject TEXT NOT NULL,
+  communication_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  communication_type TEXT NOT NULL CHECK (communication_type IN ('EMAIL','PHONE_CALL','MEETING','WHATSAPP','INTERNAL_NOTE','FORMAL_LETTER','QR_EVENT')),
+  direction TEXT NOT NULL DEFAULT 'OUTBOUND' CHECK (direction IN ('INBOUND','OUTBOUND','INTERNAL')),
+  body TEXT,
+  logged_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  follow_up_date DATE,
+  follow_up_assigned_to_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','RESOLVED','NO_ACTION_REQUIRED')),
+  lead_id BIGINT REFERENCES leads(lead_id) ON DELETE RESTRICT,
+  client_id BIGINT REFERENCES clients(client_id) ON DELETE RESTRICT,
+  contact_id BIGINT REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
+  engagement_id BIGINT REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  invoice_id BIGINT REFERENCES invoices(invoice_id) ON DELETE RESTRICT,
+  service_offered TEXT,
+  branch_location TEXT CHECK (branch_location IN ('Nairobi','Bungoma','Kisii','Other')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK ((follow_up_date IS NULL AND follow_up_assigned_to_user_id IS NULL) OR (follow_up_date IS NOT NULL AND follow_up_assigned_to_user_id IS NOT NULL))
+);
+
+CREATE INDEX communication_hub_follow_up_open ON communication_hub (follow_up_date, follow_up_assigned_to_user_id) WHERE status = 'OPEN';
+CREATE INDEX communication_hub_client_time ON communication_hub (client_id, communication_at DESC);
+CREATE INDEX communication_hub_engagement_time ON communication_hub (engagement_id, communication_at DESC);
+CREATE INDEX communication_hub_invoice_time ON communication_hub (invoice_id, communication_at DESC);
+
+-- Normalise all links to one client chain before writing a communication.
+CREATE OR REPLACE FUNCTION enforce_communication_hub_links()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  source_client_id BIGINT;
+  linked_client_id BIGINT;
+  linked_engagement_id BIGINT;
+BEGIN
+  source_client_id := NEW.client_id;
+  IF NEW.engagement_id IS NOT NULL THEN
+    SELECT client_id INTO linked_client_id FROM engagements WHERE engagement_id = NEW.engagement_id;
+    IF linked_client_id IS NULL THEN RAISE EXCEPTION 'Communication engagement does not exist'; END IF;
+    IF source_client_id IS NOT NULL AND source_client_id IS DISTINCT FROM linked_client_id THEN RAISE EXCEPTION 'Communication engagement must belong to the linked client'; END IF;
+    source_client_id := linked_client_id;
+  END IF;
+  IF NEW.lead_id IS NOT NULL THEN
+    SELECT client_id INTO linked_client_id FROM leads WHERE lead_id = NEW.lead_id;
+    IF linked_client_id IS NULL THEN RAISE EXCEPTION 'Communication lead does not exist'; END IF;
+    IF source_client_id IS NOT NULL AND source_client_id IS DISTINCT FROM linked_client_id THEN RAISE EXCEPTION 'Communication lead must belong to the linked client'; END IF;
+    source_client_id := linked_client_id;
+  END IF;
+  IF NEW.invoice_id IS NOT NULL THEN
+    SELECT e.client_id, i.engagement_id INTO linked_client_id, linked_engagement_id FROM invoices i JOIN engagements e ON e.engagement_id = i.engagement_id WHERE i.invoice_id = NEW.invoice_id;
+    IF linked_client_id IS NULL THEN RAISE EXCEPTION 'Communication invoice does not exist'; END IF;
+    IF source_client_id IS NOT NULL AND source_client_id IS DISTINCT FROM linked_client_id THEN RAISE EXCEPTION 'Communication invoice must belong to the linked client'; END IF;
+    IF NEW.engagement_id IS NOT NULL AND NEW.engagement_id IS DISTINCT FROM linked_engagement_id THEN RAISE EXCEPTION 'Communication invoice must belong to the linked engagement'; END IF;
+    source_client_id := linked_client_id;
+  END IF;
+  IF NEW.client_id IS NULL THEN NEW.client_id := source_client_id; END IF;
+  IF NEW.contact_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM client_contacts WHERE contact_id = NEW.contact_id AND client_id = NEW.client_id AND is_active) THEN
+    RAISE EXCEPTION 'Communication contact must be an active contact of the linked client';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER communication_hub_link_guard
+BEFORE INSERT OR UPDATE OF lead_id, client_id, contact_id, engagement_id, invoice_id ON communication_hub
+FOR EACH ROW EXECUTE FUNCTION enforce_communication_hub_links();
+
 -- Keep lead, contact and tax-project links in the same client chain. API role checks
 -- remain required before a tax invoice can be created, sent or cancelled.
 CREATE OR REPLACE FUNCTION enforce_tax_invoice_links()
@@ -326,6 +398,12 @@ CREATE TABLE documents (
   version_no INTEGER NOT NULL DEFAULT 1 CHECK (version_no > 0),
   supersedes_document_id BIGINT REFERENCES documents(document_id) ON DELETE RESTRICT,
   CHECK ((uploaded_by IS NOT NULL) <> uploaded_by_external)
+);
+
+CREATE TABLE communication_attachments (
+  hub_communication_id BIGINT NOT NULL REFERENCES communication_hub(hub_communication_id) ON DELETE RESTRICT,
+  document_id BIGINT NOT NULL REFERENCES documents(document_id) ON DELETE RESTRICT,
+  PRIMARY KEY (hub_communication_id, document_id)
 );
 
 CREATE TABLE document_access_logs (
