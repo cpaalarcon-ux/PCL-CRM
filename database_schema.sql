@@ -1173,8 +1173,9 @@ JOIN engagements e ON e.engagement_id = af.engagement_id
 LEFT JOIN audit_trial_balances tb ON tb.audit_file_id = af.audit_file_id;
 
 -- Engagement channels and self-hosted virtual meetings.
--- These records deliberately keep only a random room slug. The Jitsi JWT / signed
--- participant URL is minted by the API at join time and is never persisted here.
+-- Google Meet is the first managed provider. The external link is encrypted by
+-- the API and returned only after channel and handling-firm checks. A Jitsi room
+-- slug remains available for a later self-hosted provider.
 CREATE TABLE engagement_channels (
   channel_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
@@ -1219,8 +1220,10 @@ CREATE TABLE meeting_sessions (
   appointment_id BIGINT UNIQUE REFERENCES channel_appointments(appointment_id) ON DELETE RESTRICT,
   engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
   handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
-  meeting_provider TEXT NOT NULL DEFAULT 'JITSI_SELF_HOSTED' CHECK (meeting_provider IN ('JITSI_SELF_HOSTED','GOOGLE_MEET','ZOOM','MICROSOFT_TEAMS','PLUG_N_MEET')),
-  room_slug TEXT NOT NULL UNIQUE,
+  meeting_provider TEXT NOT NULL DEFAULT 'GOOGLE_MEET' CHECK (meeting_provider IN ('JITSI_SELF_HOSTED','GOOGLE_MEET','ZOOM','MICROSOFT_TEAMS','PLUG_N_MEET')),
+  external_meeting_id TEXT,
+  join_url_ciphertext TEXT,
+  room_slug TEXT UNIQUE,
   status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED','LIVE','ENDED','CANCELLED')),
   host_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
   scheduled_start_at TIMESTAMPTZ NOT NULL,
