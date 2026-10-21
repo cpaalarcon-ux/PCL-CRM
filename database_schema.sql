@@ -2867,7 +2867,7 @@ $$;
 -- Daily 00:01 Africa/Nairobi: SELECT generate_recurring_tax_tasks(now());
 -- Daily 00:05 Africa/Nairobi: SELECT flag_overdue_recurring_tasks(now());
 
--- Odoo-style Discuss controls -----------------------------------------------
+-- Collaboration-channel controls --------------------------------------------
 -- Functional channel type (fieldwork / manager review) remains separate from
 -- conversation type (public channel / private group / direct chat).
 ALTER TABLE engagement_channels
@@ -3630,13 +3630,12 @@ CREATE INDEX IF NOT EXISTS tax_period_project_tasks_workspace_position_due
   WHERE status NOT IN ('COMPLETED','CANCELLED');
 
 -- Receivables Centre --------------------------------------------------------
--- Odoo is the authoritative invoice and payment reference source.  This ERP
--- stores a controlled operational copy for client communication, reconciliation,
--- aging and statement production.  There is deliberately no eTIMS integration
--- in this module.
+-- The ERP keeps one authoritative invoice number and payment reference for
+-- client communication, reconciliation, aging and statement production. An
+-- external finance source can be identified without creating a second sequence.
 ALTER TABLE invoices
-  ADD COLUMN IF NOT EXISTS source_system TEXT NOT NULL DEFAULT 'ODOO'
-    CHECK (source_system IN ('ODOO','LEGACY','ERP')),
+  ADD COLUMN IF NOT EXISTS source_system TEXT NOT NULL DEFAULT 'ERP'
+    CHECK (source_system IN ('ERP','EXTERNAL_FINANCE','LEGACY')),
   ADD COLUMN IF NOT EXISTS external_invoice_id TEXT,
   ADD COLUMN IF NOT EXISTS source_synced_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS ledger_state TEXT NOT NULL DEFAULT 'POSTED'
@@ -3645,28 +3644,28 @@ ALTER TABLE invoices
 ALTER TABLE invoice_payments
   ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'BANK_TRANSFER'
     CHECK (payment_method IN ('CASH','MPESA','BANK_TRANSFER','CHEQUE')),
-  ADD COLUMN IF NOT EXISTS source_system TEXT NOT NULL DEFAULT 'ODOO'
-    CHECK (source_system IN ('ODOO','LEGACY','ERP')),
+  ADD COLUMN IF NOT EXISTS source_system TEXT NOT NULL DEFAULT 'ERP'
+    CHECK (source_system IN ('ERP','EXTERNAL_FINANCE','LEGACY')),
   ADD COLUMN IF NOT EXISTS external_payment_id TEXT,
   ADD COLUMN IF NOT EXISTS source_synced_at TIMESTAMPTZ;
 
-CREATE UNIQUE INDEX IF NOT EXISTS invoices_odoo_external_reference_unique
+CREATE UNIQUE INDEX IF NOT EXISTS invoices_external_reference_unique
   ON invoices (handling_firm_id, external_invoice_id)
-  WHERE source_system = 'ODOO' AND external_invoice_id IS NOT NULL;
+  WHERE source_system = 'EXTERNAL_FINANCE' AND external_invoice_id IS NOT NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS invoice_payments_odoo_external_reference_unique
+CREATE UNIQUE INDEX IF NOT EXISTS invoice_payments_external_reference_unique
   ON invoice_payments (external_payment_id)
-  WHERE source_system = 'ODOO' AND external_payment_id IS NOT NULL;
+  WHERE source_system = 'EXTERNAL_FINANCE' AND external_payment_id IS NOT NULL;
 
-CREATE OR REPLACE FUNCTION enforce_odoo_invoice_reference()
+CREATE OR REPLACE FUNCTION enforce_authoritative_invoice_reference()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
-  IF NEW.source_system = 'ODOO' THEN
-    IF nullif(trim(NEW.invoice_number), '') IS NULL THEN
-      RAISE EXCEPTION 'A posted Odoo invoice requires its exact Odoo invoice number';
-    END IF;
-    -- The displayed ERP invoice reference is the Odoo invoice reference.  The
-    -- external ID remains available for an Odoo record ID where one exists.
+  IF nullif(trim(NEW.invoice_number), '') IS NULL THEN
+    RAISE EXCEPTION 'A posted invoice requires its exact authoritative invoice number';
+  END IF;
+  IF NEW.source_system = 'EXTERNAL_FINANCE' THEN
+    -- The displayed ERP invoice number stays authoritative; an optional
+    -- external record ID identifies its source without creating another number.
     NEW.external_invoice_id := COALESCE(NULLIF(trim(NEW.external_invoice_id), ''), NEW.invoice_number);
   END IF;
   IF NEW.payment_reference IS NOT NULL
@@ -3677,12 +3676,12 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS invoices_odoo_reference_guard ON invoices;
-CREATE TRIGGER invoices_odoo_reference_guard
+DROP TRIGGER IF EXISTS invoices_authoritative_reference_guard ON invoices;
+CREATE TRIGGER invoices_authoritative_reference_guard
 BEFORE INSERT OR UPDATE OF source_system, invoice_number, external_invoice_id, payment_reference ON invoices
-FOR EACH ROW EXECUTE FUNCTION enforce_odoo_invoice_reference();
+FOR EACH ROW EXECUTE FUNCTION enforce_authoritative_invoice_reference();
 
--- Every receipt carries the originating Odoo invoice number first, followed by
+-- Every receipt carries the originating invoice number first, followed by
 -- its cash receipt, M-Pesa, bank or cheque reference.
 CREATE OR REPLACE FUNCTION enforce_invoice_payment_reference_prefix()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -3895,8 +3894,8 @@ SELECT
   invoice.invoice_id,
   invoice.handling_firm_id,
   engagement.client_id,
-  invoice.invoice_number AS odoo_invoice_number,
-  invoice.external_invoice_id AS odoo_invoice_id,
+  invoice.invoice_number AS authoritative_invoice_number,
+  invoice.external_invoice_id AS external_invoice_id,
   invoice.invoice_type,
   invoice.ledger_state,
   invoice.invoice_status,

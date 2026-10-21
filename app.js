@@ -396,14 +396,16 @@ function initialiseDashboardLegacy(){document.getElementById("runFirmPulse").add
 // The browser preview uses a position switch. Production derives this from the
 // authenticated user and must enforce the same scope through RLS and task ACLs.
 const dashboardWorkspacePreferenceKey="pcl-crm-dashboard-workspace-v1";
-const dashboardWorkspacePositions=["Engagement Partner","Manager","Audit Supervisor","Audit Assistant","Intern","Practice Administration","Tax Assistant","Tax Supervisor","Tax Manager","Authorized Tax Filer","Independent Engagement Quality Reviewer"];
+// Every person has one staff category. Tax, finance and quality duties are
+// functional assignments layered on top of that hierarchy, not new categories.
+const dashboardWorkspacePositions=["Engagement Partner","Manager","Audit Supervisor","Audit Assistant","Intern"];
 let dashboardWorklistMode="";
 function dashboardWorkspacePosition(){const stored=localStorage.getItem(dashboardWorkspacePreferenceKey);return dashboardWorkspacePositions.includes(stored)?stored:"Engagement Partner"}
 function saveDashboardWorkspacePosition(position){localStorage.setItem(dashboardWorkspacePreferenceKey,position)}
 function dashboardDateValue(value){return String(value||"").slice(0,10)}
 function dashboardTaskIsDone(task){return["completed","submitted","filed","cancelled","exempt","not applicable","no action required"].includes(String(task.status||"").toLowerCase())}
 function dashboardTaskIsPending(task){const status=String(task.status||"").toLowerCase();return["data collection","in review","blocked","pending client","awaiting client confirmation","manager approval","partner approval","identity review"].includes(status)||Boolean(task.isOverdue)||/waiting|blocked|pending client/i.test(String(task.status||""))}
-function dashboardTaskMatchesPosition(task,position){const assigned=[task.assignedPosition,task.assignedRoleName,task.assigned_role_name,task.assignedTo,task.assigned_to,task.owner,task.escalationOwner].filter(Boolean).map(value=>String(value).trim().toLowerCase());return assigned.includes(String(position).trim().toLowerCase())}
+function dashboardTaskMatchesPosition(task,position){const assigned=[task.assignedPosition,task.assignedRoleName,task.assigned_role_name,task.assignedTo,task.assigned_to,task.owner,task.escalationOwner].filter(Boolean).map(value=>String(value).trim().toLowerCase()),category=String(position).trim().toLowerCase(),functionalMap={"engagement partner":["engagement partner","independent engagement quality reviewer","practice administration"],manager:["manager","tax manager","authorized tax filer"],"audit supervisor":["audit supervisor","tax supervisor"],"audit assistant":["audit assistant","tax assistant"],intern:["intern"]};return assigned.some(value=>(functionalMap[category]||[category]).includes(value))}
 function dashboardTaxSnapshot(firmId){try{return window.pclTaxProjectWorkspace?.dashboardSnapshot?.({firmId})||{tasks:[],obligations:[],pendingUploads:[],activities:[]}}catch(error){return{tasks:[],obligations:[],pendingUploads:[],activities:[]}}}
 function dashboardTaskRows(active,firmId){const lifecycleRows=active.flatMap(engagement=>(engagement.workflowTasks||[]).map(task=>({task,engagementId:engagement.id,firmId:engagement.firmId,firmName:firmLabel(engagement.firmId),clientName:engagement.companyName,projectReference:"",source:"Engagement workflow"})));const taxRows=dashboardTaxSnapshot(firmId).tasks.map(task=>({task,engagementId:task.engagementId||null,firmId:task.firmId,firmName:firmLabel(task.firmId),clientName:task.clientName||"Tax client",projectReference:task.projectReference||"",source:"Tax Project",projectStatus:task.projectStatus||""}));return[...lifecycleRows,...taxRows].filter(row=>!firmId||row.firmId===firmId)}
 function dashboardTaskDue(row){return dashboardDateValue(row.task.dueDate||row.task.dueAt)}
@@ -617,7 +619,7 @@ function renderRecurringTaskEngine(){const section=document.getElementById("recu
 document.head.insertAdjacentHTML("beforeend",`<style>.recurring-task-list{display:grid;gap:12px}.recurring-task-card{background:#fff;border:1px solid #dfe8e3;border-left:5px solid #2d7558;border-radius:10px;padding:16px;display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.recurring-task-card.overdue{border-color:#cb4040;border-left-color:#cb4040;background:#fff8f8}.recurring-task-card h4{margin:0 0 6px}.recurring-task-card p{margin:4px 0}.recurring-matrix p{margin:7px 0}@media(max-width:700px){.recurring-task-card{display:block}}</style>`);
 injectRecurringTaskEngine();
 
-// Discuss / channel enhancements. These add Odoo-style conversation modes,
+// Discuss / channel enhancements. These add collaboration conversation modes,
 // role policies, auto-subscription and controlled #channel cross-posting while
 // retaining the existing engagement-firm lock and Google Meet configuration.
 const discussStorage={policies:"pcl-crm-channel-policies-v2",memberships:"pcl-crm-channel-memberships-v2",crossPosts:"pcl-crm-channel-cross-posts-v2"};
