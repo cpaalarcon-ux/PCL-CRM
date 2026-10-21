@@ -3214,13 +3214,22 @@ CREATE TABLE IF NOT EXISTS tax_filing_submissions (
   tax_project_obligation_id BIGINT NOT NULL UNIQUE REFERENCES tax_project_obligations(tax_project_obligation_id) ON DELETE RESTRICT,
   tax_period_project_id BIGINT NOT NULL REFERENCES tax_period_projects(tax_period_project_id) ON DELETE RESTRICT,
   filing_reference TEXT NOT NULL,
-  acknowledgement_document_id BIGINT NOT NULL REFERENCES documents(document_id) ON DELETE RESTRICT,
+  filing_date DATE NOT NULL,
+  acknowledgement_document_id BIGINT REFERENCES documents(document_id) ON DELETE RESTRICT,
   filed_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
   filed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   payment_reference TEXT,
   payment_date DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- A filing is evidenced operationally by its iTax reference and actual filing
+-- date. An acknowledgement PDF may be stored when available but is never a
+-- prerequisite for recording a completed filing.
+ALTER TABLE tax_filing_submissions ADD COLUMN IF NOT EXISTS filing_date DATE;
+UPDATE tax_filing_submissions SET filing_date = filed_at::date WHERE filing_date IS NULL;
+ALTER TABLE tax_filing_submissions ALTER COLUMN filing_date SET NOT NULL;
+ALTER TABLE tax_filing_submissions ALTER COLUMN acknowledgement_document_id DROP NOT NULL;
 
 -- Tax workpapers are structured data and are therefore Excel workbooks.
 -- Supporting evidence is deliberately separate and restricted to PDF so a
@@ -3310,10 +3319,11 @@ DECLARE
   original_file_name TEXT;
   original_mime_type TEXT;
 BEGIN
+  IF NEW.acknowledgement_document_id IS NULL THEN RETURN NEW; END IF;
   SELECT lower(file_name), lower(COALESCE(mime_type, '')) INTO original_file_name, original_mime_type
   FROM documents WHERE document_id = NEW.acknowledgement_document_id;
   IF original_file_name !~ '\\.pdf$' OR (original_mime_type <> '' AND original_mime_type <> 'application/pdf') THEN
-    RAISE EXCEPTION 'An iTax acknowledgement or tax payment receipt must be stored as a PDF document.';
+    RAISE EXCEPTION 'An optional iTax acknowledgement or tax payment receipt must be stored as a PDF document.';
   END IF;
   RETURN NEW;
 END;
@@ -3323,6 +3333,21 @@ DROP TRIGGER IF EXISTS tax_filing_acknowledgement_pdf_only ON tax_filing_submiss
 CREATE TRIGGER tax_filing_acknowledgement_pdf_only
 BEFORE INSERT OR UPDATE OF acknowledgement_document_id ON tax_filing_submissions
 FOR EACH ROW EXECUTE FUNCTION enforce_tax_filing_acknowledgement_format();
+
+CREATE OR REPLACE FUNCTION enforce_tax_filing_date()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.filing_date IS NULL OR NEW.filing_date > CURRENT_DATE THEN
+    RAISE EXCEPTION 'Record the actual filing date; it cannot be blank or in the future.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tax_filing_date_guard ON tax_filing_submissions;
+CREATE TRIGGER tax_filing_date_guard
+BEFORE INSERT OR UPDATE OF filing_date ON tax_filing_submissions
+FOR EACH ROW EXECUTE FUNCTION enforce_tax_filing_date();
 
 CREATE OR REPLACE FUNCTION enforce_tax_period_project_chain()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
