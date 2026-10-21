@@ -1172,6 +1172,482 @@ FROM audit_files af
 JOIN engagements e ON e.engagement_id = af.engagement_id
 LEFT JOIN audit_trial_balances tb ON tb.audit_file_id = af.audit_file_id;
 
+-- Production-readiness controls: immutable audit history, controlled master data,
+-- transaction correlation, firm/branch isolation, privacy operations and the
+-- restricted external client portal. Apply these additions through a reviewed
+-- migration before exposing the ERP to production data.
+
+CREATE TABLE service_catalog (
+  service_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  service_code TEXT NOT NULL UNIQUE,
+  service_name TEXT NOT NULL UNIQUE,
+  service_line TEXT NOT NULL CHECK (service_line IN ('AUDIT','TAX','ACCOUNTING','ADVISORY')),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  retired_at TIMESTAMPTZ
+);
+
+ALTER TABLE service_templates ADD COLUMN IF NOT EXISTS service_id BIGINT REFERENCES service_catalog(service_id) ON DELETE RESTRICT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS requested_service_id BIGINT REFERENCES service_catalog(service_id) ON DELETE RESTRICT;
+ALTER TABLE engagements ADD COLUMN IF NOT EXISTS primary_service_id BIGINT REFERENCES service_catalog(service_id) ON DELETE RESTRICT;
+
+CREATE TABLE engagement_services (
+  engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  service_id BIGINT NOT NULL REFERENCES service_catalog(service_id) ON DELETE RESTRICT,
+  is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (engagement_id, service_id)
+);
+
+CREATE UNIQUE INDEX engagement_services_one_primary
+ON engagement_services (engagement_id) WHERE is_primary;
+
+-- Retire records rather than deleting evidence, finance or operational history.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+ALTER TABLE client_contacts ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE client_contacts ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE client_contacts ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+ALTER TABLE engagements ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE engagements ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE engagements ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+ALTER TABLE active_engagement_tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE active_engagement_tasks ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE active_engagement_tasks ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+ALTER TABLE audit_files ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE audit_files ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE audit_files ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS deleted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS delete_reason TEXT;
+
+CREATE TABLE system_change_log (
+  change_log_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  firm_id BIGINT REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  record_type TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  action_type TEXT NOT NULL CHECK (action_type IN ('INSERT','UPDATE','SOFT_DELETE','RESTORE','SUPERSEDE','STATUS_CHANGE')),
+  before_value JSONB,
+  after_value JSONB,
+  changed_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  change_reason TEXT,
+  correlation_id UUID,
+  ip_address INET,
+  user_agent TEXT
+);
+
+CREATE INDEX system_change_log_record ON system_change_log (record_type, record_id, changed_at DESC);
+CREATE INDEX system_change_log_firm_time ON system_change_log (firm_id, changed_at DESC);
+
+CREATE OR REPLACE FUNCTION prevent_system_change_log_mutation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'System change log is append-only.';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS system_change_log_immutable ON system_change_log;
+CREATE TRIGGER system_change_log_immutable
+BEFORE UPDATE OR DELETE ON system_change_log
+FOR EACH ROW EXECUTE FUNCTION prevent_system_change_log_mutation();
+
+CREATE OR REPLACE FUNCTION reject_hard_delete()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'Hard deletion is not permitted. Archive, reverse or supersede the record instead.';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION write_system_change_log()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  before_row JSONB := CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END;
+  after_row JSONB := CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE to_jsonb(NEW) END;
+  action_name TEXT;
+  actor_id BIGINT := NULLIF(current_setting('app.user_id', true), '')::BIGINT;
+  tenant_firm_id BIGINT;
+  business_record_id TEXT;
+BEGIN
+  tenant_firm_id := NULLIF(COALESCE(after_row ->> TG_ARGV[0], before_row ->> TG_ARGV[0]), '')::BIGINT;
+  business_record_id := COALESCE(after_row ->> TG_ARGV[1], before_row ->> TG_ARGV[1]);
+  action_name := CASE
+    WHEN TG_OP = 'INSERT' THEN 'INSERT'
+    WHEN COALESCE(after_row ->> 'deleted_at', '') <> '' AND COALESCE(before_row ->> 'deleted_at', '') = '' THEN 'SOFT_DELETE'
+    WHEN COALESCE(after_row ->> 'deleted_at', '') = '' AND COALESCE(before_row ->> 'deleted_at', '') <> '' THEN 'RESTORE'
+    ELSE 'UPDATE'
+  END;
+  INSERT INTO system_change_log (firm_id, record_type, record_id, action_type, before_value, after_value, changed_by_user_id, change_reason, correlation_id, ip_address, user_agent)
+  VALUES (
+    tenant_firm_id, TG_ARGV[2], COALESCE(business_record_id, 'unknown'), action_name,
+    before_row, after_row, actor_id, NULLIF(current_setting('app.change_reason', true), ''),
+    NULLIF(current_setting('app.correlation_id', true), '')::UUID,
+    NULLIF(current_setting('app.ip_address', true), '')::INET,
+    NULLIF(current_setting('app.user_agent', true), '')
+  );
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+DROP TRIGGER IF EXISTS clients_no_hard_delete ON clients;
+CREATE TRIGGER clients_no_hard_delete BEFORE DELETE ON clients FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+DROP TRIGGER IF EXISTS users_no_hard_delete ON users;
+CREATE TRIGGER users_no_hard_delete BEFORE DELETE ON users FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+DROP TRIGGER IF EXISTS client_contacts_no_hard_delete ON client_contacts;
+CREATE TRIGGER client_contacts_no_hard_delete BEFORE DELETE ON client_contacts FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+DROP TRIGGER IF EXISTS leads_no_hard_delete ON leads;
+CREATE TRIGGER leads_no_hard_delete BEFORE DELETE ON leads FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+DROP TRIGGER IF EXISTS engagements_no_hard_delete ON engagements;
+CREATE TRIGGER engagements_no_hard_delete BEFORE DELETE ON engagements FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+DROP TRIGGER IF EXISTS active_engagement_tasks_no_hard_delete ON active_engagement_tasks;
+CREATE TRIGGER active_engagement_tasks_no_hard_delete BEFORE DELETE ON active_engagement_tasks FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+DROP TRIGGER IF EXISTS timesheets_no_hard_delete ON timesheets;
+CREATE TRIGGER timesheets_no_hard_delete BEFORE DELETE ON timesheets FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+DROP TRIGGER IF EXISTS invoices_no_hard_delete ON invoices;
+CREATE TRIGGER invoices_no_hard_delete BEFORE DELETE ON invoices FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+DROP TRIGGER IF EXISTS documents_no_hard_delete ON documents;
+CREATE TRIGGER documents_no_hard_delete BEFORE DELETE ON documents FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+DROP TRIGGER IF EXISTS audit_files_no_hard_delete ON audit_files;
+CREATE TRIGGER audit_files_no_hard_delete BEFORE DELETE ON audit_files FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+DROP TRIGGER IF EXISTS tickets_no_hard_delete ON tickets;
+CREATE TRIGGER tickets_no_hard_delete BEFORE DELETE ON tickets FOR EACH ROW EXECUTE FUNCTION reject_hard_delete();
+
+DROP TRIGGER IF EXISTS clients_change_log ON clients;
+CREATE TRIGGER clients_change_log AFTER INSERT OR UPDATE ON clients FOR EACH ROW EXECUTE FUNCTION write_system_change_log('default_firm_id','client_id','CLIENT');
+DROP TRIGGER IF EXISTS leads_change_log ON leads;
+CREATE TRIGGER leads_change_log AFTER INSERT OR UPDATE ON leads FOR EACH ROW EXECUTE FUNCTION write_system_change_log('handling_firm_id','lead_id','LEAD');
+DROP TRIGGER IF EXISTS engagements_change_log ON engagements;
+CREATE TRIGGER engagements_change_log AFTER INSERT OR UPDATE ON engagements FOR EACH ROW EXECUTE FUNCTION write_system_change_log('handling_firm_id','engagement_id','ENGAGEMENT');
+DROP TRIGGER IF EXISTS timesheets_change_log ON timesheets;
+CREATE TRIGGER timesheets_change_log AFTER INSERT OR UPDATE ON timesheets FOR EACH ROW EXECUTE FUNCTION write_system_change_log('handling_firm_id','timesheet_id','TIMESHEET');
+DROP TRIGGER IF EXISTS invoices_change_log ON invoices;
+CREATE TRIGGER invoices_change_log AFTER INSERT OR UPDATE ON invoices FOR EACH ROW EXECUTE FUNCTION write_system_change_log('handling_firm_id','invoice_id','INVOICE');
+DROP TRIGGER IF EXISTS documents_change_log ON documents;
+CREATE TRIGGER documents_change_log AFTER INSERT OR UPDATE ON documents FOR EACH ROW EXECUTE FUNCTION write_system_change_log('handling_firm_id','document_id','DOCUMENT');
+DROP TRIGGER IF EXISTS audit_files_change_log ON audit_files;
+CREATE TRIGGER audit_files_change_log AFTER INSERT OR UPDATE ON audit_files FOR EACH ROW EXECUTE FUNCTION write_system_change_log('handling_firm_id','audit_file_id','AUDIT_FILE');
+
+-- One activation command is correlated and idempotent. The API must create the
+-- run, engagement, financial baseline, workflow tasks and outbox events inside
+-- one database transaction, then mark the run COMPLETED before COMMIT.
+CREATE TABLE engagement_activation_runs (
+  activation_run_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  idempotency_key UUID NOT NULL UNIQUE,
+  source_lead_id BIGINT NOT NULL REFERENCES leads(lead_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  engagement_id BIGINT REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  status TEXT NOT NULL DEFAULT 'STARTED' CHECK (status IN ('STARTED','COMPLETED','ROLLED_BACK','FAILED')),
+  failure_detail TEXT,
+  created_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE TABLE transaction_outbox (
+  outbox_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  correlation_id UUID NOT NULL,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL,
+  aggregate_type TEXT NOT NULL,
+  aggregate_id BIGINT NOT NULL,
+  payload JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','PROCESSING','SENT','FAILED')),
+  available_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  delivered_at TIMESTAMPTZ,
+  failure_detail TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (correlation_id, event_type, aggregate_type, aggregate_id)
+);
+
+CREATE TABLE user_branch_access (
+  user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  branch_location TEXT NOT NULL CHECK (branch_location IN ('Nairobi','Bungoma','Kisii','Other')),
+  can_manage_all_branch_records BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, firm_id, branch_location)
+);
+
+CREATE OR REPLACE FUNCTION app_user_id()
+RETURNS BIGINT LANGUAGE sql STABLE AS $$
+  SELECT NULLIF(current_setting('app.user_id', true), '')::BIGINT;
+$$;
+
+CREATE OR REPLACE FUNCTION app_has_firm_access(target_firm_id BIGINT)
+RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM user_firm_access ufa
+    WHERE ufa.user_id = app_user_id() AND ufa.firm_id = target_firm_id
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION app_has_branch_access(target_firm_id BIGINT, target_branch TEXT)
+RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM user_firm_access ufa
+    WHERE ufa.user_id = app_user_id() AND ufa.firm_id = target_firm_id AND ufa.can_manage_all_firm_records
+  ) OR EXISTS (
+    SELECT 1 FROM user_branch_access uba
+    WHERE uba.user_id = app_user_id() AND uba.firm_id = target_firm_id
+      AND (uba.can_manage_all_branch_records OR uba.branch_location = target_branch)
+  );
+$$;
+
+DROP POLICY IF EXISTS opportunities_by_firm_access ON opportunities;
+DROP POLICY IF EXISTS engagement_contracts_by_firm_access ON engagement_contracts;
+DROP POLICY IF EXISTS engagements_by_firm_access ON engagements;
+ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE client_contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE engagements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE active_engagement_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE timesheets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE opportunities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE engagement_contracts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_change_log ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY clients_by_firm_branch ON clients FOR ALL
+USING (app_has_branch_access(default_firm_id, branch_location))
+WITH CHECK (app_has_branch_access(default_firm_id, branch_location));
+CREATE POLICY contacts_by_client_access ON client_contacts FOR ALL
+USING (EXISTS (SELECT 1 FROM clients c WHERE c.client_id = client_contacts.client_id AND app_has_branch_access(c.default_firm_id, c.branch_location)))
+WITH CHECK (EXISTS (SELECT 1 FROM clients c WHERE c.client_id = client_contacts.client_id AND app_has_branch_access(c.default_firm_id, c.branch_location)));
+CREATE POLICY leads_by_firm_branch ON leads FOR ALL
+USING (app_has_branch_access(handling_firm_id, branch_location))
+WITH CHECK (app_has_branch_access(handling_firm_id, branch_location));
+CREATE POLICY engagements_by_firm_access ON engagements FOR ALL
+USING (app_has_firm_access(handling_firm_id))
+WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY tasks_by_engagement_access ON active_engagement_tasks FOR ALL
+USING (EXISTS (SELECT 1 FROM engagements e WHERE e.engagement_id = active_engagement_tasks.engagement_id AND app_has_firm_access(e.handling_firm_id)))
+WITH CHECK (EXISTS (SELECT 1 FROM engagements e WHERE e.engagement_id = active_engagement_tasks.engagement_id AND app_has_firm_access(e.handling_firm_id)));
+CREATE POLICY timesheets_by_firm_access ON timesheets FOR ALL
+USING (app_has_firm_access(handling_firm_id))
+WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY invoices_by_firm_access ON invoices FOR ALL
+USING (app_has_firm_access(handling_firm_id))
+WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY documents_by_firm_access ON documents FOR ALL
+USING (app_has_firm_access(handling_firm_id))
+WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY audit_files_by_firm_access ON audit_files FOR ALL
+USING (app_has_firm_access(handling_firm_id))
+WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY tickets_by_firm_access ON tickets FOR ALL
+USING (app_has_firm_access(handling_firm_id))
+WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY opportunities_by_firm_access ON opportunities FOR ALL
+USING (app_has_firm_access(handling_firm_id))
+WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY engagement_contracts_by_firm_access ON engagement_contracts FOR ALL
+USING (app_has_firm_access(handling_firm_id))
+WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY system_change_log_read_by_firm ON system_change_log FOR SELECT
+USING (app_has_firm_access(firm_id));
+CREATE POLICY system_change_log_append_by_firm ON system_change_log FOR INSERT
+WITH CHECK (firm_id IS NULL OR app_has_firm_access(firm_id));
+
+-- Client portal: portal accounts are limited to explicitly granted clients. They
+-- never receive staff, workpaper, internal-note or unapproved-document access.
+CREATE TABLE client_portal_accounts (
+  portal_account_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  contact_id BIGINT NOT NULL UNIQUE REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
+  login_identifier TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'INVITED' CHECK (status IN ('INVITED','ACTIVE','SUSPENDED','REVOKED')),
+  mfa_required BOOLEAN NOT NULL DEFAULT TRUE,
+  last_authenticated_at TIMESTAMPTZ,
+  invited_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ
+);
+
+CREATE TABLE client_portal_access (
+  portal_account_id BIGINT NOT NULL REFERENCES client_portal_accounts(portal_account_id) ON DELETE RESTRICT,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  granted_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ,
+  PRIMARY KEY (portal_account_id, client_id)
+);
+
+CREATE TABLE portal_pbc_requests (
+  portal_pbc_request_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  requested_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  request_title TEXT NOT NULL,
+  request_detail TEXT,
+  upload_token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  single_use BOOLEAN NOT NULL DEFAULT TRUE,
+  consumed_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','UPLOADED','EXPIRED','CANCELLED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS client_released_at TIMESTAMPTZ;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS client_released_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS client_release_note TEXT;
+
+CREATE OR REPLACE FUNCTION enforce_client_document_release()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.client_released_at IS NOT NULL AND (NOT NEW.is_locked OR NEW.client_released_by_user_id IS NULL) THEN
+    RAISE EXCEPTION 'Only a locked final document with a recorded releasing user can be released to the client portal.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS documents_client_release_guard ON documents;
+CREATE TRIGGER documents_client_release_guard
+BEFORE INSERT OR UPDATE OF client_released_at, client_released_by_user_id, is_locked ON documents
+FOR EACH ROW EXECUTE FUNCTION enforce_client_document_release();
+
+CREATE TABLE data_retention_policies (
+  retention_policy_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  record_category TEXT NOT NULL UNIQUE,
+  retention_basis TEXT NOT NULL,
+  retention_period_months INTEGER NOT NULL CHECK (retention_period_months > 0),
+  disposal_method TEXT NOT NULL CHECK (disposal_method IN ('DELETE','ANONYMISE','PSEUDONYMISE','ARCHIVE_RESTRICTED')),
+  approved_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  approved_at TIMESTAMPTZ,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE legal_holds (
+  legal_hold_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  firm_id BIGINT REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  record_type TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  placed_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  placed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  released_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  released_at TIMESTAMPTZ
+);
+
+CREATE TABLE data_subject_requests (
+  request_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  client_id BIGINT REFERENCES clients(client_id) ON DELETE RESTRICT,
+  contact_id BIGINT REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
+  request_type TEXT NOT NULL CHECK (request_type IN ('ACCESS','CORRECTION','ERASURE','RESTRICTION','OBJECTION','PORTABILITY')),
+  status TEXT NOT NULL DEFAULT 'RECEIVED' CHECK (status IN ('RECEIVED','VERIFYING_IDENTITY','UNDER_REVIEW','FULFILLED','PARTIALLY_FULFILLED','REFUSED','CLOSED')),
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  due_at TIMESTAMPTZ,
+  decision_reason TEXT,
+  legal_hold_checked_at TIMESTAMPTZ,
+  decided_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  decided_at TIMESTAMPTZ
+);
+
+CREATE TABLE privacy_incidents (
+  privacy_incident_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  incident_reference TEXT NOT NULL UNIQUE,
+  detected_at TIMESTAMPTZ NOT NULL,
+  reported_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CONTAINED','ASSESSING','NOTIFIED','CLOSED')),
+  risk_level TEXT NOT NULL CHECK (risk_level IN ('LOW','MEDIUM','HIGH','CRITICAL')),
+  affected_data_description TEXT NOT NULL,
+  containment_actions TEXT,
+  odpc_notification_due_at TIMESTAMPTZ,
+  odpc_notified_at TIMESTAMPTZ,
+  data_subject_notification_due_at TIMESTAMPTZ,
+  data_subject_notified_at TIMESTAMPTZ,
+  closed_at TIMESTAMPTZ
+);
+
+CREATE TABLE backup_restore_tests (
+  backup_restore_test_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  backup_reference TEXT NOT NULL,
+  backup_created_at TIMESTAMPTZ NOT NULL,
+  restore_started_at TIMESTAMPTZ NOT NULL,
+  restore_completed_at TIMESTAMPTZ,
+  result TEXT NOT NULL CHECK (result IN ('PASSED','FAILED','PARTIAL')),
+  recovery_point_achieved_at TIMESTAMPTZ,
+  evidence_reference TEXT NOT NULL,
+  tested_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  reviewed_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  notes TEXT
+);
+
+CREATE INDEX portal_pbc_open_expiry ON portal_pbc_requests (status, expires_at) WHERE status = 'OPEN';
+CREATE INDEX privacy_incidents_deadline ON privacy_incidents (status, odpc_notification_due_at) WHERE status <> 'CLOSED';
+CREATE INDEX data_subject_requests_status ON data_subject_requests (status, due_at);
+
+CREATE OR REPLACE FUNCTION app_portal_account_id()
+RETURNS BIGINT LANGUAGE sql STABLE AS $$
+  SELECT NULLIF(current_setting('app.portal_account_id', true), '')::BIGINT;
+$$;
+
+CREATE OR REPLACE FUNCTION app_portal_has_client_access(target_client_id BIGINT)
+RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM client_portal_access cpa
+    JOIN client_portal_accounts cpae ON cpae.portal_account_id = cpa.portal_account_id
+    WHERE cpa.portal_account_id = app_portal_account_id()
+      AND cpa.client_id = target_client_id
+      AND cpa.revoked_at IS NULL
+      AND cpae.status = 'ACTIVE'
+  );
+$$;
+
+CREATE OR REPLACE VIEW v_client_portal_invoices WITH (security_barrier = true) AS
+SELECT i.invoice_id, i.invoice_number, i.service_description, i.amount_billed, i.vat_amount,
+       i.date_issued, i.due_date, i.invoice_status, i.date_paid, i.payment_reference,
+       e.client_id, e.engagement_id
+FROM invoices i
+JOIN engagements e ON e.engagement_id = i.engagement_id
+WHERE i.deleted_at IS NULL AND app_portal_has_client_access(e.client_id);
+
+CREATE OR REPLACE VIEW v_client_portal_engagement_status WITH (security_barrier = true) AS
+SELECT e.engagement_id, e.client_id,
+       CASE e.lifecycle_stage
+         WHEN 'Active Engagement' THEN 'Work in progress'
+         WHEN 'WIP / Billing' THEN 'Completion and billing in progress'
+         WHEN 'Closed / Archived' THEN 'Completed'
+         ELSE 'Engagement setup in progress'
+       END AS client_visible_status,
+       e.activated_at, e.finalized_at
+FROM engagements e
+WHERE e.deleted_at IS NULL AND app_portal_has_client_access(e.client_id);
+
+CREATE OR REPLACE VIEW v_client_portal_final_reports WITH (security_barrier = true) AS
+SELECT d.document_id, d.client_id, d.engagement_id, d.file_name, d.version_no,
+       d.client_released_at, d.client_release_note
+FROM documents d
+WHERE d.deleted_at IS NULL AND d.client_released_at IS NOT NULL
+  AND app_portal_has_client_access(d.client_id);
+
+INSERT INTO notification_templates (alert_code, channel, subject_template, body_template, is_mandatory) VALUES
+  ('PRIVACY_INCIDENT_OPEN','IN_APP','Privacy incident opened','Contain the incident, assess affected data and assign the incident owner.',TRUE),
+  ('PRIVACY_INCIDENT_ODPC_DUE','EMAIL','ODPC notification deadline','A privacy incident requires urgent notification assessment.',TRUE),
+  ('DATA_SUBJECT_REQUEST_DUE','EMAIL','Data-subject request due','Review the request, retention basis and legal holds before disposition.',TRUE),
+  ('BACKUP_RESTORE_TEST_DUE','IN_APP','Backup restore test due','Run and evidence a controlled restore test.',TRUE)
+ON CONFLICT (alert_code) DO NOTHING;
+
 -- CRM qualification, opportunity, routing and contract-renewal extension.
 -- The terms below deliberately distinguish legal firms from branches: a firm owns
 -- the engagement, a branch delivers it, a service line describes the work and a
