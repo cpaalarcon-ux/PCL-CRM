@@ -3275,6 +3275,35 @@ CREATE TRIGGER tax_task_evidence_pdf_only
 BEFORE INSERT OR UPDATE OF vault_document_id ON tax_project_task_evidence
 FOR EACH ROW EXECUTE FUNCTION enforce_tax_project_file_formats();
 
+CREATE OR REPLACE FUNCTION enforce_tax_task_evidence_chain()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  task_project_id BIGINT;
+  project_client_id BIGINT;
+  project_firm_id BIGINT;
+  document_client_id BIGINT;
+  document_firm_id BIGINT;
+BEGIN
+  SELECT obligation.tax_period_project_id INTO task_project_id
+  FROM tax_period_project_tasks task
+  JOIN tax_project_obligations obligation ON obligation.tax_project_obligation_id = task.tax_project_obligation_id
+  WHERE task.tax_period_project_task_id = NEW.tax_period_project_task_id;
+  SELECT client_id, handling_firm_id INTO project_client_id, project_firm_id
+  FROM tax_period_projects WHERE tax_period_project_id = NEW.tax_period_project_id;
+  SELECT client_id, handling_firm_id INTO document_client_id, document_firm_id
+  FROM documents WHERE document_id = NEW.vault_document_id;
+  IF task_project_id IS NULL OR task_project_id <> NEW.tax_period_project_id OR project_client_id IS NULL OR document_client_id <> project_client_id OR document_firm_id <> project_firm_id THEN
+    RAISE EXCEPTION 'Tax task evidence must belong to the task, project, client and handling firm chain.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tax_task_evidence_chain_guard ON tax_project_task_evidence;
+CREATE TRIGGER tax_task_evidence_chain_guard
+BEFORE INSERT OR UPDATE OF tax_period_project_task_id, tax_period_project_id, vault_document_id ON tax_project_task_evidence
+FOR EACH ROW EXECUTE FUNCTION enforce_tax_task_evidence_chain();
+
 CREATE OR REPLACE FUNCTION enforce_tax_period_project_chain()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE parent_engagement_id BIGINT;
