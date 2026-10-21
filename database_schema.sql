@@ -1040,3 +1040,269 @@ SELECT af.audit_file_id, af.engagement_id, af.reporting_year_end, af.file_status
 FROM audit_files af
 JOIN engagements e ON e.engagement_id = af.engagement_id
 LEFT JOIN audit_trial_balances tb ON tb.audit_file_id = af.audit_file_id;
+
+-- General-audit fieldwork controls. These tables retain the evidence trail that
+-- sits between planning and completion: source provenance, reconciliation,
+-- sample finalisation, detailed testing and the treatment of exceptions.
+CREATE TABLE audit_population_controls (
+  audit_population_control_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  audit_file_id BIGINT NOT NULL REFERENCES audit_files(audit_file_id) ON DELETE RESTRICT,
+  audit_area TEXT NOT NULL,
+  population_name TEXT NOT NULL,
+  source_type TEXT NOT NULL CHECK (source_type IN ('NATIVE_SYSTEM_EXTRACT','CLIENT_SCHEDULE','EXTERNAL_CONFIRMATION','PHYSICAL_COUNT_RECORD','OTHER_SUPPORTING_RECORD')),
+  source_system_or_module TEXT NOT NULL,
+  report_parameters TEXT NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL,
+  generated_by_reference TEXT NOT NULL,
+  row_count BIGINT NOT NULL CHECK (row_count > 0),
+  control_total NUMERIC(18,2) NOT NULL,
+  tb_gl_reference TEXT NOT NULL,
+  reporting_period TEXT NOT NULL,
+  vault_source_reference TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'RECEIVED' CHECK (status IN ('RECEIVED','CONTROLLED','REJECTED')),
+  prepared_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  reviewed_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (audit_file_id, audit_area, population_name)
+);
+
+CREATE TABLE audit_reconciliations (
+  audit_reconciliation_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  audit_file_id BIGINT NOT NULL REFERENCES audit_files(audit_file_id) ON DELETE RESTRICT,
+  audit_population_control_id BIGINT NOT NULL REFERENCES audit_population_controls(audit_population_control_id) ON DELETE RESTRICT,
+  control_reference TEXT NOT NULL,
+  account_description TEXT NOT NULL,
+  opening_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+  additions NUMERIC(18,2) NOT NULL DEFAULT 0,
+  reductions NUMERIC(18,2) NOT NULL DEFAULT 0,
+  closing_balance NUMERIC(18,2) NOT NULL,
+  tb_gl_balance NUMERIC(18,2) NOT NULL,
+  difference NUMERIC(18,2) NOT NULL,
+  clearance_reference TEXT,
+  prepared_by_reference TEXT NOT NULL,
+  reviewed_by_reference TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','CLEARED','EXCEPTION')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (audit_file_id, control_reference)
+);
+
+CREATE TABLE audit_samples (
+  audit_sample_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  audit_file_id BIGINT NOT NULL REFERENCES audit_files(audit_file_id) ON DELETE RESTRICT,
+  audit_population_control_id BIGINT NOT NULL REFERENCES audit_population_controls(audit_population_control_id) ON DELETE RESTRICT,
+  audit_area TEXT NOT NULL,
+  sample_reference TEXT NOT NULL,
+  selection_stage TEXT NOT NULL DEFAULT 'PROVISIONAL' CHECK (selection_stage IN ('PROVISIONAL','FINAL','TESTED_NO_EXCEPTION','EXCEPTION')),
+  selection_rationale TEXT NOT NULL,
+  document_reference TEXT,
+  counterparty_or_item_reference TEXT,
+  item_description TEXT NOT NULL,
+  amount NUMERIC(18,2),
+  assertion TEXT NOT NULL,
+  procedure_performed TEXT NOT NULL,
+  evidence_reference TEXT,
+  target_workpaper_reference TEXT,
+  physical_verification_required BOOLEAN NOT NULL DEFAULT FALSE,
+  prepared_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  reviewed_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (audit_file_id, sample_reference)
+);
+
+CREATE TABLE audit_exceptions (
+  audit_exception_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  audit_file_id BIGINT NOT NULL REFERENCES audit_files(audit_file_id) ON DELETE RESTRICT,
+  exception_reference TEXT NOT NULL,
+  classification TEXT NOT NULL CHECK (classification IN ('CONTROL_DEFICIENCY','ADJUSTED_MISSTATEMENT','UNADJUSTED_MISSTATEMENT','SCOPE_LIMITATION','OTHER_AUDIT_MATTER')),
+  related_reference TEXT,
+  workpaper_reference TEXT,
+  amount NUMERIC(18,2),
+  nature TEXT NOT NULL,
+  affected_assertion TEXT,
+  management_explanation TEXT,
+  further_audit_procedure TEXT,
+  management_response_or_correction TEXT,
+  balance_sheet_dr NUMERIC(18,2) NOT NULL DEFAULT 0,
+  balance_sheet_cr NUMERIC(18,2) NOT NULL DEFAULT 0,
+  profit_or_loss_dr NUMERIC(18,2) NOT NULL DEFAULT 0,
+  profit_or_loss_cr NUMERIC(18,2) NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLEARED','ADJUSTED','REPORTED_AS_UNADJUSTED')),
+  reporting_implication TEXT,
+  conclusion TEXT NOT NULL,
+  prepared_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  reviewed_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (audit_file_id, exception_reference)
+);
+
+CREATE INDEX audit_population_controls_file_area ON audit_population_controls (audit_file_id, audit_area);
+CREATE INDEX audit_reconciliations_file_population ON audit_reconciliations (audit_file_id, audit_population_control_id);
+CREATE INDEX audit_samples_file_population ON audit_samples (audit_file_id, audit_population_control_id, selection_stage);
+CREATE INDEX audit_exceptions_file_status ON audit_exceptions (audit_file_id, status);
+
+CREATE OR REPLACE FUNCTION validate_audit_population_control()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.status = 'CONTROLLED' AND (
+    NEW.row_count <= 0 OR NEW.control_total IS NULL OR
+    NULLIF(trim(NEW.report_parameters), '') IS NULL OR
+    NULLIF(trim(NEW.generated_by_reference), '') IS NULL OR
+    NULLIF(trim(NEW.tb_gl_reference), '') IS NULL OR
+    NULLIF(trim(NEW.reporting_period), '') IS NULL OR
+    NULLIF(trim(NEW.vault_source_reference), '') IS NULL
+  ) THEN
+    RAISE EXCEPTION 'A controlled audit population requires provenance, control total, TB/GL bridge and vault reference.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER audit_population_control_gate
+BEFORE INSERT OR UPDATE ON audit_population_controls
+FOR EACH ROW EXECUTE FUNCTION validate_audit_population_control();
+
+CREATE OR REPLACE FUNCTION validate_audit_reconciliation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.closing_balance := NEW.opening_balance + NEW.additions - NEW.reductions;
+  NEW.difference := NEW.closing_balance - NEW.tb_gl_balance;
+  IF NEW.status = 'CLEARED' AND (
+    abs(NEW.difference) >= 0.01 OR
+    NULLIF(trim(COALESCE(NEW.clearance_reference, '')), '') IS NULL OR
+    NULLIF(trim(NEW.prepared_by_reference), '') IS NULL OR
+    NULLIF(trim(NEW.reviewed_by_reference), '') IS NULL
+  ) THEN
+    RAISE EXCEPTION 'A cleared reconciliation must balance to zero and contain its clearance, preparer and reviewer.';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM audit_population_controls p
+    WHERE p.audit_population_control_id = NEW.audit_population_control_id
+      AND p.audit_file_id = NEW.audit_file_id
+  ) THEN
+    RAISE EXCEPTION 'The reconciliation population must belong to the same audit file.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER audit_reconciliation_gate
+BEFORE INSERT OR UPDATE ON audit_reconciliations
+FOR EACH ROW EXECUTE FUNCTION validate_audit_reconciliation();
+
+CREATE OR REPLACE FUNCTION enforce_audit_sample_finalisation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE population_ready BOOLEAN;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM audit_population_controls p
+    WHERE p.audit_population_control_id = NEW.audit_population_control_id
+      AND p.audit_file_id = NEW.audit_file_id
+      AND p.audit_area = NEW.audit_area
+  ) THEN
+    RAISE EXCEPTION 'The sample must use a source population from the same audit file and audit area.';
+  END IF;
+  IF NEW.selection_stage <> 'PROVISIONAL' THEN
+    SELECT p.status = 'CONTROLLED' AND EXISTS (
+      SELECT 1 FROM audit_reconciliations r
+      WHERE r.audit_file_id = NEW.audit_file_id
+        AND r.audit_population_control_id = p.audit_population_control_id
+        AND r.status = 'CLEARED' AND abs(r.difference) < 0.01
+    ) INTO population_ready
+    FROM audit_population_controls p
+    WHERE p.audit_population_control_id = NEW.audit_population_control_id;
+    IF NOT COALESCE(population_ready, FALSE) THEN
+      RAISE EXCEPTION 'Final or tested samples require a controlled source population and cleared TB/GL reconciliation.';
+    END IF;
+  END IF;
+  IF NEW.selection_stage = 'TESTED_NO_EXCEPTION' AND NULLIF(trim(COALESCE(NEW.evidence_reference, '')), '') IS NULL THEN
+    RAISE EXCEPTION 'A tested sample requires an evidence reference.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER audit_sample_finalisation_gate
+BEFORE INSERT OR UPDATE ON audit_samples
+FOR EACH ROW EXECUTE FUNCTION enforce_audit_sample_finalisation();
+
+CREATE OR REPLACE FUNCTION validate_audit_exception_disposition()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.status = 'REPORTED_AS_UNADJUSTED' AND (
+    NULLIF(trim(COALESCE(NEW.reporting_implication, '')), '') IS NULL OR
+    NULLIF(trim(NEW.conclusion), '') IS NULL
+  ) THEN
+    RAISE EXCEPTION 'A reported unadjusted error requires a reporting implication and conclusion.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER audit_exception_disposition_gate
+BEFORE INSERT OR UPDATE ON audit_exceptions
+FOR EACH ROW EXECUTE FUNCTION validate_audit_exception_disposition();
+
+-- Replaces the earlier archive check with the controlled fieldwork gate.
+CREATE OR REPLACE FUNCTION enforce_audit_file_archive()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  missing_planning BOOLEAN;
+  missing_completion BOOLEAN;
+  tb_ready BOOLEAN;
+  workpaper_ready BOOLEAN;
+  fieldwork_ready BOOLEAN;
+  eqr_ready BOOLEAN;
+BEGIN
+  IF OLD.file_status = 'ARCHIVED' THEN
+    RAISE EXCEPTION 'Archived audit files are immutable. Create a subsequent annual audit file.';
+  END IF;
+  IF NEW.file_status <> 'ARCHIVED' THEN RETURN NEW; END IF;
+  IF NEW.archived_by_user_id IS NULL OR NOT EXISTS (
+    SELECT 1 FROM users u JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.archived_by_user_id AND r.role_name = 'Engagement Partner'
+  ) THEN RAISE EXCEPTION 'Only the Engagement Partner can archive an audit file.'; END IF;
+  SELECT EXISTS (
+    SELECT 1 FROM (VALUES ('Overall audit strategy and plan'),('Client acceptance and continuance'),('Materiality'),('Risk assessment and response'),('Fraud risk')) required(area)
+    WHERE NOT EXISTS (SELECT 1 FROM audit_planning_controls p WHERE p.audit_file_id = NEW.audit_file_id AND p.planning_area = required.area AND p.status IN ('COMPLETE','REVIEWED'))
+  ) INTO missing_planning;
+  SELECT EXISTS (
+    SELECT 1 FROM (VALUES ('Overall audit conclusion'),('Calling-over checklist'),('Partner review'),('Subsequent events'),('Going concern'),('Signed representation letter')) required(item_type)
+    WHERE NOT EXISTS (SELECT 1 FROM audit_completion_items c WHERE c.audit_file_id = NEW.audit_file_id AND c.item_type = required.item_type AND c.status IN ('COMPLETE','REVIEWED'))
+  ) INTO missing_completion;
+  SELECT EXISTS (SELECT 1 FROM audit_trial_balances tb WHERE tb.audit_file_id = NEW.audit_file_id AND tb.is_balanced)
+     AND NOT EXISTS (SELECT 1 FROM audit_trial_balance_lines l JOIN audit_trial_balances tb ON tb.audit_trial_balance_id = l.audit_trial_balance_id WHERE tb.audit_file_id = NEW.audit_file_id AND l.mapped_audit_area IS NULL)
+  INTO tb_ready;
+  SELECT EXISTS (SELECT 1 FROM audit_workpapers w WHERE w.audit_file_id = NEW.audit_file_id AND w.status IN ('PREPARED','REVIEWED')) INTO workpaper_ready;
+  SELECT EXISTS (SELECT 1 FROM audit_population_controls p WHERE p.audit_file_id = NEW.audit_file_id)
+     AND NOT EXISTS (SELECT 1 FROM audit_population_controls p WHERE p.audit_file_id = NEW.audit_file_id AND p.status <> 'CONTROLLED')
+     AND NOT EXISTS (SELECT 1 FROM audit_population_controls p WHERE p.audit_file_id = NEW.audit_file_id AND NOT EXISTS (SELECT 1 FROM audit_reconciliations r WHERE r.audit_file_id = NEW.audit_file_id AND r.audit_population_control_id = p.audit_population_control_id AND r.status = 'CLEARED' AND abs(r.difference) < 0.01))
+     AND NOT EXISTS (SELECT 1 FROM audit_samples s WHERE s.audit_file_id = NEW.audit_file_id AND s.selection_stage = 'PROVISIONAL')
+     AND NOT EXISTS (SELECT 1 FROM audit_samples s WHERE s.audit_file_id = NEW.audit_file_id AND s.selection_stage = 'EXCEPTION' AND NOT EXISTS (SELECT 1 FROM audit_exceptions x WHERE x.audit_file_id = NEW.audit_file_id AND x.related_reference = s.sample_reference AND x.status <> 'OPEN'))
+     AND NOT EXISTS (SELECT 1 FROM audit_exceptions x WHERE x.audit_file_id = NEW.audit_file_id AND x.status = 'OPEN')
+  INTO fieldwork_ready;
+  SELECT NOT e.potential_pie OR e.eqr_status = 'Cleared' FROM engagements e WHERE e.engagement_id = NEW.engagement_id INTO eqr_ready;
+  IF missing_planning OR missing_completion OR NOT tb_ready OR NOT workpaper_ready OR NOT COALESCE(fieldwork_ready, FALSE) OR NOT COALESCE(eqr_ready, FALSE) THEN
+    RAISE EXCEPTION 'Audit file cannot be archived until planning, TB, fieldwork, completion and quality controls are complete.';
+  END IF;
+  NEW.archived_at := COALESCE(NEW.archived_at, now());
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE VIEW v_audit_file_readiness AS
+SELECT af.audit_file_id, af.engagement_id, af.reporting_year_end, af.file_status,
+       tb.is_balanced AS trial_balance_balanced,
+       COALESCE((SELECT bool_and(l.mapped_audit_area IS NOT NULL) FROM audit_trial_balance_lines l WHERE l.audit_trial_balance_id = tb.audit_trial_balance_id), FALSE) AS trial_balance_fully_mapped,
+       EXISTS (SELECT 1 FROM audit_workpapers w WHERE w.audit_file_id = af.audit_file_id AND w.status IN ('PREPARED','REVIEWED')) AS has_prepared_workpaper,
+       EXISTS (SELECT 1 FROM audit_population_controls p WHERE p.audit_file_id = af.audit_file_id AND p.status = 'CONTROLLED') AS has_controlled_population,
+       NOT EXISTS (SELECT 1 FROM audit_population_controls p WHERE p.audit_file_id = af.audit_file_id AND NOT EXISTS (SELECT 1 FROM audit_reconciliations r WHERE r.audit_file_id = af.audit_file_id AND r.audit_population_control_id = p.audit_population_control_id AND r.status = 'CLEARED' AND abs(r.difference) < 0.01)) AS all_populations_reconciled,
+       NOT EXISTS (SELECT 1 FROM audit_samples s WHERE s.audit_file_id = af.audit_file_id AND s.selection_stage = 'PROVISIONAL') AS no_provisional_samples,
+       NOT EXISTS (SELECT 1 FROM audit_exceptions x WHERE x.audit_file_id = af.audit_file_id AND x.status = 'OPEN') AS no_open_exceptions,
+       e.eqr_status
+FROM audit_files af
+JOIN engagements e ON e.engagement_id = af.engagement_id
+LEFT JOIN audit_trial_balances tb ON tb.audit_file_id = af.audit_file_id;
