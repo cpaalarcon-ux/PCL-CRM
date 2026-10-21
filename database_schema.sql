@@ -3169,6 +3169,9 @@ CREATE TABLE IF NOT EXISTS tax_upload_batches (
   source_reference TEXT NOT NULL,
   file_hash TEXT,
   record_count INTEGER NOT NULL DEFAULT 0 CHECK (record_count >= 0),
+  source_row_count INTEGER NOT NULL DEFAULT 0 CHECK (source_row_count >= 0),
+  duplicate_row_count INTEGER NOT NULL DEFAULT 0 CHECK (duplicate_row_count >= 0),
+  worksheet_name TEXT,
   no_activity BOOLEAN NOT NULL DEFAULT FALSE,
   status TEXT NOT NULL DEFAULT 'ACCEPTED' CHECK (status IN ('STAGED','ACCEPTED','REJECTED','SUPERSEDED')),
   supersedes_tax_upload_batch_id BIGINT REFERENCES tax_upload_batches(tax_upload_batch_id) ON DELETE RESTRICT,
@@ -3177,12 +3180,35 @@ CREATE TABLE IF NOT EXISTS tax_upload_batches (
   CHECK ((no_activity AND source_reference <> '') OR (NOT no_activity AND vault_document_id IS NOT NULL AND file_hash IS NOT NULL))
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS tax_upload_batches_active_period_source
+ALTER TABLE tax_upload_batches ADD COLUMN IF NOT EXISTS source_row_count INTEGER NOT NULL DEFAULT 0 CHECK (source_row_count >= 0);
+ALTER TABLE tax_upload_batches ADD COLUMN IF NOT EXISTS duplicate_row_count INTEGER NOT NULL DEFAULT 0 CHECK (duplicate_row_count >= 0);
+ALTER TABLE tax_upload_batches ADD COLUMN IF NOT EXISTS worksheet_name TEXT;
+
+-- Incremental uploads for the same source and period are permitted because a
+-- workbook can contain both old and new lines. Only one No Activity statement
+-- can remain active for an obligation/source/period.
+DROP INDEX IF EXISTS tax_upload_batches_active_period_source;
+DROP INDEX IF EXISTS tax_upload_batches_client_file_hash;
+CREATE UNIQUE INDEX IF NOT EXISTS tax_upload_batches_active_no_activity
   ON tax_upload_batches (tax_project_obligation_id, source_type, period_key)
-  WHERE status <> 'SUPERSEDED';
-CREATE UNIQUE INDEX IF NOT EXISTS tax_upload_batches_client_file_hash
+  WHERE no_activity AND status <> 'SUPERSEDED';
+CREATE INDEX IF NOT EXISTS tax_upload_batches_firm_file_hash
   ON tax_upload_batches (handling_firm_id, file_hash)
   WHERE file_hash IS NOT NULL AND status <> 'SUPERSEDED';
+
+CREATE TABLE IF NOT EXISTS tax_upload_batch_rows (
+  tax_upload_batch_row_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tax_upload_batch_id BIGINT NOT NULL REFERENCES tax_upload_batches(tax_upload_batch_id) ON DELETE RESTRICT,
+  tax_period_project_id BIGINT NOT NULL REFERENCES tax_period_projects(tax_period_project_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  source_type TEXT NOT NULL,
+  source_row_number INTEGER NOT NULL CHECK (source_row_number > 0),
+  source_record_key TEXT,
+  row_fingerprint TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (handling_firm_id, client_id, source_type, row_fingerprint)
+);
 
 CREATE TABLE IF NOT EXISTS tax_period_project_tasks (
   tax_period_project_task_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -3402,6 +3428,31 @@ CREATE TRIGGER tax_upload_batches_chain_guard
 BEFORE INSERT OR UPDATE ON tax_upload_batches
 FOR EACH ROW EXECUTE FUNCTION enforce_tax_upload_batch_chain();
 
+CREATE OR REPLACE FUNCTION enforce_tax_upload_batch_row_chain()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  batch_project_id BIGINT;
+  batch_firm_id BIGINT;
+  project_client_id BIGINT;
+  batch_source_type TEXT;
+BEGIN
+  SELECT tax_period_project_id, handling_firm_id, source_type
+    INTO batch_project_id, batch_firm_id, batch_source_type
+  FROM tax_upload_batches WHERE tax_upload_batch_id = NEW.tax_upload_batch_id;
+  SELECT client_id INTO project_client_id
+  FROM tax_period_projects WHERE tax_period_project_id = NEW.tax_period_project_id;
+  IF batch_project_id IS NULL OR batch_project_id <> NEW.tax_period_project_id OR batch_firm_id <> NEW.handling_firm_id OR project_client_id <> NEW.client_id OR batch_source_type <> NEW.source_type THEN
+    RAISE EXCEPTION 'Imported Tax rows must inherit the source batch, project, client, firm and source type.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tax_upload_batch_rows_chain_guard ON tax_upload_batch_rows;
+CREATE TRIGGER tax_upload_batch_rows_chain_guard
+BEFORE INSERT OR UPDATE ON tax_upload_batch_rows
+FOR EACH ROW EXECUTE FUNCTION enforce_tax_upload_batch_row_chain();
+
 CREATE OR REPLACE FUNCTION enforce_tax_project_approval_segregation()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE project_creator BIGINT;
@@ -3424,6 +3475,7 @@ ALTER TABLE tax_period_projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tax_project_obligations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tax_workpaper_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tax_upload_batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tax_upload_batch_rows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tax_period_project_tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tax_project_approvals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tax_filing_submissions ENABLE ROW LEVEL SECURITY;
@@ -3441,6 +3493,8 @@ CREATE POLICY tax_workpaper_versions_by_firm_access ON tax_workpaper_versions FO
 USING (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_workpaper_versions.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)))
 WITH CHECK (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_workpaper_versions.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)));
 CREATE POLICY tax_upload_batches_by_firm_access ON tax_upload_batches FOR ALL
+USING (app_has_firm_access(handling_firm_id)) WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY tax_upload_batch_rows_by_firm_access ON tax_upload_batch_rows FOR ALL
 USING (app_has_firm_access(handling_firm_id)) WITH CHECK (app_has_firm_access(handling_firm_id));
 CREATE POLICY tax_period_project_tasks_by_firm_access ON tax_period_project_tasks FOR ALL
 USING (EXISTS (SELECT 1 FROM tax_project_obligations obligation JOIN tax_period_projects project ON project.tax_period_project_id = obligation.tax_period_project_id WHERE obligation.tax_project_obligation_id = tax_period_project_tasks.tax_project_obligation_id AND app_has_firm_access(project.handling_firm_id)))
