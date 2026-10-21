@@ -76,6 +76,16 @@
     return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
   }
 
+  function choosePdfFile() {
+    return new Promise(resolve => {
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.accept = ".pdf,application/pdf";
+      picker.addEventListener("change", () => resolve(picker.files?.[0] || null), {once: true});
+      picker.click();
+    });
+  }
+
   function persist() {
     localStorage.setItem(storage.projects, JSON.stringify(projects));
     localStorage.setItem(storage.batches, JSON.stringify(batches));
@@ -386,21 +396,24 @@
     persist();
   }
 
-  function recordFiling(project, obligationCode) {
+  async function recordFiling(project, obligationCode) {
     if (currentRole() !== "Authorized Tax Filer") throw new Error("Only Authorized Tax Filer may record a submission.");
     if (project.status !== "Ready for Filing") throw new Error("The Tax Project is not authorised for filing.");
     const obligation = project.obligations.find(item => item.code === obligationCode);
     if (!obligation || obligation.status === "Filed") throw new Error("This obligation is unavailable for filing.");
     const filingReference = window.prompt(`Enter the iTax acknowledgement reference for ${obligations[obligationCode].label}:`);
     if (!filingReference) return;
-    const receiptReference = window.prompt("Enter the locked Vault reference for the acknowledgement receipt:");
-    if (!receiptReference) return;
-    filings.push({id: crypto.randomUUID(), projectId: project.id, obligationCode, filingReference: filingReference.trim(), receiptReference: receiptReference.trim(), filedByRole: currentRole(), filedAt: new Date().toISOString()});
+    const acknowledgement = await choosePdfFile();
+    if (!acknowledgement) return;
+    if (!isPdfEvidence(acknowledgement)) throw new Error("The iTax acknowledgement or payment receipt must be uploaded as a PDF document.");
+    const receiptHash = await hashUpload(acknowledgement);
+    if (filings.some(item => item.projectId === project.id && item.receiptHash === receiptHash)) throw new Error("This acknowledgement PDF is already recorded for the Tax Project.");
+    filings.push({id: crypto.randomUUID(), projectId: project.id, obligationCode, filingReference: filingReference.trim(), receiptReference: acknowledgement.name, receiptHash, filedByRole: currentRole(), filedAt: new Date().toISOString()});
     obligation.status = "Filed";
     if (project.obligations.every(item => item.status === "Filed")) {
       project.status = "Filed";
       project.lockedAt = new Date().toISOString();
-      approvalRecord(project, "FILING_EVIDENCE", "Authorized Tax Filer", "All selected obligations have an iTax acknowledgement and locked receipt reference.");
+      approvalRecord(project, "FILING_EVIDENCE", "Authorized Tax Filer", "All selected obligations have an iTax acknowledgement PDF and locked receipt evidence.");
       alertPosition("TAX_PROJECT_PERIOD_LOCKED", project, "Tax Manager", "all selected obligations are filed and the period is locked.");
     }
     persist();
@@ -578,7 +591,7 @@
     renderTaskEvidenceRegister();
   }
 
-  function handleAction(button) {
+  async function handleAction(button) {
     const project = projectById(button.dataset.id);
     if (!project) return;
     try {
@@ -589,7 +602,7 @@
       if (action === "client-confirmation") recordClientConfirmation(project);
       if (action === "manager-approve") approveForFiling(project);
       if (action === "partner-approve") approvePartner(project);
-      if (action === "file") recordFiling(project, button.dataset.obligation);
+      if (action === "file") await recordFiling(project, button.dataset.obligation);
       if (action === "amend") amendProject(project);
       render();
       if (typeof renderDashboard === "function") renderDashboard();
@@ -634,7 +647,7 @@
     document.getElementById("taxProjectForm").addEventListener("submit", event => {event.preventDefault();try {const project = createProject(new FormData(event.currentTarget));event.currentTarget.reset();document.getElementById("taxProjectMonth").value = isoToday().slice(0, 7);render();notice(`${project.projectReference} created. It is awaiting Tax Manager identity approval.`);} catch (error) {notice(error.message, true);}});
     document.getElementById("taxBatchForm").addEventListener("submit", async event => {event.preventDefault();try {await recordBatch(new FormData(event.currentTarget));event.currentTarget.reset();render();notice("Excel source workbook accepted into staging.");} catch (error) {notice(error.message, true);}});
     document.getElementById("taxTaskEvidenceForm").addEventListener("submit", async event => {event.preventDefault();try {await recordTaskEvidence(new FormData(event.currentTarget));event.currentTarget.reset();render();notice("PDF task evidence attached and hashed.");} catch (error) {notice(error.message, true);}});
-    document.getElementById("taxProjectRegister").addEventListener("click", event => {const button = event.target.closest("button[data-tax-project-action]"); if (button) handleAction(button);});
+    document.getElementById("taxProjectRegister").addEventListener("click", async event => {const button = event.target.closest("button[data-tax-project-action]"); if (button) await handleAction(button);});
     document.head.insertAdjacentHTML("beforeend", `<style>
       .tax-role-switch{min-width:195px;font-size:.85rem}.tax-project-identity{padding:13px;border:1px solid #dfe8e3;border-radius:8px;background:#f7faf8;line-height:1.55}.tax-project-register{display:grid;gap:14px}.tax-project-card{background:#fff;border:1px solid #dfe8e3;border-left:5px solid #2d7558;border-radius:10px;padding:16px}.tax-project-card.locked{border-left-color:#4b7298;background:#fbfcfe}.tax-project-heading{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.tax-project-columns{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:18px;margin-top:14px}.tax-project-columns h4{margin:0 0 7px}.tax-project-columns ul,.tax-project-policy{margin:0;padding-left:20px}.tax-project-columns li,.tax-project-policy li{margin:6px 0}.tax-project-columns button{margin:7px 0 0}.tax-project-error{background:#fbe8e8!important;color:#8b2828!important}@media(max-width:800px){.tax-project-columns{grid-template-columns:1fr}.tax-project-heading{display:block}.tax-role-switch{width:100%;margin-top:12px}}
     </style>`);
