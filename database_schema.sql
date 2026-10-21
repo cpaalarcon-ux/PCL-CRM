@@ -143,6 +143,168 @@ CREATE TABLE invoices (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Tax invoices use explicit client-contact, lead and QR relationships. The QR token
+-- is opaque: names, phone numbers, tax values and PINs must never be encoded in it.
+CREATE TABLE client_contacts (
+  contact_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  full_name TEXT NOT NULL,
+  job_title TEXT,
+  email_address TEXT,
+  phone_number TEXT,
+  role_in_decision TEXT CHECK (role_in_decision IN ('Decision Maker','Influencer','Billing Contact','Day-to-Day Contact')),
+  is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX client_contacts_one_primary
+ON client_contacts (client_id) WHERE is_primary AND is_active;
+
+CREATE TABLE leads (
+  lead_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  primary_contact_id BIGINT REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
+  requested_service TEXT NOT NULL,
+  branch_location TEXT NOT NULL CHECK (branch_location IN ('Nairobi','Bungoma','Kisii','Other')),
+  stage TEXT NOT NULL CHECK (stage IN ('New Lead','Scoping & KYC','Proposal Sent','EL Signed','Active Engagement','WIP / Billing','Closed / Archived')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE engagements
+  ADD COLUMN source_lead_id BIGINT REFERENCES leads(lead_id) ON DELETE RESTRICT;
+
+CREATE TABLE tax_projects (
+  tax_project_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  engagement_id BIGINT NOT NULL UNIQUE REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  billing_frequency TEXT NOT NULL CHECK (billing_frequency IN ('One-off','Monthly Retainer','Quarterly','Annually')),
+  fee_per_billing_period NUMERIC(16,2) CHECK (fee_per_billing_period >= 0),
+  first_invoice_date DATE,
+  next_invoice_date DATE,
+  payment_terms_days INTEGER NOT NULL DEFAULT 7 CHECK (payment_terms_days BETWEEN 1 AND 365),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK ((billing_frequency = 'One-off') OR (fee_per_billing_period > 0 AND first_invoice_date IS NOT NULL))
+);
+
+ALTER TABLE invoices
+  ADD COLUMN tax_project_id BIGINT REFERENCES tax_projects(tax_project_id) ON DELETE RESTRICT,
+  ADD COLUMN lead_id BIGINT REFERENCES leads(lead_id) ON DELETE RESTRICT,
+  ADD COLUMN contact_id BIGINT REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
+  ADD COLUMN invoice_type TEXT NOT NULL DEFAULT 'Standard Invoice' CHECK (invoice_type IN ('Standard Invoice','Tax Invoice','Credit Note')),
+  ADD COLUMN service_description TEXT,
+  ADD COLUMN tax_period_start DATE,
+  ADD COLUMN tax_period_end DATE,
+  ADD COLUMN due_date DATE,
+  ADD COLUMN payment_reference TEXT,
+  ADD COLUMN invoice_status TEXT NOT NULL DEFAULT 'Issued' CHECK (invoice_status IN ('Draft','Issued','Partially Paid','Paid','Overdue','Reconciliation Review','Cancelled')),
+  ADD COLUMN sent_at TIMESTAMPTZ,
+  ADD COLUMN scheduled_from_tax_project BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD CONSTRAINT invoices_tax_period_dates CHECK (tax_period_end IS NULL OR tax_period_start IS NULL OR tax_period_end >= tax_period_start),
+  ADD CONSTRAINT invoices_due_date CHECK (due_date IS NULL OR due_date >= date_issued);
+
+CREATE TABLE invoice_qr_codes (
+  invoice_qr_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  invoice_id BIGINT NOT NULL UNIQUE REFERENCES invoices(invoice_id) ON DELETE RESTRICT,
+  lead_id BIGINT NOT NULL REFERENCES leads(lead_id) ON DELETE RESTRICT,
+  contact_id BIGINT NOT NULL REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
+  qr_reference TEXT NOT NULL UNIQUE,
+  opaque_token TEXT NOT NULL UNIQUE,
+  payload_version SMALLINT NOT NULL DEFAULT 1 CHECK (payload_version > 0),
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','SUPERSEDED','REVOKED')),
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ
+);
+
+CREATE TABLE invoice_payments (
+  invoice_payment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  invoice_id BIGINT NOT NULL REFERENCES invoices(invoice_id) ON DELETE RESTRICT,
+  amount_received NUMERIC(16,2) NOT NULL CHECK (amount_received > 0),
+  date_received DATE NOT NULL,
+  payment_reference TEXT NOT NULL,
+  match_status TEXT NOT NULL CHECK (match_status IN ('MATCHED','REVIEW','REJECTED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE invoice_communications (
+  communication_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  invoice_id BIGINT NOT NULL REFERENCES invoices(invoice_id) ON DELETE RESTRICT,
+  contact_id BIGINT NOT NULL REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
+  channel TEXT NOT NULL CHECK (channel IN ('EMAIL','WHATSAPP','SMS','QR_TOKEN_COPIED','PORTAL')),
+  recipient_address TEXT,
+  delivery_status TEXT NOT NULL DEFAULT 'COMPOSED' CHECK (delivery_status IN ('COMPOSED','SENT','DELIVERED','FAILED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  delivered_at TIMESTAMPTZ
+);
+
+CREATE INDEX invoices_tax_project_status ON invoices (tax_project_id, invoice_status, due_date);
+CREATE INDEX invoice_payments_invoice ON invoice_payments (invoice_id, date_received);
+CREATE INDEX invoice_communications_invoice ON invoice_communications (invoice_id, created_at);
+
+-- Keep lead, contact and tax-project links in the same client chain. API role checks
+-- remain required before a tax invoice can be created, sent or cancelled.
+CREATE OR REPLACE FUNCTION enforce_tax_invoice_links()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  expected_client_id BIGINT;
+  expected_engagement_id BIGINT;
+BEGIN
+  SELECT client_id INTO expected_client_id FROM engagements WHERE engagement_id = NEW.engagement_id;
+  IF expected_client_id IS NULL THEN RAISE EXCEPTION 'Invoice engagement does not exist'; END IF;
+  IF NEW.tax_project_id IS NOT NULL THEN
+    SELECT engagement_id INTO expected_engagement_id FROM tax_projects WHERE tax_project_id = NEW.tax_project_id;
+    IF expected_engagement_id IS DISTINCT FROM NEW.engagement_id THEN RAISE EXCEPTION 'Tax project must belong to the invoice engagement'; END IF;
+  END IF;
+  IF NEW.lead_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM leads WHERE lead_id = NEW.lead_id AND client_id = expected_client_id) THEN
+    RAISE EXCEPTION 'Invoice lead must belong to the engagement client';
+  END IF;
+  IF NEW.contact_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM client_contacts WHERE contact_id = NEW.contact_id AND client_id = expected_client_id AND is_active) THEN
+    RAISE EXCEPTION 'Invoice contact must be an active contact of the engagement client';
+  END IF;
+  IF NEW.invoice_type = 'Tax Invoice' AND (NEW.tax_project_id IS NULL OR NEW.lead_id IS NULL OR NEW.contact_id IS NULL OR NEW.payment_reference IS NULL OR NEW.due_date IS NULL) THEN
+    RAISE EXCEPTION 'Tax invoice requires tax project, lead, contact, payment reference and due date';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER invoices_tax_link_guard
+BEFORE INSERT OR UPDATE OF engagement_id, tax_project_id, lead_id, contact_id, invoice_type, payment_reference, due_date ON invoices
+FOR EACH ROW EXECUTE FUNCTION enforce_tax_invoice_links();
+
+-- Payment references are reconciled without changing the net invoice amount used by WIP.
+CREATE OR REPLACE FUNCTION refresh_tax_invoice_payment_status()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  target_invoice_id BIGINT;
+  gross_total NUMERIC(16,2);
+  received_total NUMERIC(16,2);
+  review_exists BOOLEAN;
+BEGIN
+  target_invoice_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.invoice_id ELSE NEW.invoice_id END;
+  SELECT amount_billed + vat_amount INTO gross_total FROM invoices WHERE invoice_id = target_invoice_id;
+  SELECT COALESCE(SUM(amount_received),0), BOOL_OR(match_status = 'REVIEW') INTO received_total, review_exists
+  FROM invoice_payments WHERE invoice_id = target_invoice_id AND match_status <> 'REJECTED';
+  UPDATE invoices SET invoice_status = CASE
+    WHEN invoice_status = 'Cancelled' THEN 'Cancelled'
+    WHEN COALESCE(review_exists,FALSE) THEN 'Reconciliation Review'
+    WHEN received_total >= gross_total THEN 'Paid'
+    WHEN received_total > 0 THEN 'Partially Paid'
+    WHEN due_date < CURRENT_DATE THEN 'Overdue'
+    ELSE 'Issued'
+  END,
+  date_paid = CASE WHEN received_total >= gross_total THEN COALESCE(date_paid, CURRENT_DATE) ELSE date_paid END
+  WHERE invoice_id = target_invoice_id;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER invoice_payments_refresh_status
+AFTER INSERT OR UPDATE OR DELETE ON invoice_payments
+FOR EACH ROW EXECUTE FUNCTION refresh_tax_invoice_payment_status();
+
 CREATE TABLE vault_categories (
   category_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   category_name TEXT NOT NULL UNIQUE,
