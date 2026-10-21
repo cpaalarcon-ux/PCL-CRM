@@ -1,6 +1,20 @@
 -- PCL CRM / ERP production schema (PostgreSQL 15+)
 -- Apply through controlled migrations. This schema stores metadata and financial records,
 -- not document binaries. Object storage and authenticated API enforcement are mandatory.
+--
+-- Multi-firm rule: a lead is opened under exactly one handling firm. That firm is
+-- immutable after creation and every engagement child record inherits it. A change
+-- of firm is therefore a new lead and a new engagement, never an update in place.
+
+CREATE TABLE firms (
+  firm_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  legal_name TEXT NOT NULL,
+  trading_name TEXT,
+  firm_code TEXT NOT NULL UNIQUE,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (legal_name)
+);
 
 CREATE TABLE roles (
   role_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -22,8 +36,17 @@ CREATE TABLE users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE user_firm_access (
+  user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  can_manage_all_firm_records BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, firm_id)
+);
+
 CREATE TABLE clients (
   client_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  default_firm_id BIGINT REFERENCES firms(firm_id) ON DELETE RESTRICT,
   company_name TEXT NOT NULL,
   trading_name TEXT,
   primary_sector TEXT NOT NULL,
@@ -36,6 +59,7 @@ CREATE TABLE clients (
 
 CREATE TABLE engagements (
   engagement_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
   client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
   service_type TEXT NOT NULL,
   lifecycle_stage TEXT NOT NULL CHECK (lifecycle_stage IN ('New Lead','Scoping & KYC','Proposal Sent','EL Signed','Active Engagement','WIP / Billing','Closed / Archived')),
@@ -111,6 +135,7 @@ CREATE TABLE engagement_financials (
 
 CREATE TABLE timesheets (
   timesheet_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT REFERENCES firms(firm_id) ON DELETE RESTRICT,
   user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
   former_staff_identifier TEXT,
   engagement_id BIGINT REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
@@ -134,6 +159,7 @@ CREATE TABLE timesheets (
 
 CREATE TABLE invoices (
   invoice_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
   engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
   invoice_number TEXT NOT NULL UNIQUE,
   amount_billed NUMERIC(16,2) NOT NULL CHECK (amount_billed >= 0),
@@ -163,6 +189,7 @@ ON client_contacts (client_id) WHERE is_primary AND is_active;
 
 CREATE TABLE leads (
   lead_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
   client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
   primary_contact_id BIGINT REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
   requested_service TEXT NOT NULL,
@@ -174,6 +201,50 @@ CREATE TABLE leads (
 
 ALTER TABLE engagements
   ADD COLUMN source_lead_id BIGINT REFERENCES leads(lead_id) ON DELETE RESTRICT;
+
+-- The lead determines the legal firm that accepts and performs the work. It cannot
+-- be swapped after saving because that would change the accepting engagement.
+CREATE OR REPLACE FUNCTION enforce_lead_firm_immutability()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.handling_firm_id IS NULL THEN
+    RAISE EXCEPTION 'A lead requires a handling firm';
+  END IF;
+  IF TG_OP = 'UPDATE' AND NEW.handling_firm_id IS DISTINCT FROM OLD.handling_firm_id THEN
+    RAISE EXCEPTION 'A lead handling firm is immutable. Create a separate lead and engagement for another firm.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER leads_handling_firm_immutable
+BEFORE INSERT OR UPDATE OF handling_firm_id ON leads
+FOR EACH ROW EXECUTE FUNCTION enforce_lead_firm_immutability();
+
+CREATE OR REPLACE FUNCTION enforce_engagement_firm()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  lead_firm_id BIGINT;
+BEGIN
+  IF NEW.handling_firm_id IS NULL THEN
+    RAISE EXCEPTION 'An engagement requires a handling firm';
+  END IF;
+  IF NEW.source_lead_id IS NOT NULL THEN
+    SELECT handling_firm_id INTO lead_firm_id FROM leads WHERE lead_id = NEW.source_lead_id;
+    IF lead_firm_id IS NULL OR lead_firm_id IS DISTINCT FROM NEW.handling_firm_id THEN
+      RAISE EXCEPTION 'Engagement firm must match its source lead firm';
+    END IF;
+  END IF;
+  IF TG_OP = 'UPDATE' AND NEW.handling_firm_id IS DISTINCT FROM OLD.handling_firm_id THEN
+    RAISE EXCEPTION 'Engagement firm is immutable. Create a separate engagement for another firm.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER engagements_handling_firm_guard
+BEFORE INSERT OR UPDATE OF handling_firm_id, source_lead_id ON engagements
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_firm();
 
 CREATE TABLE tax_projects (
   tax_project_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -235,6 +306,7 @@ CREATE INDEX invoice_communications_invoice ON invoice_communications (invoice_i
 -- communication QR register; they must never be copied to message text or contact fields.
 CREATE TABLE communication_hub (
   hub_communication_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
   subject TEXT NOT NULL,
   communication_reference TEXT UNIQUE,
   communication_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -282,47 +354,58 @@ CREATE OR REPLACE FUNCTION enforce_communication_hub_links()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE
   source_client_id BIGINT;
+  source_firm_id BIGINT;
   linked_client_id BIGINT;
+  linked_firm_id BIGINT;
   linked_engagement_id BIGINT;
 BEGIN
   source_client_id := NEW.client_id;
+  source_firm_id := NEW.handling_firm_id;
   IF NEW.engagement_id IS NOT NULL THEN
-    SELECT client_id INTO linked_client_id FROM engagements WHERE engagement_id = NEW.engagement_id;
+    SELECT client_id, handling_firm_id INTO linked_client_id, linked_firm_id FROM engagements WHERE engagement_id = NEW.engagement_id;
     IF linked_client_id IS NULL THEN RAISE EXCEPTION 'Communication engagement does not exist'; END IF;
     IF source_client_id IS NOT NULL AND source_client_id IS DISTINCT FROM linked_client_id THEN RAISE EXCEPTION 'Communication engagement must belong to the linked client'; END IF;
+    IF source_firm_id IS NOT NULL AND source_firm_id IS DISTINCT FROM linked_firm_id THEN RAISE EXCEPTION 'Communication firm must match the linked engagement firm'; END IF;
     source_client_id := linked_client_id;
+    source_firm_id := linked_firm_id;
   END IF;
   IF NEW.lead_id IS NOT NULL THEN
-    SELECT client_id INTO linked_client_id FROM leads WHERE lead_id = NEW.lead_id;
+    SELECT client_id, handling_firm_id INTO linked_client_id, linked_firm_id FROM leads WHERE lead_id = NEW.lead_id;
     IF linked_client_id IS NULL THEN RAISE EXCEPTION 'Communication lead does not exist'; END IF;
     IF source_client_id IS NOT NULL AND source_client_id IS DISTINCT FROM linked_client_id THEN RAISE EXCEPTION 'Communication lead must belong to the linked client'; END IF;
+    IF source_firm_id IS NOT NULL AND source_firm_id IS DISTINCT FROM linked_firm_id THEN RAISE EXCEPTION 'Communication firm must match the linked lead firm'; END IF;
     source_client_id := linked_client_id;
+    source_firm_id := linked_firm_id;
   END IF;
   IF NEW.invoice_id IS NOT NULL THEN
-    SELECT e.client_id, i.engagement_id INTO linked_client_id, linked_engagement_id FROM invoices i JOIN engagements e ON e.engagement_id = i.engagement_id WHERE i.invoice_id = NEW.invoice_id;
+    SELECT e.client_id, i.engagement_id, i.handling_firm_id INTO linked_client_id, linked_engagement_id, linked_firm_id FROM invoices i JOIN engagements e ON e.engagement_id = i.engagement_id WHERE i.invoice_id = NEW.invoice_id;
     IF linked_client_id IS NULL THEN RAISE EXCEPTION 'Communication invoice does not exist'; END IF;
     IF source_client_id IS NOT NULL AND source_client_id IS DISTINCT FROM linked_client_id THEN RAISE EXCEPTION 'Communication invoice must belong to the linked client'; END IF;
     IF NEW.engagement_id IS NOT NULL AND NEW.engagement_id IS DISTINCT FROM linked_engagement_id THEN RAISE EXCEPTION 'Communication invoice must belong to the linked engagement'; END IF;
+    IF source_firm_id IS NOT NULL AND source_firm_id IS DISTINCT FROM linked_firm_id THEN RAISE EXCEPTION 'Communication firm must match the linked invoice firm'; END IF;
     source_client_id := linked_client_id;
+    source_firm_id := linked_firm_id;
   END IF;
   IF NEW.client_id IS NULL THEN NEW.client_id := source_client_id; END IF;
+  IF NEW.handling_firm_id IS NULL THEN NEW.handling_firm_id := source_firm_id; END IF;
   IF NEW.contact_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM client_contacts WHERE contact_id = NEW.contact_id AND client_id = NEW.client_id AND is_active) THEN
     RAISE EXCEPTION 'Communication contact must be an active contact of the linked client';
   END IF;
   IF NEW.communication_reference IS NOT NULL AND (
     NEW.client_id IS NULL OR
-    NULLIF(trim(COALESCE(NEW.firm_name, '')), '') IS NULL OR
+    NEW.handling_firm_id IS NULL OR
     NULLIF(trim(COALESCE(NEW.purpose, '')), '') IS NULL OR
     NULLIF(trim(COALESCE(NEW.signatory_reference, '')), '') IS NULL
   ) THEN
     RAISE EXCEPTION 'A QR communication reference requires a linked client, firm, purpose and approved signatory reference';
   END IF;
+  SELECT legal_name INTO NEW.firm_name FROM firms WHERE firm_id = NEW.handling_firm_id;
   RETURN NEW;
 END;
 $$;
 
 CREATE TRIGGER communication_hub_link_guard
-BEFORE INSERT OR UPDATE OF lead_id, client_id, contact_id, engagement_id, invoice_id, communication_reference, firm_name, purpose, signatory_reference ON communication_hub
+BEFORE INSERT OR UPDATE OF handling_firm_id, lead_id, client_id, contact_id, engagement_id, invoice_id, communication_reference, purpose, signatory_reference ON communication_hub
 FOR EACH ROW EXECUTE FUNCTION enforce_communication_hub_links();
 
 CREATE OR REPLACE FUNCTION enforce_communication_qr_links()
@@ -330,16 +413,16 @@ RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE
   hub_reference TEXT;
   hub_client_id BIGINT;
-  hub_firm TEXT;
+  hub_firm_id BIGINT;
   hub_purpose TEXT;
   hub_signatory TEXT;
 BEGIN
-  SELECT communication_reference, client_id, firm_name, purpose, signatory_reference
-    INTO hub_reference, hub_client_id, hub_firm, hub_purpose, hub_signatory
+  SELECT communication_reference, client_id, handling_firm_id, purpose, signatory_reference
+    INTO hub_reference, hub_client_id, hub_firm_id, hub_purpose, hub_signatory
   FROM communication_hub
   WHERE hub_communication_id = NEW.hub_communication_id;
   IF hub_reference IS DISTINCT FROM NEW.communication_reference OR hub_client_id IS NULL OR
-     NULLIF(trim(COALESCE(hub_firm, '')), '') IS NULL OR
+     hub_firm_id IS NULL OR
      NULLIF(trim(COALESCE(hub_purpose, '')), '') IS NULL OR
      NULLIF(trim(COALESCE(hub_signatory, '')), '') IS NULL THEN
     RAISE EXCEPTION 'Communication QR must match a fully controlled communication reference.';
@@ -358,10 +441,14 @@ CREATE OR REPLACE FUNCTION enforce_tax_invoice_links()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE
   expected_client_id BIGINT;
+  expected_firm_id BIGINT;
   expected_engagement_id BIGINT;
 BEGIN
-  SELECT client_id INTO expected_client_id FROM engagements WHERE engagement_id = NEW.engagement_id;
+  SELECT client_id, handling_firm_id INTO expected_client_id, expected_firm_id FROM engagements WHERE engagement_id = NEW.engagement_id;
   IF expected_client_id IS NULL THEN RAISE EXCEPTION 'Invoice engagement does not exist'; END IF;
+  IF NEW.handling_firm_id IS DISTINCT FROM expected_firm_id THEN
+    RAISE EXCEPTION 'Invoice firm must match the engagement handling firm';
+  END IF;
   IF NEW.tax_project_id IS NOT NULL THEN
     SELECT engagement_id INTO expected_engagement_id FROM tax_projects WHERE tax_project_id = NEW.tax_project_id;
     IF expected_engagement_id IS DISTINCT FROM NEW.engagement_id THEN RAISE EXCEPTION 'Tax project must belong to the invoice engagement'; END IF;
@@ -380,7 +467,7 @@ END;
 $$;
 
 CREATE TRIGGER invoices_tax_link_guard
-BEFORE INSERT OR UPDATE OF engagement_id, tax_project_id, lead_id, contact_id, invoice_type, payment_reference, due_date ON invoices
+BEFORE INSERT OR UPDATE OF handling_firm_id, engagement_id, tax_project_id, lead_id, contact_id, invoice_type, payment_reference, due_date ON invoices
 FOR EACH ROW EXECUTE FUNCTION enforce_tax_invoice_links();
 
 -- Payment references are reconciled without changing the net invoice amount used by WIP.
@@ -423,6 +510,7 @@ CREATE TABLE vault_categories (
 
 CREATE TABLE documents (
   document_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
   client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
   engagement_id BIGINT REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
   category_id BIGINT NOT NULL REFERENCES vault_categories(category_id) ON DELETE RESTRICT,
@@ -521,6 +609,7 @@ CREATE TABLE leave_requests (
 
 CREATE TABLE staff_assignments (
   assignment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
   engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
   user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
   role_on_job TEXT NOT NULL CHECK (role_on_job IN ('PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN')),
@@ -533,6 +622,7 @@ CREATE TABLE staff_assignments (
 
 CREATE TABLE performance_reviews (
   review_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
   engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
   reviewer_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
   reviewee_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
@@ -574,6 +664,7 @@ CREATE INDEX staff_credentials_expiry ON staff_credentials (expiry_date);
 -- rather than with a polymorphic foreign key, preserving referential integrity.
 CREATE TABLE tickets (
   ticket_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
   ticket_number TEXT NOT NULL UNIQUE,
   subject TEXT NOT NULL,
   description TEXT NOT NULL,
@@ -670,6 +761,7 @@ CREATE TABLE attendance_exceptions (
 
 CREATE TABLE client_site_visits (
   visit_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
   user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
   client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
   engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
@@ -897,6 +989,7 @@ GROUP BY e.engagement_id, c.company_name, c.primary_sector, c.branch_location, e
 -- the actual evidence remains in the secured document-vault object store.
 CREATE TABLE audit_files (
   audit_file_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
   engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
   reporting_year_end DATE NOT NULL,
   audit_file_type TEXT NOT NULL CHECK (audit_file_type IN ('FIRST_TIME','SUBSEQUENT')),
@@ -1078,6 +1171,75 @@ SELECT af.audit_file_id, af.engagement_id, af.reporting_year_end, af.file_status
 FROM audit_files af
 JOIN engagements e ON e.engagement_id = af.engagement_id
 LEFT JOIN audit_trial_balances tb ON tb.audit_file_id = af.audit_file_id;
+
+-- All engagement-linked operational records carry a denormalised firm key for
+-- fast row-level security and reporting. The trigger stops cross-firm children
+-- even if a caller tampers with an API payload.
+CREATE OR REPLACE FUNCTION enforce_engagement_child_firm()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE expected_firm_id BIGINT;
+BEGIN
+  IF NEW.engagement_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+  SELECT handling_firm_id INTO expected_firm_id
+  FROM engagements WHERE engagement_id = NEW.engagement_id;
+  IF expected_firm_id IS NULL THEN
+    RAISE EXCEPTION 'Engagement does not exist or has no handling firm';
+  END IF;
+  IF NEW.handling_firm_id IS DISTINCT FROM expected_firm_id THEN
+    RAISE EXCEPTION 'Child record firm must match the engagement handling firm';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER timesheets_handling_firm_guard
+BEFORE INSERT OR UPDATE OF handling_firm_id, engagement_id ON timesheets
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_child_firm();
+
+CREATE TRIGGER documents_handling_firm_guard
+BEFORE INSERT OR UPDATE OF handling_firm_id, engagement_id ON documents
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_child_firm();
+
+CREATE TRIGGER staff_assignments_handling_firm_guard
+BEFORE INSERT OR UPDATE OF handling_firm_id, engagement_id ON staff_assignments
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_child_firm();
+
+CREATE TRIGGER performance_reviews_handling_firm_guard
+BEFORE INSERT OR UPDATE OF handling_firm_id, engagement_id ON performance_reviews
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_child_firm();
+
+CREATE TRIGGER tickets_handling_firm_guard
+BEFORE INSERT OR UPDATE OF handling_firm_id, engagement_id ON tickets
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_child_firm();
+
+CREATE TRIGGER client_site_visits_handling_firm_guard
+BEFORE INSERT OR UPDATE OF handling_firm_id, engagement_id ON client_site_visits
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_child_firm();
+
+CREATE TRIGGER audit_files_handling_firm_guard
+BEFORE INSERT OR UPDATE OF handling_firm_id, engagement_id ON audit_files
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_child_firm();
+
+CREATE INDEX engagements_handling_firm_stage ON engagements (handling_firm_id, lifecycle_stage);
+CREATE INDEX leads_handling_firm_stage ON leads (handling_firm_id, stage);
+CREATE INDEX invoices_handling_firm_status ON invoices (handling_firm_id, invoice_status, due_date);
+CREATE INDEX communication_hub_handling_firm_time ON communication_hub (handling_firm_id, communication_at DESC);
+CREATE INDEX documents_handling_firm ON documents (handling_firm_id, engagement_id);
+CREATE INDEX audit_files_handling_firm ON audit_files (handling_firm_id, engagement_id);
+CREATE INDEX tickets_handling_firm ON tickets (handling_firm_id, status, sla_due_at);
+
+-- Production APIs must set the acting user in the transaction context, then apply
+-- this policy family (or equivalent application record rules) to every firm-owned
+-- table. Users with global partner access receive explicit rows for all firms.
+ALTER TABLE engagements ENABLE ROW LEVEL SECURITY;
+CREATE POLICY engagements_by_firm_access ON engagements
+USING (EXISTS (
+  SELECT 1 FROM user_firm_access ufa
+  WHERE ufa.firm_id = engagements.handling_firm_id
+    AND ufa.user_id = NULLIF(current_setting('app.user_id', true), '')::BIGINT
+));
 
 -- General-audit fieldwork controls. These tables retain the evidence trail that
 -- sits between planning and completion: source provenance, reconciliation,
