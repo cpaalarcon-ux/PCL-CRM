@@ -2657,3 +2657,429 @@ CREATE POLICY compliance_alerts_restricted ON compliance_alerts FOR ALL
 USING (current_user_has_mlro_or_partner_access()) WITH CHECK (current_user_has_mlro_or_partner_access());
 CREATE POLICY suspicion_reports_restricted ON suspicion_reports FOR ALL
 USING (current_user_has_mlro_or_partner_access()) WITH CHECK (current_user_has_mlro_or_partner_access());
+
+-- Recurring Task Engine V2 --------------------------------------------------
+-- Times are evaluated in Africa/Nairobi. `due_at` carries the exact deadline;
+-- `due_date` remains for older reporting views. A recurring run is immutable
+-- once it has generated tasks, which makes a Monday-to-Sunday sprint auditable.
+ALTER TABLE active_engagement_tasks
+  ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS recurring_group_id BIGINT,
+  ADD COLUMN IF NOT EXISTS recurrence_code TEXT,
+  ADD COLUMN IF NOT EXISTS recurrence_period_start DATE,
+  ADD COLUMN IF NOT EXISTS recurrence_period_end DATE,
+  ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS is_overdue BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS overdue_at TIMESTAMPTZ;
+
+ALTER TABLE tax_projects
+  ADD COLUMN IF NOT EXISTS reporting_year_end DATE;
+
+CREATE TABLE IF NOT EXISTS recurring_task_templates (
+  recurring_task_template_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  task_code TEXT NOT NULL UNIQUE,
+  task_name TEXT NOT NULL,
+  recurrence_frequency TEXT NOT NULL CHECK (recurrence_frequency IN ('WEEKLY','MONTHLY','QUARTERLY','ANNUAL')),
+  service_scope TEXT NOT NULL DEFAULT 'TAX',
+  assigned_role_name TEXT NOT NULL,
+  escalation_role_name TEXT NOT NULL,
+  trigger_rule JSONB NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS recurring_task_runs (
+  recurring_group_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  recurring_task_template_id BIGINT NOT NULL REFERENCES recurring_task_templates(recurring_task_template_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  triggered_at TIMESTAMPTZ NOT NULL,
+  due_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (period_end >= period_start),
+  UNIQUE (recurring_task_template_id, handling_firm_id, period_start)
+);
+
+ALTER TABLE active_engagement_tasks
+  ADD CONSTRAINT active_tasks_recurring_group_fk
+  FOREIGN KEY (recurring_group_id) REFERENCES recurring_task_runs(recurring_group_id) ON DELETE RESTRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS active_recurring_task_once_per_period
+  ON active_engagement_tasks (engagement_id, recurrence_code, recurrence_period_start)
+  WHERE is_recurring;
+
+CREATE INDEX IF NOT EXISTS active_tasks_recurring_overdue
+  ON active_engagement_tasks (is_overdue, due_at)
+  WHERE is_recurring AND status <> 'Completed';
+
+INSERT INTO recurring_task_templates
+  (task_code, task_name, recurrence_frequency, service_scope, assigned_role_name, escalation_role_name, trigger_rule)
+VALUES
+  ('WEEKLY_TAX_HEALTH_CHECK','Weekly Tax Health Check','WEEKLY','TAX','Tax Assistant','Tax Supervisor',
+   '{"trigger":"Monday 00:01 Africa/Nairobi","due":"Sunday 23:59 Africa/Nairobi","overdue_scan":"next Monday 00:05"}'::jsonb),
+  ('START_PAYROLL_PROCESSING','Start Payroll Processing','MONTHLY','TAX','Tax Assistant','Tax Manager',
+   '{"trigger_day":22,"due_day":25,"not_started_alert_day":23}'::jsonb),
+  ('FILE_PAYE_RETURN','File PAYE Return','MONTHLY','TAX','Tax Assistant','Tax Manager',
+   '{"trigger_day":6,"due_day":7,"kra_deadline_day":9,"critical_after_due":true}'::jsonb),
+  ('FILE_VAT_TOT_RETURN','File VAT / TOT Return','MONTHLY','TAX','Tax Assistant','Tax Manager',
+   '{"trigger_day":15,"due_day":18,"kra_deadline_day":20,"critical_after_due":true}'::jsonb),
+  ('PREPARE_ANNUAL_INCOME_TAX','Prepare Annual Income Tax','ANNUAL','TAX','Tax Assistant','Engagement Partner',
+   '{"trigger":"2 months before KRA deadline","due":"6 months after reporting year-end","partner_escalation":"1 month before deadline"}'::jsonb),
+  ('VERIFY_ETIMS_COMPLIANCE','Verify eTIMS Compliance','QUARTERLY','TAX','Tax Assistant','Tax Manager',
+   '{"trigger":"1 Jan/Apr/Jul/Oct","due_day":15,"client_risk_action":"Tax At Risk if non-compliant"}'::jsonb)
+ON CONFLICT (task_code) DO UPDATE SET
+  task_name = EXCLUDED.task_name,
+  trigger_rule = EXCLUDED.trigger_rule,
+  assigned_role_name = EXCLUDED.assigned_role_name,
+  escalation_role_name = EXCLUDED.escalation_role_name,
+  is_active = TRUE;
+
+INSERT INTO notification_templates (alert_code, channel, subject_template, body_template, is_mandatory) VALUES
+  ('WEEKLY_TAX_TASK_OVERDUE','EMAIL','Weekly tax task overdue','The prior-week Tax Health Check remains incomplete and requires immediate action.',TRUE),
+  ('PAYROLL_NOT_STARTED','IN_APP','Payroll processing has not started','The monthly payroll task has not started by the internal control date.',TRUE),
+  ('PAYE_CRITICAL_OVERDUE','EMAIL','PAYE return is critically overdue','The PAYE return is not submitted by the internal due date.',TRUE),
+  ('VAT_TOT_CRITICAL_OVERDUE','EMAIL','VAT / TOT return is critically overdue','The VAT or TOT return is not submitted by the internal due date.',TRUE),
+  ('ANNUAL_TAX_PARTNER_ESCALATION','EMAIL','Annual income tax preparation needs Partner attention','Annual income tax preparation has not started one month before its due date.',TRUE),
+  ('ETIMS_TAX_AT_RISK','IN_APP','Client tax compliance at risk','The quarterly eTIMS review is incomplete or non-compliant.',TRUE)
+ON CONFLICT (alert_code) DO NOTHING;
+
+-- Creates one task run per firm and period, then one controlled task per
+-- active tax engagement. It is idempotent, so a scheduler retry is safe.
+CREATE OR REPLACE FUNCTION create_recurring_tax_tasks(
+  p_task_code TEXT,
+  p_period_start DATE,
+  p_period_end DATE,
+  p_due_at TIMESTAMPTZ,
+  p_triggered_at TIMESTAMPTZ DEFAULT now(),
+  p_engagement_id BIGINT DEFAULT NULL
+) RETURNS INTEGER LANGUAGE plpgsql AS $$
+DECLARE created_count INTEGER := 0;
+BEGIN
+  WITH template_row AS (
+    SELECT recurring_task_template_id, task_code, task_name, assigned_role_name
+    FROM recurring_task_templates WHERE task_code = p_task_code AND is_active
+  ), eligible AS (
+    SELECT e.engagement_id, e.handling_firm_id
+    FROM engagements e
+    JOIN tax_projects tp ON tp.engagement_id = e.engagement_id AND tp.is_active
+    WHERE e.lifecycle_stage IN ('Active Engagement','WIP / Billing')
+      AND e.deleted_at IS NULL
+      AND (p_engagement_id IS NULL OR e.engagement_id = p_engagement_id)
+  ), task_runs AS (
+    INSERT INTO recurring_task_runs (recurring_task_template_id, handling_firm_id, period_start, period_end, triggered_at, due_at)
+    SELECT tr.recurring_task_template_id, el.handling_firm_id, p_period_start, p_period_end, p_triggered_at, p_due_at
+    FROM template_row tr CROSS JOIN (SELECT DISTINCT handling_firm_id FROM eligible) el
+    ON CONFLICT (recurring_task_template_id, handling_firm_id, period_start) DO UPDATE
+      SET due_at = EXCLUDED.due_at
+    RETURNING recurring_group_id, recurring_task_template_id, handling_firm_id
+  ), inserted AS (
+    INSERT INTO active_engagement_tasks
+      (engagement_id, task_name, assigned_role_name, due_date, due_at, status,
+       is_recurring, recurring_group_id, recurrence_code, recurrence_period_start, recurrence_period_end)
+    SELECT el.engagement_id, tr.task_name, tr.assigned_role_name, p_due_at::date, p_due_at,
+           'Pending', TRUE, run.recurring_group_id, tr.task_code, p_period_start, p_period_end
+    FROM eligible el
+    JOIN task_runs run ON run.handling_firm_id = el.handling_firm_id
+    CROSS JOIN template_row tr
+    ON CONFLICT (engagement_id, recurrence_code, recurrence_period_start) WHERE is_recurring DO NOTHING
+    RETURNING task_id
+  ) SELECT count(*) INTO created_count FROM inserted;
+  RETURN created_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION generate_recurring_tax_tasks(p_run_at TIMESTAMPTZ DEFAULT now())
+RETURNS INTEGER LANGUAGE plpgsql AS $$
+DECLARE
+  local_day DATE := (p_run_at AT TIME ZONE 'Africa/Nairobi')::date;
+  week_start DATE := date_trunc('week', (p_run_at AT TIME ZONE 'Africa/Nairobi'))::date;
+  month_end DATE := (date_trunc('month', local_day)::date + INTERVAL '1 month - 1 day')::date;
+  due_at TIMESTAMPTZ;
+  total_created INTEGER := 0;
+  annual_row RECORD;
+BEGIN
+  IF EXTRACT(ISODOW FROM local_day) = 1 THEN
+    due_at := ((week_start + 6) + time '23:59') AT TIME ZONE 'Africa/Nairobi';
+    total_created := total_created + create_recurring_tax_tasks('WEEKLY_TAX_HEALTH_CHECK', week_start, week_start + 6, due_at, p_run_at);
+  END IF;
+  IF EXTRACT(DAY FROM local_day) = 22 THEN
+    due_at := (make_date(EXTRACT(YEAR FROM local_day)::INT, EXTRACT(MONTH FROM local_day)::INT, LEAST(25, EXTRACT(DAY FROM month_end)::INT)) + time '23:59') AT TIME ZONE 'Africa/Nairobi';
+    total_created := total_created + create_recurring_tax_tasks('START_PAYROLL_PROCESSING', date_trunc('month', local_day)::date, month_end, due_at, p_run_at);
+  END IF;
+  IF EXTRACT(DAY FROM local_day) = 6 THEN
+    due_at := (make_date(EXTRACT(YEAR FROM local_day)::INT, EXTRACT(MONTH FROM local_day)::INT, LEAST(7, EXTRACT(DAY FROM month_end)::INT)) + time '23:59') AT TIME ZONE 'Africa/Nairobi';
+    total_created := total_created + create_recurring_tax_tasks('FILE_PAYE_RETURN', date_trunc('month', local_day)::date, month_end, due_at, p_run_at);
+  END IF;
+  IF EXTRACT(DAY FROM local_day) = 15 THEN
+    due_at := (make_date(EXTRACT(YEAR FROM local_day)::INT, EXTRACT(MONTH FROM local_day)::INT, LEAST(18, EXTRACT(DAY FROM month_end)::INT)) + time '23:59') AT TIME ZONE 'Africa/Nairobi';
+    total_created := total_created + create_recurring_tax_tasks('FILE_VAT_TOT_RETURN', date_trunc('month', local_day)::date, month_end, due_at, p_run_at);
+  END IF;
+  IF EXTRACT(MONTH FROM local_day) IN (1,4,7,10) AND EXTRACT(DAY FROM local_day) = 1 THEN
+    due_at := (make_date(EXTRACT(YEAR FROM local_day)::INT, EXTRACT(MONTH FROM local_day)::INT, 15) + time '23:59') AT TIME ZONE 'Africa/Nairobi';
+    total_created := total_created + create_recurring_tax_tasks('VERIFY_ETIMS_COMPLIANCE', local_day, local_day + 14, due_at, p_run_at);
+  END IF;
+  -- Each annual task has its own statutory period because tax year ends vary.
+  FOR annual_row IN
+    SELECT e.engagement_id, e.handling_firm_id, tp.reporting_year_end,
+           (tp.reporting_year_end + INTERVAL '6 months')::date AS tax_due_date
+    FROM engagements e JOIN tax_projects tp ON tp.engagement_id = e.engagement_id
+    WHERE tp.is_active AND tp.reporting_year_end IS NOT NULL
+      AND e.lifecycle_stage IN ('Active Engagement','WIP / Billing') AND e.deleted_at IS NULL
+      AND local_day = ((tp.reporting_year_end + INTERVAL '6 months - 2 months')::date)
+  LOOP
+    due_at := (annual_row.tax_due_date + time '23:59') AT TIME ZONE 'Africa/Nairobi';
+    total_created := total_created + create_recurring_tax_tasks('PREPARE_ANNUAL_INCOME_TAX', local_day, annual_row.tax_due_date, due_at, p_run_at, annual_row.engagement_id);
+  END LOOP;
+  RETURN total_created;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION flag_overdue_recurring_tasks(p_run_at TIMESTAMPTZ DEFAULT now())
+RETURNS INTEGER LANGUAGE plpgsql AS $$
+DECLARE affected_count INTEGER := 0;
+BEGIN
+  WITH overdue AS (
+    UPDATE active_engagement_tasks task
+       SET is_overdue = TRUE, overdue_at = COALESCE(task.overdue_at, p_run_at)
+      FROM engagements e
+     WHERE task.engagement_id = e.engagement_id
+       AND task.is_recurring
+       AND task.status NOT IN ('Completed','Rejected')
+       AND task.due_at < p_run_at
+       AND NOT task.is_overdue
+    RETURNING task.task_id, task.recurrence_code
+  ), alerts AS (
+    INSERT INTO system_alerts (alert_code, recipient_role_name, related_record_type, related_record_id)
+    SELECT 'WEEKLY_TAX_TASK_OVERDUE', role_name, 'Active Engagement Task', task_id
+    FROM overdue CROSS JOIN (VALUES ('Tax Assistant'), ('Tax Supervisor')) recipients(role_name)
+    WHERE recurrence_code = 'WEEKLY_TAX_HEALTH_CHECK'
+    RETURNING alert_id
+  ) SELECT count(*) INTO affected_count FROM overdue;
+  RETURN affected_count;
+END;
+$$;
+
+-- Production scheduler (choose pg_cron, a queue worker, or the hosting
+-- platform scheduler; do not rely on a browser being open):
+-- 00:01 Monday Africa/Nairobi: SELECT generate_recurring_tax_tasks(now());
+-- 00:05 Monday Africa/Nairobi: SELECT flag_overdue_recurring_tasks(now());
+-- Daily 00:01 Africa/Nairobi: SELECT generate_recurring_tax_tasks(now());
+-- Daily 00:05 Africa/Nairobi: SELECT flag_overdue_recurring_tasks(now());
+
+-- Odoo-style Discuss controls -----------------------------------------------
+-- Functional channel type (fieldwork / manager review) remains separate from
+-- conversation type (public channel / private group / direct chat).
+ALTER TABLE engagement_channels
+  ADD COLUMN IF NOT EXISTS conversation_type TEXT NOT NULL DEFAULT 'GROUP'
+    CHECK (conversation_type IN ('CHANNEL','GROUP','CHAT')),
+  ADD COLUMN IF NOT EXISTS description TEXT,
+  ADD COLUMN IF NOT EXISTS image_url TEXT,
+  ADD COLUMN IF NOT EXISTS group_public_role_id BIGINT REFERENCES roles(role_id) ON DELETE RESTRICT;
+
+CREATE TABLE IF NOT EXISTS engagement_channel_role_access (
+  channel_id BIGINT NOT NULL REFERENCES engagement_channels(channel_id) ON DELETE RESTRICT,
+  role_id BIGINT NOT NULL REFERENCES roles(role_id) ON DELETE RESTRICT,
+  can_join BOOLEAN NOT NULL DEFAULT TRUE,
+  auto_subscribe BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (channel_id, role_id)
+);
+
+ALTER TABLE engagement_channel_messages
+  ADD COLUMN IF NOT EXISTS source_hub_communication_id BIGINT REFERENCES communication_hub(hub_communication_id) ON DELETE RESTRICT,
+  ADD COLUMN IF NOT EXISTS reply_to_message_id BIGINT REFERENCES engagement_channel_messages(channel_message_id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS event_sequence BIGINT;
+
+CREATE TABLE IF NOT EXISTS communication_channel_cross_posts (
+  cross_post_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  hub_communication_id BIGINT NOT NULL REFERENCES communication_hub(hub_communication_id) ON DELETE RESTRICT,
+  channel_id BIGINT NOT NULL REFERENCES engagement_channels(channel_id) ON DELETE RESTRICT,
+  channel_message_id BIGINT REFERENCES engagement_channel_messages(channel_message_id) ON DELETE SET NULL,
+  mentioned_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (hub_communication_id, channel_id)
+);
+
+-- Transactional outbox lets the API publish a message after commit. A WebSocket
+-- or SSE gateway consumes it; polling remains only a fallback for old clients.
+CREATE TABLE IF NOT EXISTS channel_event_outbox (
+  event_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  channel_id BIGINT NOT NULL REFERENCES engagement_channels(channel_id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('MESSAGE_CREATED','MEMBERSHIP_CHANGED','MEETING_CHANGED')),
+  payload JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  published_at TIMESTAMPTZ
+);
+
+CREATE OR REPLACE FUNCTION auto_subscribe_channel_members()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO engagement_channel_members (channel_id, user_id, membership_role)
+  SELECT NEW.channel_id, assignment.user_id,
+         CASE WHEN assignment.role_on_job IN ('PARTNER','MANAGER') THEN 'OWNER' ELSE 'MEMBER' END
+  FROM staff_assignments assignment
+  JOIN users staff ON staff.user_id = assignment.user_id AND staff.is_active
+  JOIN engagement_channel_role_access access_rule ON access_rule.channel_id = NEW.channel_id
+    AND access_rule.role_id = staff.role_id AND access_rule.auto_subscribe
+  WHERE assignment.engagement_id = NEW.engagement_id
+  ON CONFLICT (channel_id, user_id) DO UPDATE SET removed_at = NULL;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS engagement_channel_auto_subscribe ON engagement_channels;
+CREATE TRIGGER engagement_channel_auto_subscribe
+AFTER INSERT ON engagement_channels
+FOR EACH ROW EXECUTE FUNCTION auto_subscribe_channel_members();
+
+CREATE OR REPLACE FUNCTION publish_channel_message_event()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO channel_event_outbox (channel_id, event_type, payload)
+  VALUES (NEW.channel_id, 'MESSAGE_CREATED', jsonb_build_object('channel_message_id', NEW.channel_message_id));
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS engagement_channel_message_outbox ON engagement_channel_messages;
+CREATE TRIGGER engagement_channel_message_outbox
+AFTER INSERT ON engagement_channel_messages
+FOR EACH ROW EXECUTE FUNCTION publish_channel_message_event();
+
+-- API contract: GET/POST /api/channels/{channelId}/messages; subscribe to
+-- /ws/channels or /api/channels/{channelId}/events (SSE). Authenticate first,
+-- check firm access, then active membership or an allowed role before returning
+-- a message, a meeting link, or a cross-post.
+
+-- Secure Email-to-ERP module -------------------------------------------------
+-- Credentials are never kept in these tables. Store a reference to a secret
+-- held in the deployment's secret manager, rotate it there, and audit every
+-- inbound sync and outbound send.
+CREATE TABLE IF NOT EXISTS mail_server_configurations (
+  mail_server_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  configuration_name TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('INBOUND_IMAP','OUTBOUND_SMTP')),
+  hostname TEXT NOT NULL,
+  port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
+  security_mode TEXT NOT NULL CHECK (security_mode IN ('SSL_TLS','STARTTLS')),
+  username_reference TEXT NOT NULL,
+  secret_reference TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  last_tested_at TIMESTAMPTZ,
+  last_successful_sync_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (handling_firm_id, configuration_name, direction)
+);
+
+CREATE TABLE IF NOT EXISTS email_aliases (
+  email_alias_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  alias_address TEXT NOT NULL UNIQUE,
+  route_module TEXT NOT NULL CHECK (route_module IN ('COMMUNICATION_HUB','HELPDESK','TAX_QUEUE','AUDIT_QUEUE')),
+  route_role_name TEXT,
+  default_priority TEXT CHECK (default_priority IN ('LOW','MEDIUM','HIGH','CRITICAL')),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS email_role_access (
+  role_id BIGINT NOT NULL REFERENCES roles(role_id) ON DELETE RESTRICT,
+  can_view_global_inbox BOOLEAN NOT NULL DEFAULT FALSE,
+  can_manage_server_config BOOLEAN NOT NULL DEFAULT FALSE,
+  can_manage_aliases BOOLEAN NOT NULL DEFAULT FALSE,
+  can_send_as_firm BOOLEAN NOT NULL DEFAULT FALSE,
+  can_reply_assigned_client_only BOOLEAN NOT NULL DEFAULT TRUE,
+  PRIMARY KEY (role_id)
+);
+
+CREATE TABLE IF NOT EXISTS email_threads (
+  email_thread_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  client_id BIGINT REFERENCES clients(client_id) ON DELETE RESTRICT,
+  engagement_id BIGINT REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  contact_id BIGINT REFERENCES client_contacts(contact_id) ON DELETE RESTRICT,
+  subject_normalized TEXT NOT NULL,
+  last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS email_messages (
+  email_message_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email_thread_id BIGINT NOT NULL REFERENCES email_threads(email_thread_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  hub_communication_id BIGINT UNIQUE REFERENCES communication_hub(hub_communication_id) ON DELETE RESTRICT,
+  email_alias_id BIGINT REFERENCES email_aliases(email_alias_id) ON DELETE RESTRICT,
+  direction TEXT NOT NULL CHECK (direction IN ('INBOUND','OUTBOUND')),
+  internet_message_id TEXT NOT NULL UNIQUE,
+  in_reply_to_message_id TEXT,
+  references_header TEXT,
+  from_address TEXT NOT NULL,
+  to_addresses TEXT[] NOT NULL,
+  cc_addresses TEXT[] NOT NULL DEFAULT '{}',
+  subject TEXT NOT NULL,
+  body_text TEXT,
+  received_at TIMESTAMPTZ NOT NULL,
+  sent_at TIMESTAMPTZ,
+  delivery_status TEXT NOT NULL DEFAULT 'RECEIVED' CHECK (delivery_status IN ('RECEIVED','QUEUED','SENT','FAILED','BOUNCED')),
+  routed_role_name TEXT,
+  raw_message_storage_reference TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS email_sync_runs (
+  email_sync_run_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  mail_server_id BIGINT NOT NULL REFERENCES mail_server_configurations(mail_server_id) ON DELETE RESTRICT,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  messages_fetched INTEGER NOT NULL DEFAULT 0,
+  messages_routed INTEGER NOT NULL DEFAULT 0,
+  failure_detail TEXT
+);
+
+CREATE INDEX IF NOT EXISTS email_threads_firm_client ON email_threads (handling_firm_id, client_id, last_message_at DESC);
+CREATE INDEX IF NOT EXISTS email_messages_thread_time ON email_messages (email_thread_id, received_at);
+CREATE INDEX IF NOT EXISTS email_messages_alias_queue ON email_messages (email_alias_id, routed_role_name, delivery_status);
+
+CREATE OR REPLACE FUNCTION enforce_email_thread_chain()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE source_firm BIGINT;
+BEGIN
+  IF NEW.engagement_id IS NOT NULL THEN
+    SELECT handling_firm_id INTO source_firm FROM engagements WHERE engagement_id = NEW.engagement_id;
+    IF source_firm IS NULL OR source_firm <> NEW.handling_firm_id THEN
+      RAISE EXCEPTION 'Email thread must inherit the immutable handling firm of its engagement.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS email_thread_firm_guard ON email_threads;
+CREATE TRIGGER email_thread_firm_guard
+BEFORE INSERT OR UPDATE OF handling_firm_id, engagement_id ON email_threads
+FOR EACH ROW EXECUTE FUNCTION enforce_email_thread_chain();
+
+CREATE OR REPLACE FUNCTION enforce_email_message_chain()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE thread_firm BIGINT;
+BEGIN
+  SELECT handling_firm_id INTO thread_firm FROM email_threads WHERE email_thread_id = NEW.email_thread_id;
+  IF thread_firm IS NULL OR thread_firm <> NEW.handling_firm_id THEN
+    RAISE EXCEPTION 'Email message firm must match its email thread.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS email_message_firm_guard ON email_messages;
+CREATE TRIGGER email_message_firm_guard
+BEFORE INSERT OR UPDATE OF email_thread_id, handling_firm_id ON email_messages
+FOR EACH ROW EXECUTE FUNCTION enforce_email_message_chain();
+
+-- Inbound worker contract: use IMAP IDLE where available or poll through a
+-- background worker every 2–5 minutes; de-duplicate on internet_message_id;
+-- create / update EmailThread, CommunicationHub and EmailMessage in one DB
+-- transaction; then route using email_aliases. Outbound replies must set
+-- In-Reply-To and References from the original internet_message_id before SMTP.
