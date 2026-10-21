@@ -3083,3 +3083,300 @@ FOR EACH ROW EXECUTE FUNCTION enforce_email_message_chain();
 -- create / update EmailThread, CommunicationHub and EmailMessage in one DB
 -- transaction; then route using email_aliases. Outbound replies must set
 -- In-Reply-To and References from the original internet_message_id before SMTP.
+
+-- Tax Project Workspace V2 ---------------------------------------------------
+-- An engagement is the commercial container. A tax-period project is the
+-- controlled work file for one reporting period, and it has one or more
+-- obligation records. This prevents VAT, PAYE, WHT and annual income tax from
+-- being treated as one shared status merely because they serve the same client.
+
+CREATE TABLE IF NOT EXISTS client_tax_profiles (
+  client_id BIGINT PRIMARY KEY REFERENCES clients(client_id) ON DELETE RESTRICT,
+  taxpayer_pin TEXT NOT NULL UNIQUE CHECK (taxpayer_pin = upper(trim(taxpayer_pin)) AND taxpayer_pin ~ '^[A-Z][0-9]{9}[A-Z]$'),
+  legal_name_verified TEXT NOT NULL,
+  taxpayer_pin_verified_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  taxpayer_pin_verified_at TIMESTAMPTZ NOT NULL,
+  financial_year_start DATE,
+  financial_year_end DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK ((financial_year_start IS NULL AND financial_year_end IS NULL) OR financial_year_end >= financial_year_start)
+);
+
+CREATE TABLE IF NOT EXISTS tax_period_projects (
+  tax_period_project_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tax_project_id BIGINT NOT NULL REFERENCES tax_projects(tax_project_id) ON DELETE RESTRICT,
+  engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  client_id BIGINT NOT NULL REFERENCES clients(client_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  project_reference TEXT NOT NULL UNIQUE,
+  period_kind TEXT NOT NULL CHECK (period_kind IN ('MONTHLY','ANNUAL')),
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  revision_no SMALLINT NOT NULL DEFAULT 1 CHECK (revision_no > 0),
+  status TEXT NOT NULL DEFAULT 'IDENTITY_REVIEW' CHECK (status IN ('IDENTITY_REVIEW','DATA_COLLECTION','IN_REVIEW','AWAITING_CLIENT_CONFIRMATION','MANAGER_APPROVAL','PARTNER_APPROVAL','READY_FOR_FILING','FILED','AMENDED','CANCELLED')),
+  identity_status TEXT NOT NULL DEFAULT 'PENDING' CHECK (identity_status IN ('PENDING','VERIFIED','REJECTED')),
+  client_identity_locked_at TIMESTAMPTZ,
+  client_confirmation_required BOOLEAN NOT NULL DEFAULT FALSE,
+  client_confirmation_communication_id BIGINT REFERENCES communication_hub(hub_communication_id) ON DELETE RESTRICT,
+  partner_escalation_required BOOLEAN NOT NULL DEFAULT FALSE,
+  amended_from_tax_period_project_id BIGINT REFERENCES tax_period_projects(tax_period_project_id) ON DELETE RESTRICT,
+  amendment_reason TEXT,
+  locked_at TIMESTAMPTZ,
+  created_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (period_end >= period_start),
+  CHECK ((amended_from_tax_period_project_id IS NULL) OR amendment_reason IS NOT NULL),
+  UNIQUE (engagement_id, period_kind, period_start, period_end, revision_no)
+);
+
+CREATE TABLE IF NOT EXISTS tax_project_obligations (
+  tax_project_obligation_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tax_period_project_id BIGINT NOT NULL REFERENCES tax_period_projects(tax_period_project_id) ON DELETE RESTRICT,
+  tax_type TEXT NOT NULL CHECK (tax_type IN ('VAT','PAYE','WHT','INCOME_TAX')),
+  obligation_frequency TEXT NOT NULL CHECK (obligation_frequency IN ('MONTHLY','ANNUAL')),
+  external_due_date DATE,
+  status TEXT NOT NULL DEFAULT 'NOT_STARTED' CHECK (status IN ('NOT_STARTED','DATA_COLLECTION','IN_REVIEW','READY_FOR_FILING','FILED','AMENDED','NOT_APPLICABLE')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (tax_period_project_id, tax_type),
+  CHECK ((tax_type = 'INCOME_TAX' AND obligation_frequency = 'ANNUAL') OR (tax_type <> 'INCOME_TAX' AND obligation_frequency = 'MONTHLY'))
+);
+
+CREATE TABLE IF NOT EXISTS tax_workpaper_versions (
+  tax_workpaper_version_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tax_period_project_id BIGINT NOT NULL REFERENCES tax_period_projects(tax_period_project_id) ON DELETE RESTRICT,
+  vault_document_id BIGINT NOT NULL REFERENCES documents(document_id) ON DELETE RESTRICT,
+  version_no SMALLINT NOT NULL CHECK (version_no > 0),
+  content_hash TEXT NOT NULL,
+  prepared_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  prepared_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  submitted_at TIMESTAMPTZ,
+  is_current BOOLEAN NOT NULL DEFAULT TRUE,
+  UNIQUE (tax_period_project_id, version_no),
+  UNIQUE (tax_period_project_id, content_hash)
+);
+
+CREATE TABLE IF NOT EXISTS tax_upload_batches (
+  tax_upload_batch_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tax_project_obligation_id BIGINT NOT NULL REFERENCES tax_project_obligations(tax_project_obligation_id) ON DELETE RESTRICT,
+  tax_period_project_id BIGINT NOT NULL REFERENCES tax_period_projects(tax_period_project_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  source_type TEXT NOT NULL CHECK (source_type IN ('SALES_ETIMS_Z','PURCHASES_ETIMS','BANK_STATEMENT','PAYROLL_INPUT','WHT_SCHEDULE','TB_SCHEDULES')),
+  period_key DATE NOT NULL,
+  vault_document_id BIGINT REFERENCES documents(document_id) ON DELETE RESTRICT,
+  source_reference TEXT NOT NULL,
+  file_hash TEXT,
+  record_count INTEGER NOT NULL DEFAULT 0 CHECK (record_count >= 0),
+  no_activity BOOLEAN NOT NULL DEFAULT FALSE,
+  status TEXT NOT NULL DEFAULT 'ACCEPTED' CHECK (status IN ('STAGED','ACCEPTED','REJECTED','SUPERSEDED')),
+  supersedes_tax_upload_batch_id BIGINT REFERENCES tax_upload_batches(tax_upload_batch_id) ON DELETE RESTRICT,
+  created_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK ((no_activity AND source_reference <> '') OR (NOT no_activity AND vault_document_id IS NOT NULL AND file_hash IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS tax_upload_batches_active_period_source
+  ON tax_upload_batches (tax_project_obligation_id, source_type, period_key)
+  WHERE status <> 'SUPERSEDED';
+CREATE UNIQUE INDEX IF NOT EXISTS tax_upload_batches_client_file_hash
+  ON tax_upload_batches (handling_firm_id, file_hash)
+  WHERE file_hash IS NOT NULL AND status <> 'SUPERSEDED';
+
+CREATE TABLE IF NOT EXISTS tax_period_project_tasks (
+  tax_period_project_task_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tax_project_obligation_id BIGINT NOT NULL REFERENCES tax_project_obligations(tax_project_obligation_id) ON DELETE RESTRICT,
+  task_name TEXT NOT NULL,
+  assigned_role_name TEXT NOT NULL,
+  due_date DATE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','IN_PROGRESS','COMPLETED','BLOCKED','CANCELLED')),
+  recurrence_source TEXT NOT NULL CHECK (recurrence_source IN ('OBLIGATION_TEMPLATE','MANUAL_EXCEPTION')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS tax_project_approvals (
+  tax_project_approval_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tax_period_project_id BIGINT NOT NULL REFERENCES tax_period_projects(tax_period_project_id) ON DELETE RESTRICT,
+  approval_stage TEXT NOT NULL CHECK (approval_stage IN ('CLIENT_IDENTITY','TECHNICAL_REVIEW','CLIENT_CONFIRMATION','FILING_AUTHORIZATION','PARTNER_ESCALATION','FILING_EVIDENCE','AMENDMENT_OPENED')),
+  status TEXT NOT NULL CHECK (status IN ('PENDING','APPROVED','REJECTED')),
+  requested_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  approved_by_user_id BIGINT REFERENCES users(user_id) ON DELETE RESTRICT,
+  decision_note TEXT,
+  decided_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK ((status = 'PENDING' AND approved_by_user_id IS NULL AND decided_at IS NULL) OR (status IN ('APPROVED','REJECTED') AND approved_by_user_id IS NOT NULL AND decided_at IS NOT NULL)),
+  UNIQUE (tax_period_project_id, approval_stage)
+);
+
+CREATE TABLE IF NOT EXISTS tax_filing_submissions (
+  tax_filing_submission_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tax_project_obligation_id BIGINT NOT NULL UNIQUE REFERENCES tax_project_obligations(tax_project_obligation_id) ON DELETE RESTRICT,
+  tax_period_project_id BIGINT NOT NULL REFERENCES tax_period_projects(tax_period_project_id) ON DELETE RESTRICT,
+  filing_reference TEXT NOT NULL,
+  acknowledgement_document_id BIGINT NOT NULL REFERENCES documents(document_id) ON DELETE RESTRICT,
+  filed_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  filed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  payment_reference TEXT,
+  payment_date DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Tax workpapers are structured data and are therefore Excel workbooks.
+-- Supporting evidence is deliberately separate and restricted to PDF so a
+-- review can distinguish calculations from documentary proof.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS mime_type TEXT;
+
+CREATE TABLE IF NOT EXISTS tax_project_task_evidence (
+  tax_project_task_evidence_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  tax_period_project_task_id BIGINT NOT NULL REFERENCES tax_period_project_tasks(tax_period_project_task_id) ON DELETE RESTRICT,
+  tax_period_project_id BIGINT NOT NULL REFERENCES tax_period_projects(tax_period_project_id) ON DELETE RESTRICT,
+  vault_document_id BIGINT NOT NULL REFERENCES documents(document_id) ON DELETE RESTRICT,
+  content_hash TEXT NOT NULL,
+  uploaded_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (tax_period_project_task_id, content_hash)
+);
+
+CREATE OR REPLACE FUNCTION enforce_tax_project_file_formats()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  original_file_name TEXT;
+  original_mime_type TEXT;
+BEGIN
+  IF TG_TABLE_NAME = 'tax_upload_batches' THEN
+    IF NEW.no_activity THEN RETURN NEW; END IF;
+    SELECT lower(file_name), lower(COALESCE(mime_type, '')) INTO original_file_name, original_mime_type
+    FROM documents WHERE document_id = NEW.vault_document_id;
+    IF original_file_name !~ '\\.(xlsx|xls|xlsm)$' THEN
+      RAISE EXCEPTION 'Tax Project source data and working papers must be Excel workbooks (.xlsx, .xls or .xlsm).';
+    END IF;
+    IF original_mime_type <> '' AND original_mime_type NOT IN ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.ms-excel','application/vnd.ms-excel.sheet.macroenabled.12') THEN
+      RAISE EXCEPTION 'Tax Project workbook MIME type is not an approved Excel format.';
+    END IF;
+  ELSE
+    SELECT lower(file_name), lower(COALESCE(mime_type, '')) INTO original_file_name, original_mime_type
+    FROM documents WHERE document_id = NEW.vault_document_id;
+    IF original_file_name !~ '\\.pdf$' OR (original_mime_type <> '' AND original_mime_type <> 'application/pdf') THEN
+      RAISE EXCEPTION 'Tax task evidence must be a PDF document.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tax_upload_batches_excel_only ON tax_upload_batches;
+CREATE TRIGGER tax_upload_batches_excel_only
+BEFORE INSERT OR UPDATE OF vault_document_id, no_activity ON tax_upload_batches
+FOR EACH ROW EXECUTE FUNCTION enforce_tax_project_file_formats();
+
+DROP TRIGGER IF EXISTS tax_task_evidence_pdf_only ON tax_project_task_evidence;
+CREATE TRIGGER tax_task_evidence_pdf_only
+BEFORE INSERT OR UPDATE OF vault_document_id ON tax_project_task_evidence
+FOR EACH ROW EXECUTE FUNCTION enforce_tax_project_file_formats();
+
+CREATE OR REPLACE FUNCTION enforce_tax_period_project_chain()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE parent_engagement_id BIGINT;
+DECLARE expected_client_id BIGINT;
+DECLARE expected_firm_id BIGINT;
+BEGIN
+  SELECT project.engagement_id INTO parent_engagement_id FROM tax_projects project WHERE project.tax_project_id = NEW.tax_project_id;
+  SELECT engagement.client_id, engagement.handling_firm_id INTO expected_client_id, expected_firm_id FROM engagements engagement WHERE engagement.engagement_id = NEW.engagement_id;
+  IF parent_engagement_id IS NULL OR parent_engagement_id <> NEW.engagement_id THEN
+    RAISE EXCEPTION 'Tax period project must belong to the engagement of its Tax Project container.';
+  END IF;
+  IF expected_client_id IS NULL OR expected_client_id <> NEW.client_id OR expected_firm_id <> NEW.handling_firm_id THEN
+    RAISE EXCEPTION 'Tax period project client and handling firm must match the immutable engagement chain.';
+  END IF;
+  IF NOT client_kyc_can_activate(NEW.client_id) THEN
+    RAISE EXCEPTION 'KYC Incomplete: Tax Project cannot be opened until client due diligence is complete.';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.client_identity_locked_at IS NOT NULL AND (NEW.engagement_id IS DISTINCT FROM OLD.engagement_id OR NEW.client_id IS DISTINCT FROM OLD.client_id OR NEW.handling_firm_id IS DISTINCT FROM OLD.handling_firm_id OR NEW.period_start IS DISTINCT FROM OLD.period_start OR NEW.period_end IS DISTINCT FROM OLD.period_end) THEN
+    RAISE EXCEPTION 'Client, firm and reporting period are locked after tax identity approval. Create a controlled amendment instead.';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.locked_at IS NOT NULL AND NOT (NEW.status = 'AMENDED' AND NEW.client_id = OLD.client_id AND NEW.engagement_id = OLD.engagement_id AND NEW.handling_firm_id = OLD.handling_firm_id AND NEW.period_start = OLD.period_start AND NEW.period_end = OLD.period_end) THEN
+    RAISE EXCEPTION 'Filed Tax Projects are locked. Create a linked amendment rather than changing the original.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tax_period_project_chain_guard ON tax_period_projects;
+CREATE TRIGGER tax_period_project_chain_guard
+BEFORE INSERT OR UPDATE ON tax_period_projects
+FOR EACH ROW EXECUTE FUNCTION enforce_tax_period_project_chain();
+
+CREATE OR REPLACE FUNCTION enforce_tax_upload_batch_chain()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE project_firm_id BIGINT;
+DECLARE project_locked_at TIMESTAMPTZ;
+DECLARE obligation_project_id BIGINT;
+BEGIN
+  SELECT handling_firm_id, locked_at INTO project_firm_id, project_locked_at FROM tax_period_projects WHERE tax_period_project_id = NEW.tax_period_project_id;
+  SELECT tax_period_project_id INTO obligation_project_id FROM tax_project_obligations WHERE tax_project_obligation_id = NEW.tax_project_obligation_id;
+  IF project_firm_id IS NULL OR project_firm_id <> NEW.handling_firm_id OR obligation_project_id IS NULL OR obligation_project_id <> NEW.tax_period_project_id THEN
+    RAISE EXCEPTION 'Tax upload batch must inherit its Tax Project firm and obligation.';
+  END IF;
+  IF project_locked_at IS NOT NULL THEN RAISE EXCEPTION 'The tax period is locked; create a controlled amendment before adding source data.'; END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tax_upload_batches_chain_guard ON tax_upload_batches;
+CREATE TRIGGER tax_upload_batches_chain_guard
+BEFORE INSERT OR UPDATE ON tax_upload_batches
+FOR EACH ROW EXECUTE FUNCTION enforce_tax_upload_batch_chain();
+
+CREATE OR REPLACE FUNCTION enforce_tax_project_approval_segregation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE project_creator BIGINT;
+BEGIN
+  SELECT created_by_user_id INTO project_creator FROM tax_period_projects WHERE tax_period_project_id = NEW.tax_period_project_id;
+  IF NEW.approved_by_user_id IS NOT NULL AND (NEW.approved_by_user_id = NEW.requested_by_user_id OR NEW.approved_by_user_id = project_creator) THEN
+    RAISE EXCEPTION 'Tax Project approval requires an independent approver.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tax_project_approval_segregation_guard ON tax_project_approvals;
+CREATE TRIGGER tax_project_approval_segregation_guard
+BEFORE INSERT OR UPDATE ON tax_project_approvals
+FOR EACH ROW EXECUTE FUNCTION enforce_tax_project_approval_segregation();
+
+ALTER TABLE client_tax_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tax_period_projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tax_project_obligations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tax_workpaper_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tax_upload_batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tax_period_project_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tax_project_approvals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tax_filing_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tax_project_task_evidence ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY client_tax_profiles_by_client_access ON client_tax_profiles FOR ALL
+USING (EXISTS (SELECT 1 FROM clients client WHERE client.client_id = client_tax_profiles.client_id AND app_has_branch_access(client.default_firm_id, client.branch_location)))
+WITH CHECK (EXISTS (SELECT 1 FROM clients client WHERE client.client_id = client_tax_profiles.client_id AND app_has_branch_access(client.default_firm_id, client.branch_location)));
+CREATE POLICY tax_period_projects_by_firm_access ON tax_period_projects FOR ALL
+USING (app_has_firm_access(handling_firm_id)) WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY tax_project_obligations_by_firm_access ON tax_project_obligations FOR ALL
+USING (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_project_obligations.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)))
+WITH CHECK (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_project_obligations.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)));
+CREATE POLICY tax_workpaper_versions_by_firm_access ON tax_workpaper_versions FOR ALL
+USING (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_workpaper_versions.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)))
+WITH CHECK (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_workpaper_versions.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)));
+CREATE POLICY tax_upload_batches_by_firm_access ON tax_upload_batches FOR ALL
+USING (app_has_firm_access(handling_firm_id)) WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY tax_period_project_tasks_by_firm_access ON tax_period_project_tasks FOR ALL
+USING (EXISTS (SELECT 1 FROM tax_project_obligations obligation JOIN tax_period_projects project ON project.tax_period_project_id = obligation.tax_period_project_id WHERE obligation.tax_project_obligation_id = tax_period_project_tasks.tax_project_obligation_id AND app_has_firm_access(project.handling_firm_id)))
+WITH CHECK (EXISTS (SELECT 1 FROM tax_project_obligations obligation JOIN tax_period_projects project ON project.tax_period_project_id = obligation.tax_period_project_id WHERE obligation.tax_project_obligation_id = tax_period_project_tasks.tax_project_obligation_id AND app_has_firm_access(project.handling_firm_id)));
+CREATE POLICY tax_project_approvals_by_firm_access ON tax_project_approvals FOR ALL
+USING (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_project_approvals.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)))
+WITH CHECK (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_project_approvals.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)));
+CREATE POLICY tax_filing_submissions_by_firm_access ON tax_filing_submissions FOR ALL
+USING (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_filing_submissions.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)))
+WITH CHECK (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_filing_submissions.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)));
+CREATE POLICY tax_project_task_evidence_by_firm_access ON tax_project_task_evidence FOR ALL
+USING (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_project_task_evidence.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)))
+WITH CHECK (EXISTS (SELECT 1 FROM tax_period_projects project WHERE project.tax_period_project_id = tax_project_task_evidence.tax_period_project_id AND app_has_firm_access(project.handling_firm_id)));
