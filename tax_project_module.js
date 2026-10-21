@@ -9,6 +9,7 @@
   const storage = {
     projects: "pcl-crm-tax-period-projects-v2",
     batches: "pcl-crm-tax-import-batches-v2",
+    importRows: "pcl-crm-tax-import-rows-v2",
     tasks: "pcl-crm-tax-project-tasks-v2",
     filings: "pcl-crm-tax-filing-submissions-v2",
     taskEvidence: "pcl-crm-tax-task-evidence-v2"
@@ -48,6 +49,7 @@
 
   let projects = loadRecords(storage.projects);
   let batches = loadRecords(storage.batches);
+  let importRows = loadRecords(storage.importRows);
   let tasks = loadRecords(storage.tasks);
   let filings = loadRecords(storage.filings);
   let taskEvidence = loadRecords(storage.taskEvidence);
@@ -68,7 +70,7 @@
   const projectFilings = project => filings.filter(filing => filing.projectId === project.id);
   const isLocked = project => Boolean(project.lockedAt || ["Filed", "Amended"].includes(project.status));
   const approved = (project, stage) => project.approvals?.some(item => item.stage === stage && item.status === "Approved");
-  const isExcelWorkbook = file => Boolean(file?.name && /\.(xlsx|xls|xlsm)$/i.test(file.name));
+  const isExcelWorkbook = file => Boolean(file?.name && /\.(xlsx|xlsm)$/i.test(file.name));
   const isPdfEvidence = file => Boolean(file?.name && /\.pdf$/i.test(file.name));
 
   async function hashUpload(file) {
@@ -76,9 +78,110 @@
     return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
   }
 
+  async function hashText(value) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  // Lightweight XLSX/XLSM reader for the browser preview. It reads values only,
+  // never formulas or macros, and stores only a row fingerprint in local storage.
+  // The production importer must repeat this in a server-side transaction.
+  function zipEntries(bytes) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let eocd = -1;
+    for (let index = bytes.length - 22; index >= Math.max(0, bytes.length - 65557); index -= 1) {
+      if (view.getUint32(index, true) === 0x06054b50) { eocd = index; break; }
+    }
+    if (eocd < 0) throw new Error("This workbook is not a valid XLSX/XLSM ZIP file.");
+    const total = view.getUint16(eocd + 10, true);
+    let cursor = view.getUint32(eocd + 16, true);
+    const entries = new Map();
+    for (let count = 0; count < total; count += 1) {
+      if (view.getUint32(cursor, true) !== 0x02014b50) throw new Error("The workbook ZIP directory is invalid.");
+      const method = view.getUint16(cursor + 10, true);
+      const compressedSize = view.getUint32(cursor + 20, true);
+      const nameLength = view.getUint16(cursor + 28, true);
+      const extraLength = view.getUint16(cursor + 30, true);
+      const commentLength = view.getUint16(cursor + 32, true);
+      const localOffset = view.getUint32(cursor + 42, true);
+      const name = new TextDecoder().decode(bytes.slice(cursor + 46, cursor + 46 + nameLength));
+      entries.set(name, {method, compressedSize, localOffset});
+      cursor += 46 + nameLength + extraLength + commentLength;
+    }
+    return {bytes, entries};
+  }
+
+  async function unzipText(archive, name) {
+    const entry = archive.entries.get(name);
+    if (!entry) return "";
+    const view = new DataView(archive.bytes.buffer, archive.bytes.byteOffset, archive.bytes.byteLength);
+    const start = entry.localOffset;
+    if (view.getUint32(start, true) !== 0x04034b50) throw new Error("The workbook contains an invalid file entry.");
+    const nameLength = view.getUint16(start + 26, true);
+    const extraLength = view.getUint16(start + 28, true);
+    const payload = archive.bytes.slice(start + 30 + nameLength + extraLength, start + 30 + nameLength + extraLength + entry.compressedSize);
+    let output;
+    if (entry.method === 0) output = payload;
+    else if (entry.method === 8 && "DecompressionStream" in window) {
+      const stream = new Blob([payload]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      output = new Uint8Array(await new Response(stream).arrayBuffer());
+    } else throw new Error("This browser cannot read the compressed XLSX/XLSM workbook. Use a current browser or upload through the server importer.");
+    return new TextDecoder().decode(output);
+  }
+
+  const xmlDocument = text => new DOMParser().parseFromString(text, "application/xml");
+  const normaliseCell = value => String(value ?? "").replace(/\s+/g, " ").trim();
+  const headerKey = value => normaliseCell(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const cellColumnIndex = reference => {
+    const letters = String(reference || "").match(/[A-Z]+/i)?.[0]?.toUpperCase() || "A";
+    return [...letters].reduce((result, letter) => (result * 26) + letter.charCodeAt(0) - 64, 0) - 1;
+  };
+
+  async function readWorkbookRows(file) {
+    const archive = zipEntries(new Uint8Array(await file.arrayBuffer()));
+    const workbookXml = await unzipText(archive, "xl/workbook.xml");
+    const relationshipXml = await unzipText(archive, "xl/_rels/workbook.xml.rels");
+    if (!workbookXml || !relationshipXml) throw new Error("The workbook does not contain an Excel worksheet structure.");
+    const relationshipMap = new Map([...xmlDocument(relationshipXml).querySelectorAll("Relationship")].map(node => [node.getAttribute("Id"), node.getAttribute("Target")]));
+    const firstSheet = [...xmlDocument(workbookXml).querySelectorAll("sheet")].find(node => node.getAttribute("state") !== "hidden" && node.getAttribute("state") !== "veryHidden");
+    const target = relationshipMap.get(firstSheet?.getAttribute("r:id"));
+    const sheetPath = target ? `xl/${target.replace(/^\//, "").replace(/^xl\//, "")}` : [...archive.entries.keys()].find(name => /^xl\/worksheets\/sheet\d+\.xml$/i.test(name));
+    if (!sheetPath) throw new Error("No readable worksheet was found in the uploaded workbook.");
+    const sharedXml = await unzipText(archive, "xl/sharedStrings.xml");
+    const sharedValues = sharedXml ? [...xmlDocument(sharedXml).querySelectorAll("si")].map(node => normaliseCell([...node.querySelectorAll("t")].map(text => text.textContent).join(""))) : [];
+    const sheetXml = await unzipText(archive, sheetPath);
+    const sheetDocument = xmlDocument(sheetXml);
+    const sheetRows = [...sheetDocument.querySelectorAll("sheetData > row")].map(row => {
+      const values = [];
+      [...row.querySelectorAll("c")].forEach(cell => {
+        const type = cell.getAttribute("t");
+        const raw = cell.querySelector("v")?.textContent || "";
+        const inline = cell.querySelector("is") ? [...cell.querySelectorAll("is t")].map(node => node.textContent).join("") : "";
+        const value = type === "s" ? sharedValues[Number(raw)] : type === "inlineStr" ? inline : raw;
+        values[cellColumnIndex(cell.getAttribute("r"))] = normaliseCell(value);
+      });
+      return {rowNumber: Number(row.getAttribute("r") || 0), values};
+    }).filter(row => row.values.some(Boolean));
+    if (sheetRows.length < 2) throw new Error("The first visible worksheet needs a header row and at least one data row.");
+    const [headerRow, ...dataRows] = sheetRows;
+    const headers = headerRow.values.map((value, index) => normaliseCell(value) || `Column ${index + 1}`);
+    const usableRows = dataRows.filter(row => row.values.some(Boolean)).map(row => ({rowNumber: row.rowNumber, values: headers.map((_, index) => normaliseCell(row.values[index]))}));
+    if (!usableRows.length) throw new Error("No data rows were found below the worksheet header.");
+    return {sheetName: firstSheet?.getAttribute("name") || sheetPath.split("/").pop(), headers, rows: usableRows};
+  }
+
+  async function fingerprintImportedRow(headers, values) {
+    const preferred = ["transactionid", "referencenumber", "reference", "refnum", "instrumentnum", "invoicenumber", "documentnumber", "vouchernumber", "receiptno"];
+    const indexed = headers.map((header, index) => ({key: headerKey(header), value: normaliseCell(values[index])}));
+    const identity = preferred.map(key => indexed.find(item => item.key === key)?.value).filter(Boolean);
+    const body = identity.length ? identity : indexed.filter(item => item.value).map(item => `${item.key}:${item.value}`);
+    return hashText(body.join("|"));
+  }
+
   function persist() {
     localStorage.setItem(storage.projects, JSON.stringify(projects));
     localStorage.setItem(storage.batches, JSON.stringify(batches));
+    localStorage.setItem(storage.importRows, JSON.stringify(importRows));
     localStorage.setItem(storage.tasks, JSON.stringify(tasks));
     localStorage.setItem(storage.filings, JSON.stringify(filings));
     localStorage.setItem(storage.taskEvidence, JSON.stringify(taskEvidence));
@@ -299,15 +402,27 @@
     if (!obligation || !obligations[obligation.code].expectedSources.includes(sourceType)) throw new Error("Choose a source permitted for the selected obligation.");
     if (!periodKey) throw new Error("Select the batch week or reporting-period date.");
     if (noActivity && !fileReference) throw new Error("Record the evidence reference or reason supporting a No Activity declaration.");
-    if (!noActivity && !isExcelWorkbook(workbook)) throw new Error("Tax source data and working papers must be uploaded as Excel (.xlsx, .xls or .xlsm). Put client evidence and KRA receipts in the PDF evidence field instead.");
+    if (!noActivity && !isExcelWorkbook(workbook)) throw new Error("For row-level duplicate checking, source workbooks must be Excel .xlsx or .xlsm files.");
+    let importSummary = {sheetName: "No activity", totalRows: 0, acceptedRows: 0, duplicateRows: 0, rows: []};
     if (!noActivity) {
       fileReference = fileReference || workbook.name;
       fileHash = fileHash || await hashUpload(workbook);
+      const workbookRows = await readWorkbookRows(workbook);
+      const seenFingerprints = new Set(importRows.filter(row => row.firmId === project.firmId && row.clientId === project.clientId && row.sourceType === sourceType).map(row => row.rowFingerprint));
+      const seenInWorkbook = new Set();
+      const acceptedRows = [], duplicates = [];
+      for (const row of workbookRows.rows) {
+        const rowFingerprint = await fingerprintImportedRow(workbookRows.headers, row.values);
+        if (seenFingerprints.has(rowFingerprint) || seenInWorkbook.has(rowFingerprint)) duplicates.push({...row, rowFingerprint});
+        else {seenInWorkbook.add(rowFingerprint); acceptedRows.push({...row, rowFingerprint});}
+      }
+      if (!acceptedRows.length) throw new Error(`No new items were uploaded. All ${duplicates.length} row(s) already exist for this client and source.`);
+      importSummary = {sheetName: workbookRows.sheetName, totalRows: workbookRows.rows.length, acceptedRows: acceptedRows.length, duplicateRows: duplicates.length, rows: acceptedRows};
     }
-    if (fileHash && batches.some(batch => batch.firmId === project.firmId && batch.clientId === project.clientId && batch.fileHash === fileHash && batch.status !== "Superseded")) throw new Error("This file hash was already accepted for this client. Use a controlled superseding batch instead of importing it again.");
-    if (batches.some(batch => batch.projectId === project.id && batch.obligationCode === obligation.code && batch.sourceType === sourceType && batch.periodKey === periodKey && batch.status !== "Superseded")) throw new Error("A batch already exists for this obligation, source and week/period. Do not append a duplicate.");
-    const batch = {id: crypto.randomUUID(), projectId: project.id, engagementId: project.engagementId, clientId: project.clientId, firmId: project.firmId, obligationCode: obligation.code, sourceType, periodKey, fileReference, fileHash, recordCount: Number(data.get("recordCount") || 0), noActivity, status: "Accepted", createdByRole: currentRole(), createdAt: new Date().toISOString()};
+    if (noActivity && batches.some(batch => batch.projectId === project.id && batch.obligationCode === obligation.code && batch.sourceType === sourceType && batch.periodKey === periodKey && batch.noActivity && batch.status !== "Superseded")) throw new Error("A No Activity declaration already exists for this obligation, source and period.");
+    const batch = {id: crypto.randomUUID(), projectId: project.id, engagementId: project.engagementId, clientId: project.clientId, firmId: project.firmId, obligationCode: obligation.code, sourceType, periodKey, fileReference, fileHash, worksheetName: importSummary.sheetName, sourceRowCount: importSummary.totalRows, recordCount: importSummary.acceptedRows, duplicateRowCount: importSummary.duplicateRows, noActivity, status: "Accepted", createdByRole: currentRole(), createdAt: new Date().toISOString()};
     batches.push(batch);
+    importRows.push(...importSummary.rows.map(row => ({id: crypto.randomUUID(), batchId: batch.id, projectId: project.id, clientId: project.clientId, firmId: project.firmId, sourceType, sourceRowNumber: row.rowNumber, rowFingerprint: row.rowFingerprint, createdAt: new Date().toISOString()})));
     persist();
     return batch;
   }
@@ -464,7 +579,8 @@
     if (!target) return;
     target.innerHTML = batches.length ? batches.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(batch => {
       const project = projectById(batch.projectId);
-      return `<tr><td><b>${escapeHtml(project?.clientName || "Archived client")}</b><br><span class="hint">${escapeHtml(project?.projectReference || "—")}</span></td><td>${escapeHtml(obligations[batch.obligationCode]?.label || batch.obligationCode)}<br><span class="hint">${escapeHtml(sourceLabel(batch.sourceType))}</span></td><td>${escapeHtml(batch.periodKey)}</td><td>${batch.noActivity ? "No activity declaration" : escapeHtml(batch.fileReference)}<br><span class="hint">${batch.fileHash ? escapeHtml(batch.fileHash.slice(0, 20)) : "—"}</span></td><td><span class="status-pill">${escapeHtml(batch.status)}</span></td></tr>`;
+      const counts = batch.noActivity ? "No activity declaration" : `${batch.recordCount || 0} new item(s), ${batch.duplicateRowCount || 0} duplicate(s) skipped, ${batch.sourceRowCount || 0} row(s) read`;
+      return `<tr><td><b>${escapeHtml(project?.clientName || "Archived client")}</b><br><span class="hint">${escapeHtml(project?.projectReference || "—")}</span></td><td>${escapeHtml(obligations[batch.obligationCode]?.label || batch.obligationCode)}<br><span class="hint">${escapeHtml(sourceLabel(batch.sourceType))}</span></td><td>${escapeHtml(batch.periodKey)}</td><td>${batch.noActivity ? "No activity declaration" : escapeHtml(batch.fileReference)}<br><span class="hint">${escapeHtml(batch.worksheetName || "Workbook")} · ${escapeHtml(counts)}</span></td><td><span class="status-pill">${escapeHtml(batch.status)}</span></td></tr>`;
     }).join("") : '<tr><td colspan="5" class="hint">No controlled source batches recorded.</td></tr>';
   }
 
@@ -618,7 +734,7 @@
       <div class="notice" id="taxProjectNotice" role="status"></div>
       <div class="metric-grid"><div class="card metric-card"><b id="taxProjectActive">0</b><span>Open Tax Projects</span></div><div class="card metric-card"><b id="taxProjectReview">0</b><span>Awaiting approval</span></div><div class="card metric-card"><b id="taxProjectReady">0</b><span>Ready for filing</span></div><div class="card metric-card"><b id="taxProjectLocked">0</b><span>Filed and locked</span></div></div>
       <div class="operations-layout"><form id="taxProjectForm" class="card form-card"><div class="section-heading"><h3>Open Tax Project</h3><span class="hint">Client and firm are inherited, never typed independently</span></div><div class="grid"><label class="full">Verified Tax Compliance engagement <span>*</span><select required name="engagementId" id="taxProjectEngagement"></select></label><div class="full tax-project-identity" id="taxProjectIdentityPreview"></div><label>Period type <select name="periodKind" id="taxProjectPeriodKind"><option value="Monthly">Monthly VAT / PAYE / WHT</option><option value="Annual">Annual Income Tax</option></select></label><label data-tax-period-input="Monthly">Reporting month <span>*</span><input required type="month" name="periodMonth" id="taxProjectMonth" /></label><label data-tax-period-input="Annual" hidden>Financial year start <span>*</span><input type="date" name="annualPeriodStart" id="taxProjectAnnualStart" /></label><label data-tax-period-input="Annual" hidden>Financial year end <span>*</span><input type="date" name="annualPeriodEnd" id="taxProjectAnnualEnd" /></label><label>Verified KRA PIN <span>*</span><input required name="taxpayerPin" id="taxProjectTaxpayerPin" placeholder="P000000000A" /></label><label>Confirm legal name exactly <span>*</span><input required name="confirmedLegalName" id="taxProjectConfirmName" placeholder="Legal registered name" /></label><div class="full"><label>Obligations in this period <span>*</span></label><div class="choice-list" id="taxProjectObligations"></div></div><label class="checkbox-line full"><input type="checkbox" name="requiresClientConfirmation" />Client confirmation required before filing</label><label class="checkbox-line full"><input type="checkbox" name="requiresPartnerApproval" />High-risk / PEP escalation requires Engagement Partner approval</label></div><div class="actions"><button class="btn primary" type="submit">Create controlled Tax Project</button></div></form><div class="card side-card"><div class="section-heading"><h3>Approval policy</h3><span class="hint">No self-approval</span></div><ol class="tax-project-policy"><li>Tax Assistant creates and collects controlled batches.</li><li>Tax Manager verifies the client, KRA PIN, engagement and obligation scope.</li><li>Tax Supervisor approves technical review.</li><li>Tax Manager authorises filing; Partner approval is added for high-risk work.</li><li>Authorized Tax Filer records iTax acknowledgement and locked receipt.</li></ol><p class="hint">The role switch is a browser-preview demonstration. Production uses authenticated position-based permissions.</p></div></div>
-      <div class="operations-layout"><form id="taxBatchForm" class="card form-card"><div class="section-heading"><h3>Upload source workbook</h3><span class="hint">Excel only; staging does not post to the TB or return</span></div><div class="grid"><label class="full">Tax Project <span>*</span><select required name="projectId" id="taxBatchProject"></select></label><label>Obligation <span>*</span><select required name="obligationCode" id="taxBatchObligation"></select></label><label>Source <span>*</span><select required name="sourceType" id="taxBatchSource"></select></label><label>Week start / period key <span>*</span><input required type="date" name="batchPeriodKey" id="taxBatchPeriodKey" /></label><label>Records uploaded<input min="0" type="number" name="recordCount" value="0" /></label><label class="full">Excel working paper / schedule <span>*</span><input type="file" name="workingPaperFile" accept=".xlsx,.xls,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12" /></label><label class="full">Vault reference <input name="fileReference" placeholder="Optional controlled Vault reference; filename is recorded automatically" /></label><label class="full">File hash <input name="fileHash" placeholder="Optional; calculated automatically if blank" /></label><label class="checkbox-line full"><input type="checkbox" name="noActivity" />No activity for this source/week — record the controlled reason above; no workbook is required</label></div><div class="actions"><button class="btn primary" type="submit">Accept Excel source workbook</button></div></form><div class="card side-card"><div class="section-heading"><h3>Format rules</h3><span class="hint">Separate workpapers from evidence</span></div><ul class="tax-project-policy"><li>Source schedules, calculations and tax working papers: <b>Excel only</b> (.xlsx, .xls, .xlsm).</li><li>Client support, KRA acknowledgements, payment slips and other documentary evidence: <b>PDF only</b>.</li><li>VAT requires weekly sales/eTIMS, purchases/eTIMS and bank workbooks.</li><li>File hash, client, source and period prevent repeat intake.</li></ul></div></div>
+      <div class="operations-layout"><form id="taxBatchForm" class="card form-card"><div class="section-heading"><h3>Upload source workbook</h3><span class="hint">Reads rows, accepts new items only, staging never posts to the TB or return</span></div><div class="grid"><label class="full">Tax Project <span>*</span><select required name="projectId" id="taxBatchProject"></select></label><label>Obligation <span>*</span><select required name="obligationCode" id="taxBatchObligation"></select></label><label>Source <span>*</span><select required name="sourceType" id="taxBatchSource"></select></label><label>Week start / period key <span>*</span><input required type="date" name="batchPeriodKey" id="taxBatchPeriodKey" /></label><label class="full">Excel working paper / schedule <span>*</span><input type="file" name="workingPaperFile" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12" /></label><label class="full">Vault reference <input name="fileReference" placeholder="Optional controlled Vault reference; filename is recorded automatically" /></label><label class="full">File hash <input name="fileHash" placeholder="Optional; calculated automatically if blank" /></label><label class="checkbox-line full"><input type="checkbox" name="noActivity" />No activity for this source/week — record the controlled reason above; no workbook is required</label></div><div class="actions"><button class="btn primary" type="submit">Read workbook and accept new items</button></div></form><div class="card side-card"><div class="section-heading"><h3>Row-level import rules</h3><span class="hint">Duplicate rows are skipped automatically</span></div><ul class="tax-project-policy"><li>Upload an <b>.xlsx</b> or <b>.xlsm</b> workbook with a header row. Legacy <b>.xls</b> must first be saved as .xlsx.</li><li>The importer uses transaction/reference fields where available, otherwise the normalised row values, to identify duplicates.</li><li>Only new rows are accepted. The result shows total rows read, new rows and duplicates skipped.</li><li>Client support and other documentary evidence remains PDF-only and separate from the workbook import.</li></ul></div></div>
       <div class="operations-layout"><form id="taxTaskEvidenceForm" class="card form-card"><div class="section-heading"><h3>Attach task evidence</h3><span class="hint">PDF evidence is linked to a specific tax task</span></div><div class="grid"><label class="full">Tax Project <span>*</span><select required name="projectId" id="taxTaskEvidenceProject"></select></label><label class="full">Task <span>*</span><select required name="taskId" id="taxTaskEvidenceTask"></select></label><label class="full">PDF documentary evidence <span>*</span><input required type="file" name="taskEvidenceFile" accept=".pdf,application/pdf" /></label></div><div class="actions"><button class="btn primary" type="submit">Attach PDF evidence</button></div></form><div class="card side-card"><div class="section-heading"><h3>Evidence controls</h3><span class="hint">Audit-ready, task-specific records</span></div><ul class="tax-project-policy"><li>The assigned position or Tax Manager attaches evidence.</li><li>Each PDF is SHA-256 hashed before it is registered.</li><li>Filed project evidence stays locked; corrections use an amendment.</li></ul></div></div>
       <div class="section"><div class="section-heading"><h3>Tax Project register</h3><span class="hint">The client identity, firm and period remain visible at every approval stage</span></div><div id="taxProjectRegister" class="tax-project-register"></div></div>
       <div class="section"><div class="section-heading"><h3>Controlled source batches</h3><span class="hint">Accepted batches feed the working-paper review; they are not live postings</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Client / project</th><th>Obligation / source</th><th>Week / period</th><th>Evidence</th><th>Status</th></tr></thead><tbody id="taxProjectBatchTable"></tbody></table></div></div>
@@ -634,7 +750,7 @@
     document.getElementById("taxBatchObligation").addEventListener("change", refreshBatchSources);
     document.getElementById("taxTaskEvidenceProject").addEventListener("change", refreshTaskEvidenceForm);
     document.getElementById("taxProjectForm").addEventListener("submit", event => {event.preventDefault();try {const project = createProject(new FormData(event.currentTarget));event.currentTarget.reset();document.getElementById("taxProjectMonth").value = isoToday().slice(0, 7);render();notice(`${project.projectReference} created. It is awaiting Tax Manager identity approval.`);} catch (error) {notice(error.message, true);}});
-    document.getElementById("taxBatchForm").addEventListener("submit", async event => {event.preventDefault();try {await recordBatch(new FormData(event.currentTarget));event.currentTarget.reset();render();notice("Excel source workbook accepted into staging.");} catch (error) {notice(error.message, true);}});
+    document.getElementById("taxBatchForm").addEventListener("submit", async event => {event.preventDefault();try {const batch = await recordBatch(new FormData(event.currentTarget));event.currentTarget.reset();render();notice(batch.noActivity ? "No Activity declaration accepted." : `${batch.recordCount} new item(s) uploaded. ${batch.duplicateRowCount} duplicate row(s) skipped from ${batch.sourceRowCount} row(s) read.`);} catch (error) {notice(error.message, true);}});
     document.getElementById("taxTaskEvidenceForm").addEventListener("submit", async event => {event.preventDefault();try {await recordTaskEvidence(new FormData(event.currentTarget));event.currentTarget.reset();render();notice("PDF task evidence attached and hashed.");} catch (error) {notice(error.message, true);}});
     document.getElementById("taxProjectRegister").addEventListener("click", async event => {const button = event.target.closest("button[data-tax-project-action]"); if (button) await handleAction(button);});
     document.head.insertAdjacentHTML("beforeend", `<style>
