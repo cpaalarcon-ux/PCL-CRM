@@ -1172,6 +1172,119 @@ FROM audit_files af
 JOIN engagements e ON e.engagement_id = af.engagement_id
 LEFT JOIN audit_trial_balances tb ON tb.audit_file_id = af.audit_file_id;
 
+-- Engagement channels and self-hosted virtual meetings.
+-- These records deliberately keep only a random room slug. The Jitsi JWT / signed
+-- participant URL is minted by the API at join time and is never persisted here.
+CREATE TABLE engagement_channels (
+  channel_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  parent_channel_id BIGINT REFERENCES engagement_channels(channel_id) ON DELETE RESTRICT,
+  channel_name TEXT NOT NULL,
+  channel_type TEXT NOT NULL CHECK (channel_type IN ('ENGAGEMENT','FIELDWORK_TEAM','MANAGER_REVIEW','PARTNER_REVIEW','TAX_COMPLIANCE')),
+  visibility TEXT NOT NULL DEFAULT 'PRIVATE' CHECK (visibility IN ('PRIVATE','ENGAGEMENT_TEAM')),
+  created_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  archived_at TIMESTAMPTZ,
+  UNIQUE (engagement_id, channel_name)
+);
+
+CREATE TABLE engagement_channel_members (
+  channel_id BIGINT NOT NULL REFERENCES engagement_channels(channel_id) ON DELETE RESTRICT,
+  user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  membership_role TEXT NOT NULL DEFAULT 'MEMBER' CHECK (membership_role IN ('OWNER','HOST','MEMBER','READ_ONLY')),
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  removed_at TIMESTAMPTZ,
+  PRIMARY KEY (channel_id, user_id)
+);
+
+CREATE TABLE channel_appointments (
+  appointment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  channel_id BIGINT NOT NULL REFERENCES engagement_channels(channel_id) ON DELETE RESTRICT,
+  engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  subject TEXT NOT NULL,
+  starts_at TIMESTAMPTZ NOT NULL,
+  ends_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED','LIVE','COMPLETED','CANCELLED')),
+  attendee_note TEXT,
+  created_by_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (ends_at > starts_at)
+);
+
+CREATE TABLE meeting_sessions (
+  meeting_session_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  channel_id BIGINT NOT NULL REFERENCES engagement_channels(channel_id) ON DELETE RESTRICT,
+  appointment_id BIGINT UNIQUE REFERENCES channel_appointments(appointment_id) ON DELETE RESTRICT,
+  engagement_id BIGINT NOT NULL REFERENCES engagements(engagement_id) ON DELETE RESTRICT,
+  handling_firm_id BIGINT NOT NULL REFERENCES firms(firm_id) ON DELETE RESTRICT,
+  meeting_provider TEXT NOT NULL DEFAULT 'JITSI_SELF_HOSTED' CHECK (meeting_provider IN ('JITSI_SELF_HOSTED','GOOGLE_MEET','ZOOM','MICROSOFT_TEAMS','PLUG_N_MEET')),
+  room_slug TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED','LIVE','ENDED','CANCELLED')),
+  host_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  scheduled_start_at TIMESTAMPTZ NOT NULL,
+  scheduled_end_at TIMESTAMPTZ NOT NULL,
+  started_at TIMESTAMPTZ,
+  ended_at TIMESTAMPTZ,
+  minutes_hub_communication_id BIGINT UNIQUE REFERENCES communication_hub(hub_communication_id) ON DELETE RESTRICT,
+  recording_document_id BIGINT REFERENCES documents(document_id) ON DELETE RESTRICT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (scheduled_end_at > scheduled_start_at),
+  CHECK ((status <> 'ENDED') OR ended_at IS NOT NULL)
+);
+
+CREATE TABLE engagement_channel_messages (
+  channel_message_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  channel_id BIGINT NOT NULL REFERENCES engagement_channels(channel_id) ON DELETE RESTRICT,
+  meeting_session_id BIGINT REFERENCES meeting_sessions(meeting_session_id) ON DELETE SET NULL,
+  author_user_id BIGINT REFERENCES users(user_id) ON DELETE SET NULL,
+  body TEXT NOT NULL,
+  message_type TEXT NOT NULL DEFAULT 'MESSAGE' CHECK (message_type IN ('MESSAGE','SYSTEM','MEETING')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX engagement_channels_engagement ON engagement_channels (engagement_id, archived_at);
+CREATE INDEX channel_appointments_schedule ON channel_appointments (channel_id, starts_at, status);
+CREATE INDEX meeting_sessions_status ON meeting_sessions (handling_firm_id, status, scheduled_start_at);
+CREATE INDEX engagement_channel_messages_timeline ON engagement_channel_messages (channel_id, created_at);
+
+CREATE OR REPLACE FUNCTION enforce_engagement_channel_chain()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  source_firm_id BIGINT;
+  source_engagement_id BIGINT;
+BEGIN
+  SELECT handling_firm_id INTO source_firm_id FROM engagements WHERE engagement_id = NEW.engagement_id;
+  IF source_firm_id IS NULL OR source_firm_id <> NEW.handling_firm_id THEN
+    RAISE EXCEPTION 'Channel and meeting records must inherit the handling firm of their engagement.';
+  END IF;
+  IF TG_TABLE_NAME = 'engagement_channels' AND NEW.parent_channel_id IS NOT NULL THEN
+    SELECT engagement_id INTO source_engagement_id FROM engagement_channels WHERE channel_id = NEW.parent_channel_id;
+    IF source_engagement_id IS DISTINCT FROM NEW.engagement_id THEN
+      RAISE EXCEPTION 'A sub-channel must belong to the same engagement as its parent channel.';
+    END IF;
+  END IF;
+  IF TG_TABLE_NAME IN ('channel_appointments','meeting_sessions') THEN
+    SELECT engagement_id INTO source_engagement_id FROM engagement_channels WHERE channel_id = NEW.channel_id;
+    IF source_engagement_id IS DISTINCT FROM NEW.engagement_id THEN
+      RAISE EXCEPTION 'Channel appointment or meeting must use the channel engagement.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER engagement_channels_firm_guard
+BEFORE INSERT OR UPDATE OF engagement_id, handling_firm_id, parent_channel_id ON engagement_channels
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_channel_chain();
+CREATE TRIGGER channel_appointments_firm_guard
+BEFORE INSERT OR UPDATE OF engagement_id, handling_firm_id, channel_id ON channel_appointments
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_channel_chain();
+CREATE TRIGGER meeting_sessions_firm_guard
+BEFORE INSERT OR UPDATE OF engagement_id, handling_firm_id, channel_id ON meeting_sessions
+FOR EACH ROW EXECUTE FUNCTION enforce_engagement_channel_chain();
+
 -- Production-readiness controls: immutable audit history, controlled master data,
 -- transaction correlation, firm/branch isolation, privacy operations and the
 -- restricted external client portal. Apply these additions through a reviewed
@@ -2130,3 +2243,24 @@ SELECT af.audit_file_id, af.engagement_id, af.reporting_year_end, af.file_status
 FROM audit_files af
 JOIN engagements e ON e.engagement_id = af.engagement_id
 LEFT JOIN audit_trial_balances tb ON tb.audit_file_id = af.audit_file_id;
+
+-- Engagement-channel RLS follows the shared firm-access helper declared with
+-- the production row-level access controls above.
+ALTER TABLE engagement_channels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE engagement_channel_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE channel_appointments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE meeting_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE engagement_channel_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY engagement_channels_by_firm_access ON engagement_channels FOR ALL
+USING (app_has_firm_access(handling_firm_id)) WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY channel_appointments_by_firm_access ON channel_appointments FOR ALL
+USING (app_has_firm_access(handling_firm_id)) WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY meeting_sessions_by_firm_access ON meeting_sessions FOR ALL
+USING (app_has_firm_access(handling_firm_id)) WITH CHECK (app_has_firm_access(handling_firm_id));
+CREATE POLICY engagement_channel_members_by_channel_access ON engagement_channel_members FOR ALL
+USING (EXISTS (SELECT 1 FROM engagement_channels c WHERE c.channel_id = engagement_channel_members.channel_id AND app_has_firm_access(c.handling_firm_id)))
+WITH CHECK (EXISTS (SELECT 1 FROM engagement_channels c WHERE c.channel_id = engagement_channel_members.channel_id AND app_has_firm_access(c.handling_firm_id)));
+CREATE POLICY engagement_channel_messages_by_channel_access ON engagement_channel_messages FOR ALL
+USING (EXISTS (SELECT 1 FROM engagement_channels c WHERE c.channel_id = engagement_channel_messages.channel_id AND app_has_firm_access(c.handling_firm_id)))
+WITH CHECK (EXISTS (SELECT 1 FROM engagement_channels c WHERE c.channel_id = engagement_channel_messages.channel_id AND app_has_firm_access(c.handling_firm_id)));
