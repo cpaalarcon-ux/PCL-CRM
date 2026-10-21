@@ -3658,6 +3658,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS invoice_payments_odoo_external_reference_uniqu
   ON invoice_payments (external_payment_id)
   WHERE source_system = 'ODOO' AND external_payment_id IS NOT NULL;
 
+CREATE OR REPLACE FUNCTION enforce_odoo_invoice_reference()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.source_system = 'ODOO' THEN
+    IF nullif(trim(NEW.invoice_number), '') IS NULL THEN
+      RAISE EXCEPTION 'A posted Odoo invoice requires its exact Odoo invoice number';
+    END IF;
+    -- The displayed ERP invoice reference is the Odoo invoice reference.  The
+    -- external ID remains available for an Odoo record ID where one exists.
+    NEW.external_invoice_id := COALESCE(NULLIF(trim(NEW.external_invoice_id), ''), NEW.invoice_number);
+  END IF;
+  IF NEW.payment_reference IS NOT NULL
+     AND upper(trim(NEW.payment_reference)) NOT LIKE upper(trim(NEW.invoice_number)) || '%' THEN
+    RAISE EXCEPTION 'Invoice payment reference must begin with invoice number %', NEW.invoice_number;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS invoices_odoo_reference_guard ON invoices;
+CREATE TRIGGER invoices_odoo_reference_guard
+BEFORE INSERT OR UPDATE OF source_system, invoice_number, external_invoice_id, payment_reference ON invoices
+FOR EACH ROW EXECUTE FUNCTION enforce_odoo_invoice_reference();
+
 -- Every receipt carries the originating Odoo invoice number first, followed by
 -- its cash receipt, M-Pesa, bank or cheque reference.
 CREATE OR REPLACE FUNCTION enforce_invoice_payment_reference_prefix()
