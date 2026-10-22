@@ -46,7 +46,7 @@
   }
   function stamp(client) {
     const fields = missing(client);
-    return {...client, profileStatus:fields.length ? "Draft" : "Details complete", missingFields:fields.map(field=>field.label)};
+    return {...client, profileStatus:fields.length ? (client.relationshipStatus === "Existing client" ? "Update required" : "Draft") : "Details complete", missingFields:fields.map(field=>field.label)};
   }
   function message(text, error = false) {
     const el = document.getElementById("clientProfileNotice");
@@ -59,11 +59,12 @@
     fields.forEach(field=>{
       const el=document.getElementById(field.id); if(!el)return;
       el.classList.add("client-field-missing");
-      const badge=document.createElement("small"); badge.className="client-missing-label"; badge.textContent="Missing / needs correction";
+      const badge=document.createElement("small"); badge.className="client-missing-label"; badge.textContent="Missing — update required";
       el.insertAdjacentElement("afterend",badge);
     });
     const summary=document.getElementById("clientMissingSummary");
-    summary.textContent=fields.length ? `Draft profile — ${fields.length} required details missing: ${fields.map(field=>field.label).join(", ")}. Save what you have and complete these later.` : "Profile details complete. KYC verification, approvals and the signed Engagement Letter are still required before engagement activation.";
+    const existing=client.relationshipStatus === "Existing client";
+    summary.textContent=fields.length ? `${existing ? "Existing client — file and data update required" : "Draft profile"}: ${fields.length} required details missing: ${fields.map(field=>field.label).join(", ")}. Save available details and complete the missing items later.` : `${existing ? "Existing client — profile details complete." : "Profile details complete."} Document verification and engagement approvals are tracked separately.`;
     summary.className=`client-profile-notice${fields.length ? " error" : ""}`;
   }
   function formRecord() {
@@ -72,6 +73,7 @@
     const record=buildClient(form);
     record.firmId = form.elements.clientFirm.value;
     record.importReference=clean(data.get("importReference"));
+    record.relationshipStatus=data.get("relationshipStatus")==="Existing client"?"Existing client":"Prospect";
     record.incorporationDate=data.get("incorporationDate")||null;
     record.smeAuditExempt=data.get("smeAuditExempt")==="on";
     record.smeAuditExemptionBasis=clean(data.get("smeAuditExemptionBasis"));
@@ -103,6 +105,7 @@
     resetEditor();editingId=id;snapshot=JSON.stringify(record);
     const direct=["companyName","tradingName","primarySector","branchLocation","clientCategory","leadSource","pieStatus","isSacco","billingFrequency","pipelineStage","engagementValue","engagementLetter","notes","incorporationDate","smeAuditExempt","smeAuditExemptionBasis","etimsOnboardingRequired","importReference"];
     direct.forEach(name=>setControl(name,record[name]));setControl("clientFirm",record.firmId);
+    setControl("relationshipStatus",record.relationshipStatus||"Prospect");
     Object.keys(identityFields).forEach(name=>setControl(name,record[name]));
     for(const [name,key] of Object.entries({contactName:"name",jobTitle:"jobTitle",email:"email",phone:"phone",decisionRole:"decisionRole"}))setControl(name,record.contact?.[key]);
     const taxMap={etimsStatus:"etimsStatus",taxReportingMonth:"reportingMonth",taxYearStart:"financialYearStart",taxYearEnd:"financialYearEnd",corporationTaxRate:"corporationTaxRate",openingVatCredit:"openingVatCredit",openingStock:"openingStock",finalStockStatus:"finalStockStatus",instalmentMethod:"instalmentMethod",priorYearTax:"priorYearTax",currentYearTaxForecast:"currentYearTaxForecast",expectedWhtCredits:"expectedWhtCredits",taxWorkingPaper:"workingPaper"};
@@ -112,7 +115,7 @@
     form.elements.clientFirm.disabled=Boolean(record.firmId);
     form.elements.importReference.readOnly=Boolean(record.importReference);
     form.querySelector('[type="submit"]').textContent="Save client changes";
-    document.getElementById("clientEditTitle").textContent=`Edit: ${record.companyName||record.importReference||"Client profile"}`;
+    document.getElementById("clientEditTitle").textContent=`${record.relationshipStatus==="Existing client"?"Update existing client":"Edit"}: ${record.companyName||record.importReference||"Client profile"}`;
     showRecommendation();showTaxComplianceProfile();fieldState(record);
     const unmapped=Object.entries(record.unmappedImportFields||{});
     message([unmapped.length?`Imported values needing review: ${unmapped.map(([field,value])=>`${field}: ${value}`).join("; ")}. Existing IDs, engagement ownership and historical documents will be preserved.`:"Client opened for editing. Save partial details now and complete the red fields later.",pinReview(record)].filter(Boolean).join(" "));
@@ -143,7 +146,7 @@
       record.tasks=[...record.tasks,...generateWorkflows(record).filter(task=>!existingIds.has(task.id))];
     }
     const editable=["companyName","tradingName","primarySector","branchLocation","clientCategory","leadSource","contact","services","regulators","pieStatus","isSacco","billingFrequency","pipelineStage","engagementValue","engagementLetter","notes","taxProfile","incorporationDate","smeAuditExempt","smeAuditExemptionBasis","etimsOnboardingRequired","firmId"];
-    const changes=before?[...editable,...Object.keys(identityFields)].filter(field=>JSON.stringify(before[field]??null)!==JSON.stringify(record[field]??null)).map(field=>({field,before:before[field]??null,after:record[field]??null})):[];
+    const changes=before?[...editable,"relationshipStatus",...Object.keys(identityFields)].filter(field=>JSON.stringify(before[field]??null)!==JSON.stringify(record[field]??null)).map(field=>({field,before:before[field]??null,after:record[field]??null})):[];
     if(before)record.changeHistory=[...(Array.isArray(before.changeHistory)?before.changeHistory:[]),{changedAt:record.updatedAt,source:"Local client editor (not authenticated)",changes}];
     if(index>=0)records[index]=record;else records.push(record);
     try {localStorage.setItem(key,JSON.stringify(records));}catch(_){return message("Could not save in this browser. Your entered details remain in the form.",true);}
@@ -160,7 +163,9 @@
       if(heading){heading.textContent="";const button=document.createElement("button");button.type="button";button.className="client-name-edit";button.dataset.editClient=id;button.textContent=client.companyName||client.importReference||"Missing client name";button.disabled=!canManage();heading.append(button);}
       card.querySelector(".client-completeness")?.remove();
       const fields=missing(client),panel=document.createElement("div");panel.className=`client-completeness${fields.length?" incomplete":""}`;
-      panel.innerHTML=fields.length?`<b>Draft — ${fields.length} missing details</b><div>${fields.map(field=>`<span class="client-missing-badge">Missing: ${esc(field.label)}</span>`).join("")}</div>`:'<b>Profile details complete</b><span class="hint"> · Engagement / KYC approval is separate.</span>';
+      const existing=client.relationshipStatus==="Existing client";
+      panel.innerHTML=fields.length?`<b>${existing?"Existing client — Update required":"Draft"} · ${fields.length} missing details</b><div>${fields.map(field=>`<span class="client-missing-badge">Missing: ${esc(field.label)} — update required</span>`).join("")}</div>`:`<b>${existing?"Existing client — ":""}Profile details complete</b><span class="hint"> · Document verification is tracked separately.</span>`;
+      if(existing){const meta=card.querySelector(".client-topline .client-meta");if(meta)meta.textContent=[client.firmId?firmLabel(client.firmId):"Handling firm: update required",client.primarySector||"Sector: update required",client.branchLocation||"Branch: update required","Existing client"].join(" · ");}
       const warning=pinReview(client);if(warning)panel.innerHTML+=`<div class="client-profile-notice error">${esc(warning)}</div>`;
       card.querySelector(".client-topline")?.insertAdjacentElement("afterend",panel);
       if(fields.length){const sign=card.querySelector('[data-action="sign-report"]');if(sign){sign.disabled=true;sign.title="Complete the client profile and engagement gates first.";}}
@@ -184,6 +189,7 @@
   if(form){
     form.querySelectorAll("[required]").forEach(input=>input.required=false);
     form.insertAdjacentHTML("afterbegin",'<h3 id="clientEditTitle">New client profile</h3><div id="clientProfileNotice" class="client-profile-notice" role="status" aria-live="polite">Save partial client details now. Missing fields will be highlighted in red.</div><div id="clientMissingSummary" class="client-profile-notice"></div><label>Client ID / Reference (optional if company name is entered)<input name="importReference" id="clientImportReference" /></label>');
+    document.getElementById("clientImportReference").parentElement.insertAdjacentHTML("afterend",'<label>Client relationship<select id="clientRelationshipStatus" name="relationshipStatus"><option value="Prospect">New prospect / onboarding</option><option value="Existing client">Existing client — file and data update</option></select></label>');
     form.querySelector('[type="submit"]').insertAdjacentHTML("beforebegin",`<fieldset class="client-identity-fields"><legend>Client identity and imported details</legend><p class="hint">Save incomplete details now. Tax obligations are retained as supplied; review the tax work packs before activation.</p>${Object.entries(identityFields).map(([name,label])=>`<label>${esc(label)}<input id="clientIdentity_${name}" name="${name}" /></label>`).join("")}</fieldset>`);
     form.querySelector('[type="submit"]').textContent="Save client draft";
     form.querySelector('[type="reset"]').textContent="Cancel / New client";

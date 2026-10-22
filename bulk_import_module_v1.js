@@ -60,7 +60,8 @@
       { key: "country", label: "Country", aliases: ["country"] },
       { key: "website", label: "Website", aliases: ["website"] },
       { key: "accountingSoftware", label: "Accounting Software", aliases: ["accountingsoftware"] },
-      { key: "taxObligations", label: "Tax Obligations (source)", aliases: ["taxobligations"] }
+      { key: "taxObligations", label: "Tax Obligations (source)", aliases: ["taxobligations"] },
+      { key: "relationshipStatus", label: "Client Relationship", aliases: ["relationshipstatus", "clientrelationship"] }
     ],
     links: [
       { key: "staffId", label: "Staff ID", required: true, aliases: ["staffid", "employeeid", "staffnumber"] },
@@ -170,6 +171,7 @@
     const sheets = state.workbook ? state.workbook.SheetNames.map(name => `<option value="${safe(name)}" ${name === state.sheetName ? "selected" : ""}>${safe(name)}</option>`).join("") : "";
     const sheetControl = state.workbook ? `<label>Worksheet<select id="bulkSheetSelect">${sheets}</select></label>` : "";
     host.innerHTML = `${sheetControl}<div class="bulk-import-type"><label>Import type<select id="bulkImportType"><option value="staff" ${state.type === "staff" ? "selected" : ""}>Staff roster</option><option value="clients" ${state.type === "clients" ? "selected" : ""}>Client master</option><option value="links" ${state.type === "links" ? "selected" : ""}>Staff–client links</option></select></label><label>Default firm for blank cells (optional)<select id="bulkDefaultFirm"><option value="">Leave missing — complete later</option>${firms().map(firm => `<option value="${safe(firm.id)}">${safe(firm.firmCode || firm.legalName)}</option>`).join("")}</select></label></div>${mappingHtml()}<div class="actions"><button type="button" class="btn secondary" id="bulkDownloadTemplate">Download CSV template</button><button type="button" class="btn primary" id="bulkReviewImport" ${state.headers.length ? "" : "disabled"}>Review import</button></div><div id="bulkImportReview"></div>`;
+    if (state.type === "clients") host.querySelector(".bulk-import-type").insertAdjacentHTML("beforeend", '<label>Relationship for this client list<select id="bulkClientRelationship"><option value="Prospect">New prospects / onboarding</option><option value="Existing client">Existing clients — update files and data</option></select></label>');
     host.querySelector("#bulkSheetSelect")?.addEventListener("change", event => readSheet(event.target.value));
     host.querySelector("#bulkImportType")?.addEventListener("change", event => { state.type = event.target.value; autoMap(state.type); state.prepared = null; renderMapping(); });
     host.querySelectorAll("[data-map-key]").forEach(select => select.addEventListener("change", event => { state.mapping[event.target.dataset.mapKey] = Number(event.target.value); state.prepared = null; }));
@@ -188,7 +190,7 @@
     if (start && end && end < start) return { error: "End Date cannot be before Effective Date." };
     return { record: { staffId, loginId: staffId, fullName, position, standardCostRate: numberOrNull(cell(row, "standardCostRate")), billableRate: numberOrNull(cell(row, "billableRate")), effectiveDate: start, contractStartDate: start || "", contractEndDate: end || "", employmentType: clean(cell(row, "employmentType")) || "Contract", billingStatus: clean(cell(row, "billingStatus")) || "Billable", firmScope: clean(cell(row, "firmScope")) || "Assigned firms", clientScope: "Assigned clients", projectScope: "Assigned tasks", accountStatus: "Setup link required", rateStatus: numberOrNull(cell(row, "standardCostRate")) === null && numberOrNull(cell(row, "billableRate")) === null ? "Pending Finance approval" : "Imported, Finance approval required", importSource: "Excel", importedAt: new Date().toISOString() } };
   }
-  function makeClient(row, defaultFirm) {
+  function makeClient(row, defaultFirm, defaultRelationship = "Prospect") {
     const companyName = clean(cell(row, "companyName")), primarySector = sectorFor(cell(row, "primarySector")), branchLocation = branchFor(cell(row, "branchLocation"));
     if (!companyName && !clean(cell(row, "clientReference"))) return { error: "A Company Name or Client ID / Reference is needed to identify this draft." };
     if (!window.pclClientProfiles) return { error: "Client profile validation is unavailable. Refresh the application before importing." };
@@ -211,6 +213,13 @@
     // Retain source evidence as text; it must never grant KYC, EQR or activation approval.
     record.importedSourceFields = state.headers.map((header, index) => ({ column: index + 1, header, value: clean(row[index]) })).filter(field => field.header && field.value);
     record.kycComplete = false;
+    const relationship = clean(cell(row, "relationshipStatus")) || defaultRelationship;
+    if (relationship && !["prospect", "existingclient"].includes(normalise(relationship))) return { error: "Client Relationship must be Prospect or Existing client." };
+    record.relationshipStatus = normalise(relationship) === "existingclient" ? "Existing client" : "Prospect";
+    if (record.relationshipStatus === "Existing client") {
+      record.pipelineStage = "";
+      record.notes = "Existing client imported for file and data updates. Missing information must be completed; historical engagements and approvals are not inferred from this import.";
+    }
     return { record: window.pclClientProfiles.stamp(record) };
   }
   function makeLink(row) {
@@ -226,11 +235,12 @@
     if (!canImport()) return { error: "Only Engagement Partners and Managers may upload staff or client data." };
     const missing = requiredMissing(); if (missing.length) return { error: `Map the required field(s): ${missing.join(", ")}.` };
     const defaultFirm = document.getElementById("bulkDefaultFirm")?.value || "";
+    const defaultRelationship = document.getElementById("bulkClientRelationship")?.value || "Prospect";
     const existing = state.type === "staff" ? selectedStaff() : state.type === "clients" ? selectedClients() : selectedLinks();
     const newRecords = [], errors = [], duplicates = []; const inFile = new Set();
     state.rows.forEach((row, index) => {
       const rowNumber = state.rowNumbers[index] || index + 2;
-      const candidate = state.type === "staff" ? makeStaff(row) : state.type === "clients" ? makeClient(row, defaultFirm) : makeLink(row);
+      const candidate = state.type === "staff" ? makeStaff(row) : state.type === "clients" ? makeClient(row, defaultFirm, defaultRelationship) : makeLink(row);
       if (candidate.error) { errors.push({ row: rowNumber, message: candidate.error }); return; }
       const record = candidate.record;
       const key = state.type === "staff" ? record.staffId : state.type === "clients" ? duplicateKey(record.companyName || record.importReference) : `${record.staffId}:${record.clientId}`;
@@ -253,10 +263,10 @@
     const label = state.type === "staff" ? "staff profiles" : state.type === "clients" ? "client records" : "staff–client links";
     host.innerHTML = `<div class="bulk-review"><h4>Import review</h4><div class="bulk-review-grid"><span><b>${result.records.length}</b> ready to import</span><span><b>${result.duplicates.length}</b> duplicate rows skipped</span><span><b>${result.errors.length}</b> invalid rows skipped</span></div>${result.errors.length ? `<details><summary>View invalid rows</summary><ul>${result.errors.slice(0, 25).map(item => `<li>Row ${item.row}: ${safe(item.message)}</li>`).join("")}</ul></details>` : ""}${result.duplicates.length ? `<details><summary>View duplicate rows</summary><ul>${result.duplicates.slice(0, 25).map(item => `<li>Row ${item.row}: ${safe(item.label)}</li>`).join("")}</ul></details>` : ""}<label class="checkbox-line bulk-confirm"><input id="bulkConfirmImport" type="checkbox" />I confirm that the mapped records are authorised for this private ERP workspace.</label><button class="btn primary" id="bulkConfirmButton" type="button" ${result.records.length ? "" : "disabled"}>Confirm and import ${result.records.length} ${label}</button></div>`;
     host.querySelector("#bulkConfirmButton")?.addEventListener("click", confirmImport);
-    const drafts = result.records.filter(record => record.profileStatus === "Draft");
+    const drafts = result.records.filter(record => record.missingFields?.length);
     const flagged = result.records.filter(record => record.importWarnings?.length);
     if (flagged.length) host.insertAdjacentHTML("afterbegin", `<div class="bulk-import-notice error"><b>${flagged.length} client records need a KRA PIN review and will still be imported.</b></div>`);
-    if (drafts.length) host.insertAdjacentHTML("afterbegin", `<div class="bulk-import-notice error"><b>${drafts.length} incomplete client profiles will be saved as drafts.</b><details><summary>Missing details to complete later</summary><ul>${drafts.map(record => `<li>${safe(record.companyName || record.importReference)} — ${safe((record.missingFields || []).join(", "))}</li>`).join("")}</ul></details>No KYC approval or active engagement is created by this import.</div>`);
+    if (drafts.length) host.insertAdjacentHTML("afterbegin", `<div class="bulk-import-notice error"><b>${drafts.length} profiles have missing details to update.</b><p>${drafts.filter(record => record.relationshipStatus === "Existing client").length} will be recorded as existing clients with Update required status. Existing-client status is separate from completeness of the ERP file.</p><details><summary>Missing details to complete later</summary><ul>${drafts.map(record => `<li>${safe(record.companyName || record.importReference)} — ${safe((record.missingFields || []).join(", "))}</li>`).join("")}</ul></details>This import does not create a new engagement or claim that historical documents have been verified.</div>`);
   }
   function confirmImport() {
     if (!canImport()) return notice("Only Engagement Partners and Managers may confirm an import. Nothing was saved.", true);

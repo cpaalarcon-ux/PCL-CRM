@@ -104,6 +104,16 @@ test('row-five headers and blank rows retain correct Excel row numbers',()=>{
  e.context.window.XLSX={utils:{sheet_to_json:()=>matrix}};e.importer.state.workbook={Sheets:{'Client Import':{}}};e.importer.readSheet('Client Import');
  const result=e.importer.prepare();assert.equal(result.records.length,2);assert.equal(result.duplicates[0].row,8);assert.equal(result.records[1].importReference,'T-3');
 });
+test('existing clients remain existing with update-required data, without creating leads or approvals',()=>{
+ const e=importerEnvironment('Manager');e.map(['Client_External_ID','Company_Name','Client Relationship'],[['T-EXISTING','Fictional Established Client','Existing client']]);
+ const r=e.importer.prepare().records[0];assert.equal(r.relationshipStatus,'Existing client');assert.equal(r.profileStatus,'Update required');assert.equal(r.pipelineStage,'');assert.equal(r.tasks.length,0);assert.equal(r.kycComplete,false);assert.ok(r.missingFields.length>0);
+ const reviewed=e.api.stamp({...client,relationshipStatus:'Existing client'});assert.equal(reviewed.profileStatus,'Details complete');assert.equal(reviewed.relationshipStatus,'Existing client');
+ e.storage.set(clientKey,JSON.stringify([r]));e.api.setEdit(r.id,r);e.form.data={...clientData(r),contactName:'Updated Contact'};e.form.elements.clientFirm.value='';e.save();const saved=JSON.parse(e.storage.get(clientKey))[0];assert.equal(saved.relationshipStatus,'Existing client');assert.equal(saved.profileStatus,'Update required');assert.equal(saved.id,r.id);
+});
+test('batch relationship selection applies to all clients and preserves supplied row classification',()=>{
+ const e=importerEnvironment();const original=e.context.document.getElementById;e.context.document.getElementById=id=>id==='bulkClientRelationship'?{value:'Existing client'}:original(id);
+ e.map(['Company Name','Client Relationship'],[['Fictional Existing',''],['Fictional Prospect','Prospect']]);const r=e.importer.prepare().records;assert.equal(r[0].relationshipStatus,'Existing client');assert.equal(r[1].relationshipStatus,'Prospect');assert.equal(r[1].profileStatus,'Draft');
+});
 test('client identity corrections preserve source evidence and existing relationships',()=>{
  const e=clientEnvironment('Manager');const original={...client,kraPin:'TEST-OLD',legalEntityType:'Sole Proprietor',taxObligations:'Income Tax',importedSourceFields:[{header:'KRA_PIN',value:'TEST-OLD'}]};e.storage.set(clientKey,JSON.stringify([original]));e.api.setEdit(original.id,original);e.form.data={...clientData(original),kraPin:'TEST-NEW'};e.form.elements.clientFirm.value='firm-1';e.save();
  const saved=JSON.parse(e.storage.get(clientKey))[0];assert.equal(saved.kraPin,'TEST-NEW');assert.equal(saved.taxObligations,'Income Tax');assert.equal(saved.importedSourceFields[0].value,'TEST-OLD');assert.equal(saved.id,original.id);assert.ok(saved.changeHistory[0].changes.some(c=>c.field==='kraPin'));
