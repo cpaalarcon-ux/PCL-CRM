@@ -23,10 +23,10 @@
       { label: "Directory", panel: "clients" }, { label: "Client Vault", panel: "vault" }, { label: "Client billing", panel: "invoices-statements", hint: "Client-specific billing is filtered by the selected client when a backend is connected." }
     ] },
     projects: { label: "Projects & Tasks", icon: "✓", items: [
-      { label: "Lead & engagement", panel: "lifecycle" }, { label: "Audit workspace", panel: "audit-workspace" }, { label: "Tax projects", panel: "tax-projects" }, { label: "Recurring tasks", panel: "recurring-tasks" }
+      { label: "Shared workboard", panel: "shared-workboard" }, { label: "Lead & engagement", panel: "lifecycle" }, { label: "Audit workspace", panel: "audit-workspace" }, { label: "Tax projects", panel: "tax-projects" }, { label: "Recurring tasks", panel: "recurring-tasks" }
     ] },
     finance: { label: "Finance", icon: "KES", items: [
-      { label: "Invoices", panel: "invoices-statements", anchor: "invoiceStatementRows" }, { label: "Payments", panel: "invoices-statements", anchor: "receivablePaymentForm" }, { label: "Statements", panel: "invoices-statements", anchor: "statementGenerator" }
+      { label: "Invoices & receivables", panel: "invoices-statements", anchor: "invoiceStatementRows" }, { label: "Payments", panel: "invoices-statements", anchor: "receivablePaymentForm" }, { label: "Firm statements", panel: "invoices-statements", anchor: "statementGenerator" }, { label: "Relationship summary", panel: "invoices-statements", anchor: "statementGenerator" }
     ] },
     timehr: { label: "Time & HR", icon: "◷", items: [
       { label: "My time & WIP", panel: "operations" }, { label: "Team & HR", panel: "hr" }, { label: "Attendance", panel: "attendance" }
@@ -76,6 +76,21 @@
       .tabs.legacy-hidden{display:none!important}.unified-tabs{display:flex;align-items:center;gap:6px;overflow:auto;padding:0 0 13px;margin:0 0 20px;border-bottom:1px solid var(--line)}.unified-tabs button{white-space:nowrap;border:0;background:transparent;color:#66766d;font-weight:750;padding:9px 12px;border-radius:999px}.unified-tabs button:hover{color:var(--brand);background:#eef7f1}.unified-tabs button.active{background:#dff1e7;color:var(--brand-dark)}.unified-tabs button[hidden]{display:none}.unified-tabs .dashboard-link{margin-left:auto;border:1px solid #cad9d0;color:#315d49}.unified-tabs .dashboard-link:hover{background:#fff}.unified-subnav{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:-8px 0 18px;padding:9px 12px;border:1px solid #dce7e0;border-radius:10px;background:#fff;box-shadow:0 3px 10px rgba(17,57,38,.035)}.unified-subnav[hidden]{display:none}.unified-subnav b{font-size:12px;color:#315d49;margin-right:4px}.unified-subnav button{border:0;background:transparent;color:#607269;font-size:12px;padding:6px 8px;border-radius:6px}.unified-subnav button:hover,.unified-subnav button.active{color:var(--brand-dark);background:#eaf5ee;font-weight:800}.erp-preview-control{display:flex;align-items:center;gap:6px;color:#dbe8e1;font-size:11px;font-weight:700}.erp-preview-control select{width:176px;min-height:34px;margin:0;padding:6px 25px 6px 8px;background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.26);color:#fff;font-size:12px}.erp-preview-control option{background:#fff;color:#253f34}.smart-routing{margin-bottom:19px}.smart-routing-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:12px}.smart-routing-head h3{margin:0 0 3px;font-size:17px}.smart-routing-head p{margin:0;color:var(--muted);font-size:12px}.preview-badge{display:inline-block;padding:4px 7px;border-radius:999px;background:#fff5db;color:#76520c;font-size:11px;font-weight:800;white-space:nowrap}.routing-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.routing-card{padding:16px;border:1px solid #dbe8e0;border-radius:11px;background:#fff;box-shadow:var(--shadow)}.routing-card .routing-icon{color:var(--brand);font-weight:900;font-size:13px}.routing-card b{display:block;font-size:25px;color:var(--brand-dark);margin:5px 0 2px}.routing-card span{display:block;color:#455c50;font-size:13px;font-weight:800}.routing-card small{display:block;color:var(--muted);margin-top:3px;font-size:11px}.routing-card button{padding:0;border:0;background:transparent;color:var(--brand-dark);font-weight:800;text-decoration:underline;font-size:11px;margin-top:10px}.settings-layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px}.settings-menu{padding:9px}.settings-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:7px;padding:10px;color:#53665b;font-weight:700;font-size:12px}.settings-menu button.active,.settings-menu button:hover{background:#e9f5ed;color:var(--brand-dark)}.settings-body{padding:22px}.settings-note{padding:12px 14px;background:#fff8e9;border:1px solid #ecd69b;border-radius:8px;color:#73531c;font-size:12px;margin-bottom:16px}.settings-table td,.settings-table th{vertical-align:top}.permission-tag{display:inline-block;margin:3px 3px 0 0;padding:3px 7px;border-radius:999px;background:#e9f4ec;color:#245f43;font-size:11px;font-weight:800}.shell-no-access{padding:30px;text-align:center;color:#6d7a73}.shell-no-access h2{color:#335546}.shell-mode-timehr #operations #invoiceForm,.shell-mode-timehr #operations #invoicePaymentForm{display:none!important}.shell-backend-note{font-size:11px;color:#7b887f;margin-top:16px}.header-actions{flex-wrap:wrap}.firm-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}@media(max-width:900px){.settings-layout{grid-template-columns:1fr}.settings-menu{display:flex;overflow:auto;gap:3px}.settings-menu button{white-space:nowrap;width:auto}.routing-grid{grid-template-columns:1fr}.erp-preview-control{width:100%}.erp-preview-control select{width:100%}}@media(max-width:600px){.unified-tabs .dashboard-link{margin-left:0}.firm-profile-grid{grid-template-columns:1fr}}
     `;
     document.head.append(style);
+    const v4Style = document.createElement("style");
+    v4Style.id = "unifiedShellV4Styles";
+    v4Style.textContent = `
+      :root{--v4-green:#0B3D2E;--v4-navy:#1E3A8A;--v4-gold:#D4AF37;--v4-canvas:#F8FAFC;--v4-text:#1F2937;--v4-muted:#64748B;--v4-danger:#EF4444;--v4-success:#10B981}
+      .unified-tabs{background:var(--v4-green);border:0;border-radius:12px;padding:9px 10px;margin:0 0 14px;box-shadow:0 6px 18px rgba(11,61,46,.16)}
+      .unified-tabs button{color:#fff;border-radius:7px;padding:10px 13px;font-weight:750}
+      .unified-tabs button:hover{color:#fff;background:rgba(255,255,255,.12)}
+      .unified-tabs button.active{background:#fff;color:var(--v4-green);box-shadow:none}
+      .unified-tabs .home-link{font-weight:850}.unified-tabs .settings-nav{margin-left:auto;opacity:.88}.unified-tabs .settings-nav:hover{opacity:1}
+      .unified-tabs .dashboard-link{display:none}.unified-subnav{margin:0 0 18px}.erp-preview-control span{font-size:11px}
+      .smart-routing{margin-top:2px}.routing-card{border:1px solid #e2e8f0;border-top-width:4px;border-radius:10px;background:#fff;box-shadow:0 4px 6px rgba(0,0,0,.05)}.routing-card:nth-child(1){border-top-color:var(--v4-gold)}.routing-card:nth-child(1) .routing-icon,.routing-card:nth-child(1) b{color:#9a7200}.routing-card:nth-child(2){border-top-color:var(--v4-navy)}.routing-card:nth-child(2) .routing-icon,.routing-card:nth-child(2) b{color:var(--v4-navy)}.routing-card:nth-child(3){border-top-color:var(--v4-green)}.routing-card:nth-child(3) .routing-icon,.routing-card:nth-child(3) b{color:var(--v4-green)}.routing-card b{font-size:30px}.routing-card button{margin-top:13px;color:var(--v4-green)}
+      .shared-workboard{display:grid;gap:16px}.shared-workboard-intro{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}.shared-workboard-intro h2{margin:0 0 4px}.shared-workboard-intro p{margin:0;color:var(--muted);max-width:760px}.shared-board-context{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;background:#e8f3ed;color:var(--v4-green);font-size:11px;font-weight:800;white-space:nowrap}.shared-board-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.shared-board-metric{padding:17px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:var(--card-shadow)}.shared-board-metric.kra{border-top:4px solid var(--v4-gold)}.shared-board-metric.projects{border-top:4px solid var(--v4-green)}.shared-board-metric.people{border-top:4px solid var(--v4-navy)}.shared-board-metric b{display:block;font-size:25px;color:var(--v4-text)}.shared-board-metric span{display:block;font-size:12px;font-weight:800;color:var(--v4-muted);margin-top:2px}.shared-board-metric small{display:block;font-size:11px;color:var(--v4-muted);margin-top:5px}.shared-board-card{padding:20px}.shared-board-card .section-heading{align-items:center}.firm-chip{display:inline-block;padding:3px 7px;border-radius:999px;background:#e8f3ed;color:#176044;font-size:10px;font-weight:850;white-space:nowrap}.firm-chip.navy{background:#e8f0fb;color:#1E3A8A}.shared-board-actions{display:flex;gap:6px;flex-wrap:wrap}.shared-board-actions button{border:1px solid #cbd7d0;border-radius:6px;background:#fff;color:#14563f;padding:5px 7px;font-size:11px;font-weight:750}.shared-board-actions button:hover{background:#e8f3ed}.shared-board-note{padding:12px 14px;border-left:4px solid var(--v4-gold);border-radius:8px;background:#fffaf0;color:#70541c;font-size:12px}.shared-board-empty{padding:28px 14px;border:1px dashed #cbd7d0;border-radius:8px;text-align:center;color:var(--v4-muted);font-size:12px}
+      @media(max-width:900px){.shared-board-grid{grid-template-columns:1fr}.unified-tabs .settings-nav{margin-left:0}}@media(max-width:600px){.shared-workboard-intro{flex-direction:column}.unified-tabs{border-radius:9px}}
+    `;
+    document.head.append(v4Style);
   }
 
   function addHeaderControl() {
@@ -84,7 +99,7 @@
     const preview = getPreview();
     const label = document.createElement("label");
     label.className = "erp-preview-control";
-    label.innerHTML = `<span>Staff category</span><select id="erpPreviewCategory" aria-label="Preview workspace as staff category">${staffCategories.map(category => `<option${category === preview.category ? " selected" : ""}>${esc(category)}</option>`).join("")}</select>`;
+    label.innerHTML = `<span>My Workspace</span><select id="erpPreviewCategory" aria-label="Preview My Workspace as staff category">${staffCategories.map(category => `<option${category === preview.category ? " selected" : ""}>${esc(category)}</option>`).join("")}</select>`;
     actions.prepend(label);
     document.getElementById("erpPreviewCategory").addEventListener("change", event => {
       const current = getPreview();
@@ -100,15 +115,15 @@
     legacy.classList.add("legacy-hidden");
     const nav = document.createElement("nav");
     nav.id = "unifiedTabs"; nav.className = "unified-tabs"; nav.setAttribute("aria-label", "ERP workspace modules");
+    const home = document.createElement("button"); home.type = "button"; home.className = "home-link"; home.dataset.erpHome = "true"; home.innerHTML = `<span aria-hidden="true">⌂</span> Home`; nav.append(home);
     Object.entries(groups).forEach(([id, group]) => {
-      const button = document.createElement("button"); button.type = "button"; button.dataset.erpGroup = id; button.innerHTML = `<span aria-hidden="true">${group.icon}</span> ${esc(group.label)}`; nav.append(button);
+      const button = document.createElement("button"); button.type = "button"; button.dataset.erpGroup = id; if (id === "settings") button.className = "settings-nav"; button.innerHTML = `<span aria-hidden="true">${group.icon}</span> ${esc(group.label)}`; nav.append(button);
     });
-    const dashboard = document.createElement("button"); dashboard.type = "button"; dashboard.className = "dashboard-link"; dashboard.dataset.erpDashboard = "true"; dashboard.textContent = "Smart routing"; nav.append(dashboard);
     legacy.after(nav);
     const subnav = document.createElement("div"); subnav.id = "unifiedSubnav"; subnav.className = "unified-subnav"; subnav.hidden = true; nav.after(subnav);
     nav.addEventListener("click", event => {
       const button = event.target.closest("button"); if (!button) return;
-      if (button.dataset.erpDashboard) { openDashboard(); return; }
+      if (button.dataset.erpHome || button.dataset.erpDashboard) { openDashboard(); return; }
       const group = button.dataset.erpGroup; if (!group) return;
       const preview = getPreview();
       if (!allowed(group, preview)) { showDenied(group); return; }
@@ -129,6 +144,7 @@
     document.body.className = document.body.className.replace(/\bshell-mode-[^ ]+/g, "").trim();
     togglePanels("dashboard");
     document.querySelectorAll("#unifiedTabs [data-erp-group]").forEach(button => button.classList.remove("active"));
+    document.querySelector("#unifiedTabs [data-erp-home]")?.classList.add("active");
     const sub = document.getElementById("unifiedSubnav"); if (sub) sub.hidden = true;
     try { if (typeof renderDashboard === "function") renderDashboard(); } catch (_) {}
     document.getElementById("dashboard")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -150,6 +166,7 @@
     if (panelId === "invoices-statements") {
       try { window.pclReceivablesCentre?.render?.(); } catch (_) {}
     }
+    if (panelId === "shared-workboard") renderSharedWorkboard();
     if (anchorId) setTimeout(() => document.getElementById(anchorId)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
     document.getElementById(panelId)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -186,6 +203,60 @@
     const values = routingData();
     const set = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value; };
     set("routingKraCount", values.deadlines); set("routingFinanceCount", values.overdue); set("routingTasksCount", values.myTasks);
+  }
+
+  function taskIsOpen(task) {
+    return !["completed", "submitted", "filed", "cancelled", "exempt", "not applicable", "no action required"].includes(String(task?.status || "").toLowerCase());
+  }
+  function taskDue(task) { return String(task?.dueDate || task?.dueAt || "").slice(0, 10); }
+  function sharedFirmView() { return document.getElementById("dashboardFirmFilter")?.value || ""; }
+  function sharedProjectsInView() {
+    const selectedFirm = sharedFirmView();
+    try { return (typeof activeEngagements === "function" ? activeEngagements() : []).filter(engagement => !selectedFirm || engagement.firmId === selectedFirm); }
+    catch (_) { return []; }
+  }
+  function sharedBoardTaskRows(projects) {
+    const lifecycleTasks = projects.flatMap(engagement => (engagement.workflowTasks || []).map(task => ({ task, engagement, firmId: engagement.firmId, clientName: engagement.companyName, source: "Engagement workflow" })));
+    let taxTasks = [];
+    try { taxTasks = window.pclTaxProjectWorkspace?.dashboardSnapshot?.({ firmId: sharedFirmView() }).tasks || []; } catch (_) {}
+    const taxRows = taxTasks.map(task => ({ task, engagement: null, firmId: task.firmId, clientName: task.clientName || "Tax client", source: "Tax project" }));
+    return [...lifecycleTasks, ...taxRows].filter(row => !sharedFirmView() || row.firmId === sharedFirmView());
+  }
+  function injectSharedWorkboard() {
+    if (document.getElementById("shared-workboard")) return;
+    const dashboard = document.getElementById("dashboard"); if (!dashboard) return;
+    const section = document.createElement("section");
+    section.id = "shared-workboard"; section.className = "tab-panel";
+    section.innerHTML = `<div class="shared-workboard"><div class="shared-workboard-intro"><div><h2>Shared Workboard</h2><p>One practice-wide queue for active engagements, tax projects and delivery tasks. Every row displays its Handling Firm, while staff work from the same central board without logging into a separate company.</p></div><span id="sharedBoardContext" class="shared-board-context">All authorised firms</span></div><div class="shared-board-grid"><article class="shared-board-metric projects"><b id="sharedBoardProjectCount">0</b><span>Active engagements</span><small>Across the selected firm view</small></article><article class="shared-board-metric kra"><b id="sharedBoardOpenTaskCount">0</b><span>Open tasks</span><small>Tax, audit and engagement work</small></article><article class="shared-board-metric people"><b id="sharedBoardStaffCount">0</b><span>Assigned resources</span><small>Shared staff allocation in scope</small></article></div><article class="card shared-board-card"><div class="section-heading"><div><h3>Central project and engagement queue</h3><span class="hint">Handling Firm is shown on every project and is inherited by its tasks, documents, communications, timesheets, invoices and payments.</span></div></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Project / client</th><th>Handling firm</th><th>Service</th><th>Team</th><th>Next due</th><th>Stage</th><th>Open</th></tr></thead><tbody id="sharedBoardRows"></tbody></table></div></article><div class="shared-board-note"><b>Operating rule:</b> the firm filter changes the view only. It cannot alter a project’s locked Handling Firm. Work for another firm is created as a separate engagement, then appears here alongside all other authorised work.</div></div>`;
+    dashboard.after(section);
+    section.addEventListener("click", event => {
+      const button = event.target.closest("button[data-shared-board-module]"); if (!button) return;
+      const module = button.dataset.sharedBoardModule;
+      if (module === "audit") showPanel("audit-workspace", "projects");
+      if (module === "tax") showPanel("tax-projects", "projects");
+      if (module === "lifecycle") showPanel("lifecycle", "projects");
+    });
+  }
+  function renderSharedWorkboard() {
+    const projects = sharedProjectsInView();
+    const tasks = sharedBoardTaskRows(projects);
+    const openTasks = tasks.filter(row => taskIsOpen(row.task));
+    const assignedPeople = new Set(projects.flatMap(project => [project.resources?.supervisorUserId, project.resources?.assistantUserId]).filter(Boolean));
+    const context = document.getElementById("sharedBoardContext");
+    const projectCount = document.getElementById("sharedBoardProjectCount"), openCount = document.getElementById("sharedBoardOpenTaskCount"), staffCount = document.getElementById("sharedBoardStaffCount"), body = document.getElementById("sharedBoardRows");
+    if (!body) return;
+    if (context) context.textContent = sharedFirmView() ? firmName(sharedFirmView()) : "All authorised firms";
+    if (projectCount) projectCount.textContent = projects.length;
+    if (openCount) openCount.textContent = openTasks.length;
+    if (staffCount) staffCount.textContent = assignedPeople.size;
+    body.innerHTML = projects.length ? projects.map(project => {
+      const projectTasks = tasks.filter(row => row.engagement?.id === project.id);
+      const open = projectTasks.filter(row => taskIsOpen(row.task));
+      const next = open.map(row => taskDue(row.task)).filter(Boolean).sort()[0] || "No due date";
+      const team = [project.resources?.supervisorUserId && `Supervisor: ${project.resources.supervisorUserId}`, project.resources?.assistantUserId && `Assistant: ${project.resources.assistantUserId}`].filter(Boolean).join(" · ") || "Allocate team";
+      const module = /audit/i.test(String(project.initialService || "")) ? "audit" : /tax|bookkeeping|payroll/i.test(String(project.initialService || "")) ? "tax" : "lifecycle";
+      return `<tr><td><b>${esc(project.companyName || "Client")}</b><br><span class="hint">${esc(project.id || "Engagement")}</span></td><td><span class="firm-chip ${module === "audit" ? "navy" : ""}">${esc(firmName(project.firmId))}</span></td><td>${esc(project.initialService || "Not set")}</td><td>${esc(team)}</td><td>${esc(next)}</td><td>${esc(project.stage || "Active")}</td><td><div class="shared-board-actions"><span class="status-pill ${open.length ? "review" : ""}">${open.length} open</span><button type="button" data-shared-board-module="${module}">Open</button></div></td></tr>`;
+    }).join("") : `<tr><td colspan="7" class="shared-board-empty">No active engagements match this firm view.</td></tr>`;
   }
 
   function settingProfile(firmId) {
@@ -262,13 +333,15 @@
   }
 
   function start() {
-    injectStyles(); addHeaderControl(); addNavigation(); injectSmartRouting(); settingsShell(); injectFooterNote(); applyShell();
+    injectStyles(); addHeaderControl(); addNavigation(); injectSmartRouting(); injectSharedWorkboard(); settingsShell(); injectFooterNote(); applyShell(); openDashboard();
     const workspaceSelector = document.getElementById("workspacePositionFilter");
     if (workspaceSelector && !workspaceSelector.dataset.unifiedCategorySync) {
       workspaceSelector.dataset.unifiedCategorySync = "true";
       workspaceSelector.addEventListener("change", event => { const current = getPreview(); savePreview({ category: event.target.value, permissions: current.permissions }); applyShell(); });
     }
-    window.addEventListener("pcl:tax-projects-updated", renderSmartRouting);
+    document.getElementById("dashboardFirmFilter")?.addEventListener("change", renderSharedWorkboard);
+    window.addEventListener("pcl:tax-projects-updated", () => { renderSmartRouting(); renderSharedWorkboard(); });
+    window.addEventListener("pcl:invoices-statements-updated", renderSmartRouting);
   }
   start();
 })();
