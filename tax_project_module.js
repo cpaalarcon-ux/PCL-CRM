@@ -59,7 +59,7 @@
   const projectById = id => projects.find(project => project.id === id);
   const sourceLabel = code => Object.values(obligations).find(item => item.sourceLabels[code])?.sourceLabels[code] || code;
   const currentRole = () => document.getElementById("taxProjectPreviewRole")?.value || "Tax Assistant";
-  const taxClientFor = engagement => clients.find(client => normaliseName(client.companyName) === normaliseName(engagement?.companyName)) || null;
+  const taxClientFor = engagement => clients.find(client => clientMatchesLead(client, engagement)) || null;
   const taxProfileFor = client => client?.taxProfile || null;
   const normalisePin = value => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const validTaxpayerPin = value => /^[A-Z]\d{9}[A-Z]$/.test(normalisePin(value));
@@ -376,6 +376,7 @@
     const confirmedName = data.get("confirmedLegalName");
     if (!engagement || !isTaxProjectEngagement(engagement)) throw new Error("Choose an active Tax Compliance engagement. The client and handling firm are inherited from it.");
     if (!client) throw new Error("The selected engagement is not linked to a saved client profile. Create or correct the client profile before opening a Tax Project.");
+    if (window.pclClientProfiles?.missing(client).length) throw new Error("Complete the red missing details in the Client Profile before opening a Tax Project.");
     if (!kycDocumentsVerified(engagement)) throw new Error("The Engagement Letter, Certificate of Incorporation, KRA PIN and CR12 must be Manager-verified before a Tax Project can be opened.");
     if (!period.start || !period.end || period.end < period.start) throw new Error("Enter a valid tax period.");
     if (!selectedObligations.length) throw new Error("Select at least one obligation for this period.");
