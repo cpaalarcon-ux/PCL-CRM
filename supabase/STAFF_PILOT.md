@@ -44,6 +44,14 @@ Do not reuse QA accounts. Temporary test accounts must be disabled and their ses
 
 ## Verification commands and limits
 
+### Verified in staging on 22 October 2026
+
+The Edge Function and connected sign-in page are deployed. The browser check verified the public sign-in page at `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`; authenticated browser workflows still require the staff pilot walkthrough.
+
+Seven validation tests and the Deno type check passed. Live HTTP tests with fictional Partner, Manager, Assistant and Intern accounts passed setup-link replay rejection, login, cross-firm denial, Manager privilege-escalation denial, incomplete client records, task assignment, stale-edit rejection, private upload/download permissions, and immediate access revocation after reset, disable and logout. The final resumed task/document phase passed 23 HTTP assertions. The rolled-back foundation constraint suite also passed after the pilot migrations.
+
+The upload bucket was verified private. Temporary QA accounts are inactive and archived, with sessions and links revoked. Fictional QA clients, projects and firms are archived; locked evidence and audit history remain. Three firm names are available in the initial workspace. No historical client/staff import or production DNS cutover was performed. The first Partner receives a private, expiring setup link outside source control.
+
 - `node --test tests/staff_pilot_validation.test.mjs`
 - `npm ci --ignore-scripts` inside `supabase/functions/staff-pilot`
 - `deno check --node-modules-dir=manual --config supabase/functions/staff-pilot/deno.json supabase/functions/staff-pilot/index.ts`
