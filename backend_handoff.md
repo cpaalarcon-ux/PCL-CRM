@@ -73,3 +73,8 @@ The authenticated identity returned by `/api/me` must include primary staff cate
 - Approved timesheets are locked; corrections use reversals.
 - All deletion is soft-delete plus an audit event.
 - Settings are administrator-only on the server, not merely hidden in the browser.
+
+
+## Phased production rollout
+
+See [PRODUCTION_ROLLOUT.md](PRODUCTION_ROLLOUT.md) for the proposed hosting arrangement, first live release, staff login without email delivery, browser-data migration, acceptance gates and remaining module sequence. This is a rollout plan; no production backend or subscription has been created by publishing it.
