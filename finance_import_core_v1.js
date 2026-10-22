@@ -32,7 +32,7 @@
     const companyAmountMinor = kind === "Payment" ? money(row["Amount Company Currency Signed"]) : null;
     const untaxedMinor = kind === "Journal" ? money(row["Untaxed Amount Signed Currency"]) : null;
     const record = {
-      kind, reference, sourceClientName, currency: "KES", firmId: firmId || "",
+      kind, reference, sourceClientName, currency: "KES", firmId: firmId || "", dateEncoding: "EXCEL_CALENDAR_V2",
       date: date(row[kind === "Payment" ? "Date" : "Invoice/Bill Date"]),
       amountMinor, companyAmountMinor, untaxedMinor,
       taxMinor: untaxedMinor === null ? null : amountMinor - untaxedMinor,
@@ -54,18 +54,39 @@
   function sameReference(a, b) {
     return a.kind === b.kind && a.reference.toUpperCase() === b.reference.toUpperCase() && (!a.firmId || !b.firmId || a.firmId === b.firmId);
   }
+  function legacyDateCorrection(old, incoming) {
+    if (old.dateEncoding || !old.id) return false;
+    if (sourceSignature({...old,date:incoming.date,dueDate:incoming.dueDate}) !== sourceSignature(incoming)) return false;
+    let changed=false;
+    for (const [field,header] of [["date",old.kind === "Payment" ? "Date" : "Invoice/Bill Date"],["dueDate","Due Date"]]) {
+      if (old[field] === incoming[field]) continue;
+      const raw=old.sourceFields?.find(f=>f.header===header)?.value;
+      if (typeof raw!=="string" || !/^\d{4}-\d{2}-\d{2}T.*Z$/.test(raw) || raw.slice(0,10)!==old[field]) return false;
+      const days=Math.abs((new Date(incoming[field]+"T00:00:00Z")-new Date(old[field]+"T00:00:00Z"))/86400000);
+      if (days!==1) return false;
+      changed=true;
+    }
+    return changed;
+  }
+  function correctDates(old,incoming,category,at) {
+    if (!["Engagement Partner","Manager"].includes(category) || !legacyDateCorrection(old,incoming)) throw new Error("This is not a verified legacy Excel date correction.");
+    return {...old,date:incoming.date,dueDate:incoming.dueDate,dateEncoding:"EXCEL_CALENDAR_V2",changes:[...old.changes,{at,category,reason:"Correct Excel calendar dates against re-uploaded source workbook",fields:["date","dueDate"].filter(f=>old[f]!==incoming[f]).map(field=>({field,before:old[field],after:incoming[field]})),correctedSource:incoming.source,correctedSourceFields:incoming.sourceFields}]};
+  }
   function prepare(sheets, existing, clients, firmId = "") {
-    const out = { records: [], duplicates: [], errors: [], conflicts: [], rowsRead: 0 };
+    const out = { records: [], corrections: [], duplicates: [], errors: [], conflicts: [], rowsRead: 0 }, working=existing.slice();
     for (const sheet of sheets) {
       for (const input of sheet.rows) {
         out.rowsRead++;
         const source = { fileName: sheet.fileName, sheetName: sheet.sheetName, row: input.rowNumber };
         try {
           const record = parseSource(input.values, sheet.kind, source, firmId, clients);
-          const matches = [...existing, ...out.records].filter(r => sameReference(r, record));
+          const matches = [...working, ...out.records].filter(r => sameReference(r, record));
           if (matches.length) {
             if (matches.length === 1 && sourceSignature(matches[0]) === sourceSignature(record)) out.duplicates.push({ ...source, reference: record.reference });
-            else out.conflicts.push({ ...source, reference: record.reference, reason: "Reference already exists with different data or an unresolved firm." });
+            else if(matches.length===1&&legacyDateCorrection(matches[0],record)) {
+              out.corrections.push({id:matches[0].id,record});
+              working[working.indexOf(matches[0])]={...matches[0],date:record.date,dueDate:record.dueDate};
+            } else out.conflicts.push({ ...source, reference: record.reference, reason: "Reference already exists with different data or an unresolved firm." });
           } else out.records.push(record);
         } catch (error) { out.errors.push({ ...source, reason: error.message }); }
       }
@@ -104,7 +125,7 @@
     const changes = fields.filter(f => record[f] !== values[f]).map(field => ({ field, before: record[field], after: values[field] }));
     return { ...record, ...Object.fromEntries(fields.map(f => [f, values[f]])), linkMethod: values.clientId !== record.clientId ? "Manual review" : record.linkMethod, changes: changes.length ? [...record.changes, { at, category, reason: clean(reason), fields: changes }] : record.changes };
   }
-  const api = { clean, nameKey, money, date, matchClient, parseSource, prepare, needs, summary, amend };
+  const api = { clean, nameKey, money, date, matchClient, parseSource, prepare, needs, summary, amend, correctDates };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.PCLFinanceImportCore = api;
 })(typeof window === "undefined" ? {} : window);

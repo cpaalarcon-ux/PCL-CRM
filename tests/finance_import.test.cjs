@@ -62,3 +62,15 @@ test('local storage saves atomically, rejects stale writes and denies non-manage
  store.set('pcl-unified-shell-preview-v1',JSON.stringify({category:'Intern'}));assert.throws(()=>context.window.test.save(state,store.get(key)),/Only/);
  store.delete('pcl-unified-shell-preview-v1');context.localStorage.setItem=()=>{throw new Error('Quota exceeded');};assert.throws(()=>context.window.test.save(state,store.get(key)),/Quota/);assert.equal(context.window.test.data().records.length,1);
 });
+test('legacy UTC-shift corrections require the original source timestamp and preserve client links',()=>{
+ const old={...C.parseSource(payment(),'Payment',source,'firm-a',clients),id:'legacy-1',date:'2026-09-30',dateEncoding:undefined,clientId:'c-2',linkMethod:'Manual review'};
+ old.sourceFields=old.sourceFields.map(f=>f.header==='Date'?{...f,value:'2026-09-30T21:00:00.000Z'}:f);
+ const result=C.prepare([sheet([payment()]),sheet([payment()])],[old],clients);
+ assert.equal(result.records.length,0);assert.equal(result.corrections.length,1);assert.equal(result.duplicates.length,1);assert.equal(result.conflicts.length,0);
+ const repaired=C.correctDates(old,result.corrections[0].record,'Manager','now');assert.equal(repaired.date,'2026-10-01');assert.equal(repaired.clientId,'c-2');assert.equal(repaired.firmId,'firm-a');assert.equal(repaired.amountMinor,old.amountMinor);assert.equal(repaired.changes.length,1);assert.deepEqual(repaired.sourceFields,old.sourceFields);
+ assert.equal(C.prepare([sheet([payment()])],[repaired],clients).duplicates.length,1);
+ assert.equal(C.prepare([sheet([payment(undefined,999)])],[old],clients).conflicts.length,1);
+ assert.equal(C.prepare([sheet([{...payment(),Date:'2026-10-03'}])],[old],clients).conflicts.length,1);
+ assert.equal(C.prepare([sheet([payment()])],[{...old,dateEncoding:'EXCEL_CALENDAR_V2'}],clients).conflicts.length,1);
+ assert.throws(()=>C.correctDates(old,result.corrections[0].record,'Intern','now'));
+});

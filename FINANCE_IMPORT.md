@@ -13,6 +13,7 @@ Imports use a separate, browser-local history register (`pcl-finance-import-hist
 - Negative journal amounts suggest a credit or reversal but do not establish the document type. Preserve source Paid/Reconciled separately from local allocation status. A Bank journal does not establish the payment method.
 - Review shows nonblank rows read, new records, duplicates, conflicts, invalid rows, source totals and client links. Conflicts and invalid rows block saving. Missing client/firm/allocation details do not prevent saving historical records.
 - Commit records and batch history in one storage write, with stale-data checks. Reimports are idempotent.
+- Parse Excel date serials as calendar dates, including the workbook's 1904-date setting, without UTC conversion. A controlled reimport can repair legacy one-day UTC shifts only when original source timestamps establish that pattern and every non-date source field still agrees. Review lists each change, preserves record IDs and client links, and logs before/after dates. Other changed figures or dates remain conflicts.
 
 ## Review and navigation
 

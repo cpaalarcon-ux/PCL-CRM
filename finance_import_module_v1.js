@@ -41,7 +41,8 @@
       const XLSX=await ensureXlsx(), sheets=[];
       for (const file of files) {
         if (file.size > 20*1024*1024) throw new Error(`${file.name}: file exceeds 20 MB.`);
-        const book=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:true});
+        // Parse calendar dates from Excel serials, independently of browser timezone.
+        const book=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:false});
         let usable=0;
         for (const sheetName of book.SheetNames) {
           const matrix=XLSX.utils.sheet_to_json(book.Sheets[sheetName],{header:1,raw:true,defval:null,blankrows:true});
@@ -50,7 +51,15 @@
           const headers=matrix[headerIndex].map(C.clean), kind=headers.includes("Amount Signed")?"Payment":"Journal";
           if (new Set(headers.filter(Boolean)).size!==headers.filter(Boolean).length) throw new Error(`${file.name}: duplicate column headings.`);
           const rows=[];
-          matrix.slice(headerIndex+1).forEach((values,i)=>{if(values.some(v=>C.clean(v)))rows.push({rowNumber:headerIndex+i+2,values:Object.fromEntries(headers.map((h,j)=>[h,values[j]??null]))});});
+          matrix.slice(headerIndex+1).forEach((values,i)=>{if(values.some(v=>C.clean(v)))rows.push({rowNumber:headerIndex+i+2,values:Object.fromEntries(headers.map((h,j)=>{
+            let value=values[j]??null;
+            if(["Date","Invoice/Bill Date","Due Date"].includes(h)&&typeof value==="number"){
+              const d=XLSX.SSF.parse_date_code(value,{date1904:!!book.Workbook?.WBProps?.date1904});
+              if(!d)throw new Error(`${file.name}, row ${headerIndex+i+2}: invalid Excel date.`);
+              value=`${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+            }
+            return [h,value];
+          }))});});
           sheets.push({fileName:file.name,sheetName,kind,rows});usable++;
         }
         if (!usable) throw new Error(`${file.name}: expected Payment or Journal Entry export columns were not found.`);
@@ -66,21 +75,22 @@
     const previous=localStorage.getItem(KEY)||"", clients=clientList();
     const result=C.prepare(loadedSheets,data().records,clients,firmId);
     review={result,previous,clientSnapshot:JSON.stringify(clients),firmId};
-    const s=C.summary(result.records,clients), issues=[...result.conflicts,...result.errors];
-    byId("financeImportReview").innerHTML=`<div class="fi-notice"><b>Import review · KES</b><p>${result.rowsRead} rows read · <b>${s.count} new records</b> · ${result.duplicates.length} duplicates skipped · ${result.conflicts.length} conflicts · ${result.errors.length} invalid rows.</p><p>${s.payments} payments: ${kes(s.paymentMinor)}. ${s.journals} journal entries: ${kes(s.journalMinor)}.</p><p>${s.linked} records link to an existing client. ${s.count-s.linked} require a client link. Missing firms and unallocated payments remain highlighted in red.</p></div>${issues.length?`<div class="fi-missing">${issues.map(i=>`<p>${esc(i.fileName)}, row ${i.row}: ${esc(i.reason)}</p>`).join("")}</div>`:""}<p>Imported history preserves source statuses and references. It does not mark invoices paid, create new clients or change statements.</p><label class="fi-confirm"><input type="checkbox" id="financeImportConfirm" /> I have reviewed the KES totals and understand the outstanding links.</label><button type="button" id="financeImportSave" ${!s.count||issues.length?"disabled":""}>Import ${s.count} new finance records</button>`;
+    const s=C.summary(result.records,clients), issues=[...result.conflicts,...result.errors], correctionCount=result.corrections.length;
+    byId("financeImportReview").innerHTML=`<div class="fi-notice"><b>Import review · KES</b><p>${result.rowsRead} rows read · <b>${s.count} new records</b> · ${result.duplicates.length} duplicates skipped · ${result.conflicts.length} conflicts · ${result.errors.length} invalid rows.</p><p>${s.payments} new payments: ${kes(s.paymentMinor)}. ${s.journals} new journal entries: ${kes(s.journalMinor)}.</p><p>${s.linked} new records link to an existing client. ${s.count-s.linked} require a client link. Missing firms and unallocated payments remain highlighted in red.</p>${correctionCount?`<p><b>${correctionCount} existing records need an Excel calendar-date correction.</b> Amounts, references and client links will remain unchanged.</p><details><summary>Review date corrections</summary>${result.corrections.map(c=>{const old=data().records.find(r=>r.id===c.id);return `<p>${esc(c.record.reference)}: ${esc(old.date)} → ${esc(c.record.date)}${old.dueDate!==c.record.dueDate?` · Due date ${esc(old.dueDate)} → ${esc(c.record.dueDate)}`:""}</p>`;}).join("")}</details>`:""}</div>${issues.length?`<div class="fi-missing">${issues.map(i=>`<p>${esc(i.fileName)}, row ${i.row}: ${esc(i.reason)}</p>`).join("")}</div>`:""}<p>Imported history preserves source statuses and references. It does not mark invoices paid, create new clients or change statements.</p><label class="fi-confirm"><input type="checkbox" id="financeImportConfirm" /> I have reviewed the KES totals, date corrections and outstanding links.</label><button type="button" id="financeImportSave" ${(!s.count&&!correctionCount)||issues.length?"disabled":""}>${correctionCount?`Save ${correctionCount} date corrections${s.count?` and ${s.count} new records`:""}`:`Import ${s.count} new finance records`}</button>`;
   }
   function commit() {
     guard();if(!review||!byId("financeImportConfirm")?.checked)throw new Error("Review the import and check the confirmation box.");
     if(review.firmId!==byId("financeImportFirm").value||review.clientSnapshot!==JSON.stringify(clientList()))throw new Error("The firm selection or client list changed. Review the import again.");
     const {result}=review;
-    if(result.errors.length||result.conflicts.length||!result.records.length)throw new Error("Resolve conflicts and invalid rows before importing.");
+    if(result.errors.length||result.conflicts.length||(!result.records.length&&!result.corrections.length))throw new Error("Resolve conflicts and invalid rows before importing.");
     const next=data(), at=new Date().toISOString(), batchId=crypto.randomUUID();
+    for(const correction of result.corrections){const index=next.records.findIndex(r=>r.id===correction.id);next.records[index]=C.correctDates(next.records[index],correction.record,category(),at);}
     next.records.push(...result.records.map(r=>({...r,id:crypto.randomUUID(),batchId,importedAt:at,importedByCategory:category()})));
-    next.batches.push({id:batchId,at,category:category(),currency:"KES",files:loadedSheets.map(s=>({fileName:s.fileName,sheetName:s.sheetName,rows:s.rows.length})),rowsRead:result.rowsRead,imported:result.records.length,duplicates:result.duplicates,conflicts:result.conflicts,errors:result.errors});
+    next.batches.push({id:batchId,at,category:category(),currency:"KES",files:loadedSheets.map(s=>({fileName:s.fileName,sheetName:s.sheetName,rows:s.rows.length})),rowsRead:result.rowsRead,imported:result.records.length,datesCorrected:result.corrections.length,duplicates:result.duplicates,conflicts:result.conflicts,errors:result.errors});
     save(next,review.previous);
-    const total=result.records.length, duplicates=result.duplicates.length;
+    const total=result.records.length, duplicates=result.duplicates.length, corrected=result.corrections.length;
     review=null;loadedSheets=[];byId("financeImportFiles").value="";byId("financeImportReview").replaceChildren();page=0;render();
-    message(`${total} finance records imported in this browser. ${duplicates} duplicate rows skipped. Existing client links saved; missing details remain Update required.`);
+    message(`${total} new finance records imported in this browser. ${corrected} calendar dates corrected. ${duplicates} duplicate rows skipped. Existing client links saved; missing details remain Update required.`);
   }
   function filtered(records) {
     const search=C.nameKey(byId("financeHistorySearch").value), clientId=byId("financeHistoryClient").value, kind=byId("financeHistoryKind").value;
@@ -105,7 +115,7 @@
     }).join("")||'<tr><td colspan="7">No imported finance records match these filters.</td></tr>';
     byId("financeHistoryPage").textContent=`Page ${page+1} of ${Math.max(1,Math.ceil(rows.length/40))}`;
     byId("financeHistoryPrevious").disabled=page===0;byId("financeHistoryNext").disabled=(page+1)*40>=rows.length;
-    byId("financeImportBatches").innerHTML=state.batches.slice().reverse().map(b=>`<li>${esc(b.at)} · ${b.rowsRead} rows read, ${b.imported} imported, ${b.duplicates.length} duplicates skipped · ${esc(b.category)}</li>`).join("");
+    byId("financeImportBatches").innerHTML=state.batches.slice().reverse().map(b=>`<li>${esc(b.at)} · ${b.rowsRead} rows read, ${b.imported} imported, ${b.datesCorrected||0} dates corrected, ${b.duplicates.length} duplicates skipped · ${esc(b.category)}</li>`).join("");
   }
   function openEdit(id) {
     guard();const record=data().records.find(r=>r.id===id);if(!record)throw new Error("Record no longer exists.");
