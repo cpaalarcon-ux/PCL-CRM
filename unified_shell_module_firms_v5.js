@@ -26,7 +26,7 @@
       { label: "Shared workboard", panel: "shared-workboard" }, { label: "Lead & engagement", panel: "lifecycle" }, { label: "Audit workspace", panel: "audit-workspace" }, { label: "Tax projects", panel: "tax-projects" }, { label: "Recurring tasks", panel: "recurring-tasks" }
     ] },
     finance: { label: "Finance", icon: "KES", items: [
-      { label: "Invoices & receivables", panel: "invoices-statements", anchor: "invoiceStatementRows" }, { label: "Payments", panel: "invoices-statements", anchor: "receivablePaymentForm" }, { label: "Firm statements", panel: "invoices-statements", anchor: "statementGenerator" }, { label: "Relationship summary", panel: "invoices-statements", anchor: "statementGenerator" }
+      { label: "Invoices & receivables", panel: "invoices-statements", anchor: "invoiceStatementRows" }, { label: "Payments", panel: "invoices-statements", anchor: "receivablePaymentForm" }, { label: "Imported client history", panel: "finance-import" }, { label: "Firm statements", panel: "invoices-statements", anchor: "statementGenerator" }, { label: "Relationship summary", panel: "invoices-statements", anchor: "statementGenerator" }
     ] },
     timehr: { label: "Time & HR", icon: "◷", items: [
       { label: "My time & WIP", panel: "operations" }, { label: "Team & HR", panel: "hr" }, { label: "Attendance", panel: "attendance" }
@@ -345,3 +345,4 @@
   }
   start();
 })();
+
