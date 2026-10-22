@@ -194,6 +194,9 @@
   // workbook rows, KRA PINs, evidence files or QR content. The production
   // equivalent is a server-side query constrained by the signed-in user.
   window.pclTaxProjectWorkspace = {
+    // Copies prevent the review module from mutating the legacy project register.
+    reviewProjects() { return JSON.parse(JSON.stringify(projects)); },
+    refresh() { render(); },
     dashboardSnapshot({firmId = ""} = {}) {
       const scopedProjects = projects.filter(project => !firmId || project.firmId === firmId);
       const scopedProjectIds = new Set(scopedProjects.map(project => project.id));
@@ -331,6 +334,11 @@
     if (project.identityStatus !== "Verified") return {ready: false, missing: ["Tax Manager client identity approval"]};
     const missing = [];
     project.obligations.forEach(obligation => {
+      if (obligation.code === "VAT" && window.pclTaxReview) {
+        const checks = window.pclTaxReview.projectReadiness(project.id);
+        missing.push(...checks.missing);
+        return;
+      }
       configuredSources(project, obligation).forEach(expected => {
         const batch = projectBatches(project).find(item => item.obligationCode === obligation.code && item.sourceType === expected.source && item.periodKey === expected.periodKey && item.status === "Accepted");
         if (!batch) missing.push(`${obligations[obligation.code].label}: ${expected.label}`);
@@ -443,6 +451,7 @@
     if (!["Tax Assistant", "Tax Manager"].includes(currentRole())) throw new Error("Only Tax Assistant or Tax Manager may record a controlled source batch.");
     const obligation = project.obligations.find(item => item.code === data.get("obligationCode"));
     const sourceType = data.get("sourceType");
+    if (obligation?.code === "VAT" && window.pclTaxReview) throw new Error("Use Purchases & weekly controls below for VAT sales, purchases and bank uploads. It retains the rows and runs the required preview and review checks.");
     const periodKey = dateKey(data.get("batchPeriodKey"));
     const workbook = data.get("workingPaperFile");
     let fileReference = data.get("fileReference").trim();
@@ -506,6 +515,10 @@
   function approveTechnicalReview(project) {
     requireRole("Tax Supervisor", project, "Technical review approval is unavailable.");
     if (project.status !== "In Review") throw new Error("The Tax Project must be submitted for review first.");
+    if (window.pclTaxReview && project.obligations.some(o => o.code === "VAT")) {
+      const checks = window.pclTaxReview.projectReadiness(project.id);
+      if (!checks.ready) throw new Error(`Weekly controls are incomplete: ${checks.missing.join("; ")}`);
+    }
     approvalRecord(project, "TECHNICAL_REVIEW", "Tax Supervisor", "Source batches, reconciliations and working-paper exceptions reviewed.");
     project.status = project.requiresClientConfirmation ? "Awaiting Client Confirmation" : "Manager Approval";
     project.obligations.forEach(obligation => obligation.status = project.status);
@@ -553,6 +566,10 @@
   function recordFiling(project, obligationCode) {
     if (currentRole() !== "Authorized Tax Filer") throw new Error("Only Authorized Tax Filer may record a submission.");
     if (project.status !== "Ready for Filing") throw new Error("The Tax Project is not authorised for filing.");
+    if (obligationCode === "VAT" && window.pclTaxReview) {
+      const checks = window.pclTaxReview.projectReadiness(project.id);
+      if (!checks.ready) throw new Error(`Weekly controls are incomplete: ${checks.missing.join("; ")}`);
+    }
     const obligation = project.obligations.find(item => item.code === obligationCode);
     if (!obligation || obligation.status === "Filed") throw new Error("This obligation is unavailable for filing.");
     const filingReference = window.prompt(`Enter the iTax acknowledgement reference for ${obligations[obligationCode].label}:`);

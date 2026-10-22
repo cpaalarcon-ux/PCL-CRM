@@ -23,7 +23,7 @@
       { label: "Directory", panel: "clients" }, { label: "Client Vault", panel: "vault" }, { label: "Client billing", panel: "invoices-statements", hint: "Client-specific billing is filtered by the selected client when a backend is connected." }
     ] },
     projects: { label: "Projects & Tasks", icon: "✓", items: [
-      { label: "Shared workboard", panel: "shared-workboard" }, { label: "Lead & engagement", panel: "lifecycle" }, { label: "Audit workspace", panel: "audit-workspace" }, { label: "Tax projects", panel: "tax-projects" }, { label: "Recurring tasks", panel: "recurring-tasks" }
+      { label: "Shared workboard", panel: "shared-workboard" }, { label: "Lead & engagement", panel: "lifecycle" }, { label: "Audit workspace", panel: "audit-workspace" }, { label: "Tax projects", panel: "tax-projects" }, { label: "Purchase review", panel: "tax-projects", anchor: "tax-purchase-review" }, { label: "Recurring tasks", panel: "recurring-tasks" }
     ] },
     finance: { label: "Finance", icon: "KES", items: [
       { label: "Invoices & receivables", panel: "invoices-statements", anchor: "invoiceStatementRows" }, { label: "Payments", panel: "invoices-statements", anchor: "receivablePaymentForm" }, { label: "Imported client history", panel: "finance-import" }, { label: "Firm statements", panel: "invoices-statements", anchor: "statementGenerator" }, { label: "Relationship summary", panel: "invoices-statements", anchor: "statementGenerator" }
