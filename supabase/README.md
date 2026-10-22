@@ -1,5 +1,7 @@
 # PCL ERP staging database foundation
 
+**Current work:** see [Connected staff pilot](STAFF_PILOT.md) for the authenticated workspace and follow-up migrations. The Release 0 description below records the initial restricted foundation.
+
 Release 0 was applied to the dedicated `pcl-erp-staging` Supabase project on 22 October 2026. This is a restricted database foundation, **not a staff-ready or production release**. The existing Cloudflare interface still uses the preview's browser-local data and is not connected to this database.
 
 ## Applied migration
