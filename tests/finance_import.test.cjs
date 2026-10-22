@@ -6,6 +6,11 @@ const clients=[{id:'c-1',companyName:'Example Client',tradingName:'Example Store
 const payment=(reference='BANK/TEST/001',amount=1234.56)=>({Number:reference,Date:'2026-10-01 00:00:00','Customer/Vendor':'Example Client','Amount Signed':amount,'Amount Company Currency Signed':amount,Journal:'Bank',State:'Reconciled'});
 const sheet=rows=>({kind:'Payment',fileName:'Synthetic.xlsx',sheetName:'Payments',rows:rows.map((values,i)=>({rowNumber:i+2,values}))});
 const source={fileName:'Synthetic.xlsx',sheetName:'Sheet1',row:2};
+test('Excel date cells preserve their calendar day in Nairobi',()=>{
+ const {execFileSync}=require('node:child_process');
+ const text=execFileSync(process.execPath,['-e',`const C=require(${JSON.stringify(require.resolve('../finance_import_core_v1.js'))});console.log(C.date(new Date(2026,9,1)));`],{env:{...process.env,TZ:'Africa/Nairobi'},encoding:'utf8'});
+ assert.equal(text.trim(),'2026-10-01');
+});
 test('duplicate exports import once and preserve exact KES cents, reference and client ID',()=>{
  const rows=Array.from({length:165},(_,i)=>payment(`BANK/TEST/${i}`,100+i));
  const r=C.prepare([sheet(rows),sheet(rows)],[],clients);

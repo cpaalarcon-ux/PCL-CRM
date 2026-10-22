@@ -12,7 +12,8 @@
     return cents;
   };
   function date(value) {
-    const text = value instanceof Date ? value.toISOString().slice(0, 10) : clean(value).slice(0, 10);
+    // Excel dates are calendar dates, not UTC instants. Preserve the local cell day.
+    const text = value instanceof Date ? `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,"0")}-${String(value.getDate()).padStart(2,"0")}` : clean(value).slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error("Date must be an ISO date or an Excel date cell.");
     const parsed = new Date(`${text}T00:00:00Z`);
     if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== text) throw new Error("Invalid date.");
