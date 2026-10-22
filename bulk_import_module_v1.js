@@ -70,7 +70,7 @@
   const saveJson = (key, value) => localStorage.setItem(key, JSON.stringify(value));
   const splitValues = value => clean(value).split(/[;,|]/).map(item => item.trim()).filter(Boolean);
   const bool = value => ["yes", "true", "1", "y", "checked"].includes(normalise(value));
-  const numberOrNull = value => { const number = Number(clean(value).replace(/,/g, "")); return Number.isFinite(number) ? number : null; };
+  const numberOrNull = value => { const raw = clean(value).replace(/,/g, ""); if (!raw) return null; const number = Number(raw); return Number.isFinite(number) ? number : null; };
   const dateIso = value => {
     const raw = clean(value); if (!raw) return null;
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
