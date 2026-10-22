@@ -14,6 +14,10 @@ Engagement Partners and Managers can reopen and save changes to existing staff a
 
 - Staff ID and the internal Client ID are immutable. Login IDs must be unique. Existing staff-client links, task completion, timesheets, account status and unrelated metadata are retained.
 - Client imports require at least Company Name or Client ID / Reference. Missing sector, branch, contact, firm and service information is not guessed. Unknown mapped values are kept for review.
+- All named incomplete rows remain eligible as drafts. A shared KRA PIN is a review warning, not a reason to discard a distinct client. The client cards recompute that warning after identity corrections.
+- Import headers may appear below introductory rows; review messages retain the original Excel row numbers. `Client_External_ID`, `Regulatory_Bodies` and `Service_Lines` map to the corresponding master fields.
+- KRA PIN, legal entity type, registration number, address, tax residence and source tax obligations are retained and editable. Other supplied columns are retained as source text, never interpreted as verified KYC or approval. Tax obligations require a separate work-pack review.
+- For multi-sheet onboarding workbooks, prepare one client row with its primary contact and requested services matched by Client External ID. This importer does not automatically join Contact or Engagement worksheets or upload KYC documents.
 - Missing servicing firms are not silently assigned during reload. An optional default firm can be selected explicitly for blank import cells.
 - Existing and within-file duplicates are skipped using identifiers and normalized names. Import confirmation revalidates against the latest directory.
 - Renaming a client retains previous names for legacy engagement links. Existing document and invoice snapshots are not rewritten.

@@ -7,6 +7,11 @@
   const clean = value => String(value ?? "").trim();
   const norm = value => clean(value).toLowerCase().replace(/[^a-z0-9]/g, "");
   const esc = value => clean(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const identityFields = { kraPin:"KRA PIN", legalEntityType:"Legal entity type", registrationNo:"Registration number", taxResidence:"Tax residence", physicalAddress:"Physical address", cityTown:"City / town", country:"Country", website:"Website", accountingSoftware:"Accounting software", taxObligations:"Tax obligations (source; confirm work packs separately)" };
+  function pinReview(client, records = clients) {
+    return norm(client.kraPin) && records.some(other => other.id !== client.id && norm(other.kraPin) === norm(client.kraPin))
+      ? "KRA PIN shared with another client — review both records. Both clients are retained." : "";
+  }
   function canManage() {
     try { const role = JSON.parse(localStorage.getItem("pcl-unified-shell-preview-v1") || "{}").category || "Engagement Partner"; return ["Engagement Partner", "Manager"].includes(role); } catch (_) { return false; }
   }
@@ -27,8 +32,15 @@
     add("email", "Contact email", /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean(client.contact?.email)));
     add("phone", "Contact phone", clean(client.contact?.phone));
     add("servicePicker", "Services requested", (client.services || []).some(service => allServices().includes(service)));
-    if (client.clientCategory === "Corporate") add("incorporationDate", "Incorporation date", /^\d{4}-\d{2}-\d{2}$/.test(clean(client.incorporationDate)));
-    if ((client.services || []).includes("Tax Compliance (VAT, PAYE, Income Tax)")) add("taxWorkPacks", "Tax work packs", client.taxProfile?.workPacks?.length);
+    if (client.clientCategory === "Corporate") {
+      add("incorporationDate", "Incorporation date", /^\d{4}-\d{2}-\d{2}$/.test(clean(client.incorporationDate)));
+      add("clientIdentity_registrationNo", "Registration number", clean(client.registrationNo));
+      add("clientIdentity_legalEntityType", "Legal entity type", clean(client.legalEntityType));
+    }
+    if ((client.services || []).includes("Tax Compliance (VAT, PAYE, Income Tax)")) {
+      add("taxWorkPacks", "Tax work packs", client.taxProfile?.workPacks?.length);
+      add("clientIdentity_kraPin", "KRA PIN", clean(client.kraPin));
+    }
     if (client.smeAuditExempt) add("smeAuditExemptionBasis", "Approved SME exemption basis", clean(client.smeAuditExemptionBasis));
     return fields;
   }
@@ -64,6 +76,7 @@
     record.smeAuditExempt=data.get("smeAuditExempt")==="on";
     record.smeAuditExemptionBasis=clean(data.get("smeAuditExemptionBasis"));
     record.etimsOnboardingRequired=data.get("etimsOnboardingRequired")==="on";
+    Object.keys(identityFields).forEach(name=>record[name]=clean(data.get(name)));
     return record;
   }
   function updateFieldState() { try { fieldState(formRecord()); } catch (_) { /* Existing form may still be initialising. */ } }
@@ -90,6 +103,7 @@
     resetEditor();editingId=id;snapshot=JSON.stringify(record);
     const direct=["companyName","tradingName","primarySector","branchLocation","clientCategory","leadSource","pieStatus","isSacco","billingFrequency","pipelineStage","engagementValue","engagementLetter","notes","incorporationDate","smeAuditExempt","smeAuditExemptionBasis","etimsOnboardingRequired","importReference"];
     direct.forEach(name=>setControl(name,record[name]));setControl("clientFirm",record.firmId);
+    Object.keys(identityFields).forEach(name=>setControl(name,record[name]));
     for(const [name,key] of Object.entries({contactName:"name",jobTitle:"jobTitle",email:"email",phone:"phone",decisionRole:"decisionRole"}))setControl(name,record.contact?.[key]);
     const taxMap={etimsStatus:"etimsStatus",taxReportingMonth:"reportingMonth",taxYearStart:"financialYearStart",taxYearEnd:"financialYearEnd",corporationTaxRate:"corporationTaxRate",openingVatCredit:"openingVatCredit",openingStock:"openingStock",finalStockStatus:"finalStockStatus",instalmentMethod:"instalmentMethod",priorYearTax:"priorYearTax",currentYearTaxForecast:"currentYearTaxForecast",expectedWhtCredits:"expectedWhtCredits",taxWorkingPaper:"workingPaper"};
     Object.entries(taxMap).forEach(([field,key])=>setControl(field,record.taxProfile?.[key]));
@@ -101,7 +115,7 @@
     document.getElementById("clientEditTitle").textContent=`Edit: ${record.companyName||record.importReference||"Client profile"}`;
     showRecommendation();showTaxComplianceProfile();fieldState(record);
     const unmapped=Object.entries(record.unmappedImportFields||{});
-    message(unmapped.length?`Imported values needing review: ${unmapped.map(([field,value])=>`${field}: ${value}`).join("; ")}. Existing IDs, engagement ownership and historical documents will be preserved.`:"Client opened for editing. Save partial details now and complete the red fields later.");
+    message([unmapped.length?`Imported values needing review: ${unmapped.map(([field,value])=>`${field}: ${value}`).join("; ")}. Existing IDs, engagement ownership and historical documents will be preserved.`:"Client opened for editing. Save partial details now and complete the red fields later.",pinReview(record)].filter(Boolean).join(" "));
     form.scrollIntoView({behavior:"smooth",block:"start"});form.elements.companyName.focus({preventScroll:true});
   }
   function saveEditor(event) {
@@ -129,7 +143,7 @@
       record.tasks=[...record.tasks,...generateWorkflows(record).filter(task=>!existingIds.has(task.id))];
     }
     const editable=["companyName","tradingName","primarySector","branchLocation","clientCategory","leadSource","contact","services","regulators","pieStatus","isSacco","billingFrequency","pipelineStage","engagementValue","engagementLetter","notes","taxProfile","incorporationDate","smeAuditExempt","smeAuditExemptionBasis","etimsOnboardingRequired","firmId"];
-    const changes=before?editable.filter(field=>JSON.stringify(before[field]??null)!==JSON.stringify(record[field]??null)).map(field=>({field,before:before[field]??null,after:record[field]??null})):[];
+    const changes=before?[...editable,...Object.keys(identityFields)].filter(field=>JSON.stringify(before[field]??null)!==JSON.stringify(record[field]??null)).map(field=>({field,before:before[field]??null,after:record[field]??null})):[];
     if(before)record.changeHistory=[...(Array.isArray(before.changeHistory)?before.changeHistory:[]),{changedAt:record.updatedAt,source:"Local client editor (not authenticated)",changes}];
     if(index>=0)records[index]=record;else records.push(record);
     try {localStorage.setItem(key,JSON.stringify(records));}catch(_){return message("Could not save in this browser. Your entered details remain in the form.",true);}
@@ -147,6 +161,7 @@
       card.querySelector(".client-completeness")?.remove();
       const fields=missing(client),panel=document.createElement("div");panel.className=`client-completeness${fields.length?" incomplete":""}`;
       panel.innerHTML=fields.length?`<b>Draft — ${fields.length} missing details</b><div>${fields.map(field=>`<span class="client-missing-badge">Missing: ${esc(field.label)}</span>`).join("")}</div>`:'<b>Profile details complete</b><span class="hint"> · Engagement / KYC approval is separate.</span>';
+      const warning=pinReview(client);if(warning)panel.innerHTML+=`<div class="client-profile-notice error">${esc(warning)}</div>`;
       card.querySelector(".client-topline")?.insertAdjacentElement("afterend",panel);
       if(fields.length){const sign=card.querySelector('[data-action="sign-report"]');if(sign){sign.disabled=true;sign.title="Complete the client profile and engagement gates first.";}}
     });
@@ -169,6 +184,7 @@
   if(form){
     form.querySelectorAll("[required]").forEach(input=>input.required=false);
     form.insertAdjacentHTML("afterbegin",'<h3 id="clientEditTitle">New client profile</h3><div id="clientProfileNotice" class="client-profile-notice" role="status" aria-live="polite">Save partial client details now. Missing fields will be highlighted in red.</div><div id="clientMissingSummary" class="client-profile-notice"></div><label>Client ID / Reference (optional if company name is entered)<input name="importReference" id="clientImportReference" /></label>');
+    form.querySelector('[type="submit"]').insertAdjacentHTML("beforebegin",`<fieldset class="client-identity-fields"><legend>Client identity and imported details</legend><p class="hint">Save incomplete details now. Tax obligations are retained as supplied; review the tax work packs before activation.</p>${Object.entries(identityFields).map(([name,label])=>`<label>${esc(label)}<input id="clientIdentity_${name}" name="${name}" /></label>`).join("")}</fieldset>`);
     form.querySelector('[type="submit"]').textContent="Save client draft";
     form.querySelector('[type="reset"]').textContent="Cancel / New client";
     form.addEventListener("submit",saveEditor,true);

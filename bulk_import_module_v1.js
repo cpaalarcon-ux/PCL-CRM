@@ -30,13 +30,13 @@
       { key: "firmScope", label: "Firm Scope", aliases: ["firmscope", "firm", "firmcode", "company"] }
     ],
     clients: [
-      { key: "clientReference", label: "Client ID / Reference", aliases: ["clientid", "clientreference", "customernumber", "accountnumber"] },
+      { key: "clientReference", label: "Client ID / Reference", aliases: ["clientid", "clientreference", "clientexternalid", "customernumber", "accountnumber"] },
       { key: "companyName", label: "Company Name", aliases: ["companyname", "legalname", "clientname", "customername"] },
       { key: "tradingName", label: "Trading Name", aliases: ["tradingname", "businessname"] },
       { key: "firm", label: "Handling Firm / Firm Code", aliases: ["handlingfirm", "firm", "firmcode", "companycode"] },
       { key: "primarySector", label: "Primary Sector", aliases: ["primarysector", "sector", "industry"] },
       { key: "branchLocation", label: "Branch Location", aliases: ["branchlocation", "branch", "office"] },
-      { key: "regulators", label: "Regulatory Body", aliases: ["regulatorybody", "regulators", "regulator"] },
+      { key: "regulators", label: "Regulatory Body", aliases: ["regulatorybody", "regulatorybodies", "regulators", "regulator"] },
       { key: "pieStatus", label: "PIE Status", aliases: ["piestatus", "pie", "publicinterestentity"] },
       { key: "clientCategory", label: "Client Category", aliases: ["clientcategory", "category", "entitytype"] },
       { key: "leadSource", label: "Lead Source", aliases: ["leadsource", "source"] },
@@ -45,12 +45,22 @@
       { key: "email", label: "Contact Email", aliases: ["email", "emailaddress", "contactemail"] },
       { key: "phone", label: "Contact Phone", aliases: ["phone", "phonenumber", "contactphone", "mobile"] },
       { key: "decisionRole", label: "Contact Decision Role", aliases: ["roleindecision", "decisionrole", "contactrole"] },
-      { key: "services", label: "Services Requested", aliases: ["servicesrequested", "services", "service"] },
+      { key: "services", label: "Services Requested", aliases: ["servicesrequested", "servicelines", "services", "service"] },
       { key: "engagementValue", label: "Engagement Value (KES)", aliases: ["engagementvaluekes", "engagementvalue", "fee", "value"] },
       { key: "billingFrequency", label: "Billing Frequency", aliases: ["billingfrequency", "frequency"] },
       { key: "pipelineStage", label: "Pipeline Stage", aliases: ["pipelinestage", "stage", "status"] },
       { key: "incorporationDate", label: "Incorporation Date", aliases: ["incorporationdate", "registrationdate"] },
-      { key: "smeAuditExempt", label: "SME Audit Exempt", aliases: ["smeauditexempt", "auditexempt"] }
+      { key: "smeAuditExempt", label: "SME Audit Exempt", aliases: ["smeauditexempt", "auditexempt"] },
+      { key: "kraPin", label: "KRA PIN", aliases: ["krapin", "taxpin"] },
+      { key: "legalEntityType", label: "Legal Entity Type", aliases: ["legalentitytype"] },
+      { key: "registrationNo", label: "Registration No", aliases: ["registrationno", "registrationnumber"] },
+      { key: "taxResidence", label: "Tax Residence", aliases: ["taxresidence"] },
+      { key: "physicalAddress", label: "Physical Address", aliases: ["physicaladdress"] },
+      { key: "cityTown", label: "City / Town", aliases: ["citytown", "city", "town"] },
+      { key: "country", label: "Country", aliases: ["country"] },
+      { key: "website", label: "Website", aliases: ["website"] },
+      { key: "accountingSoftware", label: "Accounting Software", aliases: ["accountingsoftware"] },
+      { key: "taxObligations", label: "Tax Obligations (source)", aliases: ["taxobligations"] }
     ],
     links: [
       { key: "staffId", label: "Staff ID", required: true, aliases: ["staffid", "employeeid", "staffnumber"] },
@@ -62,7 +72,7 @@
       { key: "allocation", label: "Allocation %", aliases: ["allocation", "allocationpercentage", "allocationpercent"] }
     ]
   };
-  const state = { workbook: null, sheetName: "", headers: [], rows: [], type: "staff", mapping: {}, prepared: null };
+  const state = { workbook: null, sheetName: "", headers: [], rows: [], rowNumbers: [], type: "staff", mapping: {}, prepared: null };
   const clean = value => String(value ?? "").trim();
   const safe = value => clean(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
   const normalise = value => clean(value).toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -137,9 +147,15 @@
   function readSheet(name) {
     if (!canImport()) return notice("Only Engagement Partners and Managers may upload staff or client data.", true);
     if (!state.workbook || !window.XLSX) return;
-    state.sheetName = name; const matrix = window.XLSX.utils.sheet_to_json(state.workbook.Sheets[name], { header: 1, defval: "", raw: false, blankrows: false });
-    const headerRow = matrix.findIndex(row => row.some(value => clean(value))); state.headers = headerRow >= 0 ? matrix[headerRow].map(clean) : [];
-    state.rows = headerRow >= 0 ? matrix.slice(headerRow + 1).filter(row => row.some(value => clean(value))) : [];
+    state.sheetName = name; const matrix = window.XLSX.utils.sheet_to_json(state.workbook.Sheets[name], { header: 1, defval: "", raw: false, blankrows: true });
+    // Onboarding workbooks can have instructions above the real header.
+    const known = new Set(Object.values(fieldSets).flat().flatMap(field => [...field.aliases, normalise(field.label)]));
+    const headerScores = matrix.slice(0, 25).map(row => row.filter(value => known.has(normalise(value))).length);
+    const bestScore = Math.max(0, ...headerScores);
+    const headerRow = bestScore >= 2 ? headerScores.indexOf(bestScore) : matrix.findIndex(row => row.some(value => clean(value)));
+    state.headers = headerRow >= 0 ? matrix[headerRow].map(clean) : [];
+    state.rows = []; state.rowNumbers = [];
+    if (headerRow >= 0) matrix.slice(headerRow + 1).forEach((row, index) => { if (row.some(value => clean(value))) { state.rows.push(row); state.rowNumbers.push(headerRow + index + 2); } });
     state.type = defaultType(); autoMap(state.type); state.prepared = null; renderMapping();
   }
   function mappingHtml() {
@@ -191,6 +207,10 @@
     if (!clientCategory && rawCategory) unmappedImportFields["Client Category"] = rawCategory;
     if (rawServices && !services.length) unmappedImportFields["Services Requested"] = rawServices;
     const record = { id: crypto.randomUUID(), importReference: clean(cell(row, "clientReference")) || crypto.randomUUID(), createdAt: new Date().toISOString(), importedAt: new Date().toISOString(), importSource: "Excel", companyName, tradingName: clean(cell(row, "tradingName")), firmId, primarySector, branchLocation, regulators: splitValues(cell(row, "regulators")), pieStatus: bool(cell(row, "pieStatus")), isSacco: normalise(primarySector) === "financialservices" && /sacco/i.test(`${companyName} ${cell(row, "regulators")}`), clientCategory, leadSource: clean(cell(row, "leadSource")), contact: { name: clean(cell(row, "contactName")), jobTitle: clean(cell(row, "jobTitle")), email: clean(cell(row, "email")), phone: clean(cell(row, "phone")), decisionRole: clean(cell(row, "decisionRole")) }, services, engagementValue: numberOrNull(cell(row, "engagementValue")), billingFrequency: clean(cell(row, "billingFrequency")), pipelineStage: "Lead", incorporationDate: dateIso(cell(row, "incorporationDate")), smeAuditExempt: false, requestedSmeAuditExempt: bool(cell(row, "smeAuditExempt")), smeAuditExemptionBasis: "", engagementLetter: "", notes: "Imported from Excel. Complete missing profile details and verify KYC before engagement activation.", taxProfile: null, eqrCompleted: false, reportSigned: false, tasks: [], unmappedImportFields };
+    for (const name of ["kraPin", "legalEntityType", "registrationNo", "taxResidence", "physicalAddress", "cityTown", "country", "website", "accountingSoftware", "taxObligations"]) record[name] = clean(cell(row, name));
+    // Retain source evidence as text; it must never grant KYC, EQR or activation approval.
+    record.importedSourceFields = state.headers.map((header, index) => ({ column: index + 1, header, value: clean(row[index]) })).filter(field => field.header && field.value);
+    record.kycComplete = false;
     return { record: window.pclClientProfiles.stamp(record) };
   }
   function makeLink(row) {
@@ -209,14 +229,21 @@
     const existing = state.type === "staff" ? selectedStaff() : state.type === "clients" ? selectedClients() : selectedLinks();
     const newRecords = [], errors = [], duplicates = []; const inFile = new Set();
     state.rows.forEach((row, index) => {
+      const rowNumber = state.rowNumbers[index] || index + 2;
       const candidate = state.type === "staff" ? makeStaff(row) : state.type === "clients" ? makeClient(row, defaultFirm) : makeLink(row);
-      if (candidate.error) { errors.push({ row: index + 2, message: candidate.error }); return; }
+      if (candidate.error) { errors.push({ row: rowNumber, message: candidate.error }); return; }
       const record = candidate.record;
       const key = state.type === "staff" ? record.staffId : state.type === "clients" ? duplicateKey(record.companyName || record.importReference) : `${record.staffId}:${record.clientId}`;
       const identities = state.type === "clients" ? [record.companyName, record.tradingName, record.importReference].map(duplicateKey).filter(Boolean) : [key];
       const exists = state.type === "staff" ? existing.some(item => item.staffId === record.staffId || item.loginId === record.loginId) : state.type === "clients" ? existing.some(item => [item.companyName, item.tradingName, item.importReference, ...(item.previousNames || [])].some(value => duplicateKey(value) && [record.companyName, record.tradingName, record.importReference].some(next => duplicateKey(next) && duplicateKey(next) === duplicateKey(value)))) : existing.some(item => item.staffId === record.staffId && item.clientId === record.clientId);
-      if (identities.some(identity => inFile.has(identity)) || exists) { duplicates.push({ row: index + 2, label: state.type === "staff" ? record.staffId : state.type === "clients" ? record.companyName || record.importReference : `${record.staffId} → ${record.clientName}` }); return; }
+      if (identities.some(identity => inFile.has(identity)) || exists) { duplicates.push({ row: rowNumber, label: state.type === "staff" ? record.staffId : state.type === "clients" ? record.companyName || record.importReference : `${record.staffId} → ${record.clientName}` }); return; }
       identities.forEach(identity => inFile.add(identity)); newRecords.push(record);
+    });
+    if (state.type === "clients") newRecords.forEach(record => {
+      const pin = normalise(record.kraPin);
+      // A shared PIN needs human review, not silent deletion of a distinct client.
+      record.importWarnings = pin && [...existing, ...newRecords].some(other => other.id !== record.id && normalise(other.kraPin) === pin)
+        ? ["KRA PIN is shared with another client. Verify both records; neither has been excluded because of the PIN."] : [];
     });
     return { records: newRecords, errors, duplicates };
   }
@@ -227,6 +254,8 @@
     host.innerHTML = `<div class="bulk-review"><h4>Import review</h4><div class="bulk-review-grid"><span><b>${result.records.length}</b> ready to import</span><span><b>${result.duplicates.length}</b> duplicate rows skipped</span><span><b>${result.errors.length}</b> invalid rows skipped</span></div>${result.errors.length ? `<details><summary>View invalid rows</summary><ul>${result.errors.slice(0, 25).map(item => `<li>Row ${item.row}: ${safe(item.message)}</li>`).join("")}</ul></details>` : ""}${result.duplicates.length ? `<details><summary>View duplicate rows</summary><ul>${result.duplicates.slice(0, 25).map(item => `<li>Row ${item.row}: ${safe(item.label)}</li>`).join("")}</ul></details>` : ""}<label class="checkbox-line bulk-confirm"><input id="bulkConfirmImport" type="checkbox" />I confirm that the mapped records are authorised for this private ERP workspace.</label><button class="btn primary" id="bulkConfirmButton" type="button" ${result.records.length ? "" : "disabled"}>Confirm and import ${result.records.length} ${label}</button></div>`;
     host.querySelector("#bulkConfirmButton")?.addEventListener("click", confirmImport);
     const drafts = result.records.filter(record => record.profileStatus === "Draft");
+    const flagged = result.records.filter(record => record.importWarnings?.length);
+    if (flagged.length) host.insertAdjacentHTML("afterbegin", `<div class="bulk-import-notice error"><b>${flagged.length} client records need a KRA PIN review and will still be imported.</b></div>`);
     if (drafts.length) host.insertAdjacentHTML("afterbegin", `<div class="bulk-import-notice error"><b>${drafts.length} incomplete client profiles will be saved as drafts.</b><details><summary>Missing details to complete later</summary><ul>${drafts.map(record => `<li>${safe(record.companyName || record.importReference)} — ${safe((record.missingFields || []).join(", "))}</li>`).join("")}</ul></details>No KYC approval or active engagement is created by this import.</div>`);
   }
   function confirmImport() {

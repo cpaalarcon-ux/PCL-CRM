@@ -54,9 +54,9 @@ function clientEnvironment(role) {
 }
 function importerEnvironment(role='Engagement Partner') {
   const env=clientEnvironment(role),source=fs.readFileSync(path.join(root,'bulk_import_module_v1.js'),'utf8');
-  vm.runInContext(source.slice(0,source.indexOf('  document.addEventListener("click",'))+'\nwindow.testImport={state,autoMap,prepare,canImport};})();',env.context);
+  vm.runInContext(source.slice(0,source.indexOf('  document.addEventListener("click",'))+'\nwindow.testImport={state,autoMap,prepare,canImport,readSheet};})();',env.context);
   env.importer=env.context.window.testImport;
-  env.map=(headers,rows,type='clients')=>{env.importer.state.headers=headers;env.importer.state.rows=rows;env.importer.state.type=type;env.importer.autoMap(type);};
+  env.map=(headers,rows,type='clients')=>{env.importer.state.headers=headers;env.importer.state.rows=rows;env.importer.state.rowNumbers=[];env.importer.state.type=type;env.importer.autoMap(type);};
   return env;
 }
 const staff = {staffId:'TEST001',loginId:'TEST001',fullName:'Example Staff',position:'Audit Assistant',employmentType:'Contract',billingStatus:'Billable',firmScope:'Assigned firms',clientScope:'Assigned clients',projectScope:'Assigned tasks',contractStartDate:'2026-01-01',contractEndDate:'2027-12-31',standardCostRate:1500,billableRate:4000,effectiveDate:'2026-01-01',accountStatus:'Active',rateStatus:'Imported, Finance approval required',extraMetadata:'preserve'};
@@ -91,6 +91,22 @@ test('client importer accepts incomplete and ID-only rows, skips blank-identity 
 test('client importer preserves unmapped fields and canonical tax services containing commas',()=>{
  const e=importerEnvironment();e.map(['Company Name','Primary Sector','Branch Location','Handling Firm / Firm Code','Services Requested'],[['Example Company','Bad sector','Bad branch','Unknown firm','Tax Compliance (VAT, PAYE, Income Tax)']]);
  const r=e.importer.prepare().records[0];assert.equal(r.unmappedImportFields['Primary Sector'],'Bad sector');assert.equal(r.firmId,'');assert.equal(r.services[0],'Tax Compliance (VAT, PAYE, Income Tax)');assert.ok(r.missingFields.includes('Tax work packs'));
+});
+test('all incomplete named clients import; shared PIN warns without discarding either record',()=>{
+ const e=importerEnvironment();const rows=Array.from({length:180},(_,i)=>[`TEST-${i+1}`,`Fictional Client ${i+1}`,i<2?'SHARED-TEST-PIN':`TEST-PIN-${i}`,'Limited Company','KRA','Income Tax | VAT','Yes']);
+ e.map(['Client_External_ID','Company_Name','KRA_PIN','Legal_Entity_Type','Regulatory_Bodies','Tax_Obligations','KYC_Complete'],rows);
+ const result=e.importer.prepare();assert.equal(result.records.length,180);assert.equal(result.errors.length,0);assert.equal(result.duplicates.length,0);assert.equal(result.records.filter(r=>r.importWarnings.length).length,2);
+ for(const r of result.records){assert.equal(r.profileStatus,'Draft');assert.equal(r.firmId,'');assert.equal(r.kycComplete,false);assert.equal(r.tasks.length,0);assert.equal(r.taxObligations,'Income Tax | VAT');assert.equal(r.legalEntityType,'Limited Company');assert.deepEqual(json(r.regulators),['KRA']);assert.ok(r.importedSourceFields.some(f=>f.header==='KYC_Complete'&&f.value==='Yes'));}
+ e.storage.set(clientKey,JSON.stringify(result.records));assert.equal(e.importer.prepare().duplicates.length,180);
+});
+test('row-five headers and blank rows retain correct Excel row numbers',()=>{
+ const e=importerEnvironment();const matrix=[[],['Client import instructions'],[],[],['Client_External_ID','Company_Name','KRA_PIN'],['T-1','Fictional First','TEST-1'],[],['T-2','Fictional First','TEST-2'],['T-3','Fictional Third','TEST-3']];
+ e.context.window.XLSX={utils:{sheet_to_json:()=>matrix}};e.importer.state.workbook={Sheets:{'Client Import':{}}};e.importer.readSheet('Client Import');
+ const result=e.importer.prepare();assert.equal(result.records.length,2);assert.equal(result.duplicates[0].row,8);assert.equal(result.records[1].importReference,'T-3');
+});
+test('client identity corrections preserve source evidence and existing relationships',()=>{
+ const e=clientEnvironment('Manager');const original={...client,kraPin:'TEST-OLD',legalEntityType:'Sole Proprietor',taxObligations:'Income Tax',importedSourceFields:[{header:'KRA_PIN',value:'TEST-OLD'}]};e.storage.set(clientKey,JSON.stringify([original]));e.api.setEdit(original.id,original);e.form.data={...clientData(original),kraPin:'TEST-NEW'};e.form.elements.clientFirm.value='firm-1';e.save();
+ const saved=JSON.parse(e.storage.get(clientKey))[0];assert.equal(saved.kraPin,'TEST-NEW');assert.equal(saved.taxObligations,'Income Tax');assert.equal(saved.importedSourceFields[0].value,'TEST-OLD');assert.equal(saved.id,original.id);assert.ok(saved.changeHistory[0].changes.some(c=>c.field==='kraPin'));
 });
 test('existing client identifiers and prior names are deduplicated',()=>{
  const e=importerEnvironment();e.storage.set(clientKey,JSON.stringify([{...client,previousNames:['Old Example Company']}]));e.map(['Client ID / Reference','Company Name'],[['CL-TEST-1','New name'],['NEW-ID','Old Example Company']]);assert.equal(e.importer.prepare().duplicates.length,2);
