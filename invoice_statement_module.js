@@ -2,6 +2,7 @@
   "use strict";
 
   const statementStorageKey = "pcl-crm-customer-statements-v1";
+  const groupRelationshipFirmId = "__GROUP_RELATIONSHIP__";
   let statementSnapshots = safeLoad(statementStorageKey);
   let activeStatementId = null;
 
@@ -63,9 +64,10 @@
       return (!firm || invoiceFirmId(invoice) === firm) && invoiceMatchesStatus(invoice, status) && (!search || text.includes(search));
     }).sort((a, b) => String(b.dateIssued || "").localeCompare(String(a.dateIssued || "")));
   }
+  function isGroupRelationshipView(firmId) { return firmId === groupRelationshipFirmId; }
   function clientOptions(firmId) {
     const unique = new Map();
-    (typeof invoices === "undefined" ? [] : invoices).filter(invoice => !firmId || invoiceFirmId(invoice) === firmId).forEach(invoice => {
+    (typeof invoices === "undefined" ? [] : invoices).filter(invoice => !firmId || isGroupRelationshipView(firmId) || invoiceFirmId(invoice) === firmId).forEach(invoice => {
       const key = invoiceClientKey(invoice);
       if (!unique.has(key)) unique.set(key, { key, name: invoiceClientName(invoice), firmId: invoiceFirmId(invoice) });
     });
@@ -79,27 +81,31 @@
     client.innerHTML = `<option value="">Select client with invoice activity…</option>${clientOptions(firm.value).map(item => `<option value="${esc(item.key)}">${esc(item.name)}</option>`).join("")}`;
     if ([...client.options].some(option => option.value === previous)) client.value = previous;
   }
-  function statementFirmOptions(selectId, includeAll = false) {
+  function statementFirmOptions(selectId, includeAll = false, includeRelationshipSummary = false) {
     const target = document.getElementById(selectId);
     if (!target) return;
     const old = target.value;
     const firms = typeof activeFirms === "function" ? activeFirms() : [];
-    target.innerHTML = `${includeAll ? '<option value="">All firms</option>' : '<option value="">Select issuing firm…</option>'}${firms.map(firm => `<option value="${esc(firm.id)}">${esc(firmLabel(firm.id))}</option>`).join("")}`;
+    const relationshipOption = includeRelationshipSummary ? `<option value="${groupRelationshipFirmId}">All firms — relationship summary</option>` : "";
+    target.innerHTML = `${includeAll ? '<option value="">All firms</option>' : '<option value="">Select issuing firm…</option>'}${relationshipOption}${firms.map(firm => `<option value="${esc(firm.id)}">${esc(firmLabel(firm.id))}</option>`).join("")}`;
     if ([...target.options].some(option => option.value === old)) target.value = old;
   }
   function statementTransactions({ firmId, clientKey, startDate, endDate }) {
-    const sourceInvoices = (typeof invoices === "undefined" ? [] : invoices).filter(invoice => invoiceFirmId(invoice) === firmId && invoiceClientKey(invoice) === clientKey && isPostedInvoice(invoice));
+    const sourceInvoices = (typeof invoices === "undefined" ? [] : invoices).filter(invoice => (isGroupRelationshipView(firmId) || invoiceFirmId(invoice) === firmId) && invoiceClientKey(invoice) === clientKey && isPostedInvoice(invoice));
     const rows = [];
     sourceInvoices.forEach(invoice => {
-      rows.push({ date: invoice.dateIssued, sequence: 1, kind: isCreditNote(invoice) ? "Credit Note" : "Invoice", reference: invoice.invoiceNumber, description: invoice.serviceDescription || "Professional services", debit: isCreditNote(invoice) ? 0 : gross(invoice), credit: isCreditNote(invoice) ? gross(invoice) : 0, invoiceId: invoice.id });
-      validPayments(invoice, "", false).forEach(payment => rows.push({ date: payment.dateReceived, sequence: 2, kind: "Payment", reference: payment.paymentReference || `PAY/${String(payment.id).slice(0, 8)}`, description: `Client payment · ${paymentMethodLabel(payment.paymentMethod)}`, debit: 0, credit: Number(payment.amountReceived || 0), invoiceId: invoice.id, paymentId: payment.id }));
+      const issuedByFirmId = invoiceFirmId(invoice), issuedByFirmName = invoiceFirmName(invoice);
+      rows.push({ date: invoice.dateIssued, sequence: 1, kind: isCreditNote(invoice) ? "Credit Note" : "Invoice", reference: invoice.invoiceNumber, description: invoice.serviceDescription || "Professional services", debit: isCreditNote(invoice) ? 0 : gross(invoice), credit: isCreditNote(invoice) ? gross(invoice) : 0, invoiceId: invoice.id, firmId: issuedByFirmId, firmName: issuedByFirmName });
+      validPayments(invoice, "", false).forEach(payment => rows.push({ date: payment.dateReceived, sequence: 2, kind: "Payment", reference: payment.paymentReference || `PAY/${String(payment.id).slice(0, 8)}`, description: `Client payment · ${paymentMethodLabel(payment.paymentMethod)}`, debit: 0, credit: Number(payment.amountReceived || 0), invoiceId: invoice.id, paymentId: payment.id, firmId: issuedByFirmId, firmName: issuedByFirmName }));
     });
     const allRows = rows.filter(row => row.date && row.date <= endDate).sort((a, b) => `${a.date}-${a.sequence}-${a.reference}`.localeCompare(`${b.date}-${b.sequence}-${b.reference}`));
     let opening = 0;
     allRows.filter(row => row.date < startDate).forEach(row => { opening += Number(row.debit) - Number(row.credit); });
     let running = opening;
     const periodRows = allRows.filter(row => row.date >= startDate).map(row => ({ ...row, balance: (running += Number(row.debit) - Number(row.credit)) }));
-    return { sourceInvoices, opening, periodRows, closing: running };
+    const firmBalances = {};
+    allRows.forEach(row => { const bucket = firmBalances[row.firmId] || { firmId: row.firmId, firmName: row.firmName, balance: 0 }; bucket.balance += Number(row.debit) - Number(row.credit); firmBalances[row.firmId] = bucket; });
+    return { sourceInvoices, opening, periodRows, closing: running, firmBalances: Object.values(firmBalances) };
   }
   function agingSummary(sourceInvoices, asAt) {
     const buckets = { current: 0, days31to60: 0, days60plus: 0 };
@@ -113,9 +119,9 @@
     });
     return buckets;
   }
-  function statementReference() {
+  function statementReference(kind = "FIRM") {
     const year = today().slice(0, 4);
-    const prefix = `STM/${year}/`;
+    const prefix = `${kind === "GROUP" ? "GRS" : "STM"}/${year}/`;
     const high = statementSnapshots.reduce((value, item) => Math.max(value, Number(String(item.reference || "").replace(prefix, "")) || 0), 0);
     return `${prefix}${String(high + 1).padStart(4, "0")}`;
   }
@@ -129,21 +135,22 @@
     const clientKey = document.getElementById("statementClient")?.value || "";
     const startDate = document.getElementById("statementStart")?.value || "";
     const endDate = document.getElementById("statementEnd")?.value || "";
-    if (!firmId || !clientKey || !startDate || !endDate || endDate < startDate) { showNotice("Select one issuing firm, client and valid statement date range.", true); return; }
+    if (!firmId || !clientKey || !startDate || !endDate || endDate < startDate) { showNotice("Select an issuing firm or the all-firms relationship summary, client and valid statement date range.", true); return; }
     const customer = clientOptions(firmId).find(item => item.key === clientKey);
     const result = statementTransactions({ firmId, clientKey, startDate, endDate });
     const sourceInvoice = result.sourceInvoices[0];
+    const relationshipSummary = isGroupRelationshipView(firmId);
     const snapshot = {
-      id: crypto.randomUUID(), reference: statementReference(), firmId, firmName: sourceInvoice ? invoiceFirmName(sourceInvoice) : (typeof firmLabel === "function" ? firmLabel(firmId) : "Firm"), clientKey, clientName: customer?.name || "Client", engagementId: sourceInvoice?.engagementId || null,
+      id: crypto.randomUUID(), reference: statementReference(relationshipSummary ? "GROUP" : "FIRM"), firmId, firmName: relationshipSummary ? "Practice Group relationship summary" : (sourceInvoice ? invoiceFirmName(sourceInvoice) : (typeof firmLabel === "function" ? firmLabel(firmId) : "Firm")), clientKey, clientName: customer?.name || "Client", engagementId: sourceInvoice?.engagementId || null,
       periodStart: startDate, periodEnd: endDate, statementDate: today(), currency: "KES", openingBalance: result.opening, closingBalance: result.closing, lines: result.periodRows, aging: agingSummary(result.sourceInvoices, endDate),
-      generatedByPosition: "Practice Administration", status: "GENERATED", createdAt: new Date().toISOString(), deliveryEvents: []
+      generatedByPosition: "Practice Administration", status: "GENERATED", createdAt: new Date().toISOString(), deliveryEvents: [], legalStatement: !relationshipSummary, statementKind: relationshipSummary ? "GROUP_RELATIONSHIP_SUMMARY" : "FIRM_STATEMENT", firmBalances: result.firmBalances, sourceFirmIds: [...new Set(result.sourceInvoices.map(invoiceFirmId))]
     };
     snapshot.integrityHash = await integrityHash({ ...snapshot, integrityHash: undefined, deliveryEvents: [] });
     statementSnapshots.push(snapshot);
     activeStatementId = snapshot.id;
     saveStatements();
     render();
-    showNotice(`${snapshot.reference} generated as an immutable statement snapshot. Use Print / Save PDF or Email to Client.`);
+    showNotice(relationshipSummary ? `${snapshot.reference} generated as a group relationship summary. It displays each issuing firm and is not a legal firm statement.` : `${snapshot.reference} generated as an immutable firm statement snapshot. Use Print / Save PDF or Email to Client.`);
   }
   function currentStatement() { return statementSnapshots.find(item => item.id === activeStatementId) || statementSnapshots.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0] || null; }
   function statusClass(status) { return ["Paid"].includes(status) ? "" : ["Partial", "Review"].includes(status) ? "partial" : ["Overdue", "Unpaid"].includes(status) ? "overdue" : "neutral"; }
@@ -165,9 +172,15 @@
     const target = document.getElementById("statementPreview");
     if (!target) return;
     const statement = currentStatement();
-    if (!statement) { target.innerHTML = '<div class="empty">Select a firm, client and period, then generate a controlled statement snapshot.</div>'; return; }
+    if (!statement) { target.innerHTML = '<div class="empty">Select a firm or all-firms relationship summary, client and period, then generate a controlled snapshot.</div>'; return; }
+    const relationshipSummary = statement.legalStatement === false || statement.statementKind === "GROUP_RELATIONSHIP_SUMMARY";
     const amount = value => `${value < 0 ? "CR " : "DR "}${format(Math.abs(value))}`;
-    target.innerHTML = `<div class="statement-heading"><div><span class="status-pill neutral">${esc(statement.reference)}</span><h3>Statement of account</h3><p><b>Issued by:</b> ${esc(statement.firmName)}<br><b>Client:</b> ${esc(statement.clientName)}<br><b>Period:</b> ${esc(statement.periodStart)} to ${esc(statement.periodEnd)} · <b>Currency:</b> KES</p></div><div class="statement-actions"><button type="button" data-statement-action="print" data-id="${esc(statement.id)}">Print / Save PDF</button><button type="button" data-statement-action="email" data-id="${esc(statement.id)}">Email client</button></div></div><div class="statement-balance"><span>Opening balance <b>${amount(statement.openingBalance)}</b></span><span>Closing balance <b>${amount(statement.closingBalance)}</b></span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Reference</th><th>Description</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead><tbody>${statement.lines.length ? statement.lines.map(line => `<tr><td>${esc(line.date)}</td><td>${esc(line.reference)}</td><td>${esc(line.description)}</td><td>${line.debit ? format(line.debit) : "—"}</td><td>${line.credit ? format(line.credit) : "—"}</td><td>${format(line.balance)}</td></tr>`).join("") : '<tr><td colspan="6" class="hint">No posted invoice, payment or credit-note movements in this period.</td></tr>'}</tbody></table></div><div class="statement-aging"><b>Aging at ${esc(statement.periodEnd)}</b><span>0–30 days: ${format(statement.aging.current)}</span><span>31–60 days: ${format(statement.aging.days31to60)}</span><span>60+ days: ${format(statement.aging.days60plus)}</span></div><p class="hint">Integrity hash: ${esc(statement.integrityHash)}. Delivery is logged through the Communication Hub; payments awaiting reconciliation are excluded until matched.</p>`;
+    const firmColumn = relationshipSummary ? "<th>Issuing firm</th>" : "";
+    const firmCell = line => relationshipSummary ? `<td>${esc(line.firmName || "Firm")}</td>` : "";
+    const firmBreakdown = relationshipSummary ? `<div class="statement-aging"><b>Balance by issuing firm</b>${(statement.firmBalances || []).map(item => `<span>${esc(item.firmName)}: ${amount(item.balance)}</span>`).join("") || "<span>No firm movements.</span>"}</div>` : "";
+    const deliveryAction = relationshipSummary ? "" : `<button type="button" data-statement-action="email" data-id="${esc(statement.id)}">Email client</button>`;
+    const controlNote = relationshipSummary ? "This is a cross-firm relationship summary. Each invoice, payment and balance remains attributable to its issuing firm. It is not a tax invoice or legal firm statement." : "This is an immutable firm statement. Delivery is logged through the Communication Hub; payments awaiting reconciliation are excluded until matched.";
+    target.innerHTML = `<div class="statement-heading"><div><span class="status-pill neutral">${esc(statement.reference)}</span><h3>${relationshipSummary ? "Client relationship summary" : "Statement of account"}</h3><p><b>${relationshipSummary ? "View:" : "Issued by:"}</b> ${esc(statement.firmName)}<br><b>Client:</b> ${esc(statement.clientName)}<br><b>Period:</b> ${esc(statement.periodStart)} to ${esc(statement.periodEnd)} · <b>Currency:</b> KES</p></div><div class="statement-actions"><button type="button" data-statement-action="print" data-id="${esc(statement.id)}">Print / Save PDF</button>${deliveryAction}</div></div><div class="statement-balance"><span>Opening balance <b>${amount(statement.openingBalance)}</b></span><span>Closing balance <b>${amount(statement.closingBalance)}</b></span></div>${firmBreakdown}<div class="table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Reference</th>${firmColumn}<th>Description</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead><tbody>${statement.lines.length ? statement.lines.map(line => `<tr><td>${esc(line.date)}</td><td>${esc(line.reference)}</td>${firmCell(line)}<td>${esc(line.description)}</td><td>${line.debit ? format(line.debit) : "—"}</td><td>${line.credit ? format(line.credit) : "—"}</td><td>${format(line.balance)}</td></tr>`).join("") : `<tr><td colspan="${relationshipSummary ? 7 : 6}" class="hint">No posted invoice, payment or credit-note movements in this period.</td></tr>`}</tbody></table></div><p class="hint">Integrity hash: ${esc(statement.integrityHash)}. ${controlNote}</p>`;
   }
   function renderStatementHistory() {
     const target = document.getElementById("statementHistoryRows");
@@ -182,7 +195,7 @@
     target.innerHTML = `<option value="">Select open invoice…</option>${open.map(invoice => `<option value="${esc(invoice.id)}">${esc(invoice.invoiceNumber)} · ${esc(invoiceClientName(invoice))} · balance ${esc(format(Math.max(0, gross(invoice) - paidAmount(invoice))))}</option>`).join("")}`;
     if ([...target.options].some(option => option.value === previous)) target.value = previous;
   }
-  function render() { statementFirmOptions("invoiceRegisterFirm", true); statementFirmOptions("statementFirm"); syncStatementClientOptions(); refreshPaymentInvoiceOptions(); renderInvoiceRegister(); renderStatementPreview(); renderStatementHistory(); }
+  function render() { statementFirmOptions("invoiceRegisterFirm", true); statementFirmOptions("statementFirm", false, true); syncStatementClientOptions(); refreshPaymentInvoiceOptions(); renderInvoiceRegister(); renderStatementPreview(); renderStatementHistory(); }
   function recordPayment(form) {
     const data = new FormData(form), invoice = (typeof invoices === "undefined" ? [] : invoices).find(item => item.id === data.get("invoiceId"));
     const amount = Number(data.get("amount") || 0), received = data.get("dateReceived"), reference = data.get("paymentReference").trim();
@@ -231,6 +244,7 @@
     showNotice(`Invoice email opened for ${contact.email}; the communication was logged.`);
   }
   function emailStatement(statement) {
+    if (statement.legalStatement === false) { showNotice("A group relationship summary is not issued by one legal firm. Generate the relevant firm statement before emailing the client.", true); return; }
     const invoice = (typeof invoices === "undefined" ? [] : invoices).find(item => item.engagementId === statement.engagementId && invoiceFirmId(item) === statement.firmId);
     const contact = invoice?.contactSnapshot || (invoice && typeof linkedContactForTaxProject === "function" ? linkedContactForTaxProject(invoiceEngagement(invoice)) : {});
     if (!invoice || !contact?.email) { showNotice("The selected statement has no eligible primary client-contact email. Record one before sending.", true); return; }
@@ -277,7 +291,7 @@
     tab.className = "tab"; tab.type = "button"; tab.dataset.tab = "invoices-statements";
     tab.innerHTML = '<svg class="nav-icon" aria-hidden="true"><use href="#icon-briefcase" /></svg>Receivables Centre';
     section.id = "invoices-statements"; section.className = "tab-panel";
-    section.innerHTML = `<div class="intro"><div><h2>Receivables Centre</h2><p>Firm-bound invoices, receipts, reconciliation, client statements and aging in one controlled finance workspace. Statutory tax compliance remains in Tax Projects. The current prototype records locally; a future backend will provide the authoritative ledger.</p></div><div class="actions"><button class="btn secondary" type="button" data-invoice-page-action="create">+ Create invoice</button><button class="btn secondary" type="button" data-invoice-page-action="export">Export CSV</button></div></div><div class="notice" id="invoiceStatementNotice" role="status"></div><div class="metric-grid"><div class="card metric-card"><b id="invoiceStatementTotal">KES 0</b><span>Invoice total in view</span></div><div class="card metric-card"><b id="invoiceStatementOutstanding">KES 0</b><span>Outstanding balance</span></div><div class="card metric-card"><b id="invoiceStatementOverdue">0</b><span>Overdue invoices</span></div><div class="card metric-card"><b id="invoiceStatementPaid">0</b><span>Paid invoices</span></div></div><section class="section"><div class="section-heading"><div><h3>Invoice register</h3><span id="invoiceStatementShowing" class="hint">Showing 0 invoices</span></div></div><div class="invoice-filter-bar"><label>Firm<select id="invoiceRegisterFirm"></select></label><label>Status<select id="invoiceRegisterStatus"><option value="">All statuses</option><option value="DRAFT">Draft</option><option value="UNPAID">Unpaid</option><option value="PARTIAL">Partial</option><option value="PAID">Paid</option><option value="OVERDUE">Overdue</option><option value="CANCELLED">Cancelled</option><option value="CREDIT_NOTE">Credit Note</option></select></label><label class="invoice-search">Search<input id="invoiceRegisterSearch" placeholder="Invoice number, client or payment reference" /></label></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Invoice</th><th>Client</th><th>Firm</th><th>Invoice / due date</th><th>Total</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead><tbody id="invoiceStatementRows"></tbody></table></div></section><section class="section"><div class="operations-layout"><form id="receivablePaymentForm" class="card form-card"><div class="section-heading"><h3>Record client payment</h3><span class="hint">Receipts update the invoice balance and flow into statements.</span></div><div class="grid"><label class="full">Invoice <span>*</span><select required name="invoiceId" id="receivablePaymentInvoice"></select></label><label>Amount received (KES) <span>*</span><input required name="amount" type="number" min="0.01" step="0.01" /></label><label>Date received <span>*</span><input required name="dateReceived" type="date" /></label><label>Payment method <span>*</span><select required name="paymentMethod"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="BANK_TRANSFER">Bank Transfer</option><option value="CHEQUE">Cheque</option></select></label><label class="full">Payment reference <span>*</span><input required name="paymentReference" placeholder="Begin with invoice number — then payment reference" /></label></div><div class="actions"><button class="btn primary" type="submit">Record payment and reconcile</button></div></form><article class="card side-card"><div class="section-heading"><h3>Payment controls</h3><span class="hint">Controlled receivables</span></div><ul class="tax-project-policy"><li>The payment must be linked to one firm-bound invoice.</li><li>Cash, M-Pesa, Bank Transfer and Cheque are recorded separately.</li><li>A matching reference is reconciled automatically. A non-matching payment is recorded for Practice Administration review.</li><li>Overpayments are blocked. Use an approved credit note or refund process instead.</li><li>Payments, credit notes and invoices are included in the client statement running balance.</li></ul></article></div></section><section id="statementGenerator" class="section statement-generator"><div class="section-heading"><div><h3>Statement generator</h3><span class="hint">Creates an immutable statement snapshot from the selected firm’s receivable activity.</span></div></div><div class="invoice-filter-bar statement-filter"><label>Issuing firm <select id="statementFirm"></select></label><label>Client <select id="statementClient"></select></label><label>From <input type="date" id="statementStart" /></label><label>To <input type="date" id="statementEnd" /></label><div class="statement-generate-action"><button class="btn primary" type="button" data-invoice-page-action="generate">Generate statement</button></div></div><div id="statementPreview" class="card statement-preview"></div></section><section class="section"><div class="section-heading"><h3>Statement snapshot register</h3><span class="hint">Statement amounts and lines are retained as generated. Delivery metadata may be appended without changing the snapshot.</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Reference / date</th><th>Client</th><th>Firm</th><th>Period</th><th>Closing balance</th><th>Status</th><th>Action</th></tr></thead><tbody id="statementHistoryRows"></tbody></table></div></section>`;
+    section.innerHTML = `<div class="intro"><div><h2>Finance &amp; Receivables</h2><p>One shared receivables workspace for invoices, payments, firm statements and client relationship summaries. Every invoice and payment keeps the locked issuing firm from its engagement. Statutory tax compliance remains in Tax Projects.</p></div><div class="actions"><button class="btn secondary" type="button" data-invoice-page-action="create">+ Create invoice</button><button class="btn secondary" type="button" data-invoice-page-action="export">Export CSV</button></div></div><div class="notice" id="invoiceStatementNotice" role="status"></div><div class="metric-grid"><div class="card metric-card"><b id="invoiceStatementTotal">KES 0</b><span>Invoice total in view</span></div><div class="card metric-card"><b id="invoiceStatementOutstanding">KES 0</b><span>Outstanding balance</span></div><div class="card metric-card"><b id="invoiceStatementOverdue">0</b><span>Overdue invoices</span></div><div class="card metric-card"><b id="invoiceStatementPaid">0</b><span>Paid invoices</span></div></div><section class="section"><div class="section-heading"><div><h3>Invoice register</h3><span id="invoiceStatementShowing" class="hint">Showing 0 invoices. The firm column remains visible in the all-firms view.</span></div></div><div class="invoice-filter-bar"><label>Firm view<select id="invoiceRegisterFirm"></select></label><label>Status<select id="invoiceRegisterStatus"><option value="">All statuses</option><option value="DRAFT">Draft</option><option value="UNPAID">Unpaid</option><option value="PARTIAL">Partial</option><option value="PAID">Paid</option><option value="OVERDUE">Overdue</option><option value="CANCELLED">Cancelled</option><option value="CREDIT_NOTE">Credit Note</option></select></label><label class="invoice-search">Search<input id="invoiceRegisterSearch" placeholder="Invoice number, client or payment reference" /></label></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Invoice</th><th>Client</th><th>Firm</th><th>Invoice / due date</th><th>Total</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead><tbody id="invoiceStatementRows"></tbody></table></div></section><section class="section"><div class="operations-layout"><form id="receivablePaymentForm" class="card form-card"><div class="section-heading"><h3>Record client payment</h3><span class="hint">Receipts update the invoice balance and flow into statements.</span></div><div class="grid"><label class="full">Invoice <span>*</span><select required name="invoiceId" id="receivablePaymentInvoice"></select></label><label>Amount received (KES) <span>*</span><input required name="amount" type="number" min="0.01" step="0.01" /></label><label>Date received <span>*</span><input required name="dateReceived" type="date" /></label><label>Payment method <span>*</span><select required name="paymentMethod"><option value="CASH">Cash</option><option value="MPESA">M-Pesa</option><option value="BANK_TRANSFER">Bank Transfer</option><option value="CHEQUE">Cheque</option></select></label><label class="full">Payment reference <span>*</span><input required name="paymentReference" placeholder="Begin with invoice number — then payment reference" /></label></div><div class="actions"><button class="btn primary" type="submit">Record payment and reconcile</button></div></form><article class="card side-card"><div class="section-heading"><h3>Payment controls</h3><span class="hint">Controlled receivables</span></div><ul class="tax-project-policy"><li>The payment must be linked to one firm-bound invoice.</li><li>Cash, M-Pesa, Bank Transfer and Cheque are recorded separately.</li><li>A matching reference is reconciled automatically. A non-matching payment is recorded for Practice Administration review.</li><li>Overpayments are blocked. Use an approved credit note or refund process instead.</li><li>Payments, credit notes and invoices are included in the client statement running balance.</li></ul></article></div></section><section id="statementGenerator" class="section statement-generator"><div class="section-heading"><div><h3>Statements &amp; client relationship summaries</h3><span class="hint">Choose one issuing firm for a legal statement. Choose All firms — relationship summary for a combined client view that retains each issuing firm and cannot be emailed as one legal statement.</span></div></div><div class="invoice-filter-bar statement-filter"><label>Statement type / issuing firm <select id="statementFirm"></select></label><label>Client <select id="statementClient"></select></label><label>From <input type="date" id="statementStart" /></label><label>To <input type="date" id="statementEnd" /></label><div class="statement-generate-action"><button class="btn primary" type="button" data-invoice-page-action="generate">Generate</button></div></div><div id="statementPreview" class="card statement-preview"></div></section><section class="section"><div class="section-heading"><h3>Statement and relationship-summary register</h3><span class="hint">Each snapshot is retained as generated. Delivery metadata may be appended only to a legal firm statement.</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Reference / date</th><th>Client</th><th>Firm / summary</th><th>Period</th><th>Closing balance</th><th>Status</th><th>Action</th></tr></thead><tbody id="statementHistoryRows"></tbody></table></div></section>`;
     if (before) nav.insertBefore(tab, before); else nav.append(tab);
     shell.append(section);
     if (typeof installPaymentMethodControl === "function") installPaymentMethodControl(document.getElementById("receivablePaymentForm"));
@@ -289,6 +303,12 @@
     document.getElementById("invoiceRegisterFirm").addEventListener("change", render);
     document.getElementById("invoiceRegisterStatus").addEventListener("change", render);
     document.getElementById("invoiceRegisterSearch").addEventListener("input", render);
+    window.addEventListener("pcl:firm-view-change", event => {
+      const selectedFirm = event.detail?.firmId || "";
+      const registerFirm = document.getElementById("invoiceRegisterFirm");
+      if (registerFirm && [...registerFirm.options].some(option => option.value === selectedFirm)) registerFirm.value = selectedFirm;
+      render();
+    });
     document.getElementById("statementFirm").addEventListener("change", syncStatementClientOptions);
     document.getElementById("receivablePaymentInvoice").addEventListener("change", event => { const invoice = invoices.find(item => item.id === event.target.value); if (invoice && receiptReference) receiptReference.value = `${invoice.invoiceNumber} — `; });
     document.getElementById("receivablePaymentForm").addEventListener("submit", event => { event.preventDefault(); recordPayment(event.currentTarget); });
