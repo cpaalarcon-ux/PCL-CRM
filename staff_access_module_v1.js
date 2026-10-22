@@ -77,6 +77,21 @@
   const style = document.createElement("style");
   style.textContent = `.staff-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0 18px}.staff-summary-grid>div{padding:13px;border:1px solid #dbe7df;border-radius:9px;background:#f9fcfa}.staff-summary-grid b{display:block;font-size:23px;color:#14563e}.staff-summary-grid span{font-size:11px;color:#637168}.staff-access-notice{margin:12px 0;padding:10px 12px;border:1px solid #cde0d4;border-radius:7px;background:#f4fbf6;color:#1f6045;font-size:12px}.staff-access-notice.error{border-color:#dfb7b7;background:#fdf2f2;color:#962f2f}.staff-directory-table td{vertical-align:top}.staff-directory-table .hint{line-height:1.45}.staff-account-status{display:inline-block;padding:3px 7px;border-radius:999px;background:#edf2f0;color:#4e5d55;font-size:11px;font-weight:700}.staff-account-status.setup-link-required{background:#fff4d9;color:#8a5c09}.staff-account-status.active{background:#e4f5ea;color:#17613e}.staff-add-section{margin-top:22px}.staff-rights-preview{padding:11px 13px;border:1px solid #d7e4dc;border-radius:7px;background:#f8fbf9;color:#4a5d53;font-size:12px}.staff-invite-flow{margin-top:18px;padding:15px 18px;border-radius:9px;background:#f8faf9;border:1px solid #dfe8e2}.staff-invite-flow h3{margin-top:0}.staff-invite-flow ol{margin:0;padding-left:20px;color:#536158;font-size:12px;line-height:1.65}.staff-link{font-size:11px;margin:2px}@media(max-width:900px){.staff-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.staff-summary-grid{grid-template-columns:1fr}}`;
   document.head.append(style);
-  document.addEventListener("click", event => { if (event.target.closest("[data-settings-menu='staff']")) window.setTimeout(render, 0); }, true);
+  function staffPanelIsSelected() {
+    return Array.from(document.querySelectorAll("[data-settings-menu='staff']")).some(button => button.classList.contains("active"));
+  }
+  function queueRender() {
+    window.setTimeout(() => { if (staffPanelIsSelected()) render(); }, 40);
+  }
+  document.addEventListener("click", event => { if (event.target.closest("[data-settings-menu='staff']")) queueRender(); }, true);
+  document.addEventListener("click", event => { if (event.target.closest("[data-settings-menu='staff']")) queueRender(); });
+  const settingsObserver = new MutationObserver(() => {
+    const body = document.getElementById("settingsBody");
+    if (body && staffPanelIsSelected() && body.dataset.staffAccessLoaded !== "true") {
+      body.dataset.staffAccessLoaded = "true";
+      queueRender();
+    }
+  });
+  settingsObserver.observe(document.body, { childList: true, subtree: true });
   window.pclStaffAccessPreview = { render, staffList };
 })();
