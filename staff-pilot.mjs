@@ -1,3 +1,4 @@
+import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
 import {createWorkspaceUI} from './staff-workspace-v6.mjs';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v6';
@@ -6,8 +7,7 @@ const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>
 const roles={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Audit Supervisor',ASSISTANT:'Audit Assistant',INTERN:'Intern'};
 const sectors=['Agribusiness','Financial Services','Energy','Healthcare','NGO','Public Sector','SME/Startup','Legal','Education'];
 const branches=['Nairobi','Bungoma','Kisii','Other'],states=['Pending','In Progress','In Review','Blocked','Completed','Cancelled'];
-let token=sessionStorage.getItem('pcl-pilot-session')||'',data=null,view='home',firm='',lastRequest=Date.now(),setupToken=new URLSearchParams(location.hash.slice(1)).get('setup');
-if(setupToken){history.replaceState(null,'',location.pathname);sessionStorage.removeItem('pcl-pilot-session');token='';$('#loginForm').hidden=true;$('#setupForm').hidden=false;}
+let token=sessionStorage.getItem('pcl-pilot-session')||'',data=null,view='home',firm='',lastRequest=Date.now(),setupToken=null;
 const isLeader=()=>data&&['PARTNER','MANAGER'].includes(data.me.category_code);
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const shortDate=v=>v?new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',day:'numeric',month:'short',year:'numeric'}).format(new Date(v)):'No date';
@@ -80,7 +80,15 @@ function upload(){
  for(const [name,el] of Object.entries(controls))el.onchange=()=>refresh(name);
  refresh();
 }
-async function credentials(id){const s=data.staff.find(x=>x.staff_id===id);modal('Generate private login link',`<p>Generate a 24-hour setup link for <b>${esc(s.full_name)}</b> (${esc(s.login_id)})?</p><p class="info">Existing ERP sessions will stop working. Share the link directly with this staff member. They choose their own password.</p><button id="confirmLink" class="primary">Confirm & generate link</button>`);$('#confirmLink').onclick=async e=>{e.target.disabled=true;try{const r=await request({action:'account_link',staff_id:id});$('#editorBody').innerHTML=`<p><b>Login ID:</b> ${esc(r.login_id)}</p><label>Private setup link<textarea class="setup-link" id="privateLink" readonly>${esc(r.setup_url)}</textarea></label><button id="copyLink" class="primary">Copy login ID & link</button><p class="muted">Expires in 24 hours. This link will not be shown again after you close this dialog.</p>`;$('#copyLink').onclick=async()=>{try{await navigator.clipboard.writeText('Login ID: '+r.login_id+'\nSetup link: '+r.setup_url);$('#editorNotice').textContent='Copied. Share privately with this staff member.';}catch{$('#privateLink').select();$('#editorNotice').textContent='Select and copy the link above.';}};await load();}catch(err){$('#editorNotice').textContent=err.message;e.target.disabled=false;}};}
+async function credentials(id){
+ const s=data.staff.find(x=>x.staff_id===id);
+ modal('Generate private login link',`<p>Generate a fresh 24-hour setup link for <b>${esc(s.full_name)}</b> (${esc(s.login_id)})?</p><p class="info">The 24 hours start when you generate the link. Earlier setup links and existing ERP sessions stop working. Share only the newest link with this staff member.</p><button id="confirmLink" class="primary">Confirm & generate link</button>`);
+ $('#confirmLink').onclick=async e=>{e.target.disabled=true;try{
+  const r=await request({action:'account_link',staff_id:id}),expires=setupExpiryText(r.expires_at);
+  $('#editorBody').innerHTML=`<p><b>Login ID:</b> ${esc(r.login_id)}</p><p><b>Valid until:</b> ${esc(expires)} (24 hours from generation)</p><label>Newest private setup link<textarea class="setup-link" id="privateLink" readonly>${esc(r.setup_url)}</textarea></label><button id="copyLink" class="primary">Copy login ID & newest link</button><p class="muted">Use once to save a password. Opening the link does not use it. Earlier links will not work, and this link will not be shown again after you close this dialog.</p>`;
+  $('#copyLink').onclick=async()=>{try{await navigator.clipboard.writeText('Login ID: '+r.login_id+'\nSetup link: '+r.setup_url+'\nValid until: '+expires+'\nUse this newest link once to save your password.');$('#editorNotice').textContent='Copied with the expiry time. Share privately with this staff member.';}catch{$('#privateLink').select();$('#editorNotice').textContent='Select and copy the link above.';}};await load();
+ }catch(err){$('#editorNotice').textContent=err.message;e.target.disabled=false;}};
+}
 $('#closeEditor').onclick=()=>{$('#editor').close();$('#editorBody').replaceChildren();};$('#editor').addEventListener('close',()=>$('#editorBody').replaceChildren());
 $('#firmFilter').onchange=e=>{firm=e.target.value;render();};
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;try{
@@ -94,8 +102,23 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button');i
  if(b.dataset.download){b.disabled=true;try{const d=data.documents.find(x=>x.document_id===b.dataset.download),blob=await request({action:'download',document_id:d.document_id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=d.file_name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}finally{b.disabled=false;}}
  }catch(err){notice(err.message,true);}});
 $('#loginForm').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{const p=Object.fromEntries(new FormData(e.target)),r=await request({...p,action:'login'},{auth:false});token=r.access_token;sessionStorage.setItem('pcl-pilot-session',token);e.target.reset();await load();notice('Signed in to the shared staff workspace.');}catch(err){notice(err.message,true);}finally{b.disabled=false;}};
-$('#setupForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return notice('Passwords do not match.',true);const b=e.target.querySelector('button');b.disabled=true;try{await request({action:'setup',token:setupToken,password:f.get('password')},{auth:false});setupToken=null;e.target.reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Password saved. Sign in using the login ID provided with your link.');}catch(err){notice(err.message,true);}finally{b.disabled=false;}};
+async function checkSetupLink(){
+ const current=setupToken,b=$('#setupForm button[type=submit]');b.disabled=true;
+ if(!current){$('#setupState').textContent='Open the complete setup link copied by your Manager.';return;}
+ $('#setupState').textContent='Checking this setup link…';
+ try{const r=await request({action:'setup_status',token:current},{auth:false});if(current!==setupToken)return;
+  $('#setupState').textContent=r.state==='ready'?'Valid until '+setupExpiryText(r.expires_at)+'. Opening this page does not use the link.':r.message;
+  b.disabled=r.state!=='ready';if(r.state!=='ready')notice(r.message,true);else notice('');
+ }catch(err){if(current===setupToken){$('#setupState').textContent='Could not check the link. Click Check link again.';notice(err.message,true);}}
+}
+function openSetup(value){
+ setupToken=value;signedOut();$('#loginForm').hidden=true;$('#setupForm').hidden=false;$('#setupForm').reset();notice('');void checkSetupLink();
+}
+$('#checkSetup').onclick=()=>void checkSetupLink();
+$('#backToSignIn').onclick=()=>{setupToken=null;$('#setupForm').reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Sign in using your staff login ID and the password you saved.');};
+$('#setupForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return notice('Passwords do not match.',true);const b=e.target.querySelector('button[type=submit]'),current=setupToken;b.disabled=true;try{await request({action:'setup',token:current,password:f.get('password')},{auth:false});if(current!==setupToken)return;setupToken=null;e.target.reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Password saved. Sign in using the login ID provided with your link.');}catch(err){if(current===setupToken){notice(err.message,true);b.disabled=false;}}};
 setInterval(()=>{if(token&&Date.now()-lastRequest>60*60*1000)signedOut('Your session ended after one hour. Please sign in again.');},15000);
 function pendingModule(name){return `<section class="card"><h2>${esc(name)}</h2><p>This module is not connected in this testing release.</p><p class="muted">The current connected release covers client records, project schedules, assigned tasks, private documents, Excel row imports and timesheets. This screen does not post invoices, send messages or approve statutory filings.</p></section>`;}
 const v6=createWorkspaceUI({$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render});
-if(token)load().catch(e=>signedOut(e.message));
+const setupWatcher=watchSetupLinks(openSetup);
+if(!setupWatcher.hasSetup&&token)load().catch(e=>signedOut(e.message));

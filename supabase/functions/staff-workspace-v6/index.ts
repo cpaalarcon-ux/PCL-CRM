@@ -1,4 +1,5 @@
 import {readWorkspace} from './workspace-read.ts';
+import {setupLinkState,setupLinkMessages} from './setup-link-rules.mjs';
 import {workspaceAction} from './workspace-actions.ts';
 import {workbookAction} from './workbook-actions.ts';
 import { createClient } from 'supabase';
@@ -54,17 +55,27 @@ async function logAdmin(tx:any,authId:string|null,action:string,key:string,detai
  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values)
  values(${authId},current_user,'staff_access',${action},${key},${tx.json(detail)})`;
 }
+async function setupStatus(p:any){
+ const token=text(p.token,64);
+ if(!/^[a-f0-9]{64}$/.test(token))fail(400,setupLinkMessages.unavailable);
+ const hash=await sha(token);await limit('setup-status:'+hash,40);
+ const [row]=await sql`select t.expires_at,t.consumed_at,t.revoked_at,t.expires_at<=now() as expired,
+ s.access_status,s.deleted_at,(s.contract_end_date is null or s.contract_end_date>=(now() at time zone 'Africa/Nairobi')::date) as contract_current
+ from erp_private.setup_tokens t join erp_private.staff_members s on s.staff_id=t.staff_id where t.token_hash=${hash}`;
+ const state=setupLinkState(row);
+ return {state,message:setupLinkMessages[state],expires_at:state==='ready'?row.expires_at:null};
+}
 async function setup(p:any){
  const token=text(p.token,64),pass=password(p.password);
- if(!/^[a-f0-9]{64}$/.test(token))fail(400,'The setup link is invalid or expired.');
+ if(!/^[a-f0-9]{64}$/.test(token))fail(400,setupLinkMessages.unavailable);
  await limit('setup:'+token,8);
  const hash=await sha(token);
  await sql.begin(async tx=>{
-  const rows=await tx`select t.*,s.auth_user_id,s.login_id,s.access_status,s.contract_end_date,s.deleted_at from erp_private.setup_tokens t
-  join erp_private.staff_members s on s.staff_id=t.staff_id where t.token_hash=${hash} and t.consumed_at is null
-  and t.revoked_at is null and t.expires_at>now()
-  and (s.contract_end_date is null or s.contract_end_date>=(now() at time zone 'Africa/Nairobi')::date) for update of t,s`;
-  if(!rows.length)fail(400,'The setup link is invalid or expired.');
+  const rows=await tx`select t.*,s.auth_user_id,s.login_id,s.access_status,s.contract_end_date,s.deleted_at,t.expires_at<=now() as expired,
+  (s.contract_end_date is null or s.contract_end_date>=(now() at time zone 'Africa/Nairobi')::date) as contract_current
+  from erp_private.setup_tokens t join erp_private.staff_members s on s.staff_id=t.staff_id where t.token_hash=${hash} for update of t,s`;
+  const state=setupLinkState(rows[0]);
+  if(state!=='ready')fail(400,setupLinkMessages[state]);
   const s=rows[0];
   if(s.deleted_at||s.access_status==='Inactive')fail(403,'Ask the Engagement Partner to review this account.');
   let userId=s.auth_user_id;
@@ -107,7 +118,7 @@ async function accountLink(id:any,p:any){
   if(a.category_code==='MANAGER'&&['PARTNER','MANAGER'].includes(s.category_code))deny();
   return {staff:s,actor:a};
  });
- await sql.begin(async tx=>{
+ const validity=await sql.begin(async tx=>{
   // Recheck the actor under the row lock so revocation cannot race credential issuance.
   await tx`select staff_id from erp_private.staff_members where staff_id in (${selected.actor.staff_id},${staffId}) order by staff_id for update`;
   await tx`select set_config('request.jwt.claims',${JSON.stringify(id.claims)},true)`;
@@ -118,10 +129,11 @@ async function accountLink(id:any,p:any){
   await tx`update erp_private.staff_members set access_status='Pending setup',sessions_invalid_before=now() where staff_id=${staffId}`;
   await tx`update erp_private.pilot_sessions set revoked_at=now() where staff_id=${staffId}`;
   await tx`update erp_private.setup_tokens set revoked_at=now() where staff_id=${staffId} and consumed_at is null`;
-  await tx`insert into erp_private.setup_tokens(token_hash,staff_id,issued_by,expires_at) values(${hash},${staffId},${selected.actor.staff_id},now()+interval '24 hours')`;
+  const [validity]=await tx`insert into erp_private.setup_tokens(token_hash,staff_id,issued_by,expires_at) values(${hash},${staffId},${selected.actor.staff_id},now()+interval '24 hours') returning created_at,expires_at`;
   await logAdmin(tx,id.claims.sub,'SETUP_LINK_ISSUED',staffId,{expires_in_hours:24});
+  return validity;
  });
- return {login_id:selected.staff.login_id,setup_url:SETUP_BASE+'#setup='+raw,expires_in_hours:24};
+ return {login_id:selected.staff.login_id,setup_url:SETUP_BASE+'#setup='+raw,expires_in_hours:24,created_at:validity.created_at,expires_at:validity.expires_at};
 }
 async function bucket(){
  const r=await admin.storage.getBucket(BUCKET);
@@ -261,6 +273,7 @@ Deno.serve(async(req:Request)=>{
   let result;
   if(p.action==='login')result=await signIn(p);
   else if(p.action==='setup')result=await setup(p);
+  else if(p.action==='setup_status')result=await setupStatus(p);
   else{
    const id=await identity(req);
    if(p.action==='download'){

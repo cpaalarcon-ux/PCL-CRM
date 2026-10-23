@@ -31,7 +31,7 @@ The frontend calls **staff-workspace-v6**, separate from the retained **staff-pi
 
 Server secrets are platform-provided and must never be placed in HTML or GitHub. The browser has a publishable key and its own token in tab session storage. Do not expose `erp_private` through the Data API or grant browser roles access.
 
-Apply migrations in filename order. The ten V6 migrations match the staging migration history. Deploy the eight runtime files in `supabase/functions/staff-workspace-v6`, including `deno.json`, with entrypoint `index.ts` and explicit import_map_path `deno.json`. Package files support local checking only; do not deploy node_modules. Dependencies are pinned.
+Apply migrations in filename order. The ten V6 migrations match the staging migration history. Deploy the nine runtime files in `supabase/functions/staff-workspace-v6`, including `deno.json`, with entrypoint `index.ts` and explicit import_map_path `deno.json`. Package files support local checking only; do not deploy node_modules. Dependencies are pinned.
 
 XLSX parsing enforces upload/signature, archive expansion, sheet and row limits, and rejects macros, encryption and external links. Formulas are not evaluated; only cached results are read. Files stay in the private `staff-pilot-private` bucket and are streamed through authenticated downloads. Object storage writes use UUID paths and do not overwrite existing objects. Failed writes roll back metadata and remove their new object; production orphan reconciliation and malware scanning remain required.
 
@@ -54,6 +54,14 @@ python tests/workspace_routing_http.py /private/qa-fixture.json
 ```
 
 Use only temporary fictional fixtures in staging. Disable QA accounts and revoke their sessions/setup links after testing. Archive fictional records while retaining audit history and locked evidence.
+
+## Setup-link clarification — 23 October 2026
+
+Each original or regenerated setup/reset link has a fresh 24-hour validity from database issuance time, independent of the one-hour login session. The generation dialog and copied details show the exact expiry in Africa/Nairobi time. Opening/checking a link does not consume it; saving the password does. Regeneration replaces earlier unused links and revokes existing sessions.
+
+The setup page checks its state before enabling Save password and distinguishes already-used, replaced, expired and unavailable links. Opening a newer link in the same browser tab now replaces the old in-memory token. No real staff links are extended, recovered or reissued automatically by this UI correction.
+
+The anonymous setup_status action requires possession of the full random token, rate-limits checks and returns only state and the usable link's expiry. It exposes no staff record or token hash. Private tables and issuance permissions are unchanged.
 
 ## Remaining release gates
 
