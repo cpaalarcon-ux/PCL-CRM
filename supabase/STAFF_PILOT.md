@@ -87,7 +87,7 @@ The connected staff workspace recognises the existing B02A–B02D purchase, B03 
 3. Review the original workbook values, classify a row, and confirm that the original reference and amounts remain unchanged.
 4. Check D09 missing-evidence warnings and pending tax-review notice even when its uploaded review-status cell says “Approved”.
 5. Use an unassigned staff account to confirm that the workbook and rows are inaccessible.
-6. Use the privately uploaded Wamumbi workbook to preview its twelve monthly purchase sections. Import only the intended period after checking the client/project selection. No actual client workbook or credentials belong in GitHub.
+6. Use the privately uploaded full-size sample workbook to preview its twelve monthly purchase sections. Import only the intended period after checking the client/project selection. No actual client workbook or credentials belong in GitHub.
 
 Local regression commands (run `npm ci` in the Edge Function directory for the pinned ExcelJS dependency):
 
