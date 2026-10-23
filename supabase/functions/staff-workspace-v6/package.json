@@ -1,1 +1,1 @@
-{"name":"pcl-staff-pilot","private":true,"version":"0.1.0","dependencies":{"@supabase/supabase-js":"2.118.0","exceljs":"4.4.0","postgres":"3.4.9"}}
+{"name":"pcl-staff-pilot","private":true,"version":"0.1.0","dependencies":{"@supabase/supabase-js":"2.118.0","exceljs":"4.4.0","postgres":"3.4.9","jszip":"3.10.2","saxes":"5.0.1"}}

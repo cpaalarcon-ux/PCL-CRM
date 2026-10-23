@@ -1,5 +1,5 @@
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261023-workbooks';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v6';
 const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';

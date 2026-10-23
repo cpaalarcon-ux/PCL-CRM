@@ -68,3 +68,33 @@ The anonymous setup_status action requires possession of the full random token, 
 The navigation explicitly labels Finance and Communications as not yet connected. Financial WIP, tax approvals, production engagement activation, full HR/attendance, the client portal, and staff/client bulk imports are not enabled by this release. Do not treat the preview modules as shared operational records.
 
 The security advisor reports leaked-password protection disabled. Address it before production; local password-length checks are not compromised-password screening. See https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection. MFA, restore testing, malware scanning, retention controls, load testing and staff acceptance remain production gates. Closed private session/token/rate-limit tables intentionally have no application-role policies; see https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy.
+
+## Workbook-template testing update (23 October 2026)
+
+The connected staff workspace recognises the existing B02A–B02D purchase, B03 direct expenditure and D09 manual non-eTIMS layouts. Use **Private documents → Review Excel**, choose a sheet and its monthly section, confirm the return/incurred period and import. The template's headers determine the mapping on the server; changing a template header fails with an explanation rather than importing against a guessed schema.
+
+- B02 keeps invoice date separate from claim month, accepts credit notes and imports routing/classification suggestions. Resale, EXP01–EXP09 and PPE codes are internal workbook classifications. They do not establish tax eligibility.
+- B03 imports only its direct input area. Linked B02 schedules, Q–W posting summaries and formula placeholders are excluded, preventing a second posting of derived expenditure.
+- D09 uses its original 16-column manual section. Linked bank charges are excluded. Payee/authority, document reference, description, legal category, basis and receipt references remain available for review. Country values are supported without imposing the Kenyan PIN format on that column. No CU number is required for this supported-exception workflow.
+- Original source rows are immutable. **Projects & tasks → Imported rows & mapping → View workbook values** shows the original columns in workbook order. Staff can classify purchases/expenditure and supplement non-eTIMS legal basis/evidence with an audited revision. Uploaded reviewer names or “Approved” cells do not confer ERP approval.
+- Blank/derived/total rows do not inflate source counts. Results show source, new, duplicate and rejected counts. Re-uploading an identical row does not add it again. Different amounts against an existing identity are rejected for review. Explicit line IDs are supported; B02 descriptions/customs/type distinguish source lines. Identical lines without a distinct identifier cannot be distinguished from duplicates and require source review.
+- Visible cross-dataset supplier references are held for review to avoid duplicate expenditure. Final claiming/filing, eligibility decisions, bank reconciliation and locked-week export packages remain separate release work; importing a file does not mark a tax task filed.
+
+### Staging acceptance checklist
+
+1. Use a fictional client/project to test B02, B03 and D09 input rows, including a credit note, a duplicate, a missing reference and incomplete evidence.
+2. Import the same worksheet twice. The second import must add no duplicate financial rows.
+3. Review the original workbook values, classify a row, and confirm that the original reference and amounts remain unchanged.
+4. Check D09 missing-evidence warnings and pending tax-review notice even when its uploaded review-status cell says “Approved”.
+5. Use an unassigned staff account to confirm that the workbook and rows are inaccessible.
+6. Use the privately uploaded Wamumbi workbook to preview its twelve monthly purchase sections. Import only the intended period after checking the client/project selection. No actual client workbook or credentials belong in GitHub.
+
+Local regression commands (run `npm ci` in the Edge Function directory for the pinned ExcelJS dependency):
+
+```sh
+node --test tests/workbook_templates.test.mjs tests/workspace_rules.test.mjs tests/staff_pilot_validation.test.mjs tests/staff_pilot_upload.test.mjs tests/setup_links.test.mjs
+deno check --node-modules-dir=manual --config supabase/functions/staff-workspace-v6/deno.json supabase/functions/staff-workspace-v6/index.ts
+python tests/workbook_templates_http.py /private/qa-session.json /private/fictional-template.xlsx
+```
+
+The HTTP harness uses temporary QA accounts and private fixtures. Deactivate/archive the QA fixture accounts and records after testing. Publish this change to `backend/staging-foundation` only; production promotion remains a separate action after staff acceptance.
