@@ -1,5 +1,7 @@
+import {taxConfigAction} from './tax-config-actions.ts';
 import {readWorkspace} from './workspace-read.ts';
 import {setupLinkState,setupLinkMessages} from './setup-link-rules.mjs';
+import {leadAction} from './lead-actions.ts';
 import {workspaceAction} from './workspace-actions.ts';
 import {workbookAction} from './workbook-actions.ts';
 import {suiteRead,suiteAction} from './suite-actions.ts';
@@ -198,6 +200,8 @@ async function action(id:any,p:any){
  return scoped(id,async(tx,a)=>{
   if(p.action==='workspace')return {...await readWorkspace(tx,a),suite:await suiteRead(tx)};
   const exported=await suiteExport(tx,a,p,admin.storage.from(BUCKET));if(exported!==undefined)return exported;
+  const config=await taxConfigAction(tx,a,p);if(config!==undefined)return config;
+  const lead=await leadAction(tx,a,p);if(lead!==undefined)return lead;
   const suite=await suiteAction(tx,a,p);if(suite!==undefined)return suite;
   const tax=await taxAction(tx,a,p);if(tax!==undefined)return tax;
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;

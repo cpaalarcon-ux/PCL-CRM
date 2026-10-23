@@ -14,3 +14,12 @@
 
 /staff-suite.mjs
   Cache-Control: no-store
+
+/staff-tax-config.mjs
+  Cache-Control: no-store
+
+/staff-communication-qr.mjs
+  Cache-Control: no-store
+
+/staff-leads.mjs
+  Cache-Control: no-store

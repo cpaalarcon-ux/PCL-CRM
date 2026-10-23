@@ -11,7 +11,9 @@ export async function nextNumber(tx:any,firm:string,kind:string,date:string){con
  return `${kind==='INV'&&f.invoice_prefix?f.invoice_prefix.replace(/\/+$/,''):kind+'/'+f.firm_code}/${year}/${String(n.last_value).padStart(5,'0')}`;
 }
 export async function suiteRead(tx:any){const [r]=await tx`select jsonb_build_object(
+ 'leads',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.leads where deleted_at is null order by created_at desc)x),
  'rates',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.tax_rates where deleted_at is null order by effective_from desc limit 300)x),
+ 'tax_profiles',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.client_tax_profiles where deleted_at is null order by effective_from desc)x),
  'staff_rates',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.staff_rates order by effective_from desc limit 1000)x),
  'budgets',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.project_budgets order by effective_from desc limit 1000)x),
  'invoices',(select coalesce(jsonb_agg(x),'[]') from (select i.*,coalesce((select sum(p.amount) from erp_private.payments p where p.invoice_id=i.invoice_id),0) as paid_amount from erp_private.invoices i where deleted_at is null order by invoice_date desc limit 1000)x),
@@ -30,20 +32,6 @@ export async function suiteRead(tx:any){const [r]=await tx`select jsonb_build_ob
  ) as suite`;return r.suite;}
 
 export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
- if(p.action==='rate_save'){
-  leader(a);const type=choice(p.tax_type,['VAT','PAYE','Corporation tax','Individual income tax','Withholding tax','Levy']),key=text(p.rate_key,60).toUpperCase();if(!/^[A-Z0-9_-]+$/.test(key))fail(400,'Use letters, numbers, underscore or hyphen for the rate code.');
-  const [from,to]=range(p.effective_from,p.effective_to),params=rateParameters(type,p.parameters||{}),url=safeUrl(p.source_url);if(!url)fail(400,'Add the official source URL.');
-  if(p.rate_id){const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`);current(r,p);if(r.status!=='Draft')fail(400,'Create a new dated rate version. Approved rates cannot change.');
-   await tx`update erp_private.tax_rates set rate_key=${key},tax_type=${type},label=${text(p.label,160)},effective_from=${from},effective_to=${to},parameters=${tx.json(params)},source_url=${url},source_note=${text(p.source_note,2000)} where rate_id=${r.rate_id}`;
-  }else await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by) values(${key},${type},${text(p.label,160)},${from},${to},${tx.json(params)},${url},${text(p.source_note,2000)},${a.staff_id})`;
-  return {ok:true};
- }
- if(p.action==='rate_approve'){
-  partner(a);const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`);current(r,p);if(r.status!=='Draft')fail(400,'Choose a draft rate.');
-  await tx`select pg_advisory_xact_lock(hashtextextended(${r.rate_key},0))`;
-  if((await tx`select rate_id from erp_private.tax_rates where rate_key=${r.rate_key} and status='Approved' and effective_from<=${r.effective_to} and effective_to>=${r.effective_from}`).length)fail(400,'An approved rate overlaps these dates. Use a non-overlapping period.');
-  await tx`update erp_private.tax_rates set status='Approved',approved_by=${a.staff_id},approved_at=now() where rate_id=${r.rate_id}`;return {ok:true};
- }
  if(p.action==='staff_rate_add'){
   partner(a);const sid=uuid(p.staff_id),[from,to]=range(p.effective_from,p.effective_to);one(await tx`select staff_id from erp_private.staff_members where staff_id=${sid}`);
   await tx`select pg_advisory_xact_lock(hashtextextended(${sid+':rates'},0))`;
@@ -93,6 +81,16 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
    left join lateral(select sum(net_amount) billed from erp_private.invoices i where i.project_id=p.project_id and i.status='Posted')i on true
    left join lateral(select sum(amount) paid from erp_private.payments x where x.project_id=p.project_id)pay on true where erp_private.finance_allowed(p.project_id) order by p.project_name`};
  }
+ if(p.action==='communication_resolve'){
+  const c=one(await tx`select * from erp_private.communications where opaque_reference=${uuid(p.opaque_reference)} and deleted_at is null`);
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'communications','QR_ACCESS',${c.communication_id},'{}')`;
+  return {communication:c};
+ }
+ if(p.action==='communication_qr'){
+  const c=one(await tx`select communication_id,opaque_reference,reference from erp_private.communications where communication_id=${uuid(p.communication_id)} and deleted_at is null`);
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'communications','QR_GENERATE',${c.communication_id},'{}')`;
+  return c;
+ }
  if(p.action==='communication_save'){
   const cid=uuid(p.client_id),firm=uuid(p.firm_id),pid=p.project_id?uuid(p.project_id):null;one(await tx`select client_id from erp_private.clients where client_id=${cid}`);one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm}`);
   if(pid)one(await tx`select project_id from erp_private.projects where project_id=${pid} and client_id=${cid} and handling_firm_id=${firm}`);
@@ -112,8 +110,8 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   else await tx`insert into erp_private.client_contacts(client_id,full_name,email_address,phone_number,job_title) values(${cid},${text(p.full_name,160)},${email},${text(p.phone_number||'',40,false)},${text(p.job_title||'',100,false)})`;return {ok:true};
  }
  if(p.action==='firm_details'){
-  partner(a);const pin=text(p.kra_pin||'',11,false);if(pin&&!/^[A-Z][0-9]{9}[A-Z]$/.test(pin))fail(400,'Check the firm KRA PIN.');const prefix=text(p.invoice_prefix||'',40,false);if(prefix&&!/^[A-Z0-9/-]+$/.test(prefix))fail(400,'Use a prefix such as INV/PCL.');
-  one(await tx`update erp_private.firms set legal_name=${text(p.legal_name,200)},kra_pin=${pin||null},email=${text(p.email||'',200,false)},phone=${text(p.phone||'',40,false)},physical_address=${text(p.physical_address||'',500,false)},invoice_prefix=${prefix||null} where firm_id=${uuid(p.firm_id)} returning firm_id`);return {ok:true};
+  partner(a);if(typeof p.vat_registered!=='boolean')fail(400,'Confirm whether this firm is VAT registered.');const pin=text(p.kra_pin||'',11,false);if(pin&&!/^[A-Z][0-9]{9}[A-Z]$/.test(pin))fail(400,'Check the firm KRA PIN.');const prefix=text(p.invoice_prefix||'',40,false);if(prefix&&!/^[A-Z0-9/-]+$/.test(prefix))fail(400,'Use a prefix such as INV/PCL.');
+  one(await tx`update erp_private.firms set vat_registered=${p.vat_registered===true},payment_instructions=${text(p.payment_instructions||'',2000,false)},legal_name=${text(p.legal_name,200)},kra_pin=${pin||null},email=${text(p.email||'',200,false)},phone=${text(p.phone||'',40,false)},physical_address=${text(p.physical_address||'',500,false)},invoice_prefix=${prefix||null} where firm_id=${uuid(p.firm_id)} returning firm_id`);return {ok:true};
  }
  if(p.action==='leave_request'){
   const [from,to]=range(p.starts_on,p.ends_on),days=weekdays(from,to);if(!days.length)fail(400,'The request contains no working days.');

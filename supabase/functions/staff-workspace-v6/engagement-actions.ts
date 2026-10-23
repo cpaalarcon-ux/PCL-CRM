@@ -2,7 +2,7 @@ import {fail,text,uuid,choice,date,revision} from './validation.mjs';
 import {number,day} from './suite-rules.mjs';
 import {one,leader,today} from './suite-actions.ts';
 export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
- if(!['compliance_save','compliance_verify','edd_approve','owner_add','engagement_save','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
+ if(!['compliance_save','compliance_verify','edd_approve','owner_add','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
  leader(a);
  if(p.action==='owner_add'){
   const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);
@@ -29,18 +29,29 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
  }
  const project=one(await tx`select p.*,c.is_pie,c.primary_sector,c.sme_audit_exempt,c.audit_requested from erp_private.projects p join erp_private.clients c using(client_id) where project_id=${uuid(p.project_id)} for update of p`);
  const e=(await tx`select * from erp_private.engagement_controls where project_id=${project.project_id} for update`)[0];
+ if(p.action==='engagement_read'){
+  const k=(await tx`select * from erp_private.client_compliance where client_id=${project.client_id}`)[0];
+  const iso=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
+  const checks=[{label:'Current client KYC verified',ok:!!k?.verified_by&&!!k.review_due&&iso(k.review_due)>=today()},{label:'Enhanced due diligence (if required)',ok:!k?.is_pep&&k?.risk_rating!=='High'||!!k?.edd_approved_by},{label:'Signed engagement letter uploaded and verified',ok:!!e?.signed_letter_id&&!!e.letter_verified_by&&(!e.letter_expires_on||iso(e.letter_expires_on)>=today())}];
+  if(project.service_code.startsWith('AUD-')&&project.sme_audit_exempt)checks.push({label:'Optional audit requested by client',ok:project.audit_requested});
+  return {checks,is_audit:project.service_code.startsWith('AUD-'),controls:e||null};
+ }
+ if(p.action==='engagement_save_activate'){
+  await engagementAction(tx,a,{...p,action:'engagement_save'});
+  return await engagementAction(tx,a,{...p,action:'engagement_activate'});
+ }
  if(p.action==='engagement_save'){
   if(e&&String(e.revision)!==revision(p.revision))fail(409,'Engagement controls changed. Refresh first.');if(e?.stage==='Finalized')fail(400,'The engagement is finalized.');
   const letter=p.signed_letter_id?uuid(p.signed_letter_id):null;if(letter)one(await tx`select document_id from erp_private.documents where document_id=${letter} and project_id=${project.project_id} and category='Signed Engagement Letters' and mime_type='application/pdf' and is_locked`);
   const isAudit=project.service_code.startsWith('AUD-'),required=isAudit&&(project.is_pie||['Financial Services','Public Sector'].includes(project.primary_sector)||p.eqr_required===true);
-  const reviewer=p.eqr_reviewer_id?uuid(p.eqr_reviewer_id):null,clearance=p.eqr_document_id?uuid(p.eqr_document_id):null;
+  const reviewer=isAudit&&p.eqr_reviewer_id?uuid(p.eqr_reviewer_id):null,clearance=isAudit&&p.eqr_document_id?uuid(p.eqr_document_id):null;
   const preservedClearance=clearance&&e?.eqr_document_id===clearance&&e?.eqr_reviewer_id===reviewer&&e?.eqr_cleared_by;
   if(clearance&&!preservedClearance){if(a.category_code!=='PARTNER')fail(403,'Only the Engagement Partner can record EQR clearance.');if(!reviewer||reviewer===a.staff_id)fail(400,'Choose an independent reviewer.');one(await tx`select staff_id from erp_private.assignment_candidates() where staff_id=${reviewer} and category_code in ('PARTNER','MANAGER') and firm_id=${project.handling_firm_id}`);
    if((await tx`select staff_id from erp_private.project_assignments where project_id=${project.project_id} and staff_id=${reviewer} and deleted_at is null`).length)fail(400,'The EQR reviewer must be independent of the engagement team.');
    one(await tx`select document_id from erp_private.documents where document_id=${clearance} and project_id=${project.project_id} and category in ('Current Year Audit','Final Reports')`);
   }
   await tx`insert into erp_private.engagement_controls(project_id,signed_letter_id,letter_verified_by,letter_expires_on,stage,eqr_required,eqr_reviewer_id,eqr_document_id,eqr_cleared_by,notes)
-   values(${project.project_id},${letter},${letter?a.staff_id:null},${date(p.letter_expires_on)},${choice(p.stage,['Scoping','Proposal','Accepted','Planning','Fieldwork','Manager Review','EQR'])},${required},${reviewer},${clearance},${clearance?(preservedClearance?e.eqr_cleared_by:a.staff_id):null},${text(p.notes||'',4000,false)})
+   values(${project.project_id},${letter},${letter?a.staff_id:null},${date(p.letter_expires_on)},${choice(p.stage,isAudit?['Scoping','Proposal','Accepted','Planning','Fieldwork','Manager Review','EQR']:['Scoping','Proposal','Accepted','Planning','Fieldwork','Manager Review'])},${required},${reviewer},${clearance},${clearance?(preservedClearance?e.eqr_cleared_by:a.staff_id):null},${text(p.notes||'',4000,false)})
    on conflict(project_id) do update set signed_letter_id=excluded.signed_letter_id,letter_verified_by=excluded.letter_verified_by,letter_expires_on=excluded.letter_expires_on,stage=excluded.stage,eqr_required=excluded.eqr_required,eqr_reviewer_id=excluded.eqr_reviewer_id,eqr_document_id=excluded.eqr_document_id,eqr_cleared_by=excluded.eqr_cleared_by,notes=excluded.notes`;
   return {ok:true};
  }
@@ -54,9 +65,9 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   await tx`update erp_private.projects set status='Active' where project_id=${project.project_id}`;return {ok:true};
  }
  if(p.action==='engagement_finalize'){
-  if(a.category_code!=='PARTNER')fail(403,'The Engagement Partner must finalize an engagement.');
+  if(project.service_code.startsWith('AUD-')&&a.category_code!=='PARTNER')fail(403,'The Engagement Partner must finalize an audit engagement.');
   if(project.status!=='Active'||!e)fail(400,'Activate the engagement and complete its review controls first.');
-  if(e.eqr_required&&(!e.eqr_document_id||!e.eqr_cleared_by))fail(400,'Independent EQR clearance is required.');
+  if(project.service_code.startsWith('AUD-')&&e.eqr_required&&(!e.eqr_document_id||!e.eqr_cleared_by))fail(400,'Independent EQR clearance is required.');
   if((await tx`select task_id from erp_private.tasks where project_id=${project.project_id} and status not in ('Completed','Cancelled') and deleted_at is null`).length)fail(400,'Complete or cancel outstanding engagement tasks first.');
   if(project.service_code.startsWith('AUD-')&&!(await tx`select document_id from erp_private.documents where project_id=${project.project_id} and category='Final Reports' and is_locked`).length)fail(400,'Upload the final signed report first.');
   await tx`update erp_private.engagement_controls set stage='Finalized',finalized_by=${a.staff_id},finalized_at=now() where project_id=${project.project_id}`;

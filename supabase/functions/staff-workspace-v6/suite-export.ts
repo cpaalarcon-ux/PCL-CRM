@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import {PDFDocument,StandardFonts} from 'pdf-lib';
 import {fail,uuid} from './validation.mjs';
+import {taxSummary} from './tax-review-actions.ts';
 import {one,leader} from './suite-actions.ts';
 const clean=(v:any)=>typeof v==='object'&&v!==null?JSON.stringify(v):v??'';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
@@ -22,14 +23,18 @@ export async function suiteExport(tx:any,a:any,p:any,storage:any){
  if(p.kind==='Tax'){
   const c=one(await tx`select * from erp_private.tax_cases where case_id=${id}`),project=one(await tx`select * from erp_private.projects where project_id=${c.project_id}`),client=one(await tx`select company_name from erp_private.clients where client_id=${project.client_id}`);
   const locked=['Locked','Filed'].includes(c.status),snapshot=c.review_snapshot;
-  const rows=locked?snapshot.rows:await tx`select r.* from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${c.project_id} and b.period_start>=${c.starts_on} and b.period_end<=${c.ends_on} limit 10001`;
+  const current=await taxSummary(tx,c),rows=current.rows;
+  const calculated=locked?c.result:current.result;
   if(rows.length>10000)fail(400,'Split exports into smaller reviewed periods.');
-  const summary=Object.entries(c.result).filter(([,v])=>!Array.isArray(v)).map(([k,v])=>[k,clean(v)]),sheets:any[]=[['Summary',['Metric','Value'],[['Client',client.company_name],['Tax',c.kind],['Status',c.status],['Use',locked?'Reviewed compilation; verify filing separately':'DRAFT - NOT FOR FILING'],...summary]]];
-  for(const dataset of ['Sales','Purchases','Expenditure','Non-eTIMS','Bank','General']){const selected=rows.filter((r:any)=>r.dataset===dataset||locked&&snapshot.batches.find((b:any)=>b.batch_id===r.batch_id)?.dataset===dataset);if(selected.length)sheets.push([dataset,['Reference','Date','Party','Net / amount','VAT','Decision','Deductible %','Original values'],selected.map((r:any)=>[r.normalized.invoice||r.normalized.reference,r.normalized.date,r.normalized.party,r.normalized.amount,r.normalized.vat,r.decision||'',r.deductible_percentage??'',r.normalized])]);}
-  if(c.result.employees)sheets.push(['Payroll',['Employee','Gross','Deductions','Taxable pay','PAYE','Source PAYE','Difference'],c.result.employees.map((e:any)=>[e.name,e.gross,e.allowed_deductions,e.taxable,e.paye,e.source_paye,e.variance])]);
-  if(c.result.allocation)sheets.push(['Partner allocations',['Partner','Profit share %','Allocated income'],c.result.allocation.map((x:any)=>[x.name,x.share,x.amount])]);
+  const summary=Object.entries(calculated).filter(([,v])=>!Array.isArray(v)).map(([k,v])=>[k,clean(v)]),sheets:any[]=[['Summary',['Metric','Value'],[['Client',client.company_name],['Tax',c.kind],['Status',c.status],['Use',locked?'Reviewed compilation; verify filing separately':'DRAFT - NOT FOR FILING'],...summary]]];
+  for(const dataset of ['Sales','Purchases','Expenditure','Non-eTIMS','Bank','General']){const selected=rows.filter((r:any)=>r.dataset===dataset||locked&&snapshot.batches.find((b:any)=>b.batch_id===r.batch_id)?.dataset===dataset);if(selected.length)sheets.push([dataset,['Reference','Date','Party','Net / amount','VAT','Decision','Deductible %','VAT rule','Income treatment','Original values'],selected.map((r:any)=>[r.normalized.invoice||r.normalized.reference,r.normalized.date,r.normalized.party,r.normalized.amount,r.normalized.vat,r.decision||'',r.deductible_percentage??'',r.vat_rate_key||'',r.income_treatment||'',r.normalized])]);}
+  if(calculated.employees)sheets.push(['Payroll',['Employee','Gross','Deductions','Taxable pay','PAYE','Source PAYE','Difference'],calculated.employees.map((e:any)=>[e.name,e.gross,e.allowed_deductions,e.taxable,e.paye,e.source_paye,e.variance])]);
+  if(calculated.allocation)sheets.push(['Partner allocations',['Partner','Profit share %','Allocated income'],calculated.allocation.map((x:any)=>[x.name,x.share,x.amount])]);
+  sheets.push(['Applied tax rules',['Code','Label','From','Through','Parameters','Official source','Approval'],(current.applied_rates||[]).map((r:any)=>[r.rate_key,r.label,dateText(r.effective_from),dateText(r.effective_to),r.parameters,r.source_url,r.approved_at])]);
+  if(current.profile)sheets.push(['Client tax profile',['Field','Value'],Object.entries(current.profile).filter(([k])=>['entity_type','residency','regime','obligations','effective_from','effective_to','notes','verified_at'].includes(k))]);
+  if(!locked)sheets.push(['Review blockers',['Issue'],current.issues.map((i:string)=>[i])]);
   const xlsx=await workbook(sheets);if(p.format==='xlsx'){bytes=xlsx;mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';name=`${c.kind}_${id.slice(0,8)}.xlsx`;}
-  else {zip.file('01_Summary_Report.pdf',await pdf((locked?'':'DRAFT - NOT FOR FILING | ')+c.kind+' compilation',[client.company_name,`Period ${dateText(c.starts_on)} to ${dateText(c.ends_on)}`,`Status: ${c.status}`,...summary.map(([k,v])=>`${k}: ${v}`)]));zip.file('02_Working_Papers.xlsx',xlsx);
+  else {zip.file('01_Summary_Report.pdf',await pdf((locked?'':'DRAFT - NOT FOR FILING | ')+c.kind+' compilation',[client.company_name,`Period ${dateText(c.starts_on)} to ${dateText(c.ends_on)}`,`Status: ${c.status}`,...summary.map(([k,v])=>`${k}: ${v}`),...(current.applied_rates||[]).map((r:any)=>`Applied ${r.rate_key} | ${dateText(r.effective_from)} to ${dateText(r.effective_to)} | ${JSON.stringify(r.parameters)} | ${r.source_url}`),...(!locked?current.issues.map((i:string)=>'REVIEW: '+i):[])]));zip.file('02_Working_Papers.xlsx',xlsx);
    const findings=locked?snapshot.findings:await tx`select summary,status,resolution from erp_private.tax_findings where project_id=${c.project_id} and (case_id=${c.case_id} or case_id is null)`;zip.file('03_Findings.pdf',await pdf('Findings',findings.map((f:any)=>`${f.status}: ${f.summary} | ${f.resolution||''}`)));
    if(locked){const docIds=[...new Set([...snapshot.batches.map((b:any)=>b.document_id),c.source_document_id].filter(Boolean))];docs=docIds.length?await tx`select * from erp_private.documents where document_id=any(${tx.array(docIds)}::uuid[])`:[];}
    name=`${locked?'Reviewed':'DRAFT'}_${c.kind}_${id.slice(0,8)}.zip`;bytes=new Uint8Array();

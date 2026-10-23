@@ -1,0 +1,554 @@
+[
+  {
+    "rate_key": "KE_VAT_STANDARD",
+    "tax_type": "VAT",
+    "label": "Standard-rated supply",
+    "effective_from": "2023-07-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 16,
+      "treatment": "Standard"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/value-added-tax",
+    "source_note": "VAT Act, section 5. Check supply classification and tax point; the approval window ends 31 December 2026.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_VAT_ZERO",
+    "tax_type": "VAT",
+    "label": "Zero-rated supply",
+    "effective_from": "2023-07-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 0,
+      "treatment": "Zero-rated"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/value-added-tax",
+    "source_note": "VAT Act Second Schedule. Zero-rating requires the applicable schedule entry and evidence.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_VAT_EXEMPT",
+    "tax_type": "VAT",
+    "label": "Exempt supply",
+    "effective_from": "2023-07-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 0,
+      "treatment": "Exempt"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/value-added-tax",
+    "source_note": "VAT Act First Schedule. Classification code, not a zero-rated supply. Related input tax is not automatically deductible.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_VAT_OUTSIDE",
+    "tax_type": "VAT",
+    "label": "Outside VAT scope",
+    "effective_from": "2023-07-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 0,
+      "treatment": "Outside scope"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/value-added-tax",
+    "source_note": "Reviewer must explain why this transaction is outside the charge to VAT. This does not establish income-tax deductibility.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_VAT_PETROLEUM_8",
+    "tax_type": "VAT",
+    "label": "Historical petroleum VAT only",
+    "effective_from": "2018-09-21",
+    "effective_to": "2023-06-30",
+    "parameters": {
+      "rate": 8,
+      "treatment": "Historical petroleum"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/value-added-tax",
+    "source_note": "Historical qualifying petroleum transactions only. Not valid from 1 July 2023.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WH_VAT",
+    "tax_type": "VAT",
+    "label": "Withholding VAT by appointed agent",
+    "effective_from": "2019-11-07",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 2,
+      "treatment": "Withholding"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/value-added-tax",
+    "source_note": "Appointed-agent status and taxable supply required. This is a withholding credit, not the supply VAT rate.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_PAYE_MONTHLY",
+    "tax_type": "PAYE",
+    "label": "Monthly PAYE bands and resident personal relief",
+    "effective_from": "2023-07-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "bands": [
+        {
+          "upper": 24000,
+          "rate": 10
+        },
+        {
+          "upper": 32333,
+          "rate": 25
+        },
+        {
+          "upper": 500000,
+          "rate": 30
+        },
+        {
+          "upper": 800000,
+          "rate": 32.5
+        },
+        {
+          "upper": null,
+          "rate": 35
+        }
+      ],
+      "personal_relief": 2400,
+      "period": "Monthly"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/paye",
+    "source_note": "Income Tax Act Third Schedule. Cumulative MONTHLY upper limits. Personal relief only where residence eligibility is established.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_IIT_ANNUAL",
+    "tax_type": "Individual income tax",
+    "label": "Annual individual bands and resident personal relief",
+    "effective_from": "2024-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "bands": [
+        {
+          "upper": 288000,
+          "rate": 10
+        },
+        {
+          "upper": 388000,
+          "rate": 25
+        },
+        {
+          "upper": 6000000,
+          "rate": 30
+        },
+        {
+          "upper": 9600000,
+          "rate": 32.5
+        },
+        {
+          "upper": null,
+          "rate": 35
+        }
+      ],
+      "personal_relief": 28800,
+      "period": "Annual"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/paye",
+    "source_note": "Annual bands entered separately; do not multiply rounded monthly bands by twelve. Full calendar-year standard resident computation only.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_PAYROLL_LIMITS",
+    "tax_type": "Relief / deduction",
+    "label": "Payroll deduction caps and insurance relief",
+    "effective_from": "2024-12-27",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "pension_monthly_cap": 30000,
+      "mortgage_monthly_cap": 30000,
+      "medical_monthly_cap": 15000,
+      "insurance_rate": 15,
+      "insurance_monthly_cap": 5000
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/paye",
+    "source_note": "Registered pension cap includes employee NSSF. Qualifying mortgage and post-retirement medical fund conditions apply. Insurance premiums require eligibility and evidence. No duplicate AHL/SHIF relief.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_CIT_RES",
+    "tax_type": "Corporation tax",
+    "label": "Standard resident corporation tax",
+    "effective_from": "2021-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 30
+    },
+    "source_url": "https://www.kra.go.ke/news-center/public-notices/1263-updated-resident-corporation-tax-return",
+    "source_note": "Income Tax Act Third Schedule. Standard resident company only. Special regimes require separate verified rules.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_TOT",
+    "tax_type": "Turnover tax",
+    "label": "Turnover tax on qualifying sales",
+    "effective_from": "2024-03-19",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 1.5,
+      "minimum_turnover_exclusive": 1000000,
+      "maximum_turnover": 25000000
+    },
+    "source_url": "https://www.kra.go.ke/images/publications/Everything-About-Turnover-Tax.pdf",
+    "source_note": "Income Tax Act section 12C. Exclude professional, management, training and rental income and other excluded categories. No expense deductions against this tax base.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_MRI",
+    "tax_type": "Rental income tax",
+    "label": "Qualifying resident residential rental income",
+    "effective_from": "2024-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 7.5,
+      "minimum_annual_rent": 288000,
+      "maximum_annual_rent": 15000000
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/residential-rental-income",
+    "source_note": "Income Tax Act section 6A. Gross residential rent received, eligibility band and election require reviewer confirmation. Commercial rent is not this regime.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_CGT",
+    "tax_type": "Capital gains tax",
+    "label": "Capital gains tax on net taxable gain",
+    "effective_from": "2023-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 15
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/capital-gains-tax",
+    "source_note": "Income Tax Act Eighth/Third Schedules. Verify transfer, adjusted cost, exemptions and whether disposal is instead trading income.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_PROF_RES",
+    "tax_type": "Withholding tax",
+    "label": "Professional / management / training fees \u00b7 resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 5,
+      "payee_residency": "Resident",
+      "payment_category": "PROF"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_PROF_NONRES",
+    "tax_type": "Withholding tax",
+    "label": "Professional / management / training fees \u00b7 non-resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 20,
+      "payee_residency": "Non-resident",
+      "payment_category": "PROF"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_CONTRACT_RES",
+    "tax_type": "Withholding tax",
+    "label": "Contractual payments \u00b7 resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 3,
+      "payee_residency": "Resident",
+      "payment_category": "CONTRACT"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_CONTRACT_NONRES",
+    "tax_type": "Withholding tax",
+    "label": "Contractual payments \u00b7 non-resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 20,
+      "payee_residency": "Non-resident",
+      "payment_category": "CONTRACT"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_ROYALTY_RES",
+    "tax_type": "Withholding tax",
+    "label": "Royalties \u00b7 resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 5,
+      "payee_residency": "Resident",
+      "payment_category": "ROYALTY"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_ROYALTY_NONRES",
+    "tax_type": "Withholding tax",
+    "label": "Royalties \u00b7 non-resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 20,
+      "payee_residency": "Non-resident",
+      "payment_category": "ROYALTY"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_INTEREST_RES",
+    "tax_type": "Withholding tax",
+    "label": "Qualifying interest \u00b7 resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 15,
+      "payee_residency": "Resident",
+      "payment_category": "INTEREST"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_INTEREST_NONRES",
+    "tax_type": "Withholding tax",
+    "label": "Qualifying interest \u00b7 non-resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 15,
+      "payee_residency": "Non-resident",
+      "payment_category": "INTEREST"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_DIGITAL_RES",
+    "tax_type": "Withholding tax",
+    "label": "Digital content monetisation \u00b7 resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 5,
+      "payee_residency": "Resident",
+      "payment_category": "DIGITAL"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_DIGITAL_NONRES",
+    "tax_type": "Withholding tax",
+    "label": "Digital content monetisation \u00b7 non-resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 20,
+      "payee_residency": "Non-resident",
+      "payment_category": "DIGITAL"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_MARKETING_RES",
+    "tax_type": "Withholding tax",
+    "label": "Sales promotion / marketing / advertising \u00b7 resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 5,
+      "payee_residency": "Resident",
+      "payment_category": "MARKETING"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_MARKETING_NONRES",
+    "tax_type": "Withholding tax",
+    "label": "Sales promotion / marketing / advertising \u00b7 non-resident",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 20,
+      "payee_residency": "Non-resident",
+      "payment_category": "MARKETING"
+    },
+    "source_url": "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/individual-withholding-tax",
+    "source_note": "Income Tax Act section 35 and Third Schedule. 2026 review window only. Confirm payment category, aggregate threshold where applicable, exemption, treaty and final/creditable status. Do not infer applicability from supplier name.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_AHL_EMPLOYEE",
+    "tax_type": "Levy",
+    "label": "Housing levy \u00b7 employee",
+    "effective_from": "2024-03-19",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 1.5,
+      "basis": "Gross salary"
+    },
+    "source_url": "https://www.kra.go.ke/news-center/public-notices/2099-collection-of-the-affordable-housing-levy-by-kenya-revenue-authority",
+    "source_note": "Affordable Housing Act 2024. Payroll only. Employee and employer sides are separate. Current PAYE deduction treatment comes from the payroll schedule.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_AHL_EMPLOYER",
+    "tax_type": "Levy",
+    "label": "Housing levy \u00b7 employer",
+    "effective_from": "2024-03-19",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 1.5,
+      "basis": "Gross salary"
+    },
+    "source_url": "https://www.kra.go.ke/news-center/public-notices/2099-collection-of-the-affordable-housing-levy-by-kenya-revenue-authority",
+    "source_note": "Affordable Housing Act 2024. Payroll only. Employee and employer sides are separate. Current PAYE deduction treatment comes from the payroll schedule.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_SHIF",
+    "tax_type": "Levy",
+    "label": "Salaried SHIF contribution",
+    "effective_from": "2024-10-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 2.75,
+      "minimum": 300,
+      "basis": "Gross salary"
+    },
+    "source_url": "https://new.kenyalaw.org/akn/ke/act/ln/2024/49/eng@2024-03-08",
+    "source_note": "Social Health Insurance Regulations, regulation 17. Minimum applies per employee; no employer match in this schedule.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_NSSF",
+    "tax_type": "NSSF",
+    "label": "NSSF Year 4 (February 2026 onwards)",
+    "effective_from": "2026-02-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "employee_rate": 6,
+      "employer_rate": 6,
+      "lower_limit": 9000,
+      "upper_limit": 108000
+    },
+    "source_url": "https://www.nssf.or.ke/notice-to-employers-year-4-2026-nssf-contribution-rates",
+    "source_note": "Year 4 official notice. Per employee limits; Tier I 540 each, Tier II up to 5940 each, total maximum 6480 each. Earlier payroll periods need the earlier approved schedule.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_NITA",
+    "tax_type": "Levy",
+    "label": "Employer industrial training levy",
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "method": "fixed",
+      "fixed_amount": 50,
+      "basis": "Per employee per month"
+    },
+    "source_url": "https://www.nita.go.ke/our-services/levy-inspectorate.html",
+    "source_note": "Industrial Training Act / Levy Order. Employer cost, not an employee deduction. Confirm any exemption. Remittance calendar must be separately verified.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_FBT_BENCHMARK",
+    "tax_type": "Interest benchmark",
+    "label": "Fringe benefit market-interest benchmark",
+    "effective_from": "2026-07-01",
+    "effective_to": "2026-09-30",
+    "parameters": {
+      "rate": 8,
+      "period": "Annual interest benchmark"
+    },
+    "source_url": "https://www.kra.go.ke/news-center/public-notices/2379-fringe-benefit-tax%2C-deemed-interest-rate-and-low-interest-benefit-7",
+    "source_note": "Income Tax Act section 12B / 16(2)(ja), as applicable. This is an annual interest benchmark, NOT the tax percentage. Monthly balance must be supported; variable balances need a reviewed weighted basis.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_DEEMED_BENCHMARK",
+    "tax_type": "Interest benchmark",
+    "label": "Deemed-interest benchmark",
+    "effective_from": "2026-07-01",
+    "effective_to": "2026-09-30",
+    "parameters": {
+      "rate": 8,
+      "period": "Annual interest benchmark"
+    },
+    "source_url": "https://www.kra.go.ke/news-center/public-notices/2379-fringe-benefit-tax%2C-deemed-interest-rate-and-low-interest-benefit-7",
+    "source_note": "Income Tax Act section 12B / 16(2)(ja), as applicable. This is an annual interest benchmark, NOT the tax percentage. Monthly balance must be supported; variable balances need a reviewed weighted basis.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_FBT_BENCHMARK",
+    "tax_type": "Interest benchmark",
+    "label": "Fringe benefit market-interest benchmark",
+    "effective_from": "2026-10-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 9,
+      "period": "Annual interest benchmark"
+    },
+    "source_url": "https://www.kra.go.ke/news-center/public-notices/2403-fringe-benefit-tax-and-deemed-interest-rate-8",
+    "source_note": "Income Tax Act section 12B / 16(2)(ja), as applicable. This is an annual interest benchmark, NOT the tax percentage. Monthly balance must be supported; variable balances need a reviewed weighted basis.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_DEEMED_BENCHMARK",
+    "tax_type": "Interest benchmark",
+    "label": "Deemed-interest benchmark",
+    "effective_from": "2026-10-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 9,
+      "period": "Annual interest benchmark"
+    },
+    "source_url": "https://www.kra.go.ke/news-center/public-notices/2403-fringe-benefit-tax-and-deemed-interest-rate-8",
+    "source_note": "Income Tax Act section 12B / 16(2)(ja), as applicable. This is an annual interest benchmark, NOT the tax percentage. Monthly balance must be supported; variable balances need a reviewed weighted basis.",
+    "verified_on": "2026-10-24"
+  },
+  {
+    "rate_key": "KE_WHT_DEEMED",
+    "tax_type": "Withholding tax",
+    "label": "Withholding on deemed interest",
+    "effective_from": "2026-07-01",
+    "effective_to": "2026-12-31",
+    "parameters": {
+      "rate": 15
+    },
+    "source_url": "https://www.kra.go.ke/news-center/public-notices/2403-fringe-benefit-tax-and-deemed-interest-rate-8",
+    "source_note": "Apply to calculated deemed interest subject to the statutory conditions, not directly to the loan principal.",
+    "verified_on": "2026-10-24"
+  }
+]
