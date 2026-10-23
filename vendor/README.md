@@ -1,6 +1,6 @@
 # Vendored QR renderer
 
-`qrcode-generator-2.0.4.mjs` is the unmodified ES module from qrcode-generator 2.0.4 by Kazuhiko Arase, licensed under MIT. The copyright and licence reference are retained in the source header.
+`qrcode-generator-2.0.4.mjs` is the unmodified ES module from qrcode-generator 2.0.4 by Kazuhiko Arase, licensed under MIT. The copyright and licence reference are retained in the source header; the permission notice is included in `qrcode-generator-LICENSE.txt`.
 
 Upstream: https://github.com/kazuhikoarase/qrcode-generator
 
