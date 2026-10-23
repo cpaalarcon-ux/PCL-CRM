@@ -30,3 +30,22 @@ export function fileType(name,bytes){
  fail(400,'Use a PDF, XLSX, PNG or JPEG matching its file extension.');
 }
 export function allowedOrigin(origin){return ['https://backend-staging-foundation.pcl-crm.pages.dev','https://pcl-crm.pages.dev','https://pcl.phamalarcon.com'].includes(origin);}
+export function documentObjectKey(clientId,firmId,documentId,mime){
+ const extensions={'application/pdf':'pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'xlsx','image/png':'png','image/jpeg':'jpg'};
+ const extension=extensions[choice(mime,Object.keys(extensions))];
+ return `clients/${uuid(clientId)}/firms/${uuid(firmId)}/${uuid(documentId)}.${extension}`;
+}
+export function assertDocumentLinks(selection,project,task){
+ if(selection.task_id&&!selection.project_id)fail(400,'Choose a project before choosing a task.');
+ if(selection.project_id){
+  if(!project)fail(403,'This project is not available to your account. Refresh the workspace.');
+  if(project.project_id!==selection.project_id||project.client_id!==selection.client_id||project.handling_firm_id!==selection.firm_id)
+   fail(400,'The project must belong to the selected client and handling firm. Choose the client and firm again.');
+  if(project.status==='Archived')fail(400,'This project is archived. Choose an open project.');
+ }
+ if(selection.task_id){
+  if(!task)fail(403,'This task is not available to your account. Refresh the workspace.');
+  if(task.task_id!==selection.task_id||task.project_id!==selection.project_id)
+   fail(400,'The task must belong to the selected project. Choose the task again.');
+ }
+}

@@ -1,6 +1,6 @@
 import { createClient } from 'supabase';
 import postgres from 'postgres';
-import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses } from './validation.mjs';
+import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
 
 const url=Deno.env.get('SUPABASE_URL')!;
 const secret=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')||'{}').default;
@@ -131,18 +131,20 @@ async function upload(req:Request,id:any){
  const bytes=new Uint8Array(await file.arrayBuffer()),name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_'),mime=fileType(name,bytes);
  const cid=uuid(f.get('client_id')),firm=uuid(f.get('firm_id')),pid=f.get('project_id')?uuid(f.get('project_id')):null,tid=f.get('task_id')?uuid(f.get('task_id')):null;
  const cat=choice(f.get('category'),['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports']);
- const doc=crypto.randomUUID(),key=`clients/${cid}/firms/${firm}/${doc}/${name}`,digest=await sha(bytes);
+ const doc=crypto.randomUUID(),key=documentObjectKey(cid,firm,doc,mime),digest=await sha(bytes);
  await bucket();let uploaded=false;
  try{return await scoped(id,async(tx,a)=>{
+  // Read through RLS before checking relationships; never disclose another team's records.
+  const project=pid?(await tx`select project_id,client_id,handling_firm_id,status from erp_private.projects where project_id=${pid} and deleted_at is null`)[0]:null;
+  const task=tid?(await tx`select task_id,project_id from erp_private.tasks where task_id=${tid} and deleted_at is null`)[0]:null;
+  assertDocumentLinks({client_id:cid,firm_id:firm,project_id:pid,task_id:tid},project,task);
   const [allow]=await tx`select erp_private.document_allowed(${cid}::uuid,${firm}::uuid,${pid}::uuid,${tid}::uuid,${cat},true) as allowed`;
   if(!allow.allowed)deny();
-  if(pid)one(await tx`select project_id from erp_private.projects where project_id=${pid} and client_id=${cid} and handling_firm_id=${firm}`);
-  if(tid)one(await tx`select task_id from erp_private.tasks where task_id=${tid} and project_id=${pid}`);
   // Metadata is inserted before storage. Failed storage rolls back metadata.
   await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by)
   values(${doc},${cid},${firm},${pid},${tid},${cat},${name},${key},${bytes.length},${digest},${mime},${a.staff_id})`;
   const result=await admin.storage.from(BUCKET).upload(key,bytes,{contentType:mime,upsert:false});
-  if(result.error)throw new Error('Upload failed');uploaded=true;
+  if(result.error)fail(502,'The file could not be stored. No document was saved. Try again or ask your Manager.');uploaded=true;
   await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc},${id.claims.sub},'UPLOAD')`;
   return {ok:true,document_id:doc};
  });}catch(e){if(uploaded)await admin.storage.from(BUCKET).remove([key]);throw e;}

@@ -44,6 +44,16 @@ Do not reuse QA accounts. Temporary test accounts must be disabled and their ses
 
 ## Verification commands and limits
 
+### Upload correction and main-platform readiness — 23 October 2026
+
+The upload form now narrows choices in order: client, linked handling firm, open project, and matching task. Changing an earlier selection clears dependent selections. Partners and Managers may save a client-level document when the client has no project yet; Supervisors require a project and Assistants require their assigned task. The server still checks permissions and all relationships independently and reports a visible-record mismatch without disclosing inaccessible records.
+
+New storage keys use document UUIDs and a validated file extension. The original filename remains metadata used for display and download, so Unicode or punctuation in a workbook filename is not part of the object key. Existing stored documents keep their keys and remain downloadable. Failed storage writes roll back their metadata.
+
+Run `node --test tests/staff_pilot_validation.test.mjs tests/staff_pilot_upload.test.mjs` for the 13 validation and upload regression tests. The upload fix still needs an authenticated browser upload/download check before it can be called fully accepted. No client workbook is included in the repository.
+
+The main interface and the connected pilot are still different data paths. Publishing the main preview does not connect its modules or transfer browser-local data. The operational move requires connecting the chosen main screens to authenticated APIs, reconciling existing records, verifying private uploads, and completing the production gates below. Recurring weekly/monthly tax generation, Excel row imports, shared timesheets and project reports remain unconnected. Keep tax approvals and finance unavailable until those services are implemented and tested. No production cutover is included in the upload correction.
+
 ### Verified in staging on 22 October 2026
 
 The Edge Function and connected sign-in page are deployed. The browser check verified the public sign-in page at `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`; authenticated browser workflows still require the staff pilot walkthrough.
