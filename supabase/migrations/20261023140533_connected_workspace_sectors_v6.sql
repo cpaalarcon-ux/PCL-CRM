@@ -11,3 +11,5 @@ ALTER TABLE erp_private.clients DROP CONSTRAINT clients_primary_sector_check;
 ALTER TABLE erp_private.clients ADD CONSTRAINT clients_sector_fk FOREIGN KEY(primary_sector) REFERENCES erp_private.sectors(name);
 CREATE INDEX clients_sector_idx ON erp_private.clients(primary_sector);
 
+;
+
