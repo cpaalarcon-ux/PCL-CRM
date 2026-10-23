@@ -8,3 +8,6 @@
 
 /staff-workspace-v6.mjs
   Cache-Control: no-store
+
+/staff-session.mjs
+  Cache-Control: no-store

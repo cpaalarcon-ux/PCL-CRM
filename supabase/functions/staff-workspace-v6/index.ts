@@ -26,6 +26,22 @@ async function limit(key:string,max=20){
  window_start=case when auth_limits.window_start<now()-interval '15 minutes' then now() else auth_limits.window_start end returning attempts`;
  if(r.attempts>max)fail(429,'Too many attempts. Wait 15 minutes before trying again.');
 }
+function activityAge(req:Request){
+ const raw=req.headers.get('x-erp-activity-age-ms');if(raw===null)return null;
+ const n=Number(raw);if(!/^\d+$/.test(raw)||!Number.isSafeInteger(n)||n<0||n>=1800000)fail(401,'Your session ended after 30 minutes of inactivity. Please sign in again.');return n;
+}
+function sessionReply(session:any){const claims=decode(session.access_token);return {access_token:session.access_token,refresh_token:session.refresh_token,expires_at:claims.exp,session_id:claims.session_id,idle_timeout_seconds:1800};}
+async function refreshSession(req:Request,p:any){
+ const age=activityAge(req),refresh=text(p.refresh_token,2048);await limit('refresh:'+await sha(refresh),12);
+ const auth=createClient(url,publicKey,{auth:{persistSession:false,autoRefreshToken:false}});
+ const result=await auth.auth.refreshSession({refresh_token:refresh});
+ if(result.error||!result.data.session||!result.data.user)fail(401,'Your session ended. Please sign in again.');
+ const session=result.data.session,claims=decode(session.access_token);
+ if(claims.sub!==result.data.user.id||!claims.session_id)fail(401,'Invalid session.');
+ const rows=await sql`select * from erp_private.touch_session(${claims.session_id}::uuid,${result.data.user.id}::uuid,${age}::integer,to_timestamp(${claims.exp}))`;
+ if(!rows.length){await admin.auth.admin.signOut(session.access_token,'local');fail(401,'Your session is inactive or expired. Please sign in again.');}
+ return sessionReply(session);
+}
 async function identity(req:Request){
  const jwt=(req.headers.get('authorization')||'').replace(/^Bearer /,'');
  if(!jwt||jwt.length>5000)fail(401,'Sign in to continue.');
@@ -33,12 +49,7 @@ async function identity(req:Request){
  if(error||!data.user)fail(401,'Your session has expired. Sign in again.');
  const claims=decode(jwt);
  if(claims.sub!==data.user.id||!claims.session_id)fail(401,'Invalid session.');
- const rows=await sql`update erp_private.pilot_sessions p set last_seen_at=now() from erp_private.staff_members s,auth.sessions a
- where p.session_id=${claims.session_id}::uuid and p.staff_id=s.staff_id and a.id=p.session_id and a.user_id=s.auth_user_id
- and s.auth_user_id=${data.user.id}::uuid and s.access_status='Active' and s.deleted_at is null
- and (s.contract_end_date is null or s.contract_end_date>=(now() at time zone 'Africa/Nairobi')::date)
- and p.revoked_at is null and p.expires_at>now() and p.last_seen_at>now()-interval '1 hour'
- and p.issued_at>=s.sessions_invalid_before returning p.staff_id`;
+ const rows=await sql`select * from erp_private.touch_session(${claims.session_id}::uuid,${data.user.id}::uuid,${activityAge(req)}::integer)`;
  if(!rows.length)fail(401,'Your session is inactive or expired. Sign in again.');
  return {jwt,claims};
 }
@@ -108,7 +119,7 @@ async function signIn(p:any){
  where s.staff_id=${s.staff_id} and s.access_status='Active' and s.deleted_at is null
  and (s.contract_end_date is null or s.contract_end_date>=(now() at time zone 'Africa/Nairobi')::date) returning session_id`;
  if(!created.length)fail(401,'This account is inactive.');
- return {access_token:result.data.session.access_token,expires_at:claims.exp};
+ return sessionReply(result.data.session);
 }
 async function accountLink(id:any,p:any){
  const staffId=uuid(p.staff_id),raw=nonce(),hash=await sha(raw);
@@ -173,6 +184,7 @@ async function download(id:any,p:any){
  });
 }
 async function action(id:any,p:any){
+ if(p.action==='session_activity')return {ok:true,idle_timeout_seconds:1800};
  if(p.action==='account_link')return accountLink(id,p);
  if(p.action==='logout'){
   await sql`update erp_private.pilot_sessions set revoked_at=now() where session_id=${id.claims.session_id}::uuid`;
@@ -258,7 +270,7 @@ async function action(id:any,p:any){
 Deno.serve(async(req:Request)=>{
  const origin=req.headers.get('origin')||'';
  const headers:Record<string,string>={'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Vary':'Origin'};
- if(origin&&allowedOrigin(origin)){headers['Access-Control-Allow-Origin']=origin;headers['Access-Control-Allow-Headers']='authorization,content-type,apikey';headers['Access-Control-Allow-Methods']='POST,OPTIONS';}
+ if(origin&&allowedOrigin(origin)){headers['Access-Control-Allow-Origin']=origin;headers['Access-Control-Allow-Headers']='authorization,content-type,apikey,x-erp-activity-age-ms';headers['Access-Control-Allow-Methods']='POST,OPTIONS';}
  if(origin&&!allowedOrigin(origin))return new Response(JSON.stringify({error:'Origin not allowed.'}),{status:403,headers});
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
  if(req.method!=='POST')return new Response(JSON.stringify({error:'Use POST.'}),{status:405,headers});
@@ -274,6 +286,7 @@ Deno.serve(async(req:Request)=>{
   if(p.action==='login')result=await signIn(p);
   else if(p.action==='setup')result=await setup(p);
   else if(p.action==='setup_status')result=await setupStatus(p);
+  else if(p.action==='refresh_session')result=await refreshSession(req,p);
   else{
    const id=await identity(req);
    if(p.action==='download'){

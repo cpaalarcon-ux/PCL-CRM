@@ -1,3 +1,4 @@
+import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261023-idle30';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
 import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261023-workbooks';
 import {uploadChoices} from './staff-pilot-upload.mjs';
@@ -7,21 +8,31 @@ const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>
 const roles={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Audit Supervisor',ASSISTANT:'Audit Assistant',INTERN:'Intern'};
 const sectors=['Agribusiness','Financial Services','Energy','Healthcare','NGO','Public Sector','SME/Startup','Legal','Education'];
 const branches=['Nairobi','Bungoma','Kisii','Other'],states=['Pending','In Progress','In Review','Blocked','Completed','Cancelled'];
-let token=sessionStorage.getItem('pcl-pilot-session')||'',data=null,view='home',firm='',lastRequest=Date.now(),setupToken=null;
+let data=null,view='home',firm='',setupToken=null;
+const session=createStaffSession({storage:sessionStorage,send,onEnd:showSignedOut,onWarning:remaining=>{
+ for(const banner of document.querySelectorAll('[data-session-warning]')){banner.hidden=remaining===null;if(remaining!==null){const text='You will be signed out in '+Math.ceil(remaining/60000)+' minute(s) due to inactivity. Save your changes or continue working.';if(banner.querySelector('span').textContent!==text)banner.querySelector('span').textContent=text;}}
+}});
 const isLeader=()=>data&&['PARTNER','MANAGER'].includes(data.me.category_code);
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const shortDate=v=>v?new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',day:'numeric',month:'short',year:'numeric'}).format(new Date(v)):'No date';
 const badge=v=>`<span class="badge ${['Completed','Active'].includes(v)?'good':['Blocked','Inactive'].includes(v)?'red':['In Review','Pending setup'].includes(v)?'warn':''}">${esc(v)}</span>`;
 const options=(items,value,blank='Choose…')=>`<option value="">${esc(blank)}</option>`+items.map(x=>{let [v,l]=Array.isArray(x)?x:[x,x];return `<option value="${esc(v)}"${String(v)===String(value)?' selected':''}>${esc(l)}</option>`;}).join('');
 function notice(message,error=false){$('#notice').textContent=message;$('#notice').className=error?'error':'';}
-function signedOut(message=''){token='';data=null;sessionStorage.removeItem('pcl-pilot-session');$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);}
-async function request(p,{file=false,blob=false,auth=true}={}){
- const headers={apikey:KEY};if(auth&&token)headers.Authorization='Bearer '+token;if(!file)headers['Content-Type']='application/json';
+function signedOut(message=''){session.end(message);}
+function showSignedOut(message=''){data=null;$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);}
+async function send(p,{file=false,blob=false,headers:extra={}}={}){
+ const headers={apikey:KEY,...extra};if(!file)headers['Content-Type']='application/json';
  const res=await fetch(API,{method:'POST',headers,body:file?p:JSON.stringify(p),cache:'no-store',referrerPolicy:'no-referrer'});
- if(!res.ok){const e=await res.json().catch(()=>({}));if(res.status===401&&auth)signedOut('Your session ended. Please sign in again.');throw Error(e.error||'The request failed.');}
- lastRequest=Date.now();return blob?res.blob():res.json();
+ if(!res.ok){const e=await res.json().catch(()=>({}));throw Object.assign(Error(e.error||'The request failed.'),{status:res.status});}
+ return blob?res.blob():res.json();
 }
-async function load(){data=await request({action:'workspace'});$('#signin').hidden=true;$('#workspace').hidden=false;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=async()=>{try{await request({action:'logout'});}finally{signedOut();}};
+async function request(p,{auth=true,...options}={}){
+ if(!auth)return send(p,options);
+ const ctx=await session.beforeRequest();
+ try{const result=await send(p,{...options,headers:ctx.headers});session.accept(ctx);return result;}
+ catch(error){session.reject(ctx,error);throw error;}
+}
+async function load(){data=await request({action:'workspace'});$('#signin').hidden=true;$('#workspace').hidden=false;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>signedOut('Signed out.');
  $('#greeting').textContent='My workspace';$('#roleLabel').textContent=roles[data.me.category_code]+' · '+data.me.login_id;
  $('#firmFilter').innerHTML=options(data.firms.map(x=>[x.firm_id,x.firm_code+' · '+x.legal_name]),firm,'All authorised firms');
  $('.firm-picker').hidden=data.me.category_code==='INTERN';render();}
@@ -101,7 +112,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button');i
  if(b.dataset.disable){const id=b.dataset.disable;modal('Disable staff access',`<p>Disable ${esc(staffName(id))}? Historical work will remain, and the next request from this account will be blocked.</p><button id="confirmDisable" class="primary">Confirm disable</button>`);$('#confirmDisable').onclick=async()=>{try{await request({action:'staff_disable',staff_id:id});$('#editor').close();await load();notice('Staff access disabled.');}catch(err){$('#editorNotice').textContent=err.message;}};}
  if(b.dataset.download){b.disabled=true;try{const d=data.documents.find(x=>x.document_id===b.dataset.download),blob=await request({action:'download',document_id:d.document_id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=d.file_name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}finally{b.disabled=false;}}
  }catch(err){notice(err.message,true);}});
-$('#loginForm').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{const p=Object.fromEntries(new FormData(e.target)),r=await request({...p,action:'login'},{auth:false});token=r.access_token;sessionStorage.setItem('pcl-pilot-session',token);e.target.reset();await load();notice('Signed in to the shared staff workspace.');}catch(err){notice(err.message,true);}finally{b.disabled=false;}};
+$('#loginForm').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{const p=Object.fromEntries(new FormData(e.target)),r=await request({...p,action:'login'},{auth:false});session.start(r);e.target.reset();await load();notice('Signed in to the shared staff workspace.');}catch(err){notice(err.message,true);}finally{b.disabled=false;}};
 async function checkSetupLink(){
  const current=setupToken,b=$('#setupForm button[type=submit]');b.disabled=true;
  if(!current){$('#setupState').textContent='Open the complete setup link copied by your Manager.';return;}
@@ -117,8 +128,9 @@ function openSetup(value){
 $('#checkSetup').onclick=()=>void checkSetupLink();
 $('#backToSignIn').onclick=()=>{setupToken=null;$('#setupForm').reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Sign in using your staff login ID and the password you saved.');};
 $('#setupForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return notice('Passwords do not match.',true);const b=e.target.querySelector('button[type=submit]'),current=setupToken;b.disabled=true;try{await request({action:'setup',token:current,password:f.get('password')},{auth:false});if(current!==setupToken)return;setupToken=null;e.target.reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Password saved. Sign in using the login ID provided with your link.');}catch(err){if(current===setupToken){notice(err.message,true);b.disabled=false;}}};
-setInterval(()=>{if(token&&Date.now()-lastRequest>60*60*1000)signedOut('Your session ended after one hour. Please sign in again.');},15000);
+watchStaffActivity(session);
+for(const button of document.querySelectorAll('[data-continue-session]'))button.onclick=()=>{if(session.activity())void session.pulse();};
 function pendingModule(name){return `<section class="card"><h2>${esc(name)}</h2><p>This module is not connected in this testing release.</p><p class="muted">The current connected release covers client records, project schedules, assigned tasks, private documents, Excel row imports and timesheets. This screen does not post invoices, send messages or approve statutory filings.</p></section>`;}
 const v6=createWorkspaceUI({$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render});
 const setupWatcher=watchSetupLinks(openSetup);
-if(!setupWatcher.hasSetup&&token)load().catch(e=>signedOut(e.message));
+if(!setupWatcher.hasSetup&&session.active)load().catch(e=>signedOut(e.message));

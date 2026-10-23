@@ -4,7 +4,7 @@ Use https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot for connect
 
 ## Available in the connected workspace
 
-- Staff-ID login and private copyable, single-use password setup/reset links. No email delivery is required. Login, logout, disabled accounts and contract expiry are checked on the server. Inactivity is limited to one hour; access tokens also expire after one hour and are not refreshed silently.
+- Staff-ID login and private copyable, single-use password setup/reset links. No email delivery is required. Login, logout, disabled accounts and contract expiry are checked on the server. Sessions end after 30 minutes without user activity, with a two-minute warning. Active sessions renew their access token; background requests alone do not extend the inactivity deadline.
 - Five staff categories: Engagement Partner, Manager, Audit Supervisor, Audit Assistant and Intern. Partner/Manager administer staff and incomplete clients; Managers cannot promote or reset other Managers/Partners. Supervisors can create and maintain projects and tasks within authorised firms without gaining staff-administration or financial rights.
 - Shared clients across authorised firms, red missing-field markers and database-backed sectors. Partner/Manager can add a sector. Every project retains one client and handling firm; another firm requires a separate project.
 - Editable project names auto-filled from client, service and year. Once-off, weekly, monthly, weekly + monthly, quarterly and annual schedules; explicit start/end, preparer, reviewer and applicable tax obligations. Schedule edits apply to future periods and preserve existing tasks and evidence.
@@ -29,7 +29,7 @@ An actual filing date is required when completing a filing task; a PDF receipt i
 
 The frontend calls **staff-workspace-v6**, separate from the retained **staff-pilot** function. Both authenticate protected actions themselves; gateway JWT verification is disabled only because login/setup routes accept unauthenticated requests. Auth.getUser and a live server session establish identity; request-body roles and IDs never establish permission. Business SQL runs transactionally as non-login, non-BYPASSRLS `erp_api`, with database RLS in the private schema.
 
-Server secrets are platform-provided and must never be placed in HTML or GitHub. The browser has a publishable key and its own token in tab session storage. Do not expose `erp_private` through the Data API or grant browser roles access.
+Server secrets are platform-provided and must never be placed in HTML or GitHub. The browser has a publishable key and its own access/refresh tokens and last-activity timestamp in tab session storage. Do not expose `erp_private` through the Data API or grant browser roles access.
 
 Apply migrations in filename order. The ten V6 migrations match the staging migration history. Deploy the nine runtime files in `supabase/functions/staff-workspace-v6`, including `deno.json`, with entrypoint `index.ts` and explicit import_map_path `deno.json`. Package files support local checking only; do not deploy node_modules. Dependencies are pinned.
 
@@ -57,7 +57,7 @@ Use only temporary fictional fixtures in staging. Disable QA accounts and revoke
 
 ## Setup-link clarification — 23 October 2026
 
-Each original or regenerated setup/reset link has a fresh 24-hour validity from database issuance time, independent of the one-hour login session. The generation dialog and copied details show the exact expiry in Africa/Nairobi time. Opening/checking a link does not consume it; saving the password does. Regeneration replaces earlier unused links and revokes existing sessions.
+Each original or regenerated setup/reset link has a fresh 24-hour validity from database issuance time, independent of the 30-minute inactivity limit. The generation dialog and copied details show the exact expiry in Africa/Nairobi time. Opening/checking a link does not consume it; saving the password does. Regeneration replaces earlier unused links and revokes existing sessions.
 
 The setup page checks its state before enabling Save password and distinguishes already-used, replaced, expired and unavailable links. Opening a newer link in the same browser tab now replaces the old in-memory token. No real staff links are extended, recovered or reissued automatically by this UI correction.
 
@@ -98,3 +98,11 @@ python tests/workbook_templates_http.py /private/qa-session.json /private/fictio
 ```
 
 The HTTP harness uses temporary QA accounts and private fixtures. Deactivate/archive the QA fixture accounts and records after testing. Publish this change to `backend/staging-foundation` only; production promotion remains a separate action after staff acceptance.
+
+## Thirty-minute inactivity update (23 October 2026)
+
+Typing, clicks, pointer movement and scrolling keep a signed-in staff session active. At 28 minutes without activity a warning offers **Continue working**; at 30 minutes the workspace and open editor are cleared and the user must sign in again. Save work before leaving the device. Reloading or waking a sleeping tab preserves the deadline and cannot revive an expired session. Refresh the staging page and sign in once after this update, because legacy sessions lack the new idle clock and refresh credential.
+
+The private database enforces the same cutoff for API/RLS access. Requests carry the age of the last genuine browser input; read-only requests and token renewal cannot advance that timestamp on their own. At most one activity heartbeat per minute keeps the server informed while staff edit without saving. The server verifies the live Auth session, staff status, contract, reset cutoff and idle deadline before renewing. New/regenerated password setup links still have their separate 24-hour validity.
+
+Regression checks: `node --test tests/staff_session.test.mjs`, `supabase/tests/idle_session_rollback.sql`, and `python tests/idle_session_http.py /private/qa-session.json --phase active` followed by `--phase expired` (temporary QA staff in staging only). Between phases, use the privileged staging SQL runner to age only the newly saved fictional session by 31 minutes. This checks expiry without waiting 30 minutes. No credentials or real staff data belong in GitHub.
