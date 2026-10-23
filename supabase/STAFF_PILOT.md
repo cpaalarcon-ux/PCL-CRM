@@ -1,3 +1,5 @@
+> **Current connected testing release:** See [Consolidated testing suite](CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. Historical descriptions below refer to earlier releases or browser-local previews. The current inactivity timeout is 30 minutes.
+
 # Connected staff testing release V6
 
 Use https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot for connected testing. The root ERP screens remain browser-local previews; no production cutover or DNS change is included.

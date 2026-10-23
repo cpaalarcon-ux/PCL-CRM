@@ -19,6 +19,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
    rejections:await tx`select r.source_row,r.reason,b.sheet_name,b.dataset from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${pid} order by b.created_at desc limit 100`};
  }
  if(p.action==='workbook_map'){
+  const target=one(await tx`select project_id from erp_private.workbook_rows where row_id=${uuid(p.row_id)}`);await tx`select pg_advisory_xact_lock(hashtextextended(${target.project_id+':tax'},0))`;
   const route=Number(p.route),category=allCategories.find(c=>c.code===p.category_code&&c.route===route&&c.kind==='Purchase');
   if(!category)fail(400,'Choose a category for the selected purchase route.');
   const narration=text(p.narration,1000),asset=text(p.asset_details||'',1000,route===3);
@@ -46,6 +47,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
  if(p.action==='workbook_preview')return {document_id:d.document_id,project_id:d.project_id,sheets,sheet_name:sheet.name,header_row:header,headers:block?.headers||values(header),template:template?{...template,selected:block}:null,
   preview:Array.from({length:Math.min(12,Math.max(0,(block?.last_row||sheet.rowCount)-header))},(_,i)=>({row:header+i+1,values:values(header+i+1).slice(0,block?.headers.length||sheet.columnCount)})),categories:allCategories};
+ await tx`select pg_advisory_xact_lock(hashtextextended(${project.project_id+':tax'},0))`;
  const dataset=template?template.dataset:choice(p.dataset,['Sales','Purchases','Bank','General']);
  if(template&&p.dataset&&p.dataset!==dataset)fail(400,'The import type must match the recognised workbook.');
  const start=date(p.period_start),end=date(p.period_end);

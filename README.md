@@ -1,3 +1,5 @@
+> **Current connected testing release:** See [Consolidated testing suite](supabase/CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. Historical descriptions below refer to earlier releases or browser-local previews. The current inactivity timeout is 30 minutes.
+
 # PCL CRM — Client, Service and Engagement Lifecycle Foundation
 
 This build provides a browser-local, editable CRM intake module for a consulting and audit practice. Open `index.html` in a current browser.

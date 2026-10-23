@@ -2,6 +2,11 @@ import {readWorkspace} from './workspace-read.ts';
 import {setupLinkState,setupLinkMessages} from './setup-link-rules.mjs';
 import {workspaceAction} from './workspace-actions.ts';
 import {workbookAction} from './workbook-actions.ts';
+import {suiteRead,suiteAction} from './suite-actions.ts';
+import {taxAction} from './tax-review-actions.ts';
+import {engagementAction} from './engagement-actions.ts';
+import {suiteExport} from './suite-export.ts';
+import {masterImport} from './master-import.ts';
 import { createClient } from 'supabase';
 import postgres from 'postgres';
 import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
@@ -191,7 +196,11 @@ async function action(id:any,p:any){
   await admin.auth.admin.signOut(id.jwt,'local');return {ok:true};
  }
  return scoped(id,async(tx,a)=>{
-  if(p.action==='workspace')return readWorkspace(tx,a);
+  if(p.action==='workspace')return {...await readWorkspace(tx,a),suite:await suiteRead(tx)};
+  const exported=await suiteExport(tx,a,p,admin.storage.from(BUCKET));if(exported!==undefined)return exported;
+  const suite=await suiteAction(tx,a,p);if(suite!==undefined)return suite;
+  const tax=await taxAction(tx,a,p);if(tax!==undefined)return tax;
+  const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
   const workbook=await workbookAction(tx,a,p,admin.storage.from(BUCKET));if(workbook!==undefined)return workbook;
   if(p.action==='task_status'){
@@ -270,7 +279,7 @@ async function action(id:any,p:any){
 Deno.serve(async(req:Request)=>{
  const origin=req.headers.get('origin')||'';
  const headers:Record<string,string>={'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Vary':'Origin'};
- if(origin&&allowedOrigin(origin)){headers['Access-Control-Allow-Origin']=origin;headers['Access-Control-Allow-Headers']='authorization,content-type,apikey,x-erp-activity-age-ms';headers['Access-Control-Allow-Methods']='POST,OPTIONS';}
+ if(origin&&allowedOrigin(origin)){headers['Access-Control-Allow-Origin']=origin;headers['Access-Control-Allow-Headers']='authorization,content-type,apikey,x-erp-activity-age-ms,x-erp-upload-kind';headers['Access-Control-Allow-Methods']='POST,OPTIONS';}
  if(origin&&!allowedOrigin(origin))return new Response(JSON.stringify({error:'Origin not allowed.'}),{status:403,headers});
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
  if(req.method!=='POST')return new Response(JSON.stringify({error:'Use POST.'}),{status:405,headers});
@@ -278,7 +287,9 @@ Deno.serve(async(req:Request)=>{
   if(Number(req.headers.get('content-length')||0)>11*1024*1024)fail(413,'The request is too large.');
   await limit('request-global',2000);
   if(req.headers.get('content-type')?.startsWith('multipart/form-data')){
-   const id=await identity(req);const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
+   const id=await identity(req);
+   if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData();const result=await scoped(id,(tx,a)=>masterImport(tx,a,form));return new Response(JSON.stringify(result),{headers});}
+   const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
   }
   const body=await req.text();if(body.length>30000)fail(413,'The request is too large.');
   let p;try{p=JSON.parse(body);}catch{fail(400,'Invalid request.');}if(!p||typeof p!=='object')fail(400,'Invalid request.');

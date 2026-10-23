@@ -1,3 +1,5 @@
+> **Current connected testing release:** See [Consolidated testing suite](CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. Historical descriptions below refer to earlier releases or browser-local previews. The current inactivity timeout is 30 minutes.
+
 # V6 connected testing checkpoint — 23 October 2026
 
 The coding environment was restored. The V6 database migrations and separate staff-workspace-v6 function are deployed to the staging project. The frontend and release documentation are published on backend/staging-foundation, keeping production main unchanged.

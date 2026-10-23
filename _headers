@@ -11,3 +11,6 @@
 
 /staff-session.mjs
   Cache-Control: no-store
+
+/staff-suite.mjs
+  Cache-Control: no-store

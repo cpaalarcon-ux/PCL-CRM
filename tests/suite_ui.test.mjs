@@ -1,0 +1,27 @@
+// Optional DOM integration regression: PCL_TEST_MODULES must contain jsdom.
+import test from 'node:test';import assert from 'node:assert/strict';import {createRequire} from 'node:module';import {readFile} from 'node:fs/promises';
+const require=createRequire(import.meta.url),{JSDOM}=require(require.resolve('jsdom',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
+const html=await readFile(new URL('../staff-pilot.html',import.meta.url),'utf8');
+const dom=new JSDOM(html,{url:'https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot'});
+for(const key of ['window','document','location','history','sessionStorage','localStorage','FormData','HTMLElement'])globalThis[key]=dom.window[key];
+dom.window.HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};dom.window.HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
+const sid='00000000-0000-4000-8000-000000000001',fid='00000000-0000-4000-8000-000000000002',cid='00000000-0000-4000-8000-000000000003',pid='00000000-0000-4000-8000-000000000004';
+const suite=Object.fromEntries(['rates','staff_rates','budgets','invoices','payments','communications','contacts','compliance','owners','engagements','tax_cases','leave','attendance','credentials','reviews','tickets'].map(k=>[k,[]]));
+const me={staff_id:sid,full_name:'Fictional Partner',category_code:'PARTNER',login_id:'qa.partner'};
+const data={me,firms:[{firm_id:fid,firm_code:'QA',legal_name:'Fictional QA firm'}],staff:[me],staff_firms:[{staff_id:sid,firm_id:fid}],clients:[{client_id:cid,company_name:'Fictional Client',kra_pin:null,missing_fields:['KRA PIN']}],client_firms:[{client_id:cid,firm_id:fid}],projects:[{project_id:pid,client_id:cid,handling_firm_id:fid,project_name:'Fictional Tax Project',service_code:'TAX-COMP',status:'Draft',revision:1}],assignments:[],candidates:[{...me,firm_id:fid}],tasks:[],documents:[],services:[{service_code:'TAX-COMP',service_name:'Tax compilation'}],sectors:[],schedules:[],timesheets:[],notifications:[],task_events:[],workbook_batches:[],suite};
+const calls=[];globalThis.fetch=async(url,opts)=>{const p=JSON.parse(opts.body);calls.push(p);const result=p.action==='login'?{access_token:'qa',refresh_token:'refresh',expires_at:Date.now()/1000+3600,session_id:'qa',idle_timeout_seconds:1800}:p.action==='workspace'?data:p.action==='statement'?{opening:0,closing:0,rows:[],currency:'KES'}:{ok:true};return {ok:true,json:async()=>result};};
+const pause=()=>new Promise(r=>setTimeout(r,40));const click=async s=>{const b=document.querySelector(s);assert.ok(b,'Missing control '+s);b.click();await pause();};
+await import('../staff-pilot.mjs');
+test('connected navigation, activation controls, tax bands and invoice form are usable',async()=>{
+ document.querySelector('#loginForm [name=login_id]').value='qa.partner';document.querySelector('#loginForm [name=password]').value='testing';document.querySelector('#loginForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
+ assert.equal(document.querySelector('#workspace').hidden,false);
+ for(const page of ['clients','projects','time','documents','communications','finance','staff','firms']){await click(`[data-view="${page}"]`);assert.ok(document.querySelector('#content').textContent.trim(),page);}
+ await click('[data-suite="rate-new"]');const f=document.querySelector('#editForm');f.elements.tax_type.value='PAYE';f.elements.tax_type.dispatchEvent(new dom.window.Event('change'));await click('[data-suite="add-band"]');assert.equal(document.querySelectorAll('[data-band-row]').length,2);await click('[data-suite="remove-band"]');assert.equal(document.querySelectorAll('[data-band-row]').length,1);document.querySelector('#editor').close();
+ await click('[data-view="finance"]');await click('[data-suite="invoice-new"]');const inv=document.querySelector('#editForm');inv.elements.project_id.value=pid;inv.elements.description.value='QA invoice';inv.querySelector('[data-line=description]').value='QA fee';inv.querySelector('[data-line=unit_price]').value='100';inv.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();assert.ok(calls.some(p=>p.action==='invoice_save'&&p.project_id===pid&&p.lines[0].unit_price==='100'));
+ await click('[data-view="projects"]');const sel=document.querySelector('select[name=project]');assert.ok(sel);sel.value=pid;sel.dispatchEvent(new dom.window.Event('change'));await pause();await click('[data-suite="engagement"]');assert.match(document.querySelector('#editorBody').textContent,/Activate engagement/);assert.match(document.querySelector('#editorBody').textContent,/Open client KYC/);document.querySelector('#editor').close();
+ await click('[data-suite="tax-list"]');await click('[data-suite="tax-new"]');assert.ok(document.querySelector('#editForm [name=kind]'));document.querySelector('#editor').close();
+ await click('[data-view="clients"]');await click('[data-suite="import-clients"]');assert.ok(document.querySelector('input[type=file]'));document.querySelector('#editor').close();
+ await click('[data-view="time"]');await click('[data-suite="leave-new"]');assert.match(document.querySelector('#editorBody').textContent,/Partner review/);document.querySelector('#editor').close();
+ await click('[data-view="communications"]');await click('[data-suite="communication-new"]');assert.ok(document.querySelector('[name=meeting_link]'));document.querySelector('#editor').close();
+ dom.window.close();
+});
