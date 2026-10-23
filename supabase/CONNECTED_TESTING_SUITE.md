@@ -36,7 +36,8 @@ Use a fictional client and separate preparer/reviewer accounts. Test both an Eng
 | Downloads | Tax case → Download report & working papers; client → Download KYC package | ZIP with PDF and XLSX; KYC also DOCX. Tax drafts are labelled NOT FOR FILING. Reviewed tax exports use locked snapshots and include supporting files within a 20 MB package limit. Downloads are audited. |
 | Time and WIP | Time & HR; Finance → Budgets & WIP | Assigned-task time, independent approval, locked entries and reversals. Effective-dated staff rates calculate approved-time cost. Missing rates remain visible rather than being treated as zero cost. |
 | Finance | Finance → Invoices / Payments / Statements | Create draft; activated engagement required to post; firm-specific permanent number; Cash, M-Pesa, Bank or Cheque allocations; overpayment blocked; reversal instead of deletion. One client statement spans permitted firms and identifies every issuer. |
-| Communications | Comms → Log communication | Client/firm/project/contact, reference, purpose, date, signatory, follow-up and minutes. A pasted Google Meet/Teams/Zoom link can be opened. Generate QR and download SVG for a letter. The QR encodes only the opaque CRM link and requires authorised sign-in; it remains outside invoicing. |
+| Letters & QR | Comms → Letters & QR → Create letter & QR | Select client, handling firm, optional project/contact, date, purpose, signatory and letter text. Save letter & generate QR opens the saved reference and printable letter. Print / Save PDF or Download QR (SVG). The code opens the protected record and requires authorised staff sign-in. It is not an electronic signature and remains outside invoicing. The creation button also stays visible on Support. |
+| Other communications | Comms → Communications → Log communication | Record calls, emails, meetings, visits, follow-up and minutes. A pasted Google Meet/Teams/Zoom link can be opened. Logging does not send an email or invitation. |
 | HR and support | Time & HR; Comms → Support | Attendance, leave with busy-season Partner approval, credential verification, roster capacity checks, feedback, ticket threads and first-response deadlines. |
 
 ## Tax controls and limits
@@ -79,3 +80,7 @@ Supabase's security advisor still reports the existing disabled leaked-password 
 5. Settings → Testing & go-live checks: record dated evidence and outstanding issues. The checklist is a readiness record, not a deployment button.
 
 Annual recurring tasks are calendar-year compilation/review/report reminders, not a statutory annual filing calendar. A non-calendar financial year and its legal filing deadline require an explicitly dated task until a fiscal-year recurrence configuration is added. Changing a schedule preserves existing tasks and takes effect for future releases; newly added annual compilation starts at the new effective date.
+
+### Letter workflow verification
+
+The dedicated letter workflow is covered by DOM regression checks: client/firm/project/contact scoping, validation failure and retry with the same request identity, printable preview after the asynchronous workspace refresh, edits retaining the original reference and opaque QR, and no letter controls for Interns. QR unit checks verify the opaque authenticated route and reject insecure production URLs. This frontend update uses the already deployed communication API and requires no schema migration.

@@ -45,7 +45,7 @@ Use the [connected staff testing workspace](https://backend-staging-foundation.p
 | Invoices | Connected: draft, activated-project posting, firm-specific number, print | No eTIMS integration, as requested. No invoice communication QR. Recurring billing, credit notes, advanced aging and automatic disbursement rebilling need follow-up. |
 | Payments and statements | Connected: Cash, M-Pesa, Bank, Cheque; allocations and reversals; combined client statement | M-Pesa is manual recording, not gateway reconciliation. Each entry retains firm and invoice reference. Legacy references are recorded, not retrieved from Odoo. |
 | Communication Hub | Connected: letters/calls/emails/meetings/visits, client/contact/project, date/purpose/signatory/reference | Logs communications; does not send emails, SMS or WhatsApp. Pre-client correspondence currently stays in lead notes. |
-| Communication QR | Connected: Generate QR, SVG download, print/letter | Encodes only an opaque CRM URL. Login and record authorisation required. No client/fee/contact data in the code; no public access grant. |
+| Communication QR | Connected: dedicated Letters & QR tab; create, save and open printable letter; SVG download; edit retaining reference | Encodes only an opaque CRM URL. Login and record authorisation required. No client/fee/contact data in the code; no public access grant. |
 | Virtual meetings | Partial: saved HTTPS Google Meet/Teams/Zoom links | Create the meeting in the provider and paste its link. OAuth creation, embedded Jitsi and self-hosted video remain pending. |
 | Channels, live chat and mail sync | Pending | Channel/member hierarchy, WebSocket/SSE, IMAP/SMTP, aliases, reply threading and mass mailing are not connected. |
 | Document Vault | Connected: private uploads, role/scoped downloads, access history, automatic locked categories | External single-use PBC portal, full version-replacement UI and retention/disposal workflow need additional work. BRS receipts are locked when uploaded. |
@@ -67,7 +67,7 @@ Use the [connected staff testing workspace](https://backend-staging-foundation.p
 4. Upload the actual approved-format sample workbook, map rows, repeat the import and reconcile counts; attach PDF evidence separately. Verify the correct client/project/firm before import.
 5. Review source-linked Draft tax rules and verify a fictional client tax profile. An authorised Partner approves the applicable rules, not every rule indiscriminately. Preview, independently review, lock and export; verify that future rate edits do not change the locked report.
 6. Test time approval, invoice posting, each payment method, reversal and combined statement. Confirm an Assistant/Intern cannot obtain fees through the API.
-7. Generate a letter QR; scan signed out and under an unauthorised staff account. Only an authorised signed-in account may see the record.
+7. Use Comms → Letters & QR → Create letter & QR. Verify the selected client/firm/contact, purpose, date and signatory on the printable letter; edit it and confirm the reference stays unchanged. Download its SVG QR; scan signed out and under an unauthorised staff account. Only an authorised signed-in account may see the record.
 8. Complete **Settings → Testing & go-live checks** with evidence. Production is not approved just because code was published.
 
 ## Verification evidence for this change

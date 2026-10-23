@@ -10,3 +10,5 @@
 .communication-qr{max-width:230px;margin:1.5rem 0}.communication-qr svg{display:block;width:100%;height:auto}.communication-qr figcaption{font-size:.8rem;color:var(--muted,#64748b)}
 #editor .form-grid>button[type=submit]{position:sticky;bottom:0;z-index:2;box-shadow:0 -4px 12px #fff}
 @media print{.communication-qr{break-inside:avoid;width:180px}}
+
+.letter-heading{border-bottom:2px solid var(--green);margin-bottom:20px}.letter-body{line-height:1.75;min-height:80px}@media print{.qr-tools{display:none!important}}
