@@ -1,3 +1,5 @@
+import {presenceAction} from './presence-actions.ts';
+import {accountingAction} from './accounting-actions.ts';
 import {taxConfigAction} from './tax-config-actions.ts';
 import {readWorkspace} from './workspace-read.ts';
 import {setupLinkState,setupLinkMessages} from './setup-link-rules.mjs';
@@ -35,9 +37,9 @@ async function limit(key:string,max=20){
 }
 function activityAge(req:Request){
  const raw=req.headers.get('x-erp-activity-age-ms');if(raw===null)return null;
- const n=Number(raw);if(!/^\d+$/.test(raw)||!Number.isSafeInteger(n)||n<0||n>=1800000)fail(401,'Your session ended after 30 minutes of inactivity. Please sign in again.');return n;
+ const n=Number(raw);if(!/^\d+$/.test(raw)||!Number.isSafeInteger(n)||n<0)fail(400,'Invalid activity timestamp.');return Math.min(n,2147483647);
 }
-function sessionReply(session:any){const claims=decode(session.access_token);return {access_token:session.access_token,refresh_token:session.refresh_token,expires_at:claims.exp,session_id:claims.session_id,idle_timeout_seconds:1800};}
+function sessionReply(session:any){const claims=decode(session.access_token);return {access_token:session.access_token,refresh_token:session.refresh_token,expires_at:claims.exp,session_id:claims.session_id,idle_timeout_seconds:null,logout_policy:'manual'};}
 async function refreshSession(req:Request,p:any){
  const age=activityAge(req),refresh=text(p.refresh_token,2048);await limit('refresh:'+await sha(refresh),12);
  const auth=createClient(url,publicKey,{auth:{persistSession:false,autoRefreshToken:false}});
@@ -58,7 +60,7 @@ async function identity(req:Request){
  if(claims.sub!==data.user.id||!claims.session_id)fail(401,'Invalid session.');
  const rows=await sql`select * from erp_private.touch_session(${claims.session_id}::uuid,${data.user.id}::uuid,${activityAge(req)}::integer)`;
  if(!rows.length)fail(401,'Your session is inactive or expired. Sign in again.');
- return {jwt,claims};
+ return {jwt,claims,activity_age_ms:activityAge(req)};
 }
 async function scoped(id:any,work:(tx:any,a:any)=>Promise<any>){
  return await sql.begin(async tx=>{
@@ -191,7 +193,7 @@ async function download(id:any,p:any){
  });
 }
 async function action(id:any,p:any){
- if(p.action==='session_activity')return {ok:true,idle_timeout_seconds:1800};
+ if(p.action==='session_activity')return {ok:true,idle_timeout_seconds:null,logout_policy:'manual'};
  if(p.action==='account_link')return accountLink(id,p);
  if(p.action==='logout'){
   await sql`update erp_private.pilot_sessions set revoked_at=now() where session_id=${id.claims.session_id}::uuid`;
@@ -199,6 +201,7 @@ async function action(id:any,p:any){
  }
  return scoped(id,async(tx,a)=>{
   if(p.action==='workspace')return {...await readWorkspace(tx,a),suite:await suiteRead(tx)};
+  const presence=await presenceAction(tx,a,p,{session_id:id.claims.session_id,activity_age_ms:id.activity_age_ms});if(presence!==undefined)return presence;
   const exported=await suiteExport(tx,a,p,admin.storage.from(BUCKET));if(exported!==undefined)return exported;
   const config=await taxConfigAction(tx,a,p);if(config!==undefined)return config;
   const lead=await leadAction(tx,a,p);if(lead!==undefined)return lead;
@@ -206,6 +209,7 @@ async function action(id:any,p:any){
   const tax=await taxAction(tx,a,p);if(tax!==undefined)return tax;
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
+  const accounting=await accountingAction(tx,a,p);if(accounting!==undefined)return accounting;
   const workbook=await workbookAction(tx,a,p,admin.storage.from(BUCKET));if(workbook!==undefined)return workbook;
   if(p.action==='task_status'){
    const task=uuid(p.task_id),status=choice(p.status,statuses),reason=text(p.blocked_reason||'',1000,false);

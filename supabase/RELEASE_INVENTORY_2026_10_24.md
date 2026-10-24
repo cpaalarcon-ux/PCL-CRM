@@ -11,7 +11,7 @@ Use the [connected staff testing workspace](https://backend-staging-foundation.p
 | Staff categories | Connected: Engagement Partner, Manager, Supervisor, Assistant, Intern | Dedicated Finance/HR/MLRO role-management UI and granular capability assignment are not complete. |
 | Staff roster, contract employees and billing classification | Connected: Staff & access; click staff to edit | Review the actual imported staff list and permissions before invitations. No unseen historical attachment was imported in this release. |
 | Login ID / copyable setup and reset | Connected: authorised roster actions; single-use links valid 24 hours | Links are private credentials. No automatic email delivery. |
-| Idle logout | Connected: 30 minutes of inactivity, warning at 28 minutes | This supersedes earlier 20-minute/one-hour suggestions. A browser remember-me option does not bypass idle security. |
+| Login duration | Connected: remains signed in until manual sign-out; automatic token renewal and browser persistence | Latest user policy supersedes all idle timeouts. Presence and attendance do not end authentication. Account reset/disablement/revocation and contract expiry still apply. |
 | Staff/client Excel imports and mapping | Connected: Staff & access / Clients → Import | Nonblank-row counts, duplicate skips, mapping and missing-client-field warnings. Validate real source files and totals during UAT. |
 | Edit staff and clients after import | Connected: Partner/Manager, subject to category/scope restrictions | Incomplete existing profiles may be retained; they do not satisfy KYC activation gates. |
 | Clients, contacts, sectors and branches | Connected: Clients; dynamic sector list and contact records | Full earlier company-field matrix and multiple requested services per lead still need expansion. |
@@ -29,9 +29,9 @@ Use the [connected staff testing workspace](https://backend-staging-foundation.p
 | Weekly/monthly/annual task visibility | Connected: Projects filters and Upcoming schedule | Annual tasks are calendar-year compilation reminders. Client fiscal-year statutory deadline automation needs expansion. |
 | Forward / escalate tasks with message | Connected: Task actions, permitted recipients, history, in-app notifications | Email delivery is not configured. |
 | Missing-document escalation | Connected: daily/scheduled task controls and manual escalation | Confirm the assigned escalation reviewer and due dates during UAT. |
-| Personal dashboard | Connected: My to-do, pending, upcoming, alerts and handover history | All nine executive graphs, lead-source analytics, full firm-health drill-down and configurable KPI routing are not complete. |
+| Personal dashboard | Connected: contextual next tax deadlines, pending independent reviews, missing document tasks, unread alerts, quick time, seven-day work and scoped global search | All nine executive graphs, lead-source analytics, full firm-health drill-down and configurable KPI routing are not complete. |
 | Excel working-paper uploads | Connected: Documents → Review Excel; original workbook sheet/header mapping | Requires a supported worksheet and period. PDF evidence is separate from Excel row data. |
-| Purchases / expenditure / PPE | Connected: Imported rows & mapping; supplied category dictionary | Reviewer confirms resale, expense or capital treatment. Catalogue labels are not automatic tax eligibility. |
+| Purchases / expenditure / PPE | Connected: supplier search, page selection, atomic bulk mapping, balanced mixed-invoice splitting, 273-account catalog and PPE first-use details | Reviewer confirms resale, expense or capital treatment. Catalogue labels are not automatic tax eligibility. |
 | Non-eTIMS expenditure | Connected: original-template import and documented exclusion review | Statutory fees and commercial licences must be distinguished. No automatic claim that every licence is excluded. |
 | Sales / purchases / bank import controls | Partial: source rows, duplicate controls, period validation, reviewer exceptions | No live eTIMS authenticity/supplier validation. Automated bank matching and fully automated three-file capture clearance remain pending. Bank entries never create another VAT posting. |
 | Tax-rate settings | Connected: Settings → Tax & payroll rates | 35 sourced schedules start **Draft**. Partner must verify applicability and approve; no blanket auto-approval. New dated versions, overlap controls and impact review exist. |
@@ -80,3 +80,15 @@ Use the [connected staff testing workspace](https://backend-staging-foundation.p
 - The existing disabled compromised-password protection warning still needs an environment configuration change before production.
 
 No real tax rule was approved on the Partner's behalf, no client filing/payment was submitted externally, and no historical attachment was assumed to be present.
+
+## Accounting, dashboard and presence additions
+
+- Settings → Chart of accounts: 273 supplied accounts, legacy controls non-postable. Manager/Partner adds draft codes; Partner activates them. These are internal classification codes, not verified official KRA return-field identifiers.
+- Project → Imported rows & mapping: supplier/PIN/invoice search, source/mapping filters, checkboxes, selected totals and contextual detailed-account drawer. Inventory method must be configured by a Manager. Exact net and VAT conservation applies to mixed-invoice splits; original raw rows remain as non-posting source controls.
+- Project → Sales & VAT reconciliation: weekly month-to-date and monthly reviews. POS is a comparator. Bank reconciliation compares gross receipts to supported sales on a consistent basis. MAX is a review benchmark only and never posts revenue/VAT. Independently locked monthly reconciliation is required for VAT case submission.
+- Monday 03:00 Africa/Nairobi: idempotent month-to-date draft sales reviews for active VAT schedules, generated by an hourly scheduler. Existing operational tax tasks remain separate.
+- Home: contextual task deadlines, independent tax/sales review queue, missing required uploads, unread alerts and weekly personal time. These are task targets, not a certified statutory calendar. Billing navigation is labelled Billing & WIP.
+- Header: clock in/out, explicit break/meeting/resume, Manager/Partner team presence and attendance/time comparison. Presence refreshes every 60 seconds. Away/Offline indicate ERP activity only, never physical absence. Calendar-driven presence, Redis and WebSockets are pending.
+- Task timers save Draft timesheets for confirmation; independent approval alone contributes cost to WIP. Missed attendance is estimated from last ERP activity, marked for Manager review and excluded from confirmed office-hour totals until approved. Closing yesterday's attendance cannot stop today's timer.
+
+Accounting previews remain unposted drafts. Full general-ledger journal posting, automated bank matching, official return generation and the pending integrations above require separate tested releases.

@@ -1,18 +1,18 @@
 """Connected staging regression. Use temporary fictional staff, never real users.
 
-Run active phase, age ONLY the saved session's last_seen_at by 31 minutes using
-the privileged staging SQL runner, then run expired phase. Revoke/disable QA
+Run active phase, age ONLY the saved session's last_seen_at by one day using
+the privileged staging SQL runner, then run persisted phase. Revoke/disable QA
 staff afterwards. Credentials remain in the private fixture directory.
 """
 import argparse,json,pathlib,urllib.request,urllib.error
 
 parser=argparse.ArgumentParser()
 parser.add_argument('fixture',type=pathlib.Path)
-parser.add_argument('--phase',choices=['active','expired'],required=True)
+parser.add_argument('--phase',choices=['active','persisted'],required=True)
 args=parser.parse_args()
 ctx=json.loads(args.fixture.read_text())
 state_path=args.fixture.with_suffix('.idle-session.json')
-url='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v6'
+url='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v7'
 origin='https://backend-staging-foundation.pcl-crm.pages.dev'
 
 def call(body,token=None,age=None,expect=200):
@@ -36,11 +36,11 @@ if args.phase=='active':
         assert r.status==204 and 'x-erp-activity-age-ms' in r.headers['Access-Control-Allow-Headers']
     print('PASS browser activity CORS preflight',flush=True)
     session=login()
-    assert session['idle_timeout_seconds']==1800 and session['refresh_token']
+    assert session['idle_timeout_seconds'] is None and session['logout_policy']=='manual' and session['refresh_token']
     call({'action':'workspace'},session['access_token'],0)
     call({'action':'session_activity'},session['access_token'],1000)
-    call({'action':'workspace'},session['access_token'],1800000,401)
-    call({'action':'workspace'},session['access_token'],-1,401)
+    call({'action':'workspace'},session['access_token'],1800000)
+    call({'action':'workspace'},session['access_token'],-1,400)
     refreshed=call({'action':'refresh_session','refresh_token':session['refresh_token']},age=1000)
     assert refreshed['session_id']==session['session_id'] and refreshed['refresh_token']
     call({'action':'workspace'},refreshed['access_token'])
@@ -48,9 +48,9 @@ if args.phase=='active':
     print('PASS active renewal; private session ready for isolated idle ageing',flush=True)
 else:
     session=json.loads(state_path.read_text())
-    call({'action':'workspace'},session['access_token'],0,401)
-    call({'action':'refresh_session','refresh_token':session['refresh_token']},age=0,expect=401)
-    print('PASS expired session cannot access records or refresh even with claimed new activity',flush=True)
+    call({'action':'workspace'},session['access_token'],86400000)
+    call({'action':'refresh_session','refresh_token':session['refresh_token']},age=86400000)
+    print('PASS idle session still accesses records and renews after a day without activity',flush=True)
     fresh=login()
     call({'action':'logout'},fresh['access_token'])
     call({'action':'workspace'},fresh['access_token'],0,401)

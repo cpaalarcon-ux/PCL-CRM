@@ -95,7 +95,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   return {tasks:await tx`select status,count(*)::int count,count(*) filter(where due_at<now() and status not in ('Completed','Cancelled'))::int overdue from erp_private.tasks where project_id=${pid} and deleted_at is null group by status`,
    time:await tx`select staff_id,status,sum(hours) hours from erp_private.timesheets where project_id=${pid} and deleted_at is null group by staff_id,status`,
    imports:await tx`select dataset,sum(source_count) source_rows,sum(new_count) imported,sum(duplicate_count) duplicates,sum(rejected_count) rejected from erp_private.workbook_batches where project_id=${pid} group by dataset`,
-   mapping:await tx`select route,category_code,count(*)::int rows from erp_private.workbook_rows where project_id=${pid} and dataset in ('Purchases','Expenditure','Non-eTIMS') group by route,category_code`};
+   mapping:await tx`select route,category_code,count(*)::int rows from erp_private.workbook_rows where project_id=${pid} and not is_split_parent and dataset in ('Purchases','Expenditure','Non-eTIMS') group by route,category_code`};
  }
  return undefined;
 }

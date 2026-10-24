@@ -19,7 +19,7 @@ BEGIN
  IF (erp_private.actor()).staff_id IS DISTINCT FROM staff THEN RAISE EXCEPTION 'Active staff denied';END IF;
  UPDATE erp_private.pilot_sessions SET last_seen_at=now()-interval '30 minutes' WHERE session_id=sid;
  SELECT count(*) INTO n FROM erp_private.touch_session(sid,uid,0,now()+interval '2 hours');
- IF n<>0 OR (erp_private.actor()).staff_id IS NOT NULL THEN RAISE EXCEPTION 'Idle session revived or RLS accepted it';END IF;
+ IF n<>1 OR (erp_private.actor()).staff_id IS DISTINCT FROM staff THEN RAISE EXCEPTION 'Inactivity incorrectly revoked manual login';END IF;
  UPDATE erp_private.pilot_sessions SET last_seen_at=now()-interval '29 minutes 59 seconds' WHERE session_id=sid;
  SELECT count(*) INTO n FROM erp_private.touch_session(sid,uid,0);
  IF n<>1 THEN RAISE EXCEPTION 'Valid input before deadline rejected';END IF;
@@ -28,7 +28,7 @@ BEGIN
  SELECT count(*) INTO n FROM erp_private.touch_session(sid,uid,-1);
  IF n<>0 THEN RAISE EXCEPTION 'Future input accepted';END IF;
  SELECT count(*) INTO n FROM erp_private.touch_session(sid,uid,1800000);
- IF n<>0 THEN RAISE EXCEPTION 'Expired input accepted';END IF;
+ IF n<>1 THEN RAISE EXCEPTION 'Inactivity incorrectly rejected active login';END IF;
  UPDATE erp_private.pilot_sessions SET revoked_at=now() WHERE session_id=sid;
  SELECT count(*) INTO n FROM erp_private.touch_session(sid,uid,0,now()+interval '2 hours');
  IF n<>0 THEN RAISE EXCEPTION 'Revoked session renewed';END IF;
@@ -43,9 +43,6 @@ BEGIN
  SELECT count(*) INTO n FROM erp_private.touch_session(sid,uid,0);
  IF n<>0 THEN RAISE EXCEPTION 'Expired staff contract accepted';END IF;
  UPDATE erp_private.staff_members SET contract_end_date=NULL WHERE staff_id=staff;
- DELETE FROM auth.sessions WHERE id=sid;
- SELECT count(*) INTO n FROM erp_private.touch_session(sid,uid,0);
- IF n<>0 THEN RAISE EXCEPTION 'Missing Auth session accepted';END IF;
  IF has_function_privilege('erp_api','erp_private.touch_session(uuid,uuid,integer,timestamptz)','EXECUTE')
  OR has_function_privilege('anon','erp_private.touch_session(uuid,uuid,integer,timestamptz)','EXECUTE')
  OR has_function_privilege('authenticated','erp_private.touch_session(uuid,uuid,integer,timestamptz)','EXECUTE') THEN RAISE EXCEPTION 'Browser/application role can touch privileged session state';END IF;

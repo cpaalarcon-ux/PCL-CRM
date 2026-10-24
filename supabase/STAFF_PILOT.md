@@ -1,4 +1,4 @@
-> **Current connected testing release:** See [Consolidated testing suite](CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. Historical descriptions below refer to earlier releases or browser-local previews. The current inactivity timeout is 30 minutes.
+> **Current connected testing release:** See [Consolidated testing suite](CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. Historical descriptions below refer to earlier releases or browser-local previews. Login persists until manual sign-out; activity affects presence only.
 
 # Connected staff testing release V6
 
@@ -6,7 +6,7 @@ Use https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot for connect
 
 ## Available in the connected workspace
 
-- Staff-ID login and private copyable, single-use password setup/reset links. No email delivery is required. Login, logout, disabled accounts and contract expiry are checked on the server. Sessions end after 30 minutes without user activity, with a two-minute warning. Active sessions renew their access token; background requests alone do not extend the inactivity deadline.
+- Staff-ID login and private copyable, single-use password setup/reset links. No email delivery is required. Login, logout, disabled accounts and contract expiry are checked on the server. Sessions remain signed in regardless of inactivity. Renewable tokens persist across reloads/browser restarts and are shared across tabs. Staff activity affects presence only. Manual sign-out, account disabling, password reset and session revocation end access.
 - Five staff categories: Engagement Partner, Manager, Audit Supervisor, Audit Assistant and Intern. Partner/Manager administer staff and incomplete clients; Managers cannot promote or reset other Managers/Partners. Supervisors can create and maintain projects and tasks within authorised firms without gaining staff-administration or financial rights.
 - Shared clients across authorised firms, red missing-field markers and database-backed sectors. Partner/Manager can add a sector. Every project retains one client and handling firm; another firm requires a separate project.
 - Editable project names auto-filled from client, service and year. Once-off, weekly, monthly, weekly + monthly, quarterly and annual schedules; explicit start/end, preparer, reviewer and applicable tax obligations. Schedule edits apply to future periods and preserve existing tasks and evidence.
@@ -59,7 +59,7 @@ Use only temporary fictional fixtures in staging. Disable QA accounts and revoke
 
 ## Setup-link clarification — 23 October 2026
 
-Each original or regenerated setup/reset link has a fresh 24-hour validity from database issuance time, independent of the 30-minute inactivity limit. The generation dialog and copied details show the exact expiry in Africa/Nairobi time. Opening/checking a link does not consume it; saving the password does. Regeneration replaces earlier unused links and revokes existing sessions.
+Each original or regenerated setup/reset link has a fresh 24-hour validity from database issuance time, independent of staff login duration. The generation dialog and copied details show the exact expiry in Africa/Nairobi time. Opening/checking a link does not consume it; saving the password does. Regeneration replaces earlier unused links and revokes existing sessions.
 
 The setup page checks its state before enabling Save password and distinguishes already-used, replaced, expired and unavailable links. Opening a newer link in the same browser tab now replaces the old in-memory token. No real staff links are extended, recovered or reissued automatically by this UI correction.
 
@@ -101,10 +101,10 @@ python tests/workbook_templates_http.py /private/qa-session.json /private/fictio
 
 The HTTP harness uses temporary QA accounts and private fixtures. Deactivate/archive the QA fixture accounts and records after testing. Publish this change to `backend/staging-foundation` only; production promotion remains a separate action after staff acceptance.
 
-## Thirty-minute inactivity update (23 October 2026)
+## Manual sign-out policy (24 October 2026)
 
-Typing, clicks, pointer movement and scrolling keep a signed-in staff session active. At 28 minutes without activity a warning offers **Continue working**; at 30 minutes the workspace and open editor are cleared and the user must sign in again. Save work before leaving the device. Reloading or waking a sleeping tab preserves the deadline and cannot revive an expired session. Refresh the staging page and sign in once after this update, because legacy sessions lack the new idle clock and refresh credential.
+This policy supersedes the earlier inactivity timeout. Being idle, away, on break, in a meeting or clocked out never signs staff out. The browser retains a renewable session until manual sign-out. Account disablement, contract expiry, password reset and explicit administrative revocation still block access. Tokens renew automatically; a temporary offline condition does not clear saved credentials. The workspace becomes unavailable if the server rejects a revoked session.
 
-The private database enforces the same cutoff for API/RLS access. Requests carry the age of the last genuine browser input; read-only requests and token renewal cannot advance that timestamp on their own. At most one activity heartbeat per minute keeps the server informed while staff edit without saving. The server verifies the live Auth session, staff status, contract, reset cutoff and idle deadline before renewing. New/regenerated password setup links still have their separate 24-hour validity.
+Attendance and task timers are separate. Clocking out closes attendance; it does not log out. Sign out while clocked in offers clock-out-and-sign-out or sign-out-only with attendance retained for review. A task timer stopped by an attendance closure is held for manual review, never automatically billed.
 
-Regression checks: `node --test tests/staff_session.test.mjs`, `supabase/tests/idle_session_rollback.sql`, and `python tests/idle_session_http.py /private/qa-session.json --phase active` followed by `--phase expired` (temporary QA staff in staging only). Between phases, use the privileged staging SQL runner to age only the newly saved fictional session by 31 minutes. This checks expiry without waiting 30 minutes. No credentials or real staff data belong in GitHub.
+Regression checks: `node --test tests/staff_session.test.mjs`, `supabase/tests/idle_session_rollback.sql`, and `tests/idle_session_http.py` with private fictional staging fixtures. The HTTP persisted phase verifies a day-old activity timestamp, token refresh and explicit logout revocation. No real staff credentials belong in GitHub.

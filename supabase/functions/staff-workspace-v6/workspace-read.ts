@@ -16,7 +16,8 @@ export async function readWorkspace(tx:any,a:any){
  'candidates',(select coalesce(jsonb_agg(rows),'[]'::jsonb) from (select * from erp_private.assignment_candidates()) rows),
  'schedules',(select coalesce(jsonb_agg(rows),'[]'::jsonb) from (select * from erp_private.project_schedules where deleted_at is null) rows),
  'timesheets',(select coalesce(jsonb_agg(rows),'[]'::jsonb) from (select * from erp_private.timesheets where deleted_at is null order by work_date desc,created_at desc limit 1000) rows),
- 'notifications',(select coalesce(jsonb_agg(rows),'[]'::jsonb) from (select * from erp_private.notifications order by created_at desc limit 50) rows),
+ 'notifications',(select coalesce(jsonb_agg(rows),'[]'::jsonb) from (select n.* from erp_private.notifications n where not exists(select 1 from erp_private.notification_reads nr where nr.notification_id=n.notification_id and nr.staff_id=${a.staff_id}) order by n.created_at desc limit 50) rows),
+ 'sales_reviews',(select coalesce(jsonb_agg(rows),'[]'::jsonb) from (select reconciliation_id,project_id,review_type,starts_on,ends_on,status,prepared_by,revision,result from erp_private.sales_reconciliations order by ends_on desc limit 100) rows),
  'task_events',(select coalesce(jsonb_agg(rows),'[]'::jsonb) from (select * from erp_private.task_events order by created_at desc limit 200) rows),
  'workbook_batches',(select coalesce(jsonb_agg(rows),'[]'::jsonb) from (select * from erp_private.workbook_batches order by created_at desc limit 200) rows)) as workspace`;return r.workspace;
 }

@@ -1,0 +1,37 @@
+BEGIN;
+DO $$
+DECLARE f uuid:=gen_random_uuid();f2 uuid:=gen_random_uuid();c uuid:=gen_random_uuid();p uuid:=gen_random_uuid();p2 uuid:=gen_random_uuid();s uuid:=gen_random_uuid();u uuid:=gen_random_uuid();sess uuid:=gen_random_uuid();doc uuid:=gen_random_uuid();b uuid:=gen_random_uuid();r uuid:=gen_random_uuid();ch uuid:=gen_random_uuid();rec uuid:=gen_random_uuid();n integer;
+BEGIN
+ IF (SELECT count(*) FROM erp_private.account_catalog WHERE catalog_version='COA-2026-10-24')<>273 THEN RAISE EXCEPTION 'Catalog incomplete';END IF;
+ INSERT INTO auth.users(id) VALUES(u);INSERT INTO auth.sessions(id,user_id) VALUES(sess,u);
+ INSERT INTO erp_private.firms(firm_id,firm_code,legal_name) VALUES(f,'A9QA','Fictional accounting rollback'),(f2,'A9OTHER','Other fictional firm');
+ INSERT INTO erp_private.staff_members(staff_id,auth_user_id,staff_identifier,login_id,full_name,category_code,employment_type,access_status,sessions_invalid_before) VALUES(s,u,'A9QA','a9.qa','Fictional accounting preparer','ASSISTANT','Permanent','Active',now()-interval '1 day');
+ INSERT INTO erp_private.pilot_sessions(session_id,staff_id,expires_at) VALUES(sess,s,now()+interval '1 hour');
+ INSERT INTO erp_private.staff_firm_access(staff_id,firm_id) VALUES(s,f);
+ INSERT INTO erp_private.clients(client_id,company_name,owner_staff_id) VALUES(c,'Fictional accounting client',s);
+ INSERT INTO erp_private.client_firm_links(client_id,firm_id) VALUES(c,f),(c,f2);
+ INSERT INTO erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) VALUES(p,c,f,'Fictional mapping','TAX-COMP',s),(p2,c,f2,'Hidden mapping','TAX-COMP',null);
+ INSERT INTO erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) VALUES(p,s,f,'ASSISTANT');
+ INSERT INTO erp_private.documents(document_id,client_id,handling_firm_id,project_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) VALUES(doc,c,f,p,'Working Papers','Fictional.xlsx','qa/'||doc,100,repeat('a',64),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',s);
+ INSERT INTO erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by) VALUES(b,p,doc,'Purchases',1,'Purchases','2026-09-01','2026-09-30','{}',1,1,0,0,s);
+ INSERT INTO erp_private.workbook_rows(row_id,batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) VALUES(r,b,p,c,'Purchases',2,'rollback-row','{"original":true}','{"amount":1000,"vat":160,"invoice":"ROLLBACK-1"}');
+ PERFORM set_config('request.jwt.claims',json_build_object('sub',u,'session_id',sess)::text,true);SET LOCAL ROLE erp_api;
+ IF (SELECT count(*) FROM erp_private.projects WHERE project_id=p2)<>0 THEN RAISE EXCEPTION 'Other firm project leaked';END IF;
+ BEGIN INSERT INTO erp_private.accounting_policies(client_id,inventory_method,notes,configured_by) VALUES(c,'Perpetual','Assistant should be denied',s);RAISE EXCEPTION 'Assistant configured policy';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN UPDATE erp_private.workbook_rows SET normalized='{"amount":900}' WHERE row_id=r;RAISE EXCEPTION 'Original amount changed';EXCEPTION WHEN check_violation THEN NULL;END;
+ BEGIN UPDATE erp_private.workbook_rows SET route=2,category_code='EXP01',account_code='62500' WHERE row_id=r;RAISE EXCEPTION 'Category mismatch accepted';EXCEPTION WHEN check_violation THEN NULL;END;
+ UPDATE erp_private.workbook_rows SET is_split_parent=true WHERE row_id=r;
+ INSERT INTO erp_private.workbook_rows(row_id,parent_row_id,batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized,route,category_code,account_code,narration) VALUES(ch,r,b,p,c,'Purchases',2,'rollback-row:1','{"original":true}','{"amount":600,"vat":96,"invoice":"ROLLBACK-1"}',2,'EXP01','61010','Electricity allocation'),(gen_random_uuid(),r,b,p,c,'Purchases',2,'rollback-row:2','{"original":true}','{"amount":400,"vat":64,"invoice":"ROLLBACK-1"}',2,'EXP08','62500','Bank charge allocation');
+ SET CONSTRAINTS ALL IMMEDIATE;
+ IF (SELECT sum((normalized->>'amount')::numeric) FROM erp_private.workbook_rows WHERE project_id=p AND NOT is_split_parent)<>1000 THEN RAISE EXCEPTION 'Allocation double counts parent';END IF;
+ BEGIN UPDATE erp_private.workbook_rows SET narration='Overwrite split source' WHERE row_id=r;RAISE EXCEPTION 'Split source changed';EXCEPTION WHEN check_violation THEN NULL;END;
+ INSERT INTO erp_private.sales_reconciliations(reconciliation_id,project_id,review_type,starts_on,ends_on,prepared_by) VALUES(rec,p,'Monthly','2026-09-01','2026-09-30',s);
+ BEGIN UPDATE erp_private.sales_reconciliations SET status='Locked' WHERE reconciliation_id=rec;RAISE EXCEPTION 'Draft directly approved';EXCEPTION WHEN check_violation THEN NULL;END;
+ UPDATE erp_private.sales_reconciliations SET status='Submitted' WHERE reconciliation_id=rec;
+ IF erp_private.tax_period_open(p,'2026-09-01','2026-09-30') THEN RAISE EXCEPTION 'Submitted review did not freeze sources';END IF;
+ BEGIN UPDATE erp_private.workbook_rows SET narration='Blocked by review' WHERE row_id=ch;RAISE EXCEPTION 'Submitted source edited';EXCEPTION WHEN check_violation THEN NULL;END;
+ BEGIN UPDATE erp_private.sales_reconciliations SET status='Locked',reviewed_by=s,review_note='Self approval' WHERE reconciliation_id=rec;RAISE EXCEPTION 'Preparer approved own review';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ BEGIN UPDATE erp_private.sales_reconciliations SET inputs='{"changed":true}' WHERE reconciliation_id=rec;RAISE EXCEPTION 'Submitted values edited';EXCEPTION WHEN check_violation THEN NULL;END;
+ RESET ROLE;
+END;$$;
+ROLLBACK;

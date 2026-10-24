@@ -134,15 +134,17 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   await tx`select pg_advisory_xact_lock(hashtextextended(${a.staff_id+':attendance'},0))`;const when=today(),old=(await tx`select * from erp_private.attendance where staff_id=${a.staff_id} and work_date=${when} for update`)[0];
   if(p.operation==='in'){
    if(old)fail(400,'Attendance or approved leave already exists for today.');const local=new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date());const late=local>'08:15';
-   return one(await tx`insert into erp_private.attendance(staff_id,work_date,clock_in,location,status,reason) values(${a.staff_id},${when},now(),${choice(p.location,['Nairobi office','Bungoma office','Kisii office','Client site','Remote'])},${late?'Late':'Present'},${text(p.reason||'',1000,late)}) returning attendance_id`);
+   const added=one(await tx`insert into erp_private.attendance(staff_id,work_date,clock_in,location,status,reason) values(${a.staff_id},${when},now(),${choice(p.location,['Nairobi office','Bungoma office','Kisii office','Client site','Remote'])},${late?'Late':'Present'},${text(p.reason||'',1000,late)}) returning attendance_id`);
+   await tx`update erp_private.staff_presence set manual_status='Auto',break_started_at=null where staff_id=${a.staff_id}`;return added;
   }
   if(p.operation!=='out'||!old||!old.clock_in||old.clock_out||old.status==='On leave')fail(400,'No open clock-in exists for today.');const breaks=Math.trunc(number(p.break_minutes,0,480));if(breaks>(Date.now()-new Date(old.clock_in).getTime())/60000)fail(400,'Breaks exceed the time since clock-in.');
-  await tx`update erp_private.attendance set clock_out=now(),break_minutes=${breaks} where attendance_id=${old.attendance_id}`;return {ok:true};
+  await tx`update erp_private.attendance set clock_out=now(),break_minutes=${breaks} where attendance_id=${old.attendance_id}`;
+  await tx`update erp_private.staff_presence set manual_status='Auto',break_started_at=null where staff_id=${a.staff_id}`;return {ok:true};
  }
  if(p.action==='attendance_correct'){
   leader(a);const t=one(await tx`select * from erp_private.attendance where attendance_id=${uuid(p.attendance_id)} for update`);current(t,p);if(t.staff_id===a.staff_id)fail(403,'Another Manager must approve your correction.');if(t.status==='On leave')fail(400,'Leave records cannot be changed to working attendance.');
   const out=new Date(p.clock_out);if(!Number.isFinite(out.getTime())||out>new Date()||out<new Date(t.clock_in)||out.getTime()-new Date(t.clock_in).getTime()>24*3600000)fail(400,'Choose a valid clock-out within 24 hours of clock-in.');
-  await tx`update erp_private.attendance set clock_out=${out},reason=${text(p.reason,1000)},reviewed_by=${a.staff_id} where attendance_id=${t.attendance_id}`;return {ok:true};
+  await tx`update erp_private.attendance set clock_out=${out},reason=${text(p.reason,1000)},reviewed_by=${a.staff_id},review_required=false where attendance_id=${t.attendance_id}`;return {ok:true};
  }
  if(p.action==='credential_add'){
   return one(await tx`insert into erp_private.staff_credentials(staff_id,credential_type,description,status,issue_date,expiry_date,cpd_hours,evidence_reference) values(${a.staff_id},${choice(p.credential_type,['CPA paper','ICPAK membership','CPD','Degree','Induction'])},${text(p.description,500)},${choice(p.status,['In progress','Passed','Expired'])},${day(p.issue_date)},${date(p.expiry_date)},${number(p.cpd_hours||0,0,1000)},${text(p.evidence_reference,1000)}) returning credential_id`);

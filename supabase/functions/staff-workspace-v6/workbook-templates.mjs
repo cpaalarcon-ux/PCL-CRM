@@ -16,7 +16,7 @@ export const legalCategories=['Payroll/wages','Bank charge','Interest','Import',
 export const workbookCategories=[
  ['STOCK',1,'Resalable goods / inventory'],
  ...['Operating expenditure','Administrative expenditure','Employment expenditure','Finance cost','Other expenditure','Import / customs cost','Professional service / WHT','Bank charge','Exception / reviewer decision'].map((label,i)=>['EXP0'+(i+1),2,label]),
- ...Object.entries({PPE00:'Land / non-depreciable',PPE10B:'Commercial / educational building',PPE50Q:'Qualifying building / machinery / hospital asset',PPE25V:'Motor vehicle / heavy equipment',PPE25C:'Computer / software / copier',PPE10M:'Furniture / telecom / other machinery',PPE50F:'Farmworks',PPER:'Special / restricted investment'}).map(([code,label])=>[code,3,label])
+ ...Object.entries({PPE00:'Land / non-depreciable',PPE10B:'Commercial / educational building',PPE50Q:'Qualifying building / machinery / hospital asset',PPE25V:'Motor vehicle / heavy equipment',PPE25C:'Computer / copier',PPE25S:'Qualifying computer software',PPE10M:'Furniture / telecom / other machinery',PPE50F:'Farmworks',PPER:'Special / restricted investment'}).map(([code,label])=>[code,3,label])
 ].map(([code,route,label])=>({code,route,label,kind:'Purchase',group:'Workbook internal code'}));
 export const sheetValues=(sheet,i)=>Array.from({length:sheet.columnCount},(_,c)=>excelValue(sheet.getRow(i).getCell(c+1).value));
 function mapHeaders(headers){const m={};for(const [k,names] of Object.entries(aliases)){const col=headers.findIndex(h=>names.includes(norm(h)));if(col>=0)m[k]=col+1;}return m;}
@@ -80,7 +80,7 @@ export function normalizeTemplate(values,template,block,start,end){
 export function rowWarnings(row){
  const n=row.normalized||{},details=row.review_details||{},out=[];
  if(['Purchases','Expenditure','Non-eTIMS'].includes(row.dataset)){
-  if(!row.route||!row.category_code)out.push('Missing classification');
+  if(!row.route||!row.category_code||!row.account_code)out.push('Missing detailed account classification');
   if(row.route===3&&!row.asset_details)out.push('Missing asset description / use');
   if(row.dataset==='Non-eTIMS'){
    if(!(details.legal_category||n.legal_category))out.push('Missing legal category');
