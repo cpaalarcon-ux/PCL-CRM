@@ -1,3 +1,4 @@
+import {procedureAction} from './procedure-actions.ts';
 import {presenceAction} from './presence-actions.ts';
 import {accountingAction} from './accounting-actions.ts';
 import {taxConfigAction} from './tax-config-actions.ts';
@@ -175,6 +176,7 @@ async function upload(req:Request,id:any){
   assertDocumentLinks({client_id:cid,firm_id:firm,project_id:pid,task_id:tid},project,task);
   const [allow]=await tx`select erp_private.document_allowed(${cid}::uuid,${firm}::uuid,${pid}::uuid,${tid}::uuid,${cat},true) as allowed`;
   if(!allow.allowed)deny();
+  if(tid&&(await tx`select stage from erp_private.task_procedures where task_id=${tid}`)[0]?.stage==='Closed')fail(400,'This task is closed. Use a separate correction task for additional evidence.');
   // Metadata is inserted before storage. Failed storage rolls back metadata.
   await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by)
   values(${doc},${cid},${firm},${pid},${tid},${cat},${name},${key},${bytes.length},${digest},${mime},${a.staff_id})`;
@@ -205,6 +207,7 @@ async function action(id:any,p:any){
   const exported=await suiteExport(tx,a,p,admin.storage.from(BUCKET));if(exported!==undefined)return exported;
   const config=await taxConfigAction(tx,a,p);if(config!==undefined)return config;
   const lead=await leadAction(tx,a,p);if(lead!==undefined)return lead;
+  const procedure=await procedureAction(tx,a,p,taxAction);if(procedure!==undefined)return procedure;
   const suite=await suiteAction(tx,a,p);if(suite!==undefined)return suite;
   const tax=await taxAction(tx,a,p);if(tax!==undefined)return tax;
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
@@ -217,7 +220,10 @@ async function action(id:any,p:any){
    const rev=revision(p.revision),filed=p.filing_date?date(p.filing_date):null;
    if(filed&&filed>new Date().toLocaleDateString('en-CA',{timeZone:'Africa/Nairobi'}))fail(400,'Filing date cannot be in the future.');
    const t=one(await tx`select template_key from erp_private.tasks where task_id=${task}`);
-   if(status==='Completed'&&['monthly-paye','monthly-vat','monthly-tot'].includes(t.template_key)&&!filed)fail(400,'Record the actual filing date. A PDF receipt is optional.');
+   const workflow=(await tx`select profile,revision,stage from erp_private.task_procedures where task_id=${task}`)[0];
+   if(status==='Completed'&&workflow){if(workflow.profile!=='Supporting task')fail(400,'Use the task workspace review, approval and closure steps.');return procedureAction(tx,a,{action:'procedure_action',task_id:task,revision:workflow.revision,operation:'capture',message:reason||'Supporting capture completed from status update.'},taxAction);}
+   if(workflow&&!['Pending preparer','Pending client documents'].includes(workflow.stage))fail(400,'Use the procedure actions to review, return or advance submitted work.');
+   if(status==='Completed'&&['monthly-paye','monthly-vat','monthly-tot'].includes(t.template_key)&&!filed)fail(400,'Record the actual filing date. Use the task workflow for written approval, filing evidence and closure.');
    const changed=await tx`update erp_private.tasks set status=${status},blocked_reason=${reason||null},filing_date=${filed}
     where task_id=${task} and revision=${rev} returning task_id`;
    if(!changed.length)fail(409,'Task changed or is no longer assigned to you. Refresh the workspace.');return {ok:true};

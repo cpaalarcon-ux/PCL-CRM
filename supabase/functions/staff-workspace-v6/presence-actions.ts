@@ -1,3 +1,4 @@
+import {automaticBreakMinutes} from './attendance-rules.mjs';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 const one=(r:any[])=>{if(!r.length)fail(403,'This staff record or task is unavailable.');return r[0];};
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date());
@@ -27,10 +28,10 @@ export async function presenceAction(tx:any,a:any,p:any,context:any){
   const target=p.action==='presence_force_out'?uuid(p.staff_id):sid;if(target!==sid)leader(a);
   await tx`select pg_advisory_xact_lock(hashtextextended(${target+':attendance'},0))`;
   const att=one(await tx`select * from erp_private.attendance where staff_id=${target} and work_date=${when} and clock_in is not null and clock_out is null and deleted_at is null for update`);
-  let mins=Number(p.break_minutes||0);if(!Number.isInteger(mins)||mins<0||mins>480||mins>(Date.now()-new Date(att.clock_in).getTime())/60000)fail(400,'Check the actual break minutes.');
+  const presence=(await tx`select break_started_at from erp_private.staff_presence where staff_id=${target}`)[0],mins=automaticBreakMinutes(att,presence);
   const reason=target!==sid?text(p.reason,1000):'Staff clocked out manually.';
-  await tx`update erp_private.attendance set clock_out=now(),break_minutes=${mins},reason=${reason},review_required=false,reviewed_by=${target!==sid?sid:null} where attendance_id=${att.attendance_id}`;
-  await tx`update erp_private.staff_presence set manual_status='Auto',break_started_at=null where staff_id=${target}`;return {ok:true};
+  const result=one(await tx`update erp_private.attendance set clock_out=now(),break_minutes=${mins},reason=${reason},review_required=false,reviewed_by=${target!==sid?sid:null} where attendance_id=${att.attendance_id} returning clock_in,clock_out,break_minutes`);
+  await tx`update erp_private.staff_presence set manual_status='Auto',break_started_at=null where staff_id=${target}`;return {ok:true,...result};
  }
  if(p.action==='timer_start'){
   await tx`select pg_advisory_xact_lock(hashtextextended(${sid+':timer'},0))`;const task=one(await tx`select * from erp_private.tasks where task_id=${uuid(p.task_id)} and assigned_to=${sid} and deleted_at is null and status not in ('Completed','Cancelled')`);

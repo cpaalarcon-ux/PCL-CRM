@@ -1,3 +1,4 @@
+import {stagingRates,preferredRates} from './testing-rates.mjs';
 import {taxKinds,pickRate,profileIssues,keys,testRate,payrollFromRules,simpleTax,vatRuleCheck} from './tax-registry.mjs';
 import {fail,text,uuid,choice,revision,date} from './validation.mjs';
 import {range,day,number,amount,round,filingKinds,vatCalculation,incomeCalculation,payrollCalculation} from './suite-rules.mjs';
@@ -10,9 +11,9 @@ export async function taxSummary(tx:any,c:any){
  const project=one(await tx`select client_id from erp_private.projects where project_id=${c.project_id}`);
  const profiles=await tx`select * from erp_private.client_tax_profiles where client_id=${project.client_id} and status='Verified' and deleted_at is null and effective_from<=${c.starts_on} and effective_to>=${c.ends_on}`;
  const profile=profiles.length===1?profiles[0]:null;
- const available=await tx`select * from erp_private.tax_rates where status='Approved' and deleted_at is null`;
+ const available=stagingRates(await tx`select * from erp_private.tax_rates where status in('Approved','Testing') and deleted_at is null`,Deno.env.get('SUPABASE_URL')||'');
  const applied:any[]=[];const rules:any={};const ruleIssues:string[]=[];
- const use=(key:string,start=dateText(c.starts_on),end=dateText(c.ends_on))=>{try{const r=pickRate(available,key,start,end);if(!applied.some(x=>x.rate_id===r.rate_id))applied.push(r);return r;}catch(e){ruleIssues.push((e as Error).message);return null;}};
+ const use=(key:string,start=dateText(c.starts_on),end=dateText(c.ends_on))=>{try{const r=pickRate(preferredRates(available,key,start,end),key,start,end);if(!applied.some(x=>x.rate_id===r.rate_id))applied.push(r);return r;}catch(e){ruleIssues.push((e as Error).message);return null;}};
  const needed=[...((keys as any)[c.kind]||[])];if(c.kind==='WHT'){if(c.inputs.payment_code)needed.push(c.inputs.payment_code);else ruleIssues.push('Select a WHT payment category.');}
  for(const key of needed){const r=use(key);if(r){if(c.kind==='WHT'&&r.tax_type!=='Withholding tax')ruleIssues.push('Select a withholding-tax payment rule.');else rules[key]=r;}}
 
@@ -67,6 +68,7 @@ export async function taxSummary(tx:any,c:any){
  if(['TOT','MRI'].includes(c.kind)&&profile?.regime!==c.kind)issues.push('The client income regime does not match this computation.');
  if(c.kind!=='VAT'&&!c.source_document_id)issues.push('Link the supporting working-paper document.');
  if(!c.inputs.return_tied)issues.push('Confirm that the draft return agrees to the reviewed computation.');
+ if(applied.some(r=>r.approval_scope==='Testing'))result.testing_only=true;
  return {result,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
 }
 export async function taxAction(tx:any,a:any,p:any):Promise<any>{
@@ -122,9 +124,6 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   const snapshot={result:s.result,rate:s.rate,applied_rates:s.applied_rates,profile:s.profile,reconciliation:s.reconciliation,rows:s.rows.map((r:any)=>({row_id:r.row_id,source_row:r.source_row,revision:r.revision,batch_id:r.batch_id,dataset:r.dataset,normalized:r.normalized,raw_values:r.raw_values,account_code:r.account_code,account_name:r.account_name,catalog_version:r.catalog_version,parent_row_id:r.parent_row_id,decision:r.decision,deductible_percentage:r.deductible_percentage,reviewed_by:r.reviewed_by,vat_rate_key:r.vat_rate_key,vat_difference_reason:r.vat_difference_reason,income_treatment:r.income_treatment,applied_rate:r.applied_rate})),batches:s.batches,findings:s.findings,inputs:c.inputs,reviewed_by:a.staff_id,reviewed_at:new Date().toISOString()};
   await tx`update erp_private.tax_cases set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note},result=${tx.json(s.result)},review_snapshot=${status==='Locked'?tx.json(snapshot):null} where case_id=${c.case_id}`;return {ok:true};
  }
- if(p.action==='tax_file'){
-  editor(a);if(c.status!=='Locked')fail(400,'Review and lock the case before recording filing.');const filed=day(p.filing_date);if(filed>today()||filed<dateText(c.ends_on))fail(400,'Filing date must follow the period and cannot be in the future.');
-  await tx`update erp_private.tax_cases set status='Filed',filing_date=${filed} where case_id=${c.case_id}`;return {ok:true};
- }
+ if(p.action==='tax_file')fail(400,'Open the linked task workspace to log written client approval, acknowledgment PDF and PRN before recording filing.');
  fail(404,'Unknown tax action.');
 }

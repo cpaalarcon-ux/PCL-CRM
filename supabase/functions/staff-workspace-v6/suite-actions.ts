@@ -1,3 +1,4 @@
+import {automaticBreakMinutes,lateClockIn} from './attendance-rules.mjs';
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
 import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,busySeason,weekdays,round} from './suite-rules.mjs';
 export const one=(rows:any[])=>{if(!rows.length)fail(403,'This record is not available to your account.');return rows[0];};
@@ -133,11 +134,11 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='clock'){
   await tx`select pg_advisory_xact_lock(hashtextextended(${a.staff_id+':attendance'},0))`;const when=today(),old=(await tx`select * from erp_private.attendance where staff_id=${a.staff_id} and work_date=${when} for update`)[0];
   if(p.operation==='in'){
-   if(old)fail(400,'Attendance or approved leave already exists for today.');const local=new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date());const late=local>'08:15';
-   const added=one(await tx`insert into erp_private.attendance(staff_id,work_date,clock_in,location,status,reason) values(${a.staff_id},${when},now(),${choice(p.location,['Nairobi office','Bungoma office','Kisii office','Client site','Remote'])},${late?'Late':'Present'},${text(p.reason||'',1000,late)}) returning attendance_id`);
+   if(old)fail(400,'Attendance or approved leave already exists for today.');const late=lateClockIn();
+   const added=one(await tx`insert into erp_private.attendance(staff_id,work_date,clock_in,location,status,reason) values(${a.staff_id},${when},now(),${choice(p.location,['Nairobi office','Bungoma office','Kisii office','Client site','Remote'])},${late?'Late':'Present'},${text(p.reason||'',1000,late)}) returning attendance_id,clock_in,clock_out,break_minutes`);
    await tx`update erp_private.staff_presence set manual_status='Auto',break_started_at=null where staff_id=${a.staff_id}`;return added;
   }
-  if(p.operation!=='out'||!old||!old.clock_in||old.clock_out||old.status==='On leave')fail(400,'No open clock-in exists for today.');const breaks=Math.trunc(number(p.break_minutes,0,480));if(breaks>(Date.now()-new Date(old.clock_in).getTime())/60000)fail(400,'Breaks exceed the time since clock-in.');
+  if(p.operation!=='out'||!old||!old.clock_in||old.clock_out||old.status==='On leave')fail(400,'No open clock-in exists for today.');const presence=(await tx`select break_started_at from erp_private.staff_presence where staff_id=${a.staff_id}`)[0],breaks=automaticBreakMinutes(old,presence);
   await tx`update erp_private.attendance set clock_out=now(),break_minutes=${breaks} where attendance_id=${old.attendance_id}`;
   await tx`update erp_private.staff_presence set manual_status='Auto',break_started_at=null where staff_id=${a.staff_id}`;return {ok:true};
  }

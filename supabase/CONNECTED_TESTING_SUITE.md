@@ -31,8 +31,8 @@ Use a fictional client and separate preparer/reviewer accounts. Test both an Eng
 | Recurrence | Projects & tasks → New project / Edit project & schedule | Once-off, weekly, monthly, weekly + monthly, weekly + monthly + annually, quarterly or annual. Weekly/Monthly/Annual task filters and Upcoming schedule explain what exists and what will be generated. |
 | Handover | Task → Forward / Escalate | Required message, permitted recipient, ownership change, retained history and in-app alert. |
 | Working papers | Documents → Review Excel; project → Imported rows & mapping | Original workbook columns, sheet/period selection, duplicate/rejected counts; resale, expenditure and PPE classification; non-eTIMS exception review. |
-| Tax cases | Projects & tasks → Open tax periods | VAT, PAYE, company, partnership, individual, TOT, MRI, WHT, CGT, AHL, SHIF, NSSF, NITA and interest-benchmark computations. Preparer saves/submits; another authorised reviewer returns or locks; actual filing date is required, receipt PDF optional. |
-| Rates | Settings → Tax & payroll rates | Manager/Partner drafts a dated schedule with legal source; Partner approves. Approved versions are immutable and cannot overlap for the same code. 35 official-source schedules are preloaded as Draft and require Partner validation. Test-only rules are excluded from client calculations. Monthly PAYE and annual income-tax bands are separate configurations. |
+| Tax cases | Projects & tasks → Open tax periods | VAT, PAYE, company, partnership, individual, TOT, MRI, WHT, CGT, AHL, SHIF, NSSF, NITA and interest-benchmark computations. Preparer saves/submits; another authorised reviewer returns or locks; filing now follows the linked task procedure, with written approval and acknowledgment PDF required. |
+| Rates | Settings → Tax & payroll rates | Manager/Partner drafts a dated schedule with legal source; Partner approves. Approved versions are immutable and cannot overlap for the same code. The catalogue contains 35 sourced schedules. User-authorized provisional schedules are marked Approved for testing; formal approval requires Partner legal verification. Test-only rules are excluded from client calculations. Monthly PAYE and annual income-tax bands are separate configurations. |
 | Downloads | Tax case → Download report & working papers; client → Download KYC package | ZIP with PDF and XLSX; KYC also DOCX. Tax drafts are labelled NOT FOR FILING. Reviewed tax exports use locked snapshots and include supporting files within a 20 MB package limit. Downloads are audited. |
 | Time and WIP | Time & HR; Billing & WIP → Budgets & WIP | Assigned-task time, independent approval, locked entries and reversals. Effective-dated staff rates calculate approved-time cost. Missing rates remain visible rather than being treated as zero cost. |
 | Finance | Billing & WIP → Invoices / Payments / Statements | Create draft; activated engagement required to post; firm-specific permanent number; Cash, M-Pesa, Bank or Cheque allocations; overpayment blocked; reversal instead of deletion. One client statement spans permitted firms and identifies every issuer. |
@@ -99,3 +99,47 @@ The dedicated letter workflow is covered by DOM regression checks: client/firm/p
 Migrations added in this release: `20261024122422_purchase_accounting_reconciliation.sql`, `20261024122800_accounting_review_guards.sql`, `20261024131627_actionable_dashboard_alerts.sql`, `20261024133148_attendance_timer_day_guard.sql`. Migration 20261024122800 was applied as the same checked SQL transaction through the staging SQL runner after migration-service request errors, then registered in migration history. Production migrations remain a separate deployment decision.
 
 The 24 October final-test update passed 83 automated Node checks, Deno type checking and rollback-only database checks for session revocation, mapping/source locks, split conservation and attendance/timer boundaries. A connected fictional-account check verified access and token renewal after a day-old activity timestamp, followed by manual logout rejecting both access and refresh. These checks support staging acceptance testing and do not certify production readiness.
+
+## Clickable workspaces and procedural work — 24 October 2026
+
+Click a task title, its row or **Open task workspace**. Click a project name/card to open its tasks. Browser Back, direct task/project links and search results preserve the work context. Record links require staff login and current record access; an unavailable link reveals no hidden record. Main navigation wraps into visible rows rather than hiding Settings behind horizontal scrolling.
+
+Within a task:
+
+1. **Upload purchases Excel / Upload Excel** fixes the client, handling firm, project and task. After saving the private original, the worksheet/section preview opens automatically. Confirm the period and import; duplicate checks, row counts and reviewer controls remain in force.
+2. **Open purchases mapping** opens the project's shared imported rows. Select rows, classify them and save. Mapping is a project working paper, not a separate ledger posting for each task.
+3. **Add work comment** retains the author/time and message without changing figures or the task stage. **Forward / Escalate** requires a receiving staff member and handover message, retained in task history.
+4. Supporting capture tasks have a shorter capture-completion path. Compilation reviews require independent review and Manager closure. Service deliverables add written client acceptance and delivery evidence. Audit engagement quality and report-issuance gates remain separate.
+
+### Statutory tax filing procedure
+
+Generated monthly VAT/PAYE/TOT filing tasks default to **Tax filing**. Other filing work can be configured by a project reviewer. Link the same client/project, tax type and period's computation, choose an independent reviewer, and record the authorised client representative, authority basis, secure delivery method, agreed cutoff and verified statutory deadline. Staff record receipt of the client records; missing records become a query/blocked stage.
+
+**Pending preparer → Pending supervisor review → Awaiting client approval → Ready to file → Filed - pending payment → Closed.**
+
+- Submission contains a preparer note and submits the linked tax computation through its existing source/rate/reconciliation controls. Independent review can return it with a required reason or approve it. A preparer cannot approve their own submission.
+- Generate the client approval summary PDF after internal review and send it manually through the agreed secure method. No email, tax return or tax payment is sent by these controls.
+- Save the written approval email as PDF or upload a signed PDF, then log its date. Approval must follow review. Late client approval requires a Manager acknowledgment; the ERP does not declare that the firm is exempt from penalties or liability.
+- Actual filing remains external in iTax. Recording it requires the client's written approval, a locked acknowledgment PDF, actual filing date and PRN, or a documented nil/no-PRN explanation. An active engagement is required. A generic status update or the older tax filing-date action cannot bypass this gate.
+- An independent Manager verifies filing and payment proof before closure. For no payable tax, record the supported nil-liability conclusion. Closure locks the task and evidence. Corrections require separate work; no routine reopen or overwrite is offered.
+- **Download status report** produces a PDF/XLSX ZIP with project-period tax statuses, reviewed figures and outstanding tasks. Written approval summaries exclude internal working papers.
+
+Weekly Tax Compilation task release is now Monday **03:00 Africa/Nairobi**. Automatic generation scans enabled schedules on active engagements; Draft projects retain manual generation for isolated testing. Monthly internal release/due targets are unchanged and are not presented as certified statutory deadlines. Existing task identities and periods are retained.
+
+### Automatic attendance
+
+Clock in/out and task timers use server timestamps. Staff choose their location and add a reason when required; no clock time is entered. Break minutes derive from Take break / Resume work, not a keyed amount at clock-out. Current system time is displayed in EAT. An authorised Manager can record a separate reasoned attendance correction; normal staff clock actions cannot supply arbitrary timestamps. Clock-out, breaks and inactivity do not sign staff out.
+
+### Rates enabled for UAT
+
+On explicit user instruction, 34 remaining Draft catalogue schedules were enabled as **Approved for testing**; one catalogue schedule was already formally Approved. Numeric parameters and coverage dates were not changed. Provisional rules are amendable by authorised Managers/Partners and are usable only in the dedicated staging Supabase project. Formally Approved rules retain priority and remain immutable.
+
+Calculations using provisional rules and their exports are marked **TESTING — NOT FOR FILING**. A simulated filing requires an explicit confirmation and fictional test evidence. Provisional enablement does not establish legal accuracy, supplier eligibility, client tax registration or actual filing with KRA. Locked calculation snapshots retain their original values when a provisional schedule is amended later.
+
+### Verification of the procedural release
+
+The release passed 90 Node checks (including DOM interaction checks), Deno type checking and rollback-only database checks for procedural locks and testing-rate permissions. A connected fictional-account test passed independent review, written client approval, simulated filing, independent Manager closure, locked-task immutability, PDF/XLSX report generation and a provisional-rate preview. It also confirmed that caller-supplied clock timestamps and break totals are ignored. No real email, KRA filing or payment occurred. Temporary fictional accounts were disabled, their sessions revoked and the fixture client/project archived; evidence and history were retained.
+
+Applied migrations: `20261024144344_task_procedures_client_approval.sql`, `20261024144958_provisional_testing_tax_rates.sql`, `20261024145528_testing_rate_edit_permissions.sql`, `20261024150802_scoped_procedure_notifications.sql`. The task-notification INSERT permission is scoped to visible task participants.
+
+Browser rendering at responsive widths still requires staff UAT: the local browser binary download failed. DOM navigation/forms and CSS structure were checked; do not describe them as a completed visual browser review. Supabase's existing compromised-password warning and performance-advisor items remain follow-up work before production.
