@@ -1,0 +1,25 @@
+/staff-pilot*
+  Cache-Control: no-store
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; connect-src https://yfjiculexbzpkvtapudk.supabase.co; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/staff-workspace-v6.mjs
+  Cache-Control: no-store
+
+/staff-session.mjs
+  Cache-Control: no-store
+
+/staff-suite.mjs
+  Cache-Control: no-store
+
+/staff-tax-config.mjs
+  Cache-Control: no-store
+
+/staff-communication-qr.mjs
+  Cache-Control: no-store
+
+/staff-leads.mjs
+  Cache-Control: no-store

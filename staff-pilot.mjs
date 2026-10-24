@@ -1,0 +1,189 @@
+import {createProcedureUI} from './staff-procedures.mjs?v=20261024-procedures';
+import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261024-click-workspaces';
+import {createPresenceUI} from './staff-presence.mjs?v=20261024-click-workspaces';
+import {renderDashboard} from './staff-dashboard.mjs?v=20261024-click-workspaces';
+import {createLeadsUI} from './staff-leads.mjs?v=20261024-release';
+import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261024-manual-logout';
+import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261024-click-workspaces';
+import {createSuiteUI} from './staff-suite.mjs?v=20261024-procedures';
+import {uploadChoices} from './staff-pilot-upload.mjs';
+const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v7';
+const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const roles={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Audit Supervisor',ASSISTANT:'Audit Assistant',INTERN:'Intern'};
+const sectors=['Agribusiness','Financial Services','Energy','Healthcare','NGO','Public Sector','SME/Startup','Legal','Education'];
+const branches=['Nairobi','Bungoma','Kisii','Other'],states=['Pending','In Progress','In Review','Blocked','Completed','Cancelled'];
+let data=null,view='home',firm='',setupToken=null,presence=null,procedures=null,selectedTask='',missingProject=false;
+// Keep the renewable session across reloads and browser restarts until sign-out.
+if(!localStorage.getItem('pcl-staff-session-v2')&&sessionStorage.getItem('pcl-staff-session-v2'))localStorage.setItem('pcl-staff-session-v2',sessionStorage.getItem('pcl-staff-session-v2'));
+sessionStorage.removeItem('pcl-staff-session-v2');
+const session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut});
+const isLeader=()=>data&&['PARTNER','MANAGER'].includes(data.me.category_code);
+const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const shortDate=v=>v?new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',day:'numeric',month:'short',year:'numeric'}).format(new Date(v)):'No date';
+const badge=v=>`<span class="badge ${['Completed','Active','Closed'].includes(v)?'good':['Blocked','Inactive','Pending client documents'].includes(v)?'red':['In Review','Pending setup','Approved for testing','Awaiting client approval','Pending supervisor review'].includes(v)?'warn':''}">${esc(v)}</span>`;
+const options=(items,value,blank='Choose…')=>`<option value="">${esc(blank)}</option>`+items.map(x=>{let [v,l]=Array.isArray(x)?x:[x,x];return `<option value="${esc(v)}"${String(v)===String(value)?' selected':''}>${esc(l)}</option>`;}).join('');
+function notice(message,error=false){$('#notice').textContent=message;$('#notice').className=error?'error':'';}
+function signedOut(message=''){session.end(message);}
+function showSignedOut(message=''){data=null;presence?.clear();$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);}
+async function send(p,{file=false,blob=false,uploadKind='',headers:extra={}}={}){
+ const headers={apikey:KEY,...extra};if(uploadKind)headers['x-erp-upload-kind']=uploadKind;if(!file)headers['Content-Type']='application/json';
+ const res=await fetch(API,{method:'POST',headers,body:file?p:JSON.stringify(p),cache:'no-store',referrerPolicy:'no-referrer'});
+ if(!res.ok){const e=await res.json().catch(()=>({}));throw Object.assign(Error(e.error||'The request failed.'),{status:res.status});}
+ return blob?res.blob():res.json();
+}
+async function request(p,{auth=true,...options}={}){
+ if(!auth)return send(p,options);
+ const ctx=await session.beforeRequest();
+ try{const result=await send(p,{...options,headers:ctx.headers});session.accept(ctx);return result;}
+ catch(error){session.reject(ctx,error);throw error;}
+}
+async function load(){data=await request({action:'workspace'});$('#signin').hidden=true;$('#workspace').hidden=false;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();
+ $('#greeting').textContent='My workspace';$('#roleLabel').textContent=roles[data.me.category_code]+' · '+data.me.login_id;
+ $('#firmFilter').innerHTML=options(data.firms.map(x=>[x.firm_id,x.firm_code+' · '+x.legal_name]),firm,'All authorised firms');
+ $('.firm-picker').hidden=data.me.category_code==='INTERN';applyWorkspaceRoute(false);render();await openCommunicationHash();void presence.refresh();}
+function filtered(){const projects=data.projects.filter(p=>!firm||p.handling_firm_id===firm),ids=new Set(projects.map(x=>x.project_id));return {projects,tasks:data.tasks.filter(t=>!firm||ids.has(t.project_id)),clients:data.clients.filter(c=>!firm||data.client_firms?.some(l=>l.client_id===c.client_id&&l.firm_id===firm)),documents:data.documents.filter(d=>!firm||d.handling_firm_id===firm)};}
+const clientName=id=>data.clients.find(x=>x.client_id===id)?.company_name||'Assigned record';
+const projectName=id=>data.projects.find(x=>x.project_id===id)?.project_name||'Assigned task';
+const staffName=id=>data.staff.find(x=>x.staff_id===id)?.full_name||data.candidates?.find(x=>x.staff_id===id)?.full_name||'Assigned staff';
+const firmName=id=>data.firms.find(x=>x.firm_id===id)?.firm_code||'';
+function nav(){const items=[['home','⌂ Home'],['clients','▦ Clients'],['projects','☷ Projects & tasks'],['time','◷ Time & HR'],['documents','▤ Documents'],['communications','◉ Comms'+(data.notifications?.length?' ('+data.notifications.length+')':'')]];if(data.me.category_code==='INTERN')items.splice(1,1);if(isLeader())items.splice(1,0,['leads','◇ Leads']);if(isLeader())items.push(['finance','▱ Billing & WIP'],['staff','♙ Staff & access']);if(isLeader())items.push(['firms','⚙ Settings']);$('#nav').innerHTML=items.map(([v,t])=>`<button data-view="${v}" class="${(view==='task'?'projects':view)===v?'active':''}" ${(view==='task'?'projects':view)===v?'aria-current="page"':''}>${t}</button>`).join('');}
+
+const empty=t=>`<div class="empty">${esc(t)}</div>`;
+function taskRows(tasks){return tasks.length?tasks.map(t=>{let due=t.due_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(t.due_at));let overdue=due&&due<today()&&!['Completed','Cancelled'].includes(t.status);const workflow=data.task_procedures?.find(w=>w.task_id===t.task_id),taskStage=workflow&&workflow.profile!=='Supporting task'?workflow.stage:t.status;return `<div class="task task-selectable ${overdue?'overdue':''}" data-task-row="${t.task_id}"><div><a class="task-title" href="#task=${t.task_id}" data-open-task="${t.task_id}">${overdue?'⚠ ':''}${esc(t.task_name)}</a><small><a class="project-title" href="#project=${t.project_id}" data-open-project="${t.project_id}">${esc(projectName(t.project_id))}</a> · ${esc(staffName(t.assigned_to))} · ${esc(shortDate(t.due_at))}</small>${t.blocked_reason?`<small>${esc(t.blocked_reason)}</small>`:''}</div><div class="actions task-row-actions">${badge(taskStage)} <button data-task="${t.task_id}">Open task workspace</button><button data-task-edit="${t.task_id}">Update status</button> ${!['Completed','Cancelled'].includes(t.status)?`<button data-v6="escalate" data-id="${t.task_id}">Forward / Escalate</button>`:''}</div></div>`;}).join(''):empty('No tasks in this section.');}
+function home(){return renderDashboard({data,firm,today:today(),esc,shortDate,taskRows,empty,clientName,projectName});}
+
+
+function bindWorkspaceSearch(){const input=$('#workspaceSearch');if(!input)return;input.oninput=()=>{const q=input.value.trim().toLowerCase(),out=$('#workspaceSearchResults');if(q.length<2){out.replaceChildren();out.hidden=true;return;}const matches=[];
+ for(const c of filtered().clients)if((c.company_name+' '+(c.kra_pin||'')).toLowerCase().includes(q))matches.push({text:'Client · '+c.company_name,html:`<button data-view="clients">${esc(c.company_name)}</button>`});
+ for(const p of filtered().projects)if(p.project_name.toLowerCase().includes(q))matches.push({text:'Project · '+p.project_name,html:`<button data-search-project="${p.project_id}">${esc(p.project_name)}</button>`});
+ for(const t of filtered().tasks)if(t.task_name.toLowerCase().includes(q))matches.push({text:'Task · '+t.task_name,html:`<button data-task="${t.task_id}">${esc(t.task_name)}</button>`});
+ for(const i of data.suite.invoices||[])if((i.invoice_number+' '+i.description+' '+clientName(i.client_id)).toLowerCase().includes(q))matches.push({text:'Billing invoice',html:`<button data-suite="invoice-view" data-id="${i.invoice_id}">${esc(i.invoice_number||i.description)}</button>`});
+ for(const c of data.suite.communications||[])if((c.reference+' '+c.subject).toLowerCase().includes(q))matches.push({text:'Communication',html:`<button data-suite="communication-view" data-id="${c.communication_id}">${esc(c.reference+' · '+c.subject)}</button>`});
+ out.hidden=false;out.innerHTML=matches.slice(0,20).map(x=>`<div><small>${esc(x.text.split(' · ')[0])}</small>${x.html}</div>`).join('')||'<p>No matching authorised records loaded.</p>';};}
+
+function clients(){const rows=filtered().clients;return `<div class="card"><div class="section-head"><h2>Clients</h2>${isLeader()?'<div class="actions"><button data-v6="sector">+ Add sector</button><button class="primary" data-new="client">+ Add client</button><button data-suite="import-clients">Import clients from Excel</button></div>':''}</div><input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients"><div class="scroll"><table><thead><tr><th>Client</th><th>Sector / branch</th><th>File updates needed</th></tr></thead><tbody>${rows.map(c=>`<tr data-search="${esc((c.company_name+' '+(c.kra_pin||'')).toLowerCase())}"><td>${isLeader()?`<button class="link" data-client="${c.client_id}">${esc(c.company_name)}</button> ${suite.button('compliance','KYC / contacts',c.client_id)+suite.button('tax-profile','Tax profile',c.client_id)}`:esc(c.company_name)}<small>${esc(c.kra_pin||'KRA PIN missing')}</small></td><td>${esc(c.primary_sector||'Missing sector')}<small>${esc(c.branch_location||'Missing branch')}</small></td><td>${c.missing_fields.length?c.missing_fields.map(x=>`<span class="missing">Missing: ${esc(x)}</span>`).join(' '):badge('Profile fields complete')}</td></tr>`).join('')}</tbody></table></div>${!rows.length?empty('No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}</div>`;}
+function projects(){const f=filtered();return `<div class="card"><div class="section-head"><h2>Projects & assigned tasks</h2>${isLeader()?'<div class="actions"><button data-new="project">+ Draft project</button><button class="primary" data-new="task">+ Assign task</button></div>':''}</div><p class="muted">One workspace across authorised firms. Each project retains its handling firm.</p>${f.projects.length?`<div class="scroll"><table><thead><tr><th>Project</th><th>Client</th><th>Handling firm</th><th>Status</th></tr></thead><tbody>${f.projects.map(p=>`<tr><td>${esc(p.project_name)}</td><td>${esc(clientName(p.client_id))}</td><td>${esc(firmName(p.handling_firm_id))}</td><td>${badge(p.status)}</td></tr>`).join('')}</tbody></table></div>`:''}<h3 class="section-space">Tasks</h3>${taskRows(f.tasks)}</div>`;}
+function staff(){return `<div class="card"><div class="section-head"><h2>Staff roster & access</h2><div class="actions"><button class="primary" data-new="staff">+ Add staff</button>${suite.button('import-staff','Import staff from Excel')}</div></div><p class="muted">Click a name to edit their profile. Generate a private link when they are ready to set their password.</p><div class="scroll"><table><thead><tr><th>Staff / login ID</th><th>Position</th><th>Employment</th><th>Access</th><th>Actions</th></tr></thead><tbody>${data.staff.map(s=>`<tr><td>${s.staff_id===data.me.staff_id?esc(s.full_name):`<button class="link" data-staff="${s.staff_id}">${esc(s.full_name)}</button>`}<small>${esc(s.staff_identifier)} · ${esc(s.login_id)}</small></td><td>${esc(roles[s.category_code])}</td><td>${esc(s.employment_type)}<small>${s.contract_end_date?'Ends '+esc(shortDate(s.contract_end_date)):''}</small></td><td>${badge(s.access_status)}</td><td>${s.staff_id!==data.me.staff_id?`<div class="actions"><button data-link="${s.staff_id}">${s.access_status==='Active'?'Reset password':'Generate login link'}</button><button class="danger" data-disable="${s.staff_id}">Disable</button></div>`:'Your account'}</td></tr>`).join('')}</tbody></table></div></div>`;}
+function documents(){const rows=filtered().documents;return `<div class="card"><div class="section-head"><h2>Private documents</h2>${data.me.category_code!=='INTERN'?'<button class="primary" data-new="upload">+ Upload document</button>':''}</div><p class="muted">Downloads require an active account and permission for the related record. Maximum upload: 10 MB. PDF, XLSX, PNG or JPEG.</p><div class="scroll"><table><thead><tr><th>File</th><th>Client / task</th><th>Category</th><th>Added</th><th>Action</th></tr></thead><tbody>${rows.map(d=>`<tr><td>${esc(d.file_name)}<small>Version ${d.version} · ${(d.file_size_bytes/1024).toFixed(1)} KB ${d.is_locked?'· Locked':''}</small></td><td>${esc(clientName(d.client_id))}<small>${esc(firmName(d.handling_firm_id))}</small></td><td>${esc(d.category)}</td><td>${esc(shortDate(d.uploaded_at))}</td><td><button data-download="${d.document_id}">Download</button>${d.project_id&&/\.xlsx$/i.test(d.file_name)&&data.me.category_code!=='INTERN'?` <button data-v6="import" data-id="${d.document_id}">Review Excel</button>`:''}</td></tr>`).join('')}</tbody></table></div>${!rows.length?empty('No documents available to your account yet.'):''}</div>`;}
+function firms(){return `<div class="card"><div class="section-head"><h2>Handling firms</h2><button class="primary" data-new="firm">+ Add firm</button></div><p class="muted">Add the correct registered names. A client may work with several firms, while each project belongs to one firm.</p>${data.firms.map(f=>`<div class="task"><div><b>${esc(f.legal_name)}</b><small>${esc(f.firm_code)}</small></div></div>`).join('')||empty('No firms registered yet.')}</div>`;}
+function render(){bindWorkspaceSearch();const allowed=['home','task','projects','documents','time','communications'];if(data.me.category_code!=='INTERN')allowed.push('clients');if(isLeader())allowed.push('leads','staff','finance');if(isLeader())allowed.push('firms');if(!allowed.includes(view))view='home';nav();$('#greeting').textContent=view==='task'?'Task workspace':'My workspace';$('#content').innerHTML=({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>`,time:()=>v6.time()+suite.hr(),staff,documents,firms:suite.settings,communications:suite.communications,finance:suite.finance}[view])();v6.bind();presence.paint();if(view==='task'&&procedures)void procedures.paint(selectedTask);if($('#search'))$('#search').oninput=e=>document.querySelectorAll('[data-search]').forEach(r=>r.hidden=!r.dataset.search.includes(e.target.value.toLowerCase()));}
+function field(name,label,value='',type='text',extra=''){return `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;}
+function select(name,label,items,value='',blank='Choose…'){return `<label>${label}<select name="${name}">${options(items,value,blank)}</select></label>`;}
+function firmChecks(selected=[]){return `<fieldset class="full"><legend>Authorised / handling firms *</legend>${data.firms.map(f=>`<label><input type="checkbox" name="firm_ids" value="${f.firm_id}"${selected.includes(f.firm_id)?' checked':''}>${esc(f.firm_code+' · '+f.legal_name)}</label>`).join('')||'<p>Add a firm first.</p>'}</fieldset>`;}
+function modal(title,html,submit,afterSave){$('#editorTitle').textContent=title;$('#editorNotice').textContent='';$('#editorBody').innerHTML=html;$('#editor').showModal();const form=$('#editForm');if(form)form.onsubmit=async e=>{e.preventDefault();const b=form.querySelector('button[type=submit]');b.disabled=true;try{const result=await submit(new FormData(form));$('#editor').close();$('#editorBody').replaceChildren();await load();notice('Saved successfully.');if(afterSave)await afterSave(result);}catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;}};}
+const form=(body,button='Save')=>`<form id="editForm" class="form-grid">${body}<button type="submit" class="primary full">${button}</button></form>`;
+function editClient(c={}){modal(c.client_id?'Edit client':'Add existing client',form(field('company_name','Company name *',c.company_name,'text','required maxlength="200"')+field('kra_pin','KRA PIN',c.kra_pin,'text','maxlength="11"')+field('primary_sector','Primary sector · search or choose',c.primary_sector||'','text','list="sectorOptions" maxlength="100"')+`<datalist id="sectorOptions">${data.sectors.map(s=>`<option value="${esc(s.name)}">${esc(data.sectors.find(p=>p.sector_id===s.parent_id)?.name||'')}</option>`).join('')}</datalist>`+select('branch_location','Branch',branches,c.branch_location,'Missing — add later')+select('client_category','Client category',['Corporate','Non-Profit','Public Entity','Individual'],c.client_category,'Missing — add later')+firmChecks(data.client_firms?.filter(l=>l.client_id===c.client_id).map(l=>l.firm_id)||[])),f=>request({...Object.fromEntries(f),action:'client_save',client_id:c.client_id,revision:c.revision,firm_ids:f.getAll('firm_ids')}));}
+function editStaff(s={}){const choices=Object.entries(roles).filter(([k])=>data.me.category_code==='PARTNER'||!['PARTNER','MANAGER'].includes(k));modal(s.staff_id?'Edit staff profile':'Add staff member',form(field('staff_identifier','Staff ID *',s.staff_identifier,'text',s.staff_id?'readonly':'required maxlength="80"')+field('login_id','Login ID *',s.login_id,'text',s.staff_id?'readonly':'required pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,79}"')+field('full_name','Full name *',s.full_name,'text','required maxlength="160"')+select('category_code','Staff category *',choices,s.category_code||'ASSISTANT')+select('employment_type','Employment type *',['Permanent','Contract','Internship','Consultant'],s.employment_type||'Contract')+select('billing_status','Billing status',['Billable','Partially billable','Non-billable'],s.billing_status||'Billable')+select('branch_location','Branch',branches,s.branch_location)+field('contract_start_date','Contract start',s.contract_start_date?.slice(0,10),'date')+field('contract_end_date','Contract end (required for Contract / Intern)',s.contract_end_date?.slice(0,10),'date')+firmChecks(data.staff_firms.filter(l=>l.staff_id===s.staff_id).map(l=>l.firm_id))),f=>request({...Object.fromEntries(f),action:'staff_save',staff_id:s.staff_id,revision:s.revision,firm_ids:f.getAll('firm_ids')}));}
+function editTask(t){modal('Update assigned task',form(`<div class="full"><h3>${esc(t.task_name)}</h3><p>${esc(t.description||'')}</p>${data.task_events.filter(e=>e.task_id===t.task_id).slice(0,10).map(e=>`<small>${shortDate(e.created_at)} · ${esc(e.event_type)}: ${esc(e.reason)}</small>`).join('')}</div>`+select('status','Task status',states,t.status)+field('filing_date','Actual filing date (required for filing tasks)',t.filing_date?.slice(0,10)||'','date',`max="${today()}"`)+`<label class="full">Blocked reason<textarea name="blocked_reason" maxlength="1000">${esc(t.blocked_reason||'')}</textarea></label>`),f=>request({...Object.fromEntries(f),action:'task_status',task_id:t.task_id,revision:t.revision}));}
+function addProject(){modal('Create draft project',form(field('project_name','Project name *','','text','required maxlength="200"')+select('client_id','Client *',data.clients.map(c=>[c.client_id,c.company_name]))+select('firm_id','Handling firm *',data.firms.map(f=>[f.firm_id,f.firm_code]))+select('service_code','Service *',data.services.map(s=>[s.service_code,s.service_name]))+select('staff_id','Initial team member',data.staff.map(s=>[s.staff_id,s.full_name]),data.me.staff_id)+`<p class="info full">This creates a draft project for the pilot. Activation requires verified onboarding and engagement approval.</p>`),f=>request({...Object.fromEntries(f),action:'project_save'}));}
+function addTask(){modal('Assign task',form(field('task_name','Task name *','','text','required maxlength="200"')+select('project_id','Project *',data.projects.map(p=>[p.project_id,p.project_name]))+select('assigned_to','Assigned staff *',data.staff.map(s=>[s.staff_id,s.full_name]))+field('due_date','Due date (5:00 PM EAT)','','date','required')+`<label class="full">Instructions<textarea name="description" maxlength="2000"></textarea></label>`),f=>request({...Object.fromEntries(f),action:'task_create'}));}
+function upload(preset={}){
+ const cats=isLeader()?['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports']:data.me.category_code==='SUPERVISOR'?['Current Year Audit','Tax Returns','Working Papers','PBC Documents']:['Working Papers'];
+ modal('Upload private document',form(select('client_id','Client *',data.clients.map(c=>[c.client_id,c.company_name]))+select('firm_id','Handling firm *',[])+select('project_id',isLeader()?'Project (optional)':'Project *',[])+select('task_id',data.me.category_code==='ASSISTANT'?'Assigned task *':'Task (optional)',[])+`<p id="uploadScopeHint" class="info full" role="status"></p>`+select('category','Folder *',cats,'Working Papers')+field('file','File *','','file','required accept=".pdf,.xlsx,.png,.jpg,.jpeg"')+`<p class="muted full">This saves the original document privately. For XLSX files linked to a project, use Review Excel in the document list to select a worksheet, map columns and import rows. Permanent-file documents, engagement letters, BRS receipts and final reports lock automatically.</p>`,'Upload'),async f=>{if(preset.task_id)for(const [key,value] of Object.entries({client_id:preset.client_id,firm_id:preset.firm_id,project_id:preset.project_id,task_id:preset.task_id,category:preset.category||'Working Papers'}))f.set(key,value);const result=await request(f,{file:true});return result;},preset.excelOnly?r=>v6.importWorkbook(r.document_id,{default_dataset:preset.dataset,default_start:preset.period_start,default_end:preset.period_end}):undefined);
+ const formEl=$('#editForm'),controls=Object.fromEntries(['client_id','firm_id','project_id','task_id'].map(name=>[name,formEl.elements.namedItem(name)]));
+ controls.client_id.required=true;controls.firm_id.required=true;
+ controls.project_id.required=!isLeader();controls.task_id.required=data.me.category_code==='ASSISTANT';
+ function refresh(changed){
+  if(changed==='client_id')controls.firm_id.value='';
+  if(['client_id','firm_id'].includes(changed))controls.project_id.value='';
+  if(['client_id','firm_id','project_id'].includes(changed))controls.task_id.value='';
+  let selection=Object.fromEntries(Object.entries(controls).map(([name,el])=>[name,el.value]));
+  let choices=uploadChoices(data,selection);
+  const selectedFirm=choices.firms.some(f=>f.firm_id===selection.firm_id)?selection.firm_id:choices.firms.length===1?choices.firms[0].firm_id:'';
+  controls.firm_id.innerHTML=options(choices.firms.map(f=>[f.firm_id,f.firm_code]),selectedFirm,'Choose handling firm…');
+  selection.firm_id=controls.firm_id.value;choices=uploadChoices(data,selection);
+  controls.project_id.innerHTML=options(choices.projects.map(p=>[p.project_id,p.project_name]),selection.project_id,isLeader()?'Client-level document (no project)':'Choose project…');
+  selection.project_id=controls.project_id.value;choices=uploadChoices(data,selection);
+  controls.task_id.innerHTML=options(choices.tasks.map(t=>[t.task_id,t.task_name]),selection.task_id,data.me.category_code==='ASSISTANT'?'Choose assigned task…':'No task link');
+  controls.firm_id.disabled=!selection.client_id||!choices.firms.length;
+  controls.project_id.disabled=!selection.firm_id||!choices.projects.length;
+  controls.task_id.disabled=!selection.project_id||!choices.tasks.length;
+  const ready=!!selection.client_id&&!!selection.firm_id&&(isLeader()||!!selection.project_id)&&(data.me.category_code!=='ASSISTANT'||!!controls.task_id.value);
+  formEl.querySelector('button[type=submit]').disabled=!ready;
+  $('#uploadScopeHint').textContent=!selection.client_id?'Start by choosing the client. Only that client’s firms, projects and tasks will appear.':!choices.firms.length?'This client has no authorised handling firm. Ask your Manager to update the client profile.':!selection.firm_id?'Choose the firm handling this document.':!choices.projects.length?(isLeader()?'No open project exists for this client and firm yet. You can save a client-level document now, or create the correct project first.':'No assigned open project is available. Ask your Manager to create or assign the correct project.'):data.me.category_code==='ASSISTANT'&&!choices.tasks.length&&selection.project_id?'No tasks are assigned to you in this project. Ask your Manager to assign the task.':'Check the client, firm and optional project/task link before uploading.';
+ }
+ for(const [name,el] of Object.entries(controls))el.onchange=()=>refresh(name);
+ refresh();
+ if(preset.client_id){controls.client_id.value=preset.client_id;refresh('client_id');if(preset.firm_id){controls.firm_id.value=preset.firm_id;refresh('firm_id');}if(preset.project_id){controls.project_id.value=preset.project_id;refresh('project_id');}if(preset.task_id){controls.task_id.value=preset.task_id;refresh('task_id');}if(preset.category)formEl.elements.category.value=preset.category;}
+ if(preset.excelOnly)formEl.elements.file.accept='.xlsx';
+ if(preset.task_id){for(const el of Object.values(controls))el.disabled=true;formEl.elements.category.disabled=true;$('#uploadScopeHint').textContent='Client, firm, project and task are linked to this workspace. '+(preset.excelOnly?'Choose the purchases/source Excel; the worksheet review opens after upload.':'Upload supporting PDF or other permitted evidence.');}
+}
+async function credentials(id){
+ const s=data.staff.find(x=>x.staff_id===id);
+ modal('Generate private login link',`<p>Generate a fresh 24-hour setup link for <b>${esc(s.full_name)}</b> (${esc(s.login_id)})?</p><p class="info">The 24 hours start when you generate the link. Earlier setup links and existing ERP sessions stop working. Share only the newest link with this staff member.</p><button id="confirmLink" class="primary">Confirm & generate link</button>`);
+ $('#confirmLink').onclick=async e=>{e.target.disabled=true;try{
+  const r=await request({action:'account_link',staff_id:id}),expires=setupExpiryText(r.expires_at);
+  $('#editorBody').innerHTML=`<p><b>Login ID:</b> ${esc(r.login_id)}</p><p><b>Valid until:</b> ${esc(expires)} (24 hours from generation)</p><label>Newest private setup link<textarea class="setup-link" id="privateLink" readonly>${esc(r.setup_url)}</textarea></label><button id="copyLink" class="primary">Copy login ID & newest link</button><p class="muted">Use once to save a password. Opening the link does not use it. Earlier links will not work, and this link will not be shown again after you close this dialog.</p>`;
+  $('#copyLink').onclick=async()=>{try{await navigator.clipboard.writeText('Login ID: '+r.login_id+'\nSetup link: '+r.setup_url+'\nValid until: '+expires+'\nUse this newest link once to save your password.');$('#editorNotice').textContent='Copied with the expiry time. Share privately with this staff member.';}catch{$('#privateLink').select();$('#editorNotice').textContent='Select and copy the link above.';}};await load();
+ }catch(err){$('#editorNotice').textContent=err.message;e.target.disabled=false;}};
+}
+$('#closeEditor').onclick=()=>{$('#editor').close();$('#editorBody').replaceChildren();};$('#editor').addEventListener('close',()=>$('#editorBody').replaceChildren());
+$('#firmFilter').onchange=e=>{firm=e.target.value;render();};
+document.addEventListener('click',async e=>{const b=e.target.closest('button,a[data-open-task],a[data-open-project],a[data-workspace-view]');
+ if(!b){const row=e.target.closest('[data-task-row]');if(row&&!e.target.closest('a,input,select,textarea,label')&&!window.getSelection()?.toString())navigateWorkspace('task',row.dataset.taskRow);return;}
+ if(b.matches('a')){if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();}
+ try{
+ if(b.dataset.openTask)navigateWorkspace('task',b.dataset.openTask);
+ if(b.dataset.openProject)navigateWorkspace('projects',b.dataset.openProject);
+ if(b.dataset.workspaceView)navigateWorkspace(b.dataset.workspaceView);
+ if(b.dataset.dashboard==='read-alert'){await request({action:'notification_read',notification_id:b.dataset.id});await load();}
+ if(b.dataset.searchProject)navigateWorkspace('projects',b.dataset.searchProject);
+ if(b.closest('#workspaceSearchResults'))$('#workspaceSearchResults').hidden=true;
+ if(b.dataset.view)navigateWorkspace(b.dataset.view);
+ if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload,firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}
+ if(b.dataset.client)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
+ if(b.dataset.staff)editStaff(data.staff.find(x=>x.staff_id===b.dataset.staff));
+ if(b.dataset.task)navigateWorkspace('task',b.dataset.task);
+ if(b.dataset.taskEdit){const t=data.tasks.find(x=>x.task_id===b.dataset.taskEdit);if(t)editTask(t);}
+ if(b.dataset.taskExcel){const t=data.tasks.find(x=>x.task_id===b.dataset.taskExcel),p=data.projects.find(x=>x.project_id===t?.project_id);if(t&&p)upload({client_id:p.client_id,firm_id:p.handling_firm_id,project_id:p.project_id,task_id:t.task_id,category:'Working Papers',excelOnly:true,dataset:/bank/i.test(t.task_name)&&!/purchases|mapping/i.test(t.task_name)?'Bank':/sales/i.test(t.task_name)?'Sales':'Purchases',period_start:t.period_start?.slice(0,10),period_end:t.period_end?.slice(0,10)});}
+ if(b.dataset.taskUpload){const t=data.tasks.find(x=>x.task_id===b.dataset.taskUpload),p=data.projects.find(x=>x.project_id===t?.project_id);if(t&&p)upload({client_id:p.client_id,firm_id:p.handling_firm_id,project_id:p.project_id,task_id:t.task_id,category:'Working Papers'});}
+ if(b.dataset.link)await credentials(b.dataset.link);
+ if(b.dataset.disable){const id=b.dataset.disable;modal('Disable staff access',`<p>Disable ${esc(staffName(id))}? Historical work will remain, and the next request from this account will be blocked.</p><button id="confirmDisable" class="primary">Confirm disable</button>`);$('#confirmDisable').onclick=async()=>{try{await request({action:'staff_disable',staff_id:id});$('#editor').close();await load();notice('Staff access disabled.');}catch(err){$('#editorNotice').textContent=err.message;}};}
+ if(b.dataset.download){b.disabled=true;try{const d=data.documents.find(x=>x.document_id===b.dataset.download),blob=await request({action:'download',document_id:d.document_id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=d.file_name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}finally{b.disabled=false;}}
+ }catch(err){notice(err.message,true);}});
+$('#loginForm').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{const p=Object.fromEntries(new FormData(e.target)),r=await request({...p,action:'login'},{auth:false});session.start(r);e.target.reset();await load();notice('Signed in to the shared staff workspace.');}catch(err){notice(err.message,true);}finally{b.disabled=false;}};
+async function checkSetupLink(){
+ const current=setupToken,b=$('#setupForm button[type=submit]');b.disabled=true;
+ if(!current){$('#setupState').textContent='Open the complete setup link copied by your Manager.';return;}
+ $('#setupState').textContent='Checking this setup link…';
+ try{const r=await request({action:'setup_status',token:current},{auth:false});if(current!==setupToken)return;
+  $('#setupState').textContent=r.state==='ready'?'Valid until '+setupExpiryText(r.expires_at)+'. Opening this page does not use the link.':r.message;
+  b.disabled=r.state!=='ready';if(r.state!=='ready')notice(r.message,true);else notice('');
+ }catch(err){if(current===setupToken){$('#setupState').textContent='Could not check the link. Click Check link again.';notice(err.message,true);}}
+}
+function openSetup(value){
+ setupToken=value;signedOut();$('#loginForm').hidden=true;$('#setupForm').hidden=false;$('#setupForm').reset();notice('');void checkSetupLink();
+}
+$('#checkSetup').onclick=()=>void checkSetupLink();
+$('#backToSignIn').onclick=()=>{setupToken=null;$('#setupForm').reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Sign in using your staff login ID and the password you saved.');};
+$('#setupForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return notice('Passwords do not match.',true);const b=e.target.querySelector('button[type=submit]'),current=setupToken;b.disabled=true;try{await request({action:'setup',token:current,password:f.get('password')},{auth:false});if(current!==setupToken)return;setupToken=null;e.target.reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Password saved. Sign in using the login ID provided with your link.');}catch(err){if(current===setupToken){notice(err.message,true);b.disabled=false;}}};
+watchStaffActivity(session);
+for(const button of document.querySelectorAll('[data-continue-session]'))button.onclick=()=>{if(session.activity())void session.pulse();};
+const v6=createWorkspaceUI({$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openProject:id=>navigateWorkspace('projects',id)});
+const leads=createLeadsUI({esc,field,select,form,modal,request,notice,badge,shortDate,firmName,clientName,today,data:()=>data,firm:()=>firm,render});
+const suite=createSuiteUI({upload,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openTask:id=>navigateWorkspace('task',id)});
+presence=createPresenceUI({$,esc,modal,form,field,select,request,load,notice,logout:()=>signedOut('Signed out.'),logTime:id=>v6.editTime(id),data:()=>data});
+procedures=createProcedureUI({$,esc,field,select,form,modal,request,notice,today,data:()=>data});
+const setupWatcher=watchSetupLinks(openSetup);
+if(!setupWatcher.hasSetup&&session.active)load().catch(e=>signedOut(e.message));
+
+async function openCommunicationHash(){const ref=new URLSearchParams(location.hash.slice(1)).get('communication');if(!ref||!data)return;history.replaceState(null,'',location.pathname+location.search);try{await suite.openReference(ref);}catch(err){notice('This communication is unavailable or your account does not have permission to view it.',true);}}
+window.addEventListener('hashchange',()=>void openCommunicationHash());
+
+function navigateWorkspace(next,id=''){
+ const params=new URLSearchParams(id?{[next==='task'?'task':'project']:id}:{view:next}),hash='#'+params;
+ if(location.hash!==hash)history.pushState(null,'',location.pathname+location.search+hash);
+ applyWorkspaceRoute();
+}
+function applyWorkspaceRoute(paint=true){
+ if(!data)return;const route=workspaceRoute(location.hash);if(!route)return;
+ view=route.view;missingProject=false;
+ if(view==='task')selectedTask=route.id;
+ const projectId=route.view==='task'?data.tasks.find(t=>t.task_id===route.id)?.project_id:route.id;
+ if(projectId){const p=data.projects.find(p=>p.project_id===projectId);if(p){if(firm&&firm!==p.handling_firm_id){firm=p.handling_firm_id;$('#firmFilter').value=firm;}v6.selectProject(p.project_id);}else if(view==='projects')missingProject=true;}
+ else if(view==='projects')v6.selectProject('');
+ if(paint){render();const heading=$('#taskWorkspaceTitle');if(heading)heading.focus();}
+}
+window.addEventListener('hashchange',()=>applyWorkspaceRoute());
