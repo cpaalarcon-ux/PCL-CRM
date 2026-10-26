@@ -32,3 +32,9 @@ test('selective reader ignores unrelated oversized worksheets but rejects choosi
 test('XML document types are rejected before processing entity declarations',async()=>{
  const z=new JSZip();z.file('xl/workbook.xml','<!DOCTYPE workbook [<!ENTITY external SYSTEM "file:///private">]><workbook/>');const bytes=await z.generateAsync({type:'uint8array'});await assert.rejects(()=>readWorkbookSheet(bytes,null),/document types/);
 });
+test('16-column manual non-eTIMS template is recognised without renaming Sheet1',()=>{
+ const w=book(),s=w.addWorksheet('Sheet1');s.getRow(4).values=['Month incurred','Payee / supplier','PIN / country','Date','Document reference','Description','Legal non-eTIMS category','Gross amount','Input VAT claim','Legal basis / evidence','Return code','TB code','Tax treatment','Reviewer','Evidence file / reference','Review status'];
+ for(let i=5;i<=104;i++)s.getCell('M'+i).value={formula:'IF(A'+i+'="","",0)'};
+ const t=detectTemplate(s);assert.equal(t.kind,'D09');assert.equal(t.blocks[0].header_row,4);assert.equal(t.blocks[0].headers.length,16);for(let i=5;i<=104;i++)assert.equal(templateRow(s,i,t,t.blocks[0]),null);
+ const wrapped={name:'Pack.zip / expenditure.xlsx :: D09 Non eTIMS',rowCount:s.rowCount,columnCount:s.columnCount,getRow:i=>s.getRow(i)};assert.equal(detectTemplate(wrapped).kind,'D09');
+});

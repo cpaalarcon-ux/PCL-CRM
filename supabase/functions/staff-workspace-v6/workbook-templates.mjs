@@ -23,7 +23,10 @@ function mapHeaders(headers){const m={};for(const [k,names] of Object.entries(al
 const formula=c=>!!(c&&typeof c==='object'&&(c.formula||c.sharedFormula));
 const filled=v=>v!==''&&v!==null&&v!==undefined&&v!==0;
 export function detectTemplate(sheet){
- const kind=/^B02[A-D]\b/i.test(sheet.name)?'B02':/^B03\b/i.test(sheet.name)?'B03':/^D09\b/i.test(sheet.name)?'D09':null;if(!kind)return null;
+ const sourceName=sheet.name.split(' :: ').at(-1);
+ let kind=/^B02[A-D]\b/i.test(sourceName)?'B02':/^B03\b/i.test(sourceName)?'B03':/^D09\b/i.test(sourceName)?'D09':null;
+ if(!kind&&sheet.columnCount===16)for(let i=1;i<=Math.min(sheet.rowCount,10);i++){const m=mapHeaders(sheetValues(sheet,i));if(['return_month','party','pin_country','date','invoice','description','amount','legal_category','legal_basis','evidence'].every(k=>m[k])){kind='D09';break;}}
+ if(!kind)return null;
  const required=kind==='B02'?['purchase_type','party','party_pin','date','invoice','amount','vat','route','category_code']:kind==='B03'?['return_month','invoice','party','date','amount','route','evidence']:['return_month','party','pin_country','date','invoice','description','amount','legal_category','legal_basis','evidence'];
  const found=[];
  for(let i=1;i<=sheet.rowCount;i++){
@@ -43,7 +46,7 @@ export function detectTemplate(sheet){
   if(kind==='B02')for(let i=Math.max(1,f.header_row-2);i<f.header_row;i++){const vals=sheetValues(sheet,i);if(/MONTH/i.test(String(vals[0]))){period=excelDate(vals[1]);if(period)break;}}
   return {...f,first_row:f.header_row+1,last_row:last,period_start:period?period.slice(0,8)+'01':null,period_end:period?new Date(Date.UTC(Number(period.slice(0,4)),Number(period.slice(5,7)),0)).toISOString().slice(0,10):null};
  });
- return {kind,source_sheet:sheet.name,dataset:kind==='B02'?'Purchases':kind==='B03'?'Expenditure':'Non-eTIMS',blocks};
+ return {kind,source_sheet:sheet.name,source_sheet_name:sourceName,dataset:kind==='B02'?'Purchases':kind==='B03'?'Expenditure':'Non-eTIMS',blocks};
 }
 export function templateRow(sheet,i,template,block){
  const vals=sheetValues(sheet,i),m=block.column_map;
@@ -68,7 +71,7 @@ export function normalizeTemplate(values,template,block,start,end){
  row.return_month=template.kind==='B02'?block.period_start:row.return_month;
  const period=row.return_month||row.date;if(period&&(period<start||period>end))issues.push('Return / incurred month is outside the selected period.');
  row.template_kind=template.kind;row.source_sheet=template.source_sheet;
- if(template.kind==='B02'&&/^B02B\b/i.test(template.source_sheet))row.legacy_tax_review=true;
+ if(template.kind==='B02'&&/^B02B\b/i.test(template.source_sheet_name||template.source_sheet))row.legacy_tax_review=true;
  const line=row.line_id||[row.description||'',row.customs_entry||'',row.purchase_type||''].map(norm).join('|');
  const key=JSON.stringify([norm(row.invoice),norm(row.party_pin)||norm(row.party),line]);
  const route=template.kind==='B02'?Number(row.route):2;
