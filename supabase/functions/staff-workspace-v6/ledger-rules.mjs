@@ -40,7 +40,8 @@ export function costJournal(row){
  if(!row.account_code||!row.route)fail(400,'Map every selected purchase first.');
  if(row.source_revision!==row.revision||!['Eligible','Excluded'].includes(row.decision)||!row.income_treatment||row.income_treatment==='Review')fail(400,'Each source needs current independent VAT and income-tax review.');
  if(row.dataset==='Non-eTIMS'&&(!specificExpense(row.account_code)||row.route!==2||!row.review_details?.legal_basis||!row.review_details?.evidence))fail(400,'Specific non-eTIMS expenditure needs an operating/finance expense category, supported basis and receipt. Stock, PPE and payroll use their own schedules.');
- const net=cashAmount(row.normalized.amount),vat=cashAmount(row.normalized.vat||0),claim=row.decision==='Eligible'?Math.round(vat*Number(row.deductible_percentage)/100):0;
+ if(row.normalized.vat==null)fail(400,'Confirm the source VAT amount, including an explicit zero where applicable, before posting.');
+ const net=cashAmount(row.normalized.amount),vat=cashAmount(row.normalized.vat),claim=row.decision==='Eligible'?Math.round(vat*Number(row.deductible_percentage)/100):0;
  if(!Number.isFinite(claim)||Math.abs(claim)>Math.abs(vat)||claim&&Math.sign(claim)!==Math.sign(vat))fail(400,'VAT recovery exceeds the source amount.');
  const signed=(code,value)=>({account_code:code,debit:Math.max(value,0)/100,credit:Math.max(-value,0)/100,source_status:'Confirmed',source_reference:row.row_id,description:row.narration||row.normalized.description||''});
  return [signed(row.account_code,net+vat-claim),...(claim?[signed('10160',claim)]:[]),signed('20000',-net-vat)];

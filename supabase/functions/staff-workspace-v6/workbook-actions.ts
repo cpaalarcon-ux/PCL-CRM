@@ -1,3 +1,5 @@
+import {detectImportProfile,profilePurchase} from './import-profiles.mjs';
+import {purchaseUploadProfile,purchaseUploadRows,purchaseUploadMap,purchaseUploadHeaders,purchaseUploadRates,purchaseUploadValues,purchaseUploadId,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from './purchase-upload.mjs';
 import {readSourceSheet} from './source-reader.mjs';
 import categories from './purchase-categories.json' with {type:'json'};
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
@@ -12,15 +14,17 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  if(p.action==='workbook_rows'){
   const pid=uuid(p.project_id),offset=Math.max(0,Math.min(100000,Math.trunc(Number(p.offset)||0)));
   one(await tx`select project_id from erp_private.projects where project_id=${pid}`);
-  const search='%'+text(p.search||'',160,false)+'%',mapping=choice(p.mapping||'All',['All','Unmapped','Inventory','Expenditure','PPE']),dataset=choice(p.dataset||'All',['Costs','All','Purchases','Expenditure','Non-eTIMS','Sales','POS','Bank']);
+  const search='%'+text(p.search||'',160,false)+'%',mapping=choice(p.mapping||'All',['All','Unmapped','Inventory','Expenditure','PPE']),dataset=choice(p.dataset||'All',['Costs','All','Purchases','Expenditure','Non-eTIMS','Sales','POS','Bank']),rate=choice(p.vat_category||'All',['All','16%','8%','0%','Exempt','Non-eTIMS','Unconfirmed']);
   const rows=await tx`select r.*,b.sheet_name,b.document_id,v.decision,v.source_revision from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id)
    where r.project_id=${pid} and not r.is_split_parent and (${dataset}='All' or ${dataset}='Costs' and r.dataset in ('Purchases','Expenditure','Non-eTIMS') or r.dataset=${dataset})
    and (${mapping}='All' or ${mapping}='Unmapped' and r.account_code is null or r.account_code is not null and r.route=case ${mapping} when 'Inventory' then 1 when 'Expenditure' then 2 when 'PPE' then 3 else 0 end)
+   and (${rate}='All' or (case when r.dataset='Non-eTIMS' then 'Non-eTIMS' else coalesce(r.normalized->>'vat_category','Unconfirmed') end)=${rate})
    and concat_ws(' ',r.normalized->>'invoice',r.normalized->>'reference',r.normalized->>'party',r.normalized->>'party_pin',r.normalized->>'description') ilike ${search}
    order by r.created_at,r.source_row,r.row_id limit 100 offset ${offset}`;
   const total=one(await tx`select count(*)::int count from erp_private.workbook_rows r where r.project_id=${pid} and not r.is_split_parent
    and (${dataset}='All' or ${dataset}='Costs' and r.dataset in ('Purchases','Expenditure','Non-eTIMS') or r.dataset=${dataset})
    and (${mapping}='All' or ${mapping}='Unmapped' and r.account_code is null or r.account_code is not null and r.route=case ${mapping} when 'Inventory' then 1 when 'Expenditure' then 2 when 'PPE' then 3 else 0 end)
+   and (${rate}='All' or (case when r.dataset='Non-eTIMS' then 'Non-eTIMS' else coalesce(r.normalized->>'vat_category','Unconfirmed') end)=${rate})
    and concat_ws(' ',r.normalized->>'invoice',r.normalized->>'reference',r.normalized->>'party',r.normalized->>'party_pin',r.normalized->>'description') ilike ${search}`).count;
   return {policies:await tx`select * from erp_private.stock_policy_versions where client_id=(select client_id from erp_private.projects where project_id=${pid}) order by effective_from desc`,activities:await tx`select * from erp_private.client_activities where client_id=(select client_id from erp_private.projects where project_id=${pid}) order by activity_name`,accounts:await tx`select * from erp_private.account_catalog order by code`,policy:(await tx`select * from erp_private.accounting_policies where client_id=(select client_id from erp_private.projects where project_id=${pid})`)[0]||null,rows:rows.map((r:any)=>({...r,warnings:rowWarnings(r)})),legal_categories:legalCategories,total,
    categories:allCategories,
@@ -46,38 +50,49 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  const bytes=new Uint8Array(await result.data.arrayBuffer());
  const sourceInfo:any=await readSourceSheet(bytes,d.file_name,p.sheet_name?text(p.sheet_name,500):null);const {sheet,sheets}=sourceInfo;
  if(sheet.columnCount>80||sheet.rowCount>20000)fail(400,'Split the worksheet into at most 80 columns and 20,000 rows.');
- const template=detectTemplate(sheet);
- const header=p.header_row===0||p.header_row==='0'?0:Math.trunc(Number(p.header_row)||template?.blocks[0].header_row||(sourceInfo.headerless?0:1));
+ const standard=purchaseUploadProfile(sheet,p.upload_format===purchaseUploadId),standardData=standard?purchaseUploadRows(sheet):null;
+ const template=standard?null:detectTemplate(sheet),profile=standard||detectImportProfile(sheet);
+ if(standard&&p.header_row!=null&&Number(p.header_row)!==1)fail(400,'The standard purchase template reserves row 1 for headings. Transactions start on row 2.');
+ const header=standard?1:p.header_row===0||p.header_row==='0'?0:Math.trunc(Number(p.header_row)||template?.blocks[0].header_row||profile?.header_row||(sourceInfo.headerless?0:1));
  if(header<0||header>sheet.rowCount||(!template&&header>200))fail(400,'Choose a valid header row.');
  const block=template?.blocks.find((b:any)=>b.header_row===header);
  if(template&&!block)fail(400,'Choose one of the recognised workbook sections.');
  const values=(i:number)=>sheetValues(sheet,i);
+ const previewTotal=standard?standardData.rows.length:Math.max(0,(block?.last_row||sheet.rowCount)-header),previewOffset=Math.max(0,Math.min(previewTotal,Math.trunc(Number(p.preview_offset)||0)));
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
- if(p.action==='workbook_preview')return {client_id:project.client_id,client_name:project.company_name,client_pin:project.kra_pin,document_id:d.document_id,project_id:d.project_id,sheets,sheet_name:sheet.name,header_row:header,headers:block?.headers||(header===0?Array.from({length:sheet.columnCount},(_,i)=>'Column '+(i+1)):values(header)),source_inventory:sourceInfo.inventory||null,source_adapter:sourceInfo.adapter||'XLSX',template:template?{...template,selected:block}:null,
-  preview:Array.from({length:Math.min(12,Math.max(0,(block?.last_row||sheet.rowCount)-header))},(_,i)=>({row:header+i+1,values:values(header+i+1).slice(0,block?.headers.length||sheet.columnCount)})),categories:allCategories};
- if(['text/csv','application/zip'].includes(d.mime_type)&&p.confirmed_client_id!==project.client_id)fail(400,'Confirm the legal client before committing this source.');
+ if(p.action==='workbook_preview')return {client_id:project.client_id,client_name:project.company_name,client_pin:project.kra_pin,document_id:d.document_id,project_id:d.project_id,sheets,sheet_name:sheet.name,header_row:header,headers:standard?purchaseUploadHeaders:block?.headers||(header===0?Array.from({length:sheet.columnCount},(_,i)=>'Column '+(i+1)):values(header)),import_profile:profile,source_inventory:sourceInfo.inventory||null,source_adapter:sourceInfo.adapter||'XLSX',template:template?{...template,selected:block}:null,
+  standard_purchase:standard?{id:purchaseUploadId,rates:purchaseUploadRates,ignored_count:standardData.ignored,summary:p.vat_category&&p.period_start&&p.period_end?purchaseUploadSummary(standardData.rows,choice(p.vat_category,purchaseUploadRates),date(p.period_start),date(p.period_end)):null}:null,
+  preview_total:previewTotal,preview_offset:previewOffset,preview_page_size:200,
+  preview:standard?standardData.rows.slice(previewOffset,previewOffset+200).map(r=>({row:r.source_row,values:r.values})):Array.from({length:Math.min(200,previewTotal-previewOffset)},(_,i)=>({row:header+previewOffset+i+1,values:values(header+previewOffset+i+1).slice(0,block?.headers.length||sheet.columnCount)})),categories:allCategories};
+ if((standard||['text/csv','application/zip'].includes(d.mime_type))&&p.confirmed_client_id!==project.client_id)fail(400,'Confirm the legal client before committing this source.');
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.project_id+':tax'},0))`;
- const dataset=template?template.dataset:choice(p.dataset,['Sales','POS','Purchases','Bank','General']);
+ const dataset=template?template.dataset:profile?.recognised?profile.dataset:choice(p.dataset,['Sales','POS','Purchases','Bank','General']);
+ if(['Sales','Payroll'].includes(dataset))fail(400,'Use Sales totals / Payroll imports to confirm this source without creating invoice records.');
+ if(profile&&!profile.recognised)fail(400,'Review the changed source format: '+(profile.errors||[]).join(' '));
  if(template&&p.dataset&&p.dataset!==dataset)fail(400,'The import type must match the recognised workbook.');
- if(sourceInfo.section&&!p.section_contract_confirmed)fail(400,'Confirm the selected KRA CSV section column mapping. A section name alone is not a validated filing contract.');
+ if(sourceInfo.section&&!profile?.recognised&&!p.section_contract_confirmed)fail(400,'Confirm the selected KRA CSV section column mapping. A section name alone is not a validated filing contract.');
  const start=date(p.period_start),end=date(p.period_end);
- if(!start||!end||end<start)fail(400,'Choose the import period.');const map=block?block.column_map:importMap(p.column_map,dataset),batch=crypto.randomUUID();
- const first=Math.trunc(Number(p.first_row)||block?.first_row||header+1),last=Math.trunc(Number(p.last_row)||block?.last_row||sheet.rowCount);
- if(first<=header||last<first||last>sheet.rowCount||last-first>=10000||block&&(first<block.first_row||last>block.last_row))fail(400,'Choose up to 10,000 data rows within the selected section.');
- const signature=await hash(JSON.stringify({version:4,digest:d.sha256,sheet:sheet.name,header,dataset,start,end,first,last,map}));
+ if(!start||!end||end<start)fail(400,'Choose the import period.');const map=block?block.column_map:profile?.recognised?profile.column_map:importMap(p.column_map,dataset),batch=crypto.randomUUID();
+ const first=standard?2:Number(p.first_row||block?.first_row||header+1),last=standard?sheet.rowCount:Number(p.last_row||block?.last_row||sheet.rowCount);
+ if(!standard)importRowRange({header,first,last,rowCount:sheet.rowCount,block});
+ if(standard&&!standardData.rows.length)fail(400,'No purchase transactions found. Keep the headings in row 1 and paste transactions from row 2.');
+ if(standard&&!purchaseUploadRates.includes(p.vat_category))fail(400,'Select the VAT category in the ERP: 16%, 8%, 0% or Exempt.');
+ const selectedRate=standard?p.vat_category:null;
+ const signature=await hash(JSON.stringify({version:5,digest:d.sha256,sheet:sheet.name,header,dataset,start,end,first,last,map,profile:profile?.id||null,vat_category:selectedRate}));
  const previous=(await tx`select b.* from erp_private.workbook_import_requests r join erp_private.workbook_batches b using(batch_id) where r.project_id=${project.project_id} and r.signature=${signature}`)[0];
  if(previous)return {ok:true,batch_id:previous.batch_id,duplicate_upload:true,dataset:previous.dataset,source_count:previous.source_count,new_count:0,duplicate_count:previous.new_count+previous.duplicate_count,rejected_count:previous.rejected_count,rejections:[]};
  const isCost=['Purchases','Expenditure','Non-eTIMS'].includes(dataset);
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':'+(isCost?'Cost':dataset)},0))`;
  let source=0,added=0,duplicates=0;const rejected:any[]=[],parsed:any[]=[];
- const canonical=(r:any)=>JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k])=>!template||['date','invoice','party','party_pin','line_id','description','customs_entry','amount','vat','purchase_type','original_invoice'].includes(k)).sort(([a],[b])=>a.localeCompare(b))));
+ const canonical=(r:any)=>JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k])=>!template&&!standard||['date','invoice','party','party_pin','line_id','description','customs_entry','amount','vat','purchase_type','original_invoice','original_invoice_date'].includes(k)||standard&&k==='vat_category').sort(([a],[b])=>a.localeCompare(b))));
  let ignored=0;
  for(let i=first;i<=last;i++){
-  const v=template?templateRow(sheet,i,template,block):values(i);if(!v){ignored++;continue;}
-  const n=template?normalizeTemplate(v,template,block,start,end):normalizeImport(v,map,dataset,start,end);if(!n){ignored++;continue;}source++;
+  const v=standard?purchaseUploadValues(sheet,i):template?templateRow(sheet,i,template,block):values(i);if(!v||standard&&!v.some(v=>String(v??'').trim())){ignored++;continue;}
+  const n=standard?normalizePurchaseUpload(v,selectedRate,start,end):template?normalizeTemplate(v,template,block,start,end):profile?.recognised?profilePurchase(v,profile,start,end):normalizeImport(v,map,dataset,start,end);if(!n){ignored++;continue;}source++;
   if(n.issues.length){rejected.push({row:i,raw:n.raw,reason:n.issues.join(' ')});continue;}
   parsed.push({...n,source_row:i,row_key:await hash(n.key)});
  }
+ if(standard&&rejected.length)fail(400,`${rejected.length} purchase row(s) need correction. No purchase rows were imported. ${rejected.slice(0,3).map(r=>'Row '+r.row+': '+r.reason).join(' ')}`);
  const known=new Map<string,string>();
  for(let i=0;i<parsed.length;i+=500){const keys=parsed.slice(i,i+500).map(n=>n.row_key);
   const rows=await tx`select row_key,normalized from erp_private.workbook_rows where client_id=${project.client_id} and parent_row_id is null and dataset=${dataset} and row_key=any(${tx.array(keys)}::text[])`;

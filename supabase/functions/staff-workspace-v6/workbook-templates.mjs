@@ -6,7 +6,7 @@ const aliases={
  purchase_type:['TYPE OF PURCHASES','TYPE'],party_pin:['PIN OF SUPPLIER','SUPPLIER PIN'],party:['NAME OF SUPPLIER','SUPPLIER NAME','SUPPLIER','PAYEE / SUPPLIER'],
  date:['INVOICE DATE','INV DATE','DATE'],invoice:['INVOICE NO.','INV NUMBER','INVOICE / UID','DOCUMENT REFERENCE'],description:['DESCRIPTION'],
  customs_entry:['CUSTOMS ENTRY NO.','C.E NO.'],amount:['TAXABLE VALUE','NET COST','GROSS AMOUNT'],vat:['VAT AMOUNT','INPUT VAT CLAIM'],
- original_invoice:['RELEVANT INVOICE NUMBER'],original_invoice_date:['RELEVANT INVOICE DATE'],import_type:['TYPE OF IMPORT'],
+ original_invoice:['ORIGINAL INVOICE NUMBER','RELEVANT INVOICE NUMBER'],original_invoice_date:['ORIGINAL INVOICE DATE','RELEVANT INVOICE DATE'],import_type:['TYPE OF IMPORT'],
  gross:['GROSS'],route:['ROUTING CODE'],category_code:['CLASS / CATEGORY CODE'],return_code:['RETURN CODE'],tb_code:['TB CODE'],
  pl_group:['P&L GROUP'],source_status:['REVIEW STATUS','STATUS'],return_month:['RETURN MONTH','MONTH INCURRED'],source:['SOURCE'],
  vat_treatment:['VAT TREATMENT'],evidence:['EVIDENCE','EVIDENCE FILE / REFERENCE'],reviewer:['REVIEWER'],tax_treatment:['FILING TREATMENT','TAX TREATMENT'],
@@ -27,13 +27,18 @@ export function detectTemplate(sheet){
  let kind=/^B02[A-D]\b/i.test(sourceName)?'B02':/^B03\b/i.test(sourceName)?'B03':/^D09\b/i.test(sourceName)?'D09':null;
  if(!kind&&sheet.columnCount===16)for(let i=1;i<=Math.min(sheet.rowCount,10);i++){const m=mapHeaders(sheetValues(sheet,i));if(['return_month','party','pin_country','date','invoice','description','amount','legal_category','legal_basis','evidence'].every(k=>m[k])){kind='D09';break;}}
  if(!kind)return null;
- const required=kind==='B02'?['purchase_type','party','party_pin','date','invoice','amount','vat','route','category_code']:kind==='B03'?['return_month','invoice','party','date','amount','route','evidence']:['return_month','party','pin_country','date','invoice','description','amount','legal_category','legal_basis','evidence'];
+ const required=kind==='B02'?['purchase_type','party','party_pin','date','invoice','amount','vat']:kind==='B03'?['return_month','invoice','party','date','amount','route','evidence']:['return_month','party','pin_country','date','invoice','description','amount','legal_category','legal_basis','evidence'];
  const found=[];
  for(let i=1;i<=sheet.rowCount;i++){
   // Stop before the B03 linked feed (which uses B02 headings).
   const vals=sheetValues(sheet,i),map=mapHeaders(vals);
   if(kind==='B03'&&found.length&&(map.purchase_type||norm(vals[0]).includes('LINKED B02')))break;
-  if(required.every(k=>map[k])){found.push({header_row:i,column_map:map,headers:vals.slice(0,kind==='B03'?15:kind==='D09'?16:sheet.columnCount)});if(kind!=='B02')break;}
+  if(required.every(k=>map[k])){
+   // Purchase routing and category are entered in the ERP. Old workbook K/P
+   // values remain in source evidence only and are not imported mappings.
+   if(kind==='B02'){delete map.route;delete map.category_code;}
+   found.push({header_row:i,column_map:map,headers:vals.slice(0,kind==='B03'?15:kind==='D09'?16:sheet.columnCount)});if(kind!=='B02')break;
+  }
  }
  if(!found.length)fail(400,`${sheet.name}: expected workbook headers are missing. Restore the original B02, B03 or D09 template headings.`);
  let blocks=found.map((f,j)=>{
@@ -61,10 +66,15 @@ export function templateRow(sheet,i,template,block){
 export function normalizeTemplate(values,template,block,start,end){
  const m=block.column_map,raw=Object.fromEntries(block.headers.map((header,i)=>[`${i+1}: ${header}`,values[i]??'']));
  const get=k=>m[k]?values[m[k]-1]??'':'';
- const row={};for(const k of Object.keys(m))row[k]=['amount','vat','gross'].includes(k)?money(get(k)):['date','original_invoice_date','return_month'].includes(k)?excelDate(get(k)):String(get(k)).trim();
+ const row={};for(const k of Object.keys(m)){
+  if(template.kind==='B02'&&['route','category_code'].includes(k))continue;
+  row[k]=['amount','vat','gross'].includes(k)?money(get(k)):['date','original_invoice_date','return_month'].includes(k)?excelDate(get(k)):String(get(k)).trim();
+ }
  const issues=[];if(!row.date)issues.push('Invoice / document date is missing or invalid.');
  if(!row.invoice)issues.push('Invoice / document reference is required.');if(!row.party)issues.push('Supplier / payee is required.');
  if(row.amount===null)issues.push('Amount is missing or invalid.');if(m.vat&&get('vat')!==''&&row.vat===null)issues.push('VAT amount is invalid.');
+ if(get('original_invoice_date')!==''&&!row.original_invoice_date)issues.push('Original invoice date is invalid.');
+ if(row.original_invoice_date&&row.date&&row.original_invoice_date>row.date)issues.push('Original invoice date cannot be later than this document date.');
  if(get('return_month')!==''&&!row.return_month)issues.push('Return / incurred month is invalid.');
  if(template.kind==='B02'&&row.party_pin&&!/^[A-Z]\d{9}[A-Z]$/i.test(row.party_pin))issues.push('Supplier PIN format is invalid.');
  // Claim month is independent of invoice date in these workbooks. A prior invoice remains a review item.
@@ -74,8 +84,8 @@ export function normalizeTemplate(values,template,block,start,end){
  if(template.kind==='B02'&&/^B02B\b/i.test(template.source_sheet_name||template.source_sheet))row.legacy_tax_review=true;
  const line=row.line_id||[row.description||'',row.customs_entry||'',row.purchase_type||''].map(norm).join('|');
  const key=JSON.stringify([norm(row.invoice),norm(row.party_pin)||norm(row.party),line]);
- const route=template.kind==='B02'?Number(row.route):2;
- const category=route===1?'STOCK':row.category_code||workbookCategories.find(c=>c.route===route&&norm(c.label)===norm(row.pl_group))?.code||null;
+ const route=template.kind==='B02'?null:2;
+ const category=template.kind==='B02'?null:row.category_code||workbookCategories.find(c=>c.route===route&&norm(c.label)===norm(row.pl_group))?.code||null;
  const valid=workbookCategories.some(c=>c.route===route&&c.code===category);
  return {raw,row,issues,key,route:[1,2,3].includes(route)?route:null,category_code:valid?category:null,narration:row.description||null};
 }

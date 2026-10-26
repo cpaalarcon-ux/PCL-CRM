@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import {periodImportAction} from './period-import-actions.ts';
 import {referenceAction} from './reference-actions.ts';
 import {discussionAction} from './discussion-actions.ts';
 import {taxPeriodAction} from './tax-period-actions.ts';
@@ -7,6 +8,7 @@ import {procedureAction} from './procedure-actions.ts';
 import {presenceAction} from './presence-actions.ts';
 import {accountingAction} from './accounting-actions.ts';
 import {ledgerAction} from './ledger-actions.ts';
+import {purchaseLedgerAction} from './purchase-ledger-actions.ts';
 import {taxConfigAction} from './tax-config-actions.ts';
 import {readWorkspace} from './workspace-read.ts';
 import {setupLinkState,setupLinkMessages} from './setup-link-rules.mjs';
@@ -187,7 +189,8 @@ async function upload(req:Request,id:any){
  const bytes=new Uint8Array(await file.arrayBuffer()),name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_'),mime=fileType(name,bytes);
  if(mime==='application/vnd.openxmlformats-officedocument.wordprocessingml.document')fail(400,'Upload Word policies through Settings → Reference documents. Project source files use CSV, XLSX or ZIP.');
  const cid=uuid(f.get('client_id')),firm=uuid(f.get('firm_id')),pid=f.get('project_id')?uuid(f.get('project_id')):null,tid=f.get('task_id')?uuid(f.get('task_id')):null;
- const cat=choice(f.get('category'),['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports']);
+ const cat=choice(f.get('category'),['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports','Import Sources']);
+ if(cat==='Import Sources'&&(!pid||!['text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mime)))fail(400,'Import sources require a project and a CSV, XLSX or ZIP file.');
  const doc=crypto.randomUUID(),key=documentObjectKey(cid,firm,doc,mime),digest=await sha(bytes);
  await bucket();let uploaded=false;
  try{return await scoped(id,async(tx,a)=>{
@@ -223,7 +226,7 @@ async function action(id:any,p:any){
   await admin.auth.admin.signOut(id.jwt,'local');return {ok:true};
  }
  return scoped(id,async(tx,a)=>{
-  if(p.action==='workspace')return {...await readWorkspace(tx,a),suite:await suiteRead(tx),release:'v10-tax-work-periods-chatter'};
+  if(p.action==='workspace')return {...await readWorkspace(tx,a),suite:await suiteRead(tx),release:'v12-recognised-imports-sales-payroll-ledgers'};
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
   const discussion=await discussionAction(tx,a,p);if(discussion!==undefined)return discussion;
   const periods=await taxPeriodAction(tx,a,p);if(periods!==undefined)return periods;
@@ -237,6 +240,8 @@ async function action(id:any,p:any){
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
   const improvements=await improvementAction(tx,a,p);if(improvements!==undefined)return improvements;
+  const importedPeriod=await periodImportAction(tx,a,p,admin.storage.from(BUCKET));if(importedPeriod!==undefined)return importedPeriod;
+  const purchases=await purchaseLedgerAction(tx,a,p);if(purchases!==undefined)return purchases;
   const ledger=await ledgerAction(tx,a,p,admin.storage.from(BUCKET));if(ledger!==undefined)return ledger;
   const accounting=await accountingAction(tx,a,p);if(accounting!==undefined)return accounting;
   const workbook=await workbookAction(tx,a,p,admin.storage.from(BUCKET));if(workbook!==undefined)return workbook;

@@ -3,12 +3,28 @@ const costTypes=['Purchases','Expenditure','Non-eTIMS'];
 export const isCost=r=>costTypes.includes(r.dataset);
 export const cents=v=>{const n=Number(v);if(v===''||v==null||!Number.isFinite(n)||Math.abs(n)>1e12||Math.abs(n*100-Math.round(n*100))>.0001)fail(400,'Use an amount with at most two decimals.');return Math.round(n*100);};
 export const money=v=>Math.round(Number(v||0)*100)/100;
+export function inventoryDetails(row,p){
+ const old=row.review_details||{},details={...old};
+ if(Number(p.route)!==1){delete details.inventory_use;delete details.construction_job;delete details.stock_class;return details;}
+ const inferred=['10200','50010'].includes(String(p.account_code))?'Construction raw materials':['10190','50000'].includes(String(p.account_code))?'Goods for resale':'Other inventory';
+ const use=choice(p.inventory_use||old.inventory_use||inferred,['Goods for resale','Construction raw materials','Other inventory']);
+ if(use==='Construction raw materials'&&!['10200','50010'].includes(String(p.account_code)))fail(400,'Use the raw-material purchases or raw-material inventory account for construction materials.');
+ if(use!=='Construction raw materials'&&['10200','50010'].includes(String(p.account_code)))fail(400,'Classify this raw-material account as Construction raw materials.');
+ details.inventory_use=use;
+ details.stock_class=text(p.stock_class??old.stock_class??'',100,false);
+ if(use==='Construction raw materials'){
+  details.construction_job=text(p.construction_job??old.construction_job??'',200);
+  if(!details.stock_class)fail(400,'Enter the material category for construction raw materials.');
+ }else delete details.construction_job;
+ return details;
+}
 export function mapValue(row,p,accounts,policy){
  if(!isCost(row)||row.is_split_parent)fail(400,'Choose active purchase or expenditure rows.');
  const account=accounts.find(a=>a.code===String(p.account_code)&&a.status==='Active'&&!a.is_legacy);
  if(!account||account.route!==Number(p.route))fail(400,'Choose an active detailed account for this route.');
  if(row.dataset==='Non-eTIMS'&&(Number(p.route)!==2||Number(account.code)<51000||Number(account.code)>=67000||Number(account.code)>=60000&&Number(account.code)<=60170))fail(400,'Use a specific operating, administrative or finance expense category for non-eTIMS expenditure. Stock, PPE and payroll belong in their own schedules.');
  if(Number(p.route)===1){if(!policy||!['Periodic','Perpetual'].includes(policy.inventory_method))fail(400,'A Manager must configure the client inventory method first.');const asset=account.statement==='Statement of financial position';if(policy.inventory_method==='Perpetual'&&!asset||policy.inventory_method==='Periodic'&&asset)fail(400,'The inventory account does not match the configured accounting method.');if(['50100','50110','50120','50130','50140','50150'].includes(account.code))fail(400,'Cost-of-sales and stock adjustments are not purchase-entry accounts.');}
+ inventoryDetails(row,p);
  const asset=Number(p.route)===3?text(p.asset_details||'',1000):null;
  const use=Number(p.route)===3?choice(p.first_use_status,['In use','Not yet in use']):null;
  const first=use==='In use'?date(p.first_use_date):null;if(use==='In use'&&(!first||first>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date())))fail(400,'Confirm an actual first-use date, not a future date.');

@@ -38,6 +38,7 @@ async function reviewedRows(tx:any,pid:string,ids:string[]){
  if(r.length!==parsed.length)fail(403,'All source rows must belong to this authorised project.');return r;
 }
 async function sourceCheck(tx:any,j:any){
+ if(j.source_snapshot?.kind==='Period import'){const source=one(await tx`select * from erp_private.period_imports where import_id=${j.source_snapshot.import_id} and project_id=${j.project_id}`);if(source.status!=='Confirmed'||source.source_hash!==j.source_snapshot.source_hash)fail(409,'The source summary changed or was superseded.');return;}
  if(j.source_snapshot?.kind!=='Workbook')return;
  const r=await reviewedRows(tx,j.project_id,j.source_snapshot.rows.map((x:any)=>x.row_id));
  if(await digest(r.map(sourceShape))!==j.source_snapshot.digest)fail(409,'A source or its review changed. Refresh the generated draft before resubmitting.');
@@ -49,12 +50,22 @@ function salesLines(r:any){
  const net=cashAmount(r.normalized.amount),vat=cashAmount(r.normalized.vat||0),signed=(account_code:string,n:number)=>({account_code,debit:Math.max(n,0)/100,credit:Math.max(-n,0)/100,source_status:'Confirmed',source_reference:r.row_id,description:r.normalized.invoice});
  return [signed('10060',net+vat),signed(code,-net),...(vat?[signed('21020',-vat)]:[])];
 }
+async function checkPurchaseCredits(tx:any,rows:any[]){
+ for(const r of rows.filter((x:any)=>x.dataset!=='Sales'&&Number(x.normalized.amount)<0)){
+  if(!r.normalized.original_invoice)fail(400,'Credit '+r.normalized.invoice+' needs its original invoice reference.');
+  const party=r.normalized.party_pin||r.normalized.party||'',original=await tx`select normalized from erp_private.workbook_rows where client_id=${r.client_id} and dataset in ('Purchases','Expenditure','Non-eTIMS') and not is_split_parent and upper(normalized->>'invoice')=${String(r.normalized.original_invoice).toUpperCase()} and coalesce(nullif(normalized->>'party_pin',''),normalized->>'party','')=${party}`;
+  if(!original.length)fail(400,'Credit '+r.normalized.invoice+' is unmatched. Import the supported original purchase before posting.');
+  const credits=await tx`select normalized from erp_private.workbook_rows where client_id=${r.client_id} and dataset in ('Purchases','Expenditure','Non-eTIMS') and not is_split_parent and upper(normalized->>'original_invoice')=${String(r.normalized.original_invoice).toUpperCase()} and coalesce(nullif(normalized->>'party_pin',''),normalized->>'party','')=${party}`;
+  for(const field of ['amount','vat'])if(-credits.reduce((n:number,x:any)=>n+Math.min(Number(x.normalized[field]||0),0),0)>original.reduce((n:number,x:any)=>n+Math.max(Number(x.normalized[field]||0),0),0)+.01)fail(400,'Cumulative credits exceed the original purchase '+r.normalized.original_invoice+'.');
+ }
+}
 async function generateSource(tx:any,a:any,l:any,p:any){
  const rows=await reviewedRows(tx,l.project_id,p.row_ids),kind=p.kind==='Sales'?'Sales':'Purchases';
  if(rows.some((r:any)=>day(r.normalized.date||r.period_start)<day(l.starts_on)||day(r.normalized.date||r.period_end)>day(l.ends_on)))fail(400,'The sources must fall inside this financial year.');
  if(rows.some((r:any)=>kind==='Sales'?r.dataset!=='Sales':!['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset)))fail(400,'Select the matching source type.');
  const claimed=await tx`select * from erp_private.ledger_sources where source_kind='Workbook row' and source_key=any(${tx.array(rows.map((r:any)=>r.row_id))}::text[])`;
  if(claimed.length){const ids=[...new Set(claimed.map((x:any)=>x.journal_id))];if(claimed.length===rows.length&&ids.length===1){const existing=one(await tx`select * from erp_private.ledger_journals where journal_id=${ids[0]}`);if(existing.period_id===l.period_id&&existing.source_snapshot.digest===await digest(rows.map(sourceShape)))return {journal_id:existing.journal_id,reused:true};}fail(409,'Some sources already belong to a journal. Select the remaining unposted rows.');}
+ await checkPurchaseCredits(tx,rows);
  const items=rows.flatMap((r:any)=>kind==='Sales'?salesLines(r):costJournal(r)),snapshot={kind:'Workbook',rows:rows.map(sourceShape),digest:await digest(rows.map(sourceShape))};
  const result=await newJournal(tx,a,l,kind,p,items,snapshot,true);
  for(const r of rows)await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id,source_revision) values('Workbook row',${r.row_id},${result.journal_id},${l.project_id},${r.revision})`;
@@ -70,7 +81,8 @@ async function report(tx:any,l:any,to:string){
  where r.project_id=${l.project_id} and not r.is_split_parent and r.dataset in ('Sales','Purchases','Expenditure','Non-eTIMS') and coalesce(nullif(r.normalized->>'date',''),b.period_start::text)>=${day(l.starts_on)} and coalesce(nullif(r.normalized->>'date',''),b.period_end::text)<=${to} and (j.status is distinct from 'Posted') order by r.created_at,r.source_row limit 2001`;
  const assets=await tx`select * from erp_private.ledger_assets where period_id=${l.period_id} order by created_at`,charges=await tx`select c.*,j.status as journal_status from erp_private.ledger_asset_charges c join erp_private.ledger_journals j using(journal_id) where c.project_id=${l.project_id} and c.starts_on>=${day(l.starts_on)} and c.ends_on<=${to}`;
  const ppe_sources=await tx`select r.row_id,r.account_code,r.first_use_date,r.narration,r.normalized from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.ledger_assets a on a.source_row_id=r.row_id where r.project_id=${l.project_id} and r.route=3 and not r.is_split_parent and a.asset_id is null and coalesce(nullif(r.normalized->>'date',''),b.period_start::text)>=${day(l.starts_on)} and coalesce(nullif(r.normalized->>'date',''),b.period_end::text)<=${to} limit 2000`;
- const issues=[];if(!journals.some((j:any)=>j.kind==='Opening'&&j.status==='Posted'))issues.push('Opening balances are not yet independently posted.');
+ const pendingImports=await tx`select i.import_id from erp_private.period_imports i where i.project_id=${l.project_id} and i.starts_on>=${day(l.starts_on)} and i.ends_on<=${to} and i.status<>'Superseded' and not exists(select 1 from erp_private.ledger_sources s join erp_private.ledger_journals j using(journal_id) where s.source_kind='Period import' and s.source_key=i.import_id::text and j.status='Posted')`;
+ const issues=[];if(pendingImports.length)issues.push(pendingImports.length+' sales/payroll summary import(s) still await independent posting.');if(!journals.some((j:any)=>j.kind==='Opening'&&j.status==='Posted'))issues.push('Opening balances are not yet independently posted.');
  const drafts=journals.filter((j:any)=>j.status!=='Posted');if(drafts.length)issues.push(drafts.length+' journal(s) await preparation or review.');
  if(pending.length)issues.push((pending.length>2000?'More than 2,000':pending.length)+' imported row(s) are not posted.');
  if(assets.some((x:any)=>x.status!=='Approved'))issues.push('Asset classifications or rate evidence still await approval.');
@@ -119,6 +131,21 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   if(p.journal_id){const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);if(j.generated||j.kind!==kind)fail(400,'Generated source entries must be refreshed or reversed, not manually overwritten.');
    await writeLines(tx,j,items);await tx`update erp_private.ledger_journals set journal_date=${date(p.journal_date)},reference=${text(p.reference,100)},description=${text(p.description||'',2000,false)},evidence=${text(p.evidence||'',5000,false)},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};
   }return await newJournal(tx,a,l,kind,p,items);
+ }
+ if(p.action==='ledger_period_import_create'){
+  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':period-import'},0))`;
+  const source=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid}`);
+  if(source.status!=='Confirmed'||day(source.starts_on)<day(l.starts_on)||day(source.ends_on)>day(l.ends_on))fail(400,'Choose an independently confirmed import within this financial year.');
+  const used=(await tx`select journal_id from erp_private.ledger_sources where source_kind='Period import' and source_key=${source.import_id}`)[0];if(used)return {...used,reused:true};
+  let items:any[]=[];
+  if(source.kind==='Sales'){
+   const codes:any={'16%':'40000','8%':'40010','0%':'40020',Exempt:'40030'};
+   const signed=(code:string,value:number,description:string)=>({account_code:code,debit:Math.max(value,0)/100,credit:Math.max(-value,0)/100,source_status:'Confirmed',source_reference:source.import_id,description});
+   for(const g of source.payload.groups){const net=cashAmount(g.net),vat=cashAmount(g.vat);if(net||vat)items.push(signed('10060',net+vat,'Sales summary '+g.vat_category),signed(codes[g.vat_category],-net,'Net sales '+g.vat_category),...(vat?[signed('21020',-vat,'Output VAT '+g.vat_category)]:[]));}
+  }else{const t=source.payload.totals;items=payrollJournal({gross_pay:t.gross,paye:t.paye,shif:t.shif,employee_ahl:t.employee_ahl,employee_nssf:t.employee_nssf,employee_pension:t.employee_pension,other_deductions:t.other_deductions,employer_ahl:t.employer_ahl,employer_nssf:t.employer_nssf,employer_nita:t.nita,evidence:source.import_id});}
+  if(!items.length)fail(400,'A zero summary needs no accounting entry.');
+  const result=await newJournal(tx,a,l,source.kind,{journal_date:day(source.ends_on),reference:source.kind.toUpperCase()+'-'+day(source.starts_on)+'-'+source.import_id.slice(0,8),evidence:'Confirmed import '+source.import_id+'; '+source.review_note,description:'Reviewed '+source.kind.toLowerCase()+' category/control totals'},items,{kind:'Period import',import_id:source.import_id,source_hash:source.source_hash},true);
+  await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id,source_revision) values('Period import',${source.import_id},${result.journal_id},${pid},${source.revision})`;return result;
  }
  if(p.action==='ledger_generate_sources')return await generateSource(tx,a,l,p);
  if(p.action==='ledger_payroll_create'){

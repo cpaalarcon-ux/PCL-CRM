@@ -23,7 +23,7 @@ export function excelValue(v){
  if(v.richText)return v.richText.map(x=>x.text).join('');
  if(v.text)return String(v.text);if(v.error)return String(v.error);return '';
 }
-export const importFields=['date','invoice','party','party_pin','line_id','description','amount','vat','reference','debit','credit','account'];
+export const importFields=['date','invoice','party','party_pin','line_id','description','amount','vat','reference','debit','credit','account','vat_category','original_invoice','original_invoice_date','document_type'];
 export function importMap(input,dataset){
  const map={};for(const [k,v] of Object.entries(input||{})){if(!importFields.includes(k))fail(400,'Unknown mapping field.');if(v!==''&&v!=null){const n=Number(v);if(!Number.isInteger(n)||n<1||n>80)fail(400,'Map columns 1–80.');map[k]=n;}}
  if(new Set(Object.values(map)).size!==Object.values(map).length)fail(400,'Each source column can map to only one field.');
@@ -31,14 +31,23 @@ export function importMap(input,dataset){
  if(required.some(k=>!map[k])||!Object.keys(map).length)fail(400,'Map the required columns.');
  if(dataset==='Bank'&&!map.debit&&!map.credit)fail(400,'Map debit and/or credit amounts.');return map;
 }
-export function money(v){if(v===''||v==null)return null;let s=String(v).trim().replace(/,/g,'');if(/^\(.*\)$/.test(s))s='-'+s.slice(1,-1);if(!/^-?\d+(\.\d{1,6})?$/.test(s))return null;let n=Number(s);return Number.isFinite(n)&&Math.abs(n)<1e12?Math.round(n*100)/100:null;}
+export function money(v){
+ if(v==null||!['string','number'].includes(typeof v)||typeof v==='number'&&!Number.isFinite(v))return null;
+ let s=typeof v==='number'&&v!==0&&Math.abs(v)<1e-6?v.toFixed(20):String(v).trim();
+ if(!s||s.length>100)return null;if(/^\(.*\)$/.test(s))s='-'+s.slice(1,-1);
+ if(s.includes(',')&&!/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s))return null;
+ s=s.replace(/,/g,'');const m=s.match(/^(-?)(\d+)(?:\.(\d+))?$/);if(!m)return null;
+ const fraction=(m[3]||'').padEnd(3,'0');let cents=BigInt(m[2])*100n+BigInt(fraction.slice(0,2));
+ if(fraction[2]>='5')cents++;if(cents>=100000000000000n)return null;
+ const amount=Number(cents)/100;return amount===0?0:m[1]?-amount:amount;
+}
 export function excelDate(v){if(v instanceof Date)v=Number.isFinite(v.getTime())?v.toISOString().slice(0,10):'';if(typeof v==='number'&&v>0&&v<100000)v=new Date(Date.UTC(1899,11,30)+Math.floor(v)*86400000).toISOString().slice(0,10);let s=String(v||'').trim(),m=s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);if(m)s=`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;try{return date(s);}catch{return null;}}
 export function normalizeImport(values,map,dataset,start,end){
  const raw=Object.fromEntries(Object.entries(map).map(([key,col])=>[key,values[col-1]??'']));
  const hasData=dataset==='General'?Object.values(raw).some(v=>String(v).trim()!==''):
   (dataset==='Bank'?['date','reference','debit','credit']:['date','invoice','party','party_pin']).some(k=>raw[k]!=null&&String(raw[k]).trim()!==''&&raw[k]!==0);
  if(!hasData)return null;
- const row={};for(const [key,value] of Object.entries(raw))row[key]=['amount','vat','debit','credit'].includes(key)?money(value):key==='date'?excelDate(value):String(value).trim();
+ const row={};for(const [key,value] of Object.entries(raw))row[key]=['amount','vat','debit','credit'].includes(key)?money(value):['date','original_invoice_date'].includes(key)?excelDate(value):String(value).trim();
  const issues=[];
  if(dataset!=='General'){
   if(!row.date||row.date<start||row.date>end)issues.push('Date is missing, invalid or outside the selected period.');
@@ -49,6 +58,8 @@ export function normalizeImport(values,map,dataset,start,end){
    if(!row.invoice)issues.push('Invoice / CU reference is required.');
    if(row.amount===null)issues.push('Net amount is missing or invalid.');
    if(map.vat&&raw.vat!==''&&row.vat===null)issues.push('VAT amount is invalid.');
+   if(map.original_invoice_date&&raw.original_invoice_date!==''&&!row.original_invoice_date)issues.push('Original invoice date is invalid.');
+   if(row.original_invoice_date&&row.date&&row.original_invoice_date>row.date)issues.push('Original invoice date cannot be later than this document date.');
    if(row.party_pin&&!/^[A-Z]\d{9}[A-Z]$/i.test(row.party_pin))issues.push('Supplier / buyer PIN format is invalid.');
   }
  }

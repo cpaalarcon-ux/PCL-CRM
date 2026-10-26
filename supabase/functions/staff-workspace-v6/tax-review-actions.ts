@@ -1,3 +1,4 @@
+import {summarySalesRows} from './period-import-actions.ts';
 import {stagingRates,preferredRates} from './testing-rates.mjs';
 import {taxKinds,pickRate,profileIssues,keys,testRate,payrollFromRules,simpleTax,vatRuleCheck} from './tax-registry.mjs';
 import {fail,text,uuid,choice,revision,date} from './validation.mjs';
@@ -21,6 +22,9 @@ export async function taxSummary(tx:any,c:any){
  const rows=await tx`select r.*,v.decision,v.deductible_percentage,v.source_revision,v.reviewed_by,v.vat_rate_key,v.vat_difference_reason,v.income_treatment,b.period_start,b.period_end,b.uploaded_by
   from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v on v.row_id=r.row_id
   where r.project_id=${c.project_id} and not r.is_split_parent and r.dataset<>'POS' and b.period_start>=${c.starts_on} and b.period_end<=${c.ends_on} order by r.source_row limit 10001`;
+ const summaryRows=await summarySalesRows(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on));rows.push(...summaryRows);
+ const summaryImports=await tx`select * from erp_private.period_imports where project_id=${c.project_id} and kind='Sales' and status='Confirmed' and starts_on<=${c.ends_on} and ends_on>=${c.starts_on}`;
+ for(const s of summaryImports)batches.push({batch_id:s.import_id,dataset:'Sales',period_start:s.starts_on,period_end:s.ends_on,source_count:4,new_count:4,rejected_count:0});
  if(rows.length>10000)fail(400,'Split the tax review into smaller periods (maximum 10,000 rows per case).');
  const issues:string[]=profileIssues(profile,{...c,starts_on:dateText(c.starts_on),ends_on:dateText(c.ends_on)});if(batches.some((b:any)=>dateText(b.period_start)<dateText(c.starts_on)||dateText(b.period_end)>dateText(c.ends_on)))issues.push('An imported batch crosses this case period. Use matching period boundaries.');
  const rejected=batches.reduce((s:number,b:any)=>s+b.rejected_count,0);
@@ -29,6 +33,7 @@ export async function taxSummary(tx:any,c:any){
  if(findings.some((f:any)=>f.status==='Open'))issues.push('Open findings must be resolved.');
  let output=0,input=0,unreviewed=0,unmapped=0;
  for(const r of rows){
+  if(r.is_period_summary&&!Number(r.normalized.amount)&&!Number(r.normalized.vat))continue;
   const approved=r.source_revision===r.revision&&['Eligible','Excluded','Confirmed'].includes(r.decision);
   if(!approved)unreviewed++;
   if(c.kind==='VAT'&&r.dataset!=='Bank'){
@@ -56,6 +61,7 @@ export async function taxSummary(tx:any,c:any){
   result=vatCalculation({output:round(output),eligible_input:round(input),opening_credit:opening,withholding_credit:c.inputs.withholding_credit||0,reverse_charge:c.inputs.reverse_charge||0,adjustments:c.inputs.adjustments||0});
   if((result.withholding_credit||result.reverse_charge||result.adjustments)&&!c.inputs.adjustment_basis)issues.push('Explain withholding certificates, reverse charge and adjustments with evidence references.');
  }else if(c.kind==='PAYE'){
+  if(c.inputs.period_import_id){const imp=(await tx`select status,payload from erp_private.period_imports where import_id=${uuid(c.inputs.period_import_id)} and project_id=${c.project_id} and kind='Payroll' and starts_on=${c.starts_on} and ends_on=${c.ends_on}`)[0];if(!imp||imp.status!=='Confirmed')issues.push('The linked payroll import is unavailable or superseded. Refresh the case from the current confirmed payroll.');}
   if(!c.inputs.employees?.length)issues.push('Add the payroll rows before submitting.');
   else if(needed.every(k=>rules[k])){try{result=payrollFromRules(c.inputs,rules);if(result.exceptions)issues.push(`${result.exceptions} employee PAYE differences need correction.`);}catch(e){issues.push((e as Error).message);}}
  }else if(['Company','Individual','Partnership'].includes(c.kind)){
@@ -120,7 +126,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   if(!['Draft','Returned'].includes(c.status))fail(400,'Only a draft or returned case can be changed.');if(c.prepared_by!==a.staff_id)fail(403,'The assigned preparer must update the computation.');
   let inputs=p.inputs;if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||JSON.stringify(inputs).length>20000)fail(400,'Invalid computation inputs.');
   // Strip arbitrary metadata; computed results and approvals never come from browser input.
-  const allowed=c.kind==='VAT'?['opening_credit','opening_credit_basis','withholding_credit','reverse_charge','adjustments','adjustment_basis','bank_reconciliation','rejection_resolution','return_tied']:c.kind==='PAYE'?['employees','return_tied']:['accounting_profit','addbacks','deductions','losses','partners','other_reliefs','credits','return_tied','gross_receipts','proceeds','acquisition_cost','improvement_cost','transfer_cost','payment_code','taxable_payment','eligibility_confirmed','evidence_reference','loan_balance','actual_interest_rate','gross_pay','headcount','employees'];
+  const allowed=c.kind==='VAT'?['opening_credit','opening_credit_basis','withholding_credit','reverse_charge','adjustments','adjustment_basis','bank_reconciliation','rejection_resolution','return_tied']:c.kind==='PAYE'?['employees','return_tied','period_import_id']:['accounting_profit','addbacks','deductions','losses','partners','other_reliefs','credits','return_tied','gross_receipts','proceeds','acquisition_cost','improvement_cost','transfer_cost','payment_code','taxable_payment','eligibility_confirmed','evidence_reference','loan_balance','actual_interest_rate','gross_pay','headcount','employees'];
   inputs=Object.fromEntries(Object.entries(inputs).filter(([k])=>allowed.includes(k)));inputs.return_tied=inputs.return_tied===true;inputs.eligibility_confirmed=inputs.eligibility_confirmed===true;
   const source=p.source_document_id?uuid(p.source_document_id):null;if(source)one(await tx`select document_id from erp_private.documents where document_id=${source} and project_id=${c.project_id}`);
   const rid=null; // Applicable versions are resolved on the server from client, tax and period.

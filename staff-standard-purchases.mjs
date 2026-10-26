@@ -1,0 +1,31 @@
+export function createStandardPurchaseImportUI(ctx){
+ const {$,esc,field,select,form,modal,request,notice,today}=ctx;
+ const amount=n=>Number(n||0).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
+ return function open(r,settings={}){
+  let reviewed=null,offset=r.preview.length,busy=false;
+  modal('Import standard purchase template',form(`<p class="full"><b>${esc(r.client_name)}</b> · PIN ${esc(r.client_pin||'Not recorded')}</p><p class="info full">Row 1 contains headings. Transactions start on row 2. All 12 columns are fixed. Blank rows are skipped. Choose one VAT category and reporting period for this upload, then review the totals.</p><button type="button" id="downloadPurchaseTemplate" class="full">Download blank CSV template</button>`+
+   select('vat_category','VAT category for this upload *',r.standard_purchase.rates,settings.vat_category||'')+
+   field('period_start','Reporting period start *',settings.period_start||today().slice(0,8)+'01','date','required')+
+   field('period_end','Reporting period end *',settings.period_end||today(),'date','required')+
+   `<label class="full"><input type="checkbox" name="confirm_client" required>I confirm the client, VAT category and reporting period.</label><button type="button" id="checkPurchaseUpload" class="full">Check rows & totals</button><div id="purchaseUploadCheck" class="full" aria-live="polite"></div><div class="scroll full purchase-ledger-scroll"><table><thead><tr><th>Source row</th>${r.headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody id="standardPurchaseRows">${r.preview.map(row=>`<tr><th>${row.row}</th>${row.values.map(v=>`<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p id="standardPurchaseCount" class="full">${r.preview.length} of ${r.preview_total} populated rows shown. ${r.standard_purchase.ignored_count} blank rows skipped.</p><button type="button" id="standardPurchaseMore" class="full" ${offset>=r.preview_total?'hidden':''}>Load more rows</button><p class="muted full">Net, VAT and gross are rounded to two decimals. Gross must equal rounded net plus VAT. Credit notes retain negative amounts and their original invoice links. Routing, category and account are selected in the ERP after import.</p>`,'Import reviewed purchases'),async f=>{
+   const selected={vat_category:f.get('vat_category'),period_start:f.get('period_start'),period_end:f.get('period_end')};
+   if(!reviewed||reviewed.selection!==JSON.stringify(selected))throw Error('Check the rows and totals for the selected VAT category and period before importing.');
+   if(reviewed.summary.rejected_count||!reviewed.summary.source_count)throw Error('Correct the listed source rows before importing.');
+   const result=await request({action:'workbook_commit',document_id:r.document_id,sheet_name:r.sheet_name,upload_format:r.standard_purchase.id,header_row:1,...selected,confirmed_client_id:f.has('confirm_client')?r.client_id:null});
+   setTimeout(()=>modal('Purchase import result',`<p>${result.new_count} new rows · ${result.duplicate_count} duplicates skipped · ${result.rejected_count} exceptions.</p>${result.rejections.map(x=>`<p class="error">Row ${x.row}: ${esc(x.reason)}</p>`).join('')}<button data-v6="rows" data-id="${r.project_id}">Classify purchase imports</button>`),50);
+  });
+  $('#editor').classList.add('mapping-workspace');
+  const current=()=>Object.fromEntries(['vat_category','period_start','period_end'].map(k=>[k,$('#editForm').elements.namedItem(k).value]));
+  const check=$('#purchaseUploadCheck'),submit=$('#editForm button[type=submit]');submit.disabled=true;
+  for(const key of ['vat_category','period_start','period_end'])$('#editForm').elements.namedItem(key).onchange=()=>{reviewed=null;submit.disabled=true;check.textContent='Check the rows and totals again after changing the selection.';};
+  $('#checkPurchaseUpload').onclick=async()=>{const button=$('#checkPurchaseUpload');button.disabled=true;try{
+   const selected=current();if(!selected.vat_category)throw Error('Choose a VAT category.');if(!selected.period_start||!selected.period_end||selected.period_end<selected.period_start)throw Error('Choose a valid reporting period.');
+   const next=await request({action:'workbook_preview',document_id:r.document_id,sheet_name:r.sheet_name,upload_format:r.standard_purchase.id,header_row:1,...selected});
+   if($('#purchaseUploadCheck')!==check)return;const s=next.standard_purchase.summary;reviewed={selection:JSON.stringify(selected),summary:s};
+   check.innerHTML=`<p><b>${s.source_count} transactions</b> · ${s.credit_count} credit notes · ${s.rejected_count} rows needing correction · ${s.rounded_count} rows rounded.</p><p>Valid-row totals: net KES ${amount(s.net)} · VAT KES ${amount(s.vat)} · gross KES ${amount(s.gross)}.</p>${s.issues.map(x=>`<p class="error">Row ${x.row}: ${esc(x.reason)}</p>`).join('')}${s.rejected_count?'<p class="error">Correct these rows and upload the revised file. No purchase rows will be imported while validation errors remain.</p>':''}`;
+   submit.disabled=s.rejected_count>0||s.source_count===0||reviewed.selection!==JSON.stringify(current());
+  }catch(e){check.textContent=e.message;submit.disabled=true;}finally{button.disabled=false;}};
+  $('#standardPurchaseMore').onclick=async()=>{if(busy)return;busy=true;try{const n=await request({action:'workbook_preview',document_id:r.document_id,sheet_name:r.sheet_name,upload_format:r.standard_purchase.id,header_row:1,preview_offset:offset});if(!$('#standardPurchaseRows'))return;$('#standardPurchaseRows').insertAdjacentHTML('beforeend',n.preview.map(row=>`<tr><th>${row.row}</th>${row.values.map(v=>`<td>${esc(v)}</td>`).join('')}</tr>`).join(''));offset+=n.preview.length;$('#standardPurchaseCount').textContent=`${offset} of ${r.preview_total} populated rows shown.`;$('#standardPurchaseMore').hidden=offset>=r.preview_total;}catch(e){notice(e.message,true);}finally{busy=false;}};
+  $('#downloadPurchaseTemplate').onclick=()=>{const a=document.createElement('a'),url=URL.createObjectURL(new Blob(['\uFEFF'+r.headers.join(',')+'\r\n'],{type:'text/csv;charset=utf-8'}));a.href=url;a.download='Purchase_Upload.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+ };
+}

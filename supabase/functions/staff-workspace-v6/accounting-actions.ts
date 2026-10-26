@@ -1,6 +1,7 @@
+import {summarySalesRows} from './period-import-actions.ts';
 import {digest} from './improvement-actions.ts';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
-import {mapValue,splitValues,reconciliation,isCost,money} from './accounting-rules.mjs';
+import {mapValue,splitValues,reconciliation,isCost,money,inventoryDetails} from './accounting-rules.mjs';
 const one=(r:any[])=>{if(!r.length)fail(403,'Record unavailable to this account.');return r[0];};
 const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must configure accounting.');};
 const reviewer=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner must review.');};
@@ -9,8 +10,10 @@ const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice
 const hash=async(v:any)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(v))))).map(n=>n.toString(16).padStart(2,'0')).join('');
 export async function reconSource(tx:any,project:string,start:string,end:string){
  const rows=await tx`select r.*,v.decision,v.source_revision,v.deductible_percentage,v.vat_rate_key,v.income_treatment,v.reviewed_by from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id) where r.project_id=${project} and b.period_start>=${start} and b.period_start<=${end} and (r.dataset not in ('Sales','POS','Bank') or (r.normalized->>'date'>=${start} and r.normalized->>'date'<=${end})) and not r.is_split_parent order by r.row_id limit 10001`;
+ rows.push(...await summarySalesRows(tx,project,start,end));
  if(rows.length>10000)fail(400,'Split the review into periods with at most 10,000 rows.');
- return {rows,fingerprint:await hash(rows),crossing:(await tx`select count(*)::int n from erp_private.workbook_batches where project_id=${project} and period_start<=${end} and period_end>=${start} and (period_start<${start} or period_end>${end})`)[0].n};
+ const summaryCrossing=(await tx`select count(*)::int n from erp_private.period_imports where project_id=${project} and kind='Sales' and status='Confirmed' and starts_on<=${end} and ends_on>=${start} and (starts_on<${start} or ends_on>${end})`)[0].n;
+ return {rows,fingerprint:await hash(rows),crossing:summaryCrossing+(await tx`select count(*)::int n from erp_private.workbook_batches where project_id=${project} and period_start<=${end} and period_end>=${start} and (period_start<${start} or period_end>${end})`)[0].n};
 }
 async function calculate(tx:any,c:any,inputs:any){const source=await reconSource(tx,c.project_id,day(c.starts_on),day(c.ends_on)),deferral=c.review_type==='Monthly'?(await tx`select * from erp_private.bank_deferrals where reconciliation_id=${c.reconciliation_id}`)[0]:null,result=reconciliation(source.rows,inputs,{bankPendingApproved:!!deferral});
  if(c.review_type==='Monthly'&&source.crossing)result.issues.push('An import batch crosses this review period. Use matching import periods.');
@@ -49,7 +52,7 @@ export async function accountingAction(tx:any,a:any,p:any){
  if(['workbook_map','workbook_map_bulk','workbook_split','workbook_mapping_undo'].includes(p.action)){
   if(project.status==='Archived')fail(400,'Archived projects cannot change.');await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
   const selection=p.selection_id?one(await tx`select * from erp_private.mapping_selections where selection_id=${uuid(p.selection_id)} and project_id=${pid} and selected_by=${a.staff_id} for update`):null;
-  const mappingHash=await digest([p.route,p.account_code,p.narration||'',p.asset_details||'',p.first_use_status||'',p.first_use_date||'',p.activity_id||'',p.stock_class||'',p.legal_category||'',p.legal_basis||'',p.evidence||'']);
+  const mappingHash=await digest([p.route,p.account_code,p.narration||'',p.asset_details||'',p.first_use_status||'',p.first_use_date||'',p.activity_id||'',p.stock_class||'',p.inventory_use||'',p.construction_job||'',p.legal_category||'',p.legal_basis||'',p.evidence||'']);
   if(selection){if(selection.selection_hash!==p.selection_hash)fail(409,'Selection confirmation does not match. Select again.');if(selection.consumed_at){if(selection.result?.payload_hash!==mappingHash)fail(409,'This selection has already been applied with different values.');return selection.result;}if(new Date(selection.expires_at).getTime()<Date.now())fail(409,'Selection expired. Apply the filters and select again.');}
   const items=selection?selection.rows_snapshot:p.action==='workbook_map_bulk'?p.rows:[{row_id:p.row_id,revision:p.revision}];if(!Array.isArray(items)||!items.length||items.length>(selection?10000:500))fail(400,'Select 1–500 rows or confirm all matching rows.');
   if(p.activity_id){one(await tx`select activity_id from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${project.client_id}`);if(Number(p.route)===1&&!p.stock_class)fail(400,'Enter the stock class for the selected activity.');}
@@ -64,13 +67,13 @@ export async function accountingAction(tx:any,a:any,p:any){
    const r=rows[0],parts=splitValues(r,p.parts),values=parts.map((part:any)=>mapValue(r,part,accounts,policy));
    await tx`update erp_private.workbook_rows set is_split_parent=true where row_id=${r.row_id}`;
    for(let i=0;i<parts.length;i++){const n={...r.normalized,amount:parts[i].amount,vat:parts[i].vat,gross:money(parts[i].amount+parts[i].vat),line_id:'allocation-'+(i+1),description:values[i].narration},v=values[i];
-    await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized,route,category_code,narration,asset_details,review_details,account_code,first_use_status,first_use_date,parent_row_id) values(${r.batch_id},${pid},${r.client_id},${r.dataset},${r.source_row},${r.row_key+':allocation:'+(i+1)},${tx.json(r.raw_values)},${tx.json(n)},${v.route},${v.category_code},${v.narration},${v.asset_details},${tx.json(r.review_details||{})},${v.account_code},${v.first_use_status},${v.first_use_date},${r.row_id})`;
+    await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized,route,category_code,narration,asset_details,review_details,account_code,first_use_status,first_use_date,parent_row_id) values(${r.batch_id},${pid},${r.client_id},${r.dataset},${r.source_row},${r.row_key+':allocation:'+(i+1)},${tx.json(r.raw_values)},${tx.json(n)},${v.route},${v.category_code},${v.narration},${v.asset_details},${tx.json(inventoryDetails(r,parts[i]))},${v.account_code},${v.first_use_status},${v.first_use_date},${r.row_id})`;
    }return {ok:true,count:parts.length};
   }
   // Validate every member before mutating any member. The enclosing transaction is all-or-nothing.
   const activityPolicies=p.activity_id?await tx`select * from erp_private.stock_policy_versions where activity_id=${uuid(p.activity_id)} order by effective_from desc`:[];
   const values=rows.map((r:any)=>{const at=String(r.normalized.return_month||r.normalized.date||day(r.period_start));const dated=activityPolicies.find((v:any)=>day(v.effective_from)<=at);return mapValue(r,p,accounts,dated||policy);});
-  const updates=rows.map((r:any,i:number)=>{const details={...(r.review_details||{})};for(const k of ['legal_category','legal_basis','evidence','activity_id','stock_class'])if(p[k]!==undefined)details[k]=text(p[k],2000,false);return {row_id:r.row_id,...values[i],review_details:details};});
+  const updates=rows.map((r:any,i:number)=>{const details=inventoryDetails(r,p);for(const k of ['legal_category','legal_basis','evidence','activity_id'])if(p[k]!==undefined)details[k]=text(p[k],2000,false);return {row_id:r.row_id,...values[i],review_details:details};});
   for(let i=0;i<updates.length;i+=500)await tx`update erp_private.workbook_rows r set route=v.route,category_code=v.category_code,account_code=v.account_code,narration=v.narration,asset_details=v.asset_details,first_use_status=v.first_use_status,first_use_date=v.first_use_date,review_details=v.review_details from jsonb_to_recordset(${tx.json(updates.slice(i,i+500))}::jsonb) as v(row_id uuid,route integer,category_code text,account_code text,narration text,asset_details text,first_use_status text,first_use_date date,review_details jsonb) where r.row_id=v.row_id`;
   if(selection)await tx`update erp_private.mapping_selections set consumed_at=now(),result=${tx.json({ok:true,count:rows.length,payload_hash:mappingHash})} where selection_id=${selection.selection_id}`;
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'workbook_rows','BULK_MAPPING',${pid},${tx.json({row_ids:ids,account_code:p.account_code,count:rows.length})})`;return {ok:true,count:rows.length};
