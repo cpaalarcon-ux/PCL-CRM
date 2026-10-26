@@ -1,5 +1,6 @@
 import {detectImportProfile,profilePurchase} from './import-profiles.mjs';
-import {purchaseUploadProfile,purchaseUploadRows,purchaseUploadMap,purchaseUploadHeaders,purchaseUploadRates,purchaseUploadValues,purchaseUploadId,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from './purchase-upload.mjs';
+import {purchaseUploadProfile,purchaseUploadRows,purchaseUploadMap,purchaseUploadHeaders,purchaseUploadRates,purchaseUploadValues,purchaseDisplayValues,purchasePendingMatch,purchaseUploadId,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from './purchase-upload.mjs';
+import {pendingPurchases} from './purchase-pending.ts';
 import {readSourceSheet} from './source-reader.mjs';
 import categories from './purchase-categories.json' with {type:'json'};
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
@@ -27,8 +28,8 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
    and (${rate}='All' or (case when r.dataset='Non-eTIMS' then 'Non-eTIMS' else coalesce(r.normalized->>'vat_category','Unconfirmed') end)=${rate})
    and concat_ws(' ',r.normalized->>'invoice',r.normalized->>'reference',r.normalized->>'party',r.normalized->>'party_pin',r.normalized->>'description') ilike ${search}`).count;
   return {policies:await tx`select * from erp_private.stock_policy_versions where client_id=(select client_id from erp_private.projects where project_id=${pid}) order by effective_from desc`,activities:await tx`select * from erp_private.client_activities where client_id=(select client_id from erp_private.projects where project_id=${pid}) order by activity_name`,accounts:await tx`select * from erp_private.account_catalog order by code`,policy:(await tx`select * from erp_private.accounting_policies where client_id=(select client_id from erp_private.projects where project_id=${pid})`)[0]||null,rows:rows.map((r:any)=>({...r,warnings:rowWarnings(r)})),legal_categories:legalCategories,total,
-   categories:allCategories,
-   rejections:await tx`select r.source_row,r.reason,b.sheet_name,b.dataset from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${pid} order by b.created_at desc limit 100`};
+   categories:allCategories,pending_information:await pendingPurchases(tx,pid),
+   rejections:await tx`select r.source_row,r.reason,b.sheet_name,b.dataset from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${pid} and not r.raw_values ? '_pending_purchase' order by b.created_at desc limit 100`};
  }
  if(p.action==='workbook_map'){
   const target=one(await tx`select project_id from erp_private.workbook_rows where row_id=${uuid(p.row_id)}`);await tx`select pg_advisory_xact_lock(hashtextextended(${target.project_id+':tax'},0))`;
@@ -63,7 +64,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  if(p.action==='workbook_preview')return {client_id:project.client_id,client_name:project.company_name,client_pin:project.kra_pin,document_id:d.document_id,project_id:d.project_id,sheets,sheet_name:sheet.name,header_row:header,headers:standard?purchaseUploadHeaders:block?.headers||(header===0?Array.from({length:sheet.columnCount},(_,i)=>'Column '+(i+1)):values(header)),import_profile:profile,source_inventory:sourceInfo.inventory||null,source_adapter:sourceInfo.adapter||'XLSX',template:template?{...template,selected:block}:null,
   standard_purchase:standard?{id:purchaseUploadId,rates:purchaseUploadRates,ignored_count:standardData.ignored,summary:p.vat_category&&p.period_start&&p.period_end?purchaseUploadSummary(standardData.rows,choice(p.vat_category,purchaseUploadRates),date(p.period_start),date(p.period_end)):null}:null,
   preview_total:previewTotal,preview_offset:previewOffset,preview_page_size:200,
-  preview:standard?standardData.rows.slice(previewOffset,previewOffset+200).map(r=>({row:r.source_row,values:r.values})):Array.from({length:Math.min(200,previewTotal-previewOffset)},(_,i)=>({row:header+previewOffset+i+1,values:values(header+previewOffset+i+1).slice(0,block?.headers.length||sheet.columnCount)})),categories:allCategories};
+  preview:standard?standardData.rows.slice(previewOffset,previewOffset+200).map(r=>({row:r.source_row,values:r.values,display_values:purchaseDisplayValues(r.values)})):Array.from({length:Math.min(200,previewTotal-previewOffset)},(_,i)=>({row:header+previewOffset+i+1,values:values(header+previewOffset+i+1).slice(0,block?.headers.length||sheet.columnCount)})),categories:allCategories};
  if((standard||['text/csv','application/zip'].includes(d.mime_type))&&p.confirmed_client_id!==project.client_id)fail(400,'Confirm the legal client before committing this source.');
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.project_id+':tax'},0))`;
  const dataset=template?template.dataset:profile?.recognised?profile.dataset:choice(p.dataset,['Sales','POS','Purchases','Bank','General']);
@@ -73,14 +74,15 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  if(sourceInfo.section&&!profile?.recognised&&!p.section_contract_confirmed)fail(400,'Confirm the selected KRA CSV section column mapping. A section name alone is not a validated filing contract.');
  const start=date(p.period_start),end=date(p.period_end);
  if(!start||!end||end<start)fail(400,'Choose the import period.');const map=block?block.column_map:profile?.recognised?profile.column_map:importMap(p.column_map,dataset),batch=crypto.randomUUID();
+ if(!one(await tx`select erp_private.tax_period_open(${project.project_id}::uuid,${start}::date,${end}::date) as open`).open)fail(400,'Return the submitted tax case before adding source rows. Locked periods cannot receive imports.');
  const first=standard?2:Number(p.first_row||block?.first_row||header+1),last=standard?sheet.rowCount:Number(p.last_row||block?.last_row||sheet.rowCount);
  if(!standard)importRowRange({header,first,last,rowCount:sheet.rowCount,block});
  if(standard&&!standardData.rows.length)fail(400,'No purchase transactions found. Keep the headings in row 1 and paste transactions from row 2.');
  if(standard&&!purchaseUploadRates.includes(p.vat_category))fail(400,'Select the VAT category in the ERP: 16%, 8%, 0% or Exempt.');
  const selectedRate=standard?p.vat_category:null;
- const signature=await hash(JSON.stringify({version:5,digest:d.sha256,sheet:sheet.name,header,dataset,start,end,first,last,map,profile:profile?.id||null,vat_category:selectedRate}));
+ const signature=await hash(JSON.stringify({version:6,digest:d.sha256,sheet:sheet.name,header,dataset,start,end,first,last,map,profile:profile?.id||null,vat_category:selectedRate,allow_pending_credit_details:p.allow_pending_credit_details===true}));
  const previous=(await tx`select b.* from erp_private.workbook_import_requests r join erp_private.workbook_batches b using(batch_id) where r.project_id=${project.project_id} and r.signature=${signature}`)[0];
- if(previous)return {ok:true,batch_id:previous.batch_id,duplicate_upload:true,dataset:previous.dataset,source_count:previous.source_count,new_count:0,duplicate_count:previous.new_count+previous.duplicate_count,rejected_count:previous.rejected_count,rejections:[]};
+ if(previous){const pending=await pendingPurchases(tx,project.project_id,null,null,previous.batch_id),history=Number((await tx`select count(*)::int n from erp_private.workbook_rejections where batch_id=${previous.batch_id} and raw_values ? '_pending_purchase'`)[0].n);return {ok:true,batch_id:previous.batch_id,duplicate_upload:true,dataset:previous.dataset,source_count:previous.source_count,new_count:0,duplicate_count:previous.new_count+previous.duplicate_count+history-pending.total,pending_count:pending.total,rejected_count:previous.rejected_count-history,rejections:[]};}
  const isCost=['Purchases','Expenditure','Non-eTIMS'].includes(dataset);
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':'+(isCost?'Cost':dataset)},0))`;
  let source=0,added=0,duplicates=0;const rejected:any[]=[],parsed:any[]=[];
@@ -90,9 +92,12 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
   const v=standard?purchaseUploadValues(sheet,i):template?templateRow(sheet,i,template,block):values(i);if(!v||standard&&!v.some(v=>String(v??'').trim())){ignored++;continue;}
   const n=standard?normalizePurchaseUpload(v,selectedRate,start,end):template?normalizeTemplate(v,template,block,start,end):profile?.recognised?profilePurchase(v,profile,start,end):normalizeImport(v,map,dataset,start,end);if(!n){ignored++;continue;}source++;
   if(n.issues.length){rejected.push({row:i,raw:n.raw,reason:n.issues.join(' ')});continue;}
+  if(standard&&n.pending.length){rejected.push({row:i,raw:{...n.raw,_pending_purchase:{key:await hash(n.key),match:purchasePendingMatch(n.row),row:n.row}},reason:'Pending information: '+n.pending.join(' '),pending:true});continue;}
   parsed.push({...n,source_row:i,row_key:await hash(n.key)});
  }
- if(standard&&rejected.length)fail(400,`${rejected.length} purchase row(s) need correction. No purchase rows were imported. ${rejected.slice(0,3).map(r=>'Row '+r.row+': '+r.reason).join(' ')}`);
+ const hardErrors=rejected.filter(r=>!r.pending),pendingCount=rejected.filter(r=>r.pending).length;
+ if(standard&&hardErrors.length)fail(400,`${hardErrors.length} purchase row(s) need correction. No purchase rows were imported. ${hardErrors.slice(0,3).map(r=>'Row '+r.row+': '+r.reason).join(' ')}`);
+ if(pendingCount&&p.allow_pending_credit_details!==true)fail(400,`Confirm that ${pendingCount} credit note(s) will be retained as Pending information, outside posting, until the original invoice details are supplied.`);
  const known=new Map<string,string>();
  for(let i=0;i<parsed.length;i+=500){const keys=parsed.slice(i,i+500).map(n=>n.row_key);
   const rows=await tx`select row_key,normalized from erp_private.workbook_rows where client_id=${project.client_id} and parent_row_id is null and dataset=${dataset} and row_key=any(${tx.array(keys)}::text[])`;
@@ -124,5 +129,6 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  await tx`insert into erp_private.workbook_import_requests(project_id,signature,batch_id,document_id) values(${project.project_id},${signature},${batch},${d.document_id})`;
  for(let i=0;i<rejected.length;i+=500)await tx`insert into erp_private.workbook_rejections(batch_id,source_row,reason,raw_values) select ${batch}::uuid,r.row,r.reason,r.raw from jsonb_to_recordset(${tx.json(rejected.slice(i,i+500))}::jsonb) as r(row integer,reason text,raw jsonb)`;
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
- return {ok:true,batch_id:batch,ignored_count:ignored,dataset,source_count:source,new_count:added,duplicate_count:duplicates,rejected_count:rejected.length,rejections:rejected.slice(0,100).map(r=>({row:r.row,reason:r.reason}))};
+ const outstanding=pendingCount?(await pendingPurchases(tx,project.project_id,null,null,batch)).total:0;
+ return {ok:true,batch_id:batch,ignored_count:ignored,dataset,source_count:source,new_count:added,duplicate_count:duplicates+pendingCount-outstanding,pending_count:outstanding,rejected_count:rejected.length-pendingCount,rejections:rejected.filter(r=>!r.pending).slice(0,100).map(r=>({row:r.row,reason:r.reason}))};
 }

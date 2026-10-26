@@ -1,3 +1,4 @@
+import {pendingPurchases} from './purchase-pending.ts';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
 import {readWorkbookSheet} from './workbook-reader.mjs';
@@ -82,14 +83,15 @@ async function report(tx:any,l:any,to:string){
  const assets=await tx`select * from erp_private.ledger_assets where period_id=${l.period_id} order by created_at`,charges=await tx`select c.*,j.status as journal_status from erp_private.ledger_asset_charges c join erp_private.ledger_journals j using(journal_id) where c.project_id=${l.project_id} and c.starts_on>=${day(l.starts_on)} and c.ends_on<=${to}`;
  const ppe_sources=await tx`select r.row_id,r.account_code,r.first_use_date,r.narration,r.normalized from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.ledger_assets a on a.source_row_id=r.row_id where r.project_id=${l.project_id} and r.route=3 and not r.is_split_parent and a.asset_id is null and coalesce(nullif(r.normalized->>'date',''),b.period_start::text)>=${day(l.starts_on)} and coalesce(nullif(r.normalized->>'date',''),b.period_end::text)<=${to} limit 2000`;
  const pendingImports=await tx`select i.import_id from erp_private.period_imports i where i.project_id=${l.project_id} and i.starts_on>=${day(l.starts_on)} and i.ends_on<=${to} and i.status<>'Superseded' and not exists(select 1 from erp_private.ledger_sources s join erp_private.ledger_journals j using(journal_id) where s.source_kind='Period import' and s.source_key=i.import_id::text and j.status='Posted')`;
- const issues=[];if(pendingImports.length)issues.push(pendingImports.length+' sales/payroll summary import(s) still await independent posting.');if(!journals.some((j:any)=>j.kind==='Opening'&&j.status==='Posted'))issues.push('Opening balances are not yet independently posted.');
+ const pending_information=await pendingPurchases(tx,l.project_id,day(l.starts_on),to);
+ const issues=[];if(pending_information.total)issues.push(pending_information.total+' credit note(s) are Pending information and excluded from posted figures. Complete original invoice details before relying on final totals.');if(pendingImports.length)issues.push(pendingImports.length+' sales/payroll summary import(s) still await independent posting.');if(!journals.some((j:any)=>j.kind==='Opening'&&j.status==='Posted'))issues.push('Opening balances are not yet independently posted.');
  const drafts=journals.filter((j:any)=>j.status!=='Posted');if(drafts.length)issues.push(drafts.length+' journal(s) await preparation or review.');
  if(pending.length)issues.push((pending.length>2000?'More than 2,000':pending.length)+' imported row(s) are not posted.');
  if(assets.some((x:any)=>x.status!=='Approved'))issues.push('Asset classifications or rate evidence still await approval.');
  if(ppe_sources.length)issues.push(ppe_sources.length+' PPE source(s) still need an asset and shared-rate record.');
  if(!journals.some((j:any)=>j.kind==='Stock'&&j.status==='Posted'))issues.push('Confirm stock / cost-of-sales completeness separately before relying on gross profit.');
  const balance=money(tb.reduce((sum:any,r:any)=>sum+r.net,0));if(balance!==0)issues.push('The trial balance is not balanced.');
- return {period:l,as_of:to,accounts,tb,profit,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
+ return {period:l,pending_information,as_of:to,accounts,tb,profit,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
 }
 
 export async function ledgerAction(tx:any,a:any,p:any,storage:any){

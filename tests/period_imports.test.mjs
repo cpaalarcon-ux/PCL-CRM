@@ -2,6 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {purchaseLedgerAction}=await import('../supabase/functions/staff-workspace-v6/purchase-ledger-actions.ts');
 const {accountingAction}=await import('../supabase/functions/staff-workspace-v6/accounting-actions.ts');
+const {taxSummary}=await import('../supabase/functions/staff-workspace-v6/tax-review-actions.ts');
 const {workbookAction}=await import('../supabase/functions/staff-workspace-v6/workbook-actions.ts');
 const {periodImportAction,summarySalesRows}=await import('../supabase/functions/staff-workspace-v6/period-import-actions.ts');
 const {ledgerAction}=await import('../supabase/functions/staff-workspace-v6/ledger-actions.ts');
@@ -28,7 +29,7 @@ test('Period imports: summary-only storage, overlap replacement, independent rev
  assert.equal((await as('INTERN',()=>tx`select document_id from erp_private.documents where document_id=${D}`)).length,0);
 
  const sources=new Map();const storage={download:async key=>({data:new Blob([sources.get(key)])})};
- async function doc(name,body){const idd=id(),key='qa/'+idd;sources.set(key,body);await as('ASSISTANT',()=>tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${idd},${C},${F},${P},${T},'Import Sources',${name},${key},${body.length},${'c'.repeat(64)},'text/csv',${actors.ASSISTANT.staff_id})`);return idd;}
+ async function doc(name,body){const digest=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body))).toString('hex'),idd=id(),key='qa/'+idd;sources.set(key,body);await as('ASSISTANT',()=>tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${idd},${C},${F},${P},${T},'Import Sources',${name},${key},${body.length},${digest},'text/csv',${actors.ASSISTANT.staff_id})`);return idd;}
  const imp=(role,p)=>as(role,a=>periodImportAction(tx,a,{project_id:P,...p},storage));
  const ledger=(role,p)=>as(role,a=>ledgerAction(tx,a,{project_id:P,...p},storage));
  const source=await doc('Sales.csv','Sales category,Net sales,Output VAT\n16%,1000,160\n8%,0,0\n0%,100,0\nExempt,50,0');
@@ -67,5 +68,27 @@ test('Period imports: summary-only storage, overlap replacement, independent rev
   assert.equal((await run({action:'workbook_commit'})).duplicate_upload,true);
   const again=await doc('Purchase-standard-again.csv',body);const repeated=await run({action:'workbook_commit',document_id:again});assert.equal(repeated.new_count,0);assert.equal(repeated.duplicate_count,2);
   const bad=await doc('Purchase-standard-invalid.csv',body.replace('51670.552800000005','60000'));const before=(await tx`select count(*)::int n from erp_private.workbook_rows`)[0].n;await assert.rejects(()=>run({action:'workbook_commit',document_id:bad}),/No purchase rows were imported.*Column J/);assert.equal((await tx`select count(*)::int n from erp_private.workbook_rows`)[0].n,before);
+ });
+ await t.test('pending credits stay outside posting, block tax completion and resolve on corrected reupload',async()=>{
+  const good='Local,P000000001A,Example supplier,2026-10-03,PEND-INV,Supplies,,200,32,232,,',credit='Local,P000000001A,Example supplier,2026-10-10,PEND-CN,Returned supplies,,-100,-16,-116,,',body=[purchaseUploadHeaders.join(','),good,credit].join('\n');
+  const source=await doc('Purchase-pending.csv',body),input={document_id:source,project_id:P,upload_format:'PCL-PURCHASES-1',period_start:'2026-10-01',period_end:'2026-10-31',vat_category:'16%',confirmed_client_id:C};
+  const run=p=>as('ASSISTANT',a=>workbookAction(tx,a,{...input,...p},storage));
+  await assert.rejects(()=>run({action:'workbook_commit'}),/Confirm.*Pending information/);
+  const preview=await run({action:'workbook_preview'});assert.equal(preview.standard_purchase.summary.pending_count,1);assert.equal(preview.standard_purchase.summary.source_totals.gross,116);assert.equal(preview.preview[0].display_values[3],'03/10/2026');
+  const result=await run({action:'workbook_commit',allow_pending_credit_details:true});assert.equal(result.new_count,1);assert.equal(result.pending_count,1);assert.equal(result.rejected_count,0);
+  const exceptions=await tx`select * from erp_private.workbook_rejections where batch_id=${result.batch_id}`;assert.equal(exceptions.length,1);assert.equal(exceptions[0].raw_values['11: Original invoice number'],'');
+  assert.equal((await tx`select * from erp_private.workbook_rows where batch_id=${result.batch_id}`).length,1);
+  assert.equal((await run({action:'workbook_commit',allow_pending_credit_details:true})).pending_count,1);
+  let listing=await run({action:'workbook_rows'});assert.equal(listing.pending_information.total,1);assert.equal(listing.pending_information.gross,-116);assert.equal(listing.rejections.length,0);
+  await assert.rejects(()=>run({action:'workbook_rows',project_id:P2}),/not available|unavailable|not found|permission/i);
+  const report=await ledger('ASSISTANT',{action:'ledger_read',period_id:l.period_id});assert.match(report.issues.join(' '),/Pending information/);const pl=await call('ASSISTANT',{});assert.equal(pl.pending_information.total,1);assert.match(pl.disclosure,/excluded.*-116.00/);
+  const oldDeno=globalThis.Deno;globalThis.Deno={env:{get:()=>''}};
+  try{const summary=await as('ASSISTANT',()=>taxSummary(tx,{case_id:id(),project_id:P,kind:'VAT',status:'Draft',starts_on:'2026-10-01',ends_on:'2026-10-31',inputs:{rejection_resolution:'A generic note cannot clear a pending credit'}}));assert.match(summary.issues.join(' '),/Pending information/);assert.equal(summary.rejected_count,0);}finally{globalThis.Deno=oldDeno;}
+  const corrected=await doc('Purchase-completed.csv',body.replace('-116,,','-116,PEND-INV,2026-10-03'));
+  const complete=await run({action:'workbook_commit',document_id:corrected});assert.equal(complete.new_count,1);assert.equal(complete.duplicate_count,1);assert.equal(complete.pending_count,0);
+  listing=await run({action:'workbook_rows'});assert.equal(listing.pending_information.total,0);assert.equal((await tx`select count(*)::int n from erp_private.workbook_rejections where batch_id=${result.batch_id}`)[0].n,1);
+  const repeated=await run({action:'workbook_commit',allow_pending_credit_details:true});assert.equal(repeated.pending_count,0);assert.equal(repeated.duplicate_count,2);
+  await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by,status) values(${P},'VAT','2026-10-01','2026-10-31',${actors.ASSISTANT.staff_id},'Submitted')`;
+  await assert.rejects(()=>run({action:'workbook_commit',document_id:corrected}),/submitted tax case|Locked periods/);
  });
 });

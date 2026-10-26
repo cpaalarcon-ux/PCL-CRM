@@ -6,6 +6,10 @@ export const purchaseUploadHeaders=['Type of purchases','Supplier PIN','Supplier
 export const purchaseUploadMap={purchase_type:1,party_pin:2,party:3,date:4,invoice:5,description:6,customs_entry:7,amount:8,vat:9,gross:10,original_invoice:11,original_invoice_date:12};
 export const purchaseUploadRates=['16%','8%','0%','Exempt'];
 const clean=v=>String(v??'').trim(),norm=v=>clean(v).replace(/\s+/g,' ').toUpperCase();
+const optional=v=>/^(?:n\/?a|not applicable|—|-)$/i.test(clean(v))?'':v;
+export const purchaseDate=v=>excelDate(typeof v==='string'&&/^\d{5}(?:\.0+)?$/.test(v.trim())?Number(v):v);
+export const purchaseDisplayValues=values=>values.map((v,i)=>{if(![3,11].includes(i))return v;const d=purchaseDate(optional(v));return d?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):optional(v);});
+export const purchasePendingMatch=row=>Object.fromEntries(['purchase_type','party_pin','party','date','invoice','description','customs_entry','amount','vat','gross','vat_category','return_month'].map(k=>[k,row[k]]));
 export const purchaseUploadValues=(sheet,i)=>Array.from({length:12},(_,j)=>excelValue(sheet.getRow(i).getCell(j+1).value));
 export function purchaseUploadProfile(sheet,required=false){
  const titles=purchaseUploadValues(sheet,1),matches=titles.filter((v,i)=>norm(v)===norm(purchaseUploadHeaders[i])).length;
@@ -22,8 +26,8 @@ export function purchaseUploadRows(sheet){
 }
 export function normalizePurchaseUpload(values,rate,start,end){
  if(!purchaseUploadRates.includes(rate))fail(400,'Select the VAT category in the ERP: 16%, 8%, 0% or Exempt. Use one category per upload.');
- const raw=Object.fromEntries(purchaseUploadHeaders.map((h,i)=>[`${i+1}: ${h}`,values[i]??''])),row={},issues=[],rounded=[];
- for(const [key,col] of Object.entries(purchaseUploadMap)){const value=values[col-1]??'';row[key]=['amount','vat','gross'].includes(key)?money(value):['date','original_invoice_date'].includes(key)?excelDate(value):clean(value);}
+ const raw=Object.fromEntries(purchaseUploadHeaders.map((h,i)=>[`${i+1}: ${h}`,values[i]??''])),row={},issues=[],pending=[],rounded=[];
+ for(const [key,col] of Object.entries(purchaseUploadMap)){const value=[7,11,12].includes(col)?optional(values[col-1]??''):values[col-1]??'';row[key]=['amount','vat','gross'].includes(key)?money(value):['date','original_invoice_date'].includes(key)?purchaseDate(value):clean(value);}
  row.party_pin=row.party_pin.toUpperCase();row.vat_category=rate;row.source_profile=purchaseUploadId;row.return_month=start;row.vat_basis='Supplied';
  if(!['LOCAL','IMPORT','IMPORTED'].includes(norm(row.purchase_type)))issues.push('Column A: choose Local or Import.');
  if(!/^[A-Z]\d{9}[A-Z]$/.test(row.party_pin))issues.push('Column B: enter a valid supplier PIN.');
@@ -43,20 +47,26 @@ export function normalizePurchaseUpload(values,rate,start,end){
   if(['16%','8%'].includes(rate)&&Math.abs(Math.round(row.vat*100)-Math.round(money(row.amount*parseInt(rate)/100)*100))>1)issues.push('Column I: VAT does not agree with the selected category. Check the source and category.');
  }
  const credit=row.amount<0;row.document_type=credit?'Credit note':'Invoice';
- if(credit&&!row.original_invoice)issues.push('Column K: original invoice number is required for a credit note.');
- if((credit||clean(values[11]))&&!row.original_invoice_date)issues.push('Column L: enter a valid original invoice date.');
+ if(credit&&!row.original_invoice)pending.push('Column K: original invoice number is missing.');
+ if(credit&&!clean(optional(values[11])))pending.push('Column L: original invoice date is missing.');
+ else if(clean(optional(values[11]))&&!row.original_invoice_date)issues.push('Column L: enter a valid original invoice date.');
  if(row.original_invoice_date&&row.date&&row.original_invoice_date>row.date)issues.push('Column L: original invoice date cannot be later than the credit-note date.');
  if(!credit&&(row.original_invoice||row.original_invoice_date))issues.push('Columns K and L: leave blank for an ordinary invoice; credit notes use negative amounts.');
  for(const [key,col] of [['amount',7],['vat',8],['gross',9]])if(row[key]!==null&&Math.abs(Number(String(values[col]).replace(/,/g,''))-row[key])>1e-9)rounded.push(key);
  row.rounded_fields=rounded;
  const line=[row.description,row.customs_entry,row.purchase_type].map(norm).join('|');
  const key=JSON.stringify([norm(row.invoice),norm(row.party_pin)||norm(row.party),line]);
- return {raw,row,issues,key,route:null,category_code:null,narration:row.description||null};
+ return {raw,row,issues,pending,key,route:null,category_code:null,narration:row.description||null};
 }
 export function purchaseUploadSummary(records,rate,start,end){
- const out={source_count:records.length,valid_count:0,rejected_count:0,credit_count:0,rounded_count:0,net:0,vat:0,gross:0,issues:[]};
- for(const {source_row,values} of records){const n=normalizePurchaseUpload(values,rate,start,end);if(n.row.amount<0)out.credit_count++;if(n.row.rounded_fields.length)out.rounded_count++;if(n.issues.length){out.rejected_count++;if(out.issues.length<100)out.issues.push({row:source_row,reason:n.issues.join(' ')});continue;}out.valid_count++;for(const k of ['net','vat','gross'])out[k]+=Math.round(n.row[k==='net'?'amount':k]*100);}
- for(const k of ['net','vat','gross'])out[k]/=100;return out;
+ const out={source_count:records.length,valid_count:0,rejected_count:0,pending_count:0,credit_count:0,rounded_count:0,net:0,vat:0,gross:0,source_totals:{net:0,vat:0,gross:0,complete:true},pending_totals:{net:0,vat:0,gross:0},issues:[],pending_issues:[]};
+ for(const {source_row,values} of records){const n=normalizePurchaseUpload(values,rate,start,end);if(n.row.amount<0)out.credit_count++;if(n.row.rounded_fields.length)out.rounded_count++;
+  for(const k of ['net','vat','gross']){const amount=n.row[k==='net'?'amount':k];if(amount===null)out.source_totals.complete=false;else out.source_totals[k]+=Math.round(amount*100);}
+  if(n.issues.length){out.rejected_count++;if(out.issues.length<100)out.issues.push({row:source_row,reason:n.issues.join(' ')});continue;}
+  if(n.pending.length){out.pending_count++;if(out.pending_issues.length<100)out.pending_issues.push({row:source_row,invoice:n.row.invoice,reason:n.pending.join(' ')});for(const k of ['net','vat','gross'])out.pending_totals[k]+=Math.round(n.row[k==='net'?'amount':k]*100);continue;}
+  out.valid_count++;for(const k of ['net','vat','gross'])out[k]+=Math.round(n.row[k==='net'?'amount':k]*100);
+ }
+ for(const k of ['net','vat','gross']){out[k]/=100;out.source_totals[k]/=100;out.pending_totals[k]/=100;}return out;
 }
 export function importRowRange({header,first,last,rowCount,block}){
  if(!Number.isInteger(first)||!Number.isInteger(last))fail(400,'First and last data rows must be whole numbers.');

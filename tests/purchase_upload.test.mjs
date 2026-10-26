@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {money} from '../supabase/functions/staff-workspace-v6/workspace-rules.mjs';
-import {purchaseUploadHeaders,purchaseUploadMap,purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from '../supabase/functions/staff-workspace-v6/purchase-upload.mjs';
+import {purchaseDisplayValues,purchaseUploadHeaders,purchaseUploadMap,purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from '../supabase/functions/staff-workspace-v6/purchase-upload.mjs';
 const sheet=rows=>({name:'Purchase Upload',rowCount:rows.length,columnCount:Math.max(...rows.map(r=>r.length)),getRow:i=>({getCell:c=>({value:rows[i-1]?.[c-1]??null})})});
 const row=()=>['Local','P000000001A','Example supplier','2026-10-03','0000123','Supplies','',100,16,116,'',''];
 test('fixed template validates header order but imports only row two onwards, skipping blanks',()=>{
@@ -23,7 +23,7 @@ test('zero-rated and exempt remain distinct ERP choices without an extra spreads
  assert.match(normalizePurchaseUpload(row(),'8%','2026-10-01','2026-10-31').issues.join(' '),/selected category/);
 });
 test('credit notes require original details, preserve signs and permit prior-period original dates',()=>{
- const v=row();v[3]='2026-10-10';v[4]='CN-001';v[7]=-100;v[8]=-16;v[9]=-116;let n=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31');assert.match(n.issues.join(' '),/Column K/);assert.match(n.issues.join(' '),/Column L/);
+ const v=row();v[3]='2026-10-10';v[4]='CN-001';v[7]=-100;v[8]=-16;v[9]=-116;let n=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31');assert.deepEqual(n.issues,[]);assert.match(n.pending.join(' '),/Column K/);assert.match(n.pending.join(' '),/Column L/);
  v[10]='0000123';v[11]='24/09/2026';n=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31');assert.deepEqual(n.issues,[]);assert.equal(n.row.original_invoice_date,'2026-09-24');assert.equal(n.row.amount,-100);assert.equal(n.row.document_type,'Credit note');assert.equal(n.row.return_month,'2026-10-01');v[8]=16;assert.match(normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31').issues.join(' '),/same sign/);
 });
 test('invoice dates remain separate from selected claim period and source identifiers stay text',()=>{
@@ -38,4 +38,19 @@ test('range errors state the actual cause and accept exactly 10000 data rows',()
 });
 test('review totals exclude rejected rows visibly and distinguish zero rows from blank rows',()=>{
  const good=row(),bad=row();bad[9]=200;const s=sheet([purchaseUploadHeaders,good,[],bad]);const summary=purchaseUploadSummary(purchaseUploadRows(s).rows,'16%','2026-10-01','2026-10-31');assert.equal(summary.source_count,2);assert.equal(summary.rejected_count,1);assert.equal(summary.valid_count,1);assert.equal(summary.net,100);assert.equal(summary.vat,16);assert.equal(summary.gross,116);assert.equal(summary.issues[0].row,4);
+});
+
+test('optional blanks and N/A are missing values only in optional columns',()=>{
+ for(const value of ['', 'N/A',' n/a ','NA','Not applicable','—','-']){const v=row();v[6]=v[10]=v[11]=value;const n=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31');assert.deepEqual(n.issues,[]);assert.deepEqual(n.pending,[]);assert.equal(n.row.customs_entry,'');assert.equal(n.row.original_invoice,'');}
+ const v=row();v[8]='N/A';assert.match(normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31').issues.join(' '),/Column I/);
+ v[7]=-100;v[8]=-16;v[9]=-116;v[10]=v[11]='N/A';let n=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31');assert.equal(n.pending.length,2);assert.deepEqual(n.issues,[]);assert.equal(n.raw['11: Original invoice number'],'N/A');v[11]='invalid-date';n=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31');assert.match(n.issues.join(' '),/Column L/);
+});
+test('whole-file and pending totals preserve signed credits without disguising missing numbers',()=>{
+ const credit=row();credit[4]='CN-PENDING';credit[7]=-100;credit[8]=-16;credit[9]=-116;
+ const records=[{source_row:2,values:row()},{source_row:3,values:credit}],s=purchaseUploadSummary(records,'16%','2026-10-01','2026-10-31');
+ assert.equal(s.pending_count,1);assert.equal(s.valid_count,1);assert.equal(s.rejected_count,0);assert.deepEqual(s.pending_totals,{net:-100,vat:-16,gross:-116});assert.deepEqual(s.source_totals,{net:0,vat:0,gross:0,complete:true});assert.equal(s.gross,116);assert.equal(s.pending_issues[0].row,3);
+ credit[8]='';assert.equal(purchaseUploadSummary(records,'16%','2026-10-01','2026-10-31').source_totals.complete,false);
+});
+test('standard purchase dates display as calendar dates and preserve text references',()=>{
+ const v=row();v[3]=46030;v[11]='46043';const shown=purchaseDisplayValues(v);assert.equal(shown[3],'08/01/2026');assert.equal(shown[11],'21/01/2026');assert.equal(shown[4],'0000123');assert.equal(v[3],46030);
 });

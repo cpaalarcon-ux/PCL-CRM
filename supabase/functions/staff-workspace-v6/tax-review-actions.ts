@@ -1,3 +1,4 @@
+import {pendingPurchases} from './purchase-pending.ts';
 import {summarySalesRows} from './period-import-actions.ts';
 import {stagingRates,preferredRates} from './testing-rates.mjs';
 import {taxKinds,pickRate,profileIssues,keys,testRate,payrollFromRules,simpleTax,vatRuleCheck} from './tax-registry.mjs';
@@ -27,7 +28,10 @@ export async function taxSummary(tx:any,c:any){
  for(const s of summaryImports)batches.push({batch_id:s.import_id,dataset:'Sales',period_start:s.starts_on,period_end:s.ends_on,source_count:4,new_count:4,rejected_count:0});
  if(rows.length>10000)fail(400,'Split the tax review into smaller periods (maximum 10,000 rows per case).');
  const issues:string[]=profileIssues(profile,{...c,starts_on:dateText(c.starts_on),ends_on:dateText(c.ends_on)});if(batches.some((b:any)=>dateText(b.period_start)<dateText(c.starts_on)||dateText(b.period_end)>dateText(c.ends_on)))issues.push('An imported batch crosses this case period. Use matching period boundaries.');
- const rejected=batches.reduce((s:number,b:any)=>s+b.rejected_count,0);
+ const pending_information=await pendingPurchases(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on));
+ const pendingHistory=Number((await tx`select count(*)::int n from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${c.project_id} and b.period_start<=${c.ends_on} and b.period_end>=${c.starts_on} and r.raw_values ? '_pending_purchase'`)[0].n);
+ const rejected=batches.reduce((s:number,b:any)=>s+b.rejected_count,0)-pendingHistory;
+ if(pending_information.total&&['VAT','Company','Individual','Partnership'].includes(c.kind))issues.push(`${pending_information.total} credit note(s) are Pending information. Supply original invoice details and reupload before submitting this tax case.`);
  if(rejected&&!c.inputs.rejection_resolution)issues.push(`${rejected} rejected source rows need a documented reconciliation.`);
  const findings=await tx`select * from erp_private.tax_findings where project_id=${c.project_id} and deleted_at is null and (case_id=${c.case_id} or case_id is null)`;
  if(findings.some((f:any)=>f.status==='Open'))issues.push('Open findings must be resolved.');
@@ -89,7 +93,7 @@ export async function taxSummary(tx:any,c:any){
  if(c.kind!=='VAT'&&!c.source_document_id)issues.push('Link the supporting working-paper document.');
  if(!c.inputs.return_tied)issues.push('Confirm that the draft return agrees to the reviewed computation.');
  if(applied.some(r=>r.approval_scope==='Testing'))result.testing_only=true;
- return {result,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
+ return {result,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
 }
 export async function taxAction(tx:any,a:any,p:any):Promise<any>{
  if(!String(p.action).startsWith('tax_'))return undefined;

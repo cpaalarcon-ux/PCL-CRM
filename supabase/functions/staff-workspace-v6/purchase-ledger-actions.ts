@@ -1,3 +1,4 @@
+import {pendingPurchases} from './purchase-pending.ts';
 import ExcelJS from 'exceljs';
 import {fail,uuid,text,choice,date} from './validation.mjs';
 const groups=['All','Goods for resale','Construction raw materials','Other inventory','Expenditure','PPE','Unmapped'];
@@ -27,8 +28,10 @@ export async function purchaseLedgerAction(tx:any,a:any,p:any){
  and concat_ws(' ',supplier,supplier_pin,invoice,narration,account_code,account_name,construction_job,stock_class) ilike ${search}
  group by ledger_group,vat_category,account_code,account_name order by ledger_group,account_code,vat_category`;
  const total=summary.reduce((n:number,r:any)=>n+r.rows,0);
- const disclosure='Purchase movements from classified import data. Mapping is not posting or VAT approval. These are not stock-on-hand balances. Posted accounting entries, stock issues/consumption and the approved asset register remain separate controls.';
- if(p.action==='purchase_ledger_read')return {project,rows,summary,total,offset,page_size:200,groups,rates,disclosure};
+ const pending_information=await pendingPurchases(tx,pid,start,end);
+ const pendingNotice=pending_information.total?` ${pending_information.total} credit note(s) pending original invoice details are excluded from these figures: net KES ${pending_information.net.toFixed(2)}, VAT KES ${pending_information.vat.toFixed(2)}, gross KES ${pending_information.gross.toFixed(2)}. Pending totals cover the project/date window, before ledger, VAT and search filters. Complete them before relying on final totals.`:'';
+ const disclosure='Purchase movements from classified import data. Mapping is not posting or VAT approval. These are not stock-on-hand balances. Posted accounting entries, stock issues/consumption and the approved asset register remain separate controls.'+pendingNotice;
+ if(p.action==='purchase_ledger_read')return {project,pending_information,rows,summary,total,offset,page_size:200,groups,rates,disclosure};
  if(rows.length>20000)fail(400,'Narrow the date, account or ledger filters to export at most 20,000 rows.');
  const book=new ExcelJS.Workbook(),sheet=book.addWorksheet('Purchase ledger'),heads=['Date','Supplier','PIN','Invoice / note','Original invoice','Narration','Ledger','Stock class','Construction job / site','VAT category','Net KES','VAT KES','Gross KES','Account','Account name','Review','Posting status','Posting reference','Posted reversal','First-use status','First-use date','Source batch','Source row'];
  sheet.addRow([project.project_name]);sheet.addRow([disclosure]);sheet.addRow(heads);
