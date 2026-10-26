@@ -21,7 +21,7 @@ export function splitValues(row,parts){
  if(parsed.reduce((s,p)=>s+p.amount,0)!==cents(row.normalized.amount)||parsed.reduce((s,p)=>s+p.vat,0)!==cents(row.normalized.vat||0))fail(400,'Allocation net and VAT totals must equal the original transaction exactly.');
  return parsed.map(p=>({...p,amount:p.amount/100,vat:p.vat/100,narration:text(p.narration,1000)}));
 }
-export function reconciliation(rows,inputs={}){
+export function reconciliation(rows,inputs={},controls={}){
  const total=kind=>rows.filter(r=>r.dataset===kind&&!r.is_split_parent).reduce((a,r)=>({net:money(a.net+Number(r.normalized.amount||0)),vat:money(a.vat+Number(r.normalized.vat||0)),gross:money(a.gross+Number(r.normalized.amount||0)+Number(r.normalized.vat||0))}),{net:0,vat:0,gross:0});
  const etims=total('Sales'),pos=total('POS'),bank=rows.filter(r=>r.dataset==='Bank').reduce((a,r)=>money(a+Number(r.normalized.credit||0)),0),allocations=Array.isArray(inputs.allocations)?inputs.allocations:[];
  if(allocations.length>500)fail(400,'Split the reconciliation into fewer than 500 adjustments.');
@@ -31,12 +31,13 @@ export function reconciliation(rows,inputs={}){
  const sum=cat=>money(parsed.filter(x=>x.category===cat).reduce((s,x)=>s+x.amount,0));
  // Bank and sales are compared on a consistent gross basis. Nothing here posts revenue or VAT.
  const adjusted_receipts=money(bank-sum('Non-sales receipt')-sum('Prior debtor collection')+sum('Current credit sales')+sum('Cash not banked')+sum('Settlement fee')+sum('Timing into bank')-sum('Timing out of bank'));
- const issues=[];if(!rows.some(r=>r.dataset==='Sales'))issues.push('Upload the supported sales register.');if(!rows.some(r=>r.dataset==='Bank'))issues.push('Upload the bank control source.');
+ const pending=!rows.some(r=>r.dataset==='Bank')&&controls.bankPendingApproved===true;
+ const issues=[];if(pending&&parsed.length)issues.push('Do not enter a bank bridge without bank data. Retain alternative sales evidence in the deferral.');if(!rows.some(r=>r.dataset==='Sales'))issues.push('Upload the supported sales register.');if(!rows.some(r=>r.dataset==='Bank')&&!pending)issues.push('Upload the bank control source.');
  if(sum('Non-sales receipt')+sum('Prior debtor collection')>bank+.01)issues.push('Receipt exclusions exceed the imported bank deposits.');
  const source_explanation=String(inputs.source_explanation||'').trim();if(rows.some(r=>r.dataset==='POS')&&Math.abs(etims.gross-pos.gross)>.01&&!source_explanation)issues.push('Explain the eTIMS/POS difference and identify corrective source rows.');
  if(!rows.some(r=>r.dataset==='POS')&&!inputs.pos_not_applicable_reason)issues.push('Upload POS/Z-report data or explain why POS is not applicable.');
- const residual=money(adjusted_receipts-etims.gross);if(Math.abs(residual)>.01&&!parsed.some(x=>x.category==='Other supported adjustment'))issues.push('The banking bridge has an unexplained residual.');
+ const residual=money(adjusted_receipts-etims.gross);if(!pending&&Math.abs(residual)>.01&&!parsed.some(x=>x.category==='Other supported adjustment'))issues.push('The banking bridge has an unexplained residual.');
  const other=money(parsed.filter(x=>x.category==='Other supported adjustment').reduce((s,x)=>s+x.amount,0));if(other&&Math.abs(Math.abs(residual)-other)>.01)issues.push('Other supported adjustments must explain the residual exactly.');
  if(!String(inputs.conclusion||'').trim())issues.push('Record the reconciliation conclusion.');
- return {etims,pos,bank_deposits:bank,benchmark_net:Math.max(etims.net,pos.net),adjusted_gross_receipts:adjusted_receipts,residual_gross:residual,allocations:parsed,issues,source_explanation,pos_not_applicable_reason:String(inputs.pos_not_applicable_reason||''),conclusion:String(inputs.conclusion||''),statement:'Review benchmark only. Approved sales and VAT remain supported source transactions; no MAX posting.'};
+ return {bank_status:pending?'Bank pending':'Imported',etims,pos,bank_deposits:pending?null:bank,benchmark_net:Math.max(etims.net,pos.net),adjusted_gross_receipts:pending?null:adjusted_receipts,residual_gross:pending?null:residual,allocations:parsed,issues,source_explanation,pos_not_applicable_reason:String(inputs.pos_not_applicable_reason||''),conclusion:String(inputs.conclusion||''),statement:'Review benchmark only. Approved sales and VAT remain supported source transactions; no MAX posting.'};
 }

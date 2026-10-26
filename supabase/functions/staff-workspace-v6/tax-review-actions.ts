@@ -46,7 +46,7 @@ export async function taxSummary(tx:any,c:any){
   const reconciliation=await tx`select reconciliation_id,reviewed_by,review_note,inputs,result,source_fingerprint from erp_private.sales_reconciliations where project_id=${c.project_id} and review_type='Monthly' and starts_on=${c.starts_on} and ends_on=${c.ends_on} and status='Locked'`;salesReview=reconciliation[0]||null;if(!reconciliation.length)issues.push('Complete independent monthly sales and bank reconciliation before tax submission.');
   if(!batches.some((b:any)=>b.dataset==='Sales'))issues.push('Upload the sales source for this period.');
   if(!batches.some((b:any)=>['Purchases','Expenditure','Non-eTIMS'].includes(b.dataset)))issues.push('Upload the purchases/expenditure source for this period.');
-  if(!batches.some((b:any)=>b.dataset==='Bank'))issues.push('Upload the bank control source for this period.');
+  if(!batches.some((b:any)=>b.dataset==='Bank')&&salesReview?.result?.bank_status!=='Bank pending')issues.push('Upload the bank control source for this period.');
   if(unreviewed)issues.push(`${unreviewed} source rows require reviewer decisions.`);if(unmapped)issues.push(`${unmapped} purchase/expenditure rows need mapping.`);
   if(!c.inputs.bank_reconciliation)issues.push('Record the bank reconciliation explanation and resolved differences.');
   const previous=(await tx`select result,ends_on,status from erp_private.tax_cases where project_id=${c.project_id} and kind='VAT' and ends_on<${c.starts_on} and status in ('Locked','Filed') order by ends_on desc limit 1`)[0];
@@ -59,6 +59,20 @@ export async function taxSummary(tx:any,c:any){
   if(!c.inputs.employees?.length)issues.push('Add the payroll rows before submitting.');
   else if(needed.every(k=>rules[k])){try{result=payrollFromRules(c.inputs,rules);if(result.exceptions)issues.push(`${result.exceptions} employee PAYE differences need correction.`);}catch(e){issues.push((e as Error).message);}}
  }else if(['Company','Individual','Partnership'].includes(c.kind)){
+  const identity=one(await tx`select legal_entity_type from erp_private.clients where client_id=${project.client_id}`),expectedType=({Company:'Limited company',Individual:'Sole proprietor',Partnership:'Partnership'} as any)[c.kind];
+  if(identity.legal_entity_type!==expectedType)issues.push('Confirm the annual computation against the canonical legal entity type. Other individual income needs its supported recipient workflow.');
+  if(!(await tx`select period_id from erp_private.client_periods where client_id=${project.client_id} and starts_on=${c.starts_on} and ends_on=${c.ends_on}`).length)issues.push('Record the exact verified annual reporting period and dated deadline rule.');
+  if(c.kind==='Partnership'){
+   const interests=await tx`select * from erp_private.partner_interests where client_id=${project.client_id} and effective_from<=${c.ends_on} and effective_to>=${c.starts_on}`;
+   const groups=[...new Set(interests.map((x:any)=>x.group_id))];
+   if(groups.length!==1||interests.some((x:any)=>dateText(x.effective_from)>dateText(c.starts_on)||dateText(x.effective_to)<dateText(c.ends_on)))issues.push('Dated partner agreements do not cover one complete annual window. Support subperiod profit allocation before annual submission.');
+   else if(interests.some((x:any)=>!c.inputs.partners?.some((p:any)=>p.name===x.partner_name&&Math.abs(Number(p.share)-Number(x.profit_percentage))<0.00001)))issues.push('Tie each partner allocation to the dated agreement; preserve company recipients.');
+  }
+  const annualStock=await tx`select result,status from erp_private.stock_controls where project_id=${c.project_id} and starts_on>=${c.starts_on} and ends_on<=${c.ends_on}`;if(annualStock.some((s:any)=>s.status!=='Approved'||s.result?.provisional||s.result?.count_value==null))issues.push('Tie out supported stock counts and costs: provisional stock cannot certify annual stock.');
+  if(!c.inputs.annual_bank_review_document_id)issues.push('Link the completed annual bank review evidence. Monthly Bank pending is not annual clearance.');
+  else if(!(await tx`select document_id from erp_private.documents where document_id=${uuid(c.inputs.annual_bank_review_document_id)} and project_id=${c.project_id} and deleted_at is null`).length)issues.push('Annual bank review evidence is unavailable.');
+  const outstanding=await tx`select d.reconciliation_id from erp_private.bank_deferrals d join erp_private.sales_reconciliations r using(reconciliation_id) where d.project_id=${c.project_id} and r.starts_on>=${c.starts_on} and r.ends_on<=${c.ends_on} and not exists(select 1 from erp_private.bank_supplements s where s.reconciliation_id=d.reconciliation_id and s.status='Approved' and not s.amendment_required)`;
+  if(outstanding.length)issues.push('Complete deferred bank supplements and resolve any required amendments before annual completion.');
   if(c.inputs.accounting_profit===undefined||c.inputs.accounting_profit==='')issues.push('Enter accounting profit and supported tax adjustments.');
   else if(c.kind==='Partnership'&&!c.inputs.partners?.length)issues.push('Add partner profit-sharing percentages.');
   else if(c.kind==='Partnership'||rate){const reliefs=c.kind==='Individual'?Number(rate.parameters.personal_relief||0)+Number(c.inputs.other_reliefs||0):0;result=incomeCalculation(c.kind,{...c.inputs,reliefs},rate?.parameters);if(c.kind==='Individual')result.personal_relief=Number(rate.parameters.personal_relief||0);}

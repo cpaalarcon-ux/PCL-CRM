@@ -32,7 +32,7 @@ export function importMap(input,dataset){
  if(dataset==='Bank'&&!map.debit&&!map.credit)fail(400,'Map debit and/or credit amounts.');return map;
 }
 export function money(v){if(v===''||v==null)return null;let s=String(v).trim().replace(/,/g,'');if(/^\(.*\)$/.test(s))s='-'+s.slice(1,-1);if(!/^-?\d+(\.\d{1,6})?$/.test(s))return null;let n=Number(s);return Number.isFinite(n)&&Math.abs(n)<1e12?Math.round(n*100)/100:null;}
-export function excelDate(v){if(typeof v==='number'&&v>0&&v<100000)v=new Date(Date.UTC(1899,11,30)+Math.floor(v)*86400000).toISOString().slice(0,10);let s=String(v||'').trim(),m=s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);if(m)s=`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;try{return date(s);}catch{return null;}}
+export function excelDate(v){if(v instanceof Date)v=Number.isFinite(v.getTime())?v.toISOString().slice(0,10):'';if(typeof v==='number'&&v>0&&v<100000)v=new Date(Date.UTC(1899,11,30)+Math.floor(v)*86400000).toISOString().slice(0,10);let s=String(v||'').trim(),m=s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);if(m)s=`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;try{return date(s);}catch{return null;}}
 export function normalizeImport(values,map,dataset,start,end){
  const raw=Object.fromEntries(Object.entries(map).map(([key,col])=>[key,values[col-1]??'']));
  const hasData=dataset==='General'?Object.values(raw).some(v=>String(v).trim()!==''):

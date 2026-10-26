@@ -1,3 +1,5 @@
+> **Entity/activity and mapping testing release:** See [V3 testing procedures and boundaries](supabase/ENTITY_ACTIVITY_V3.md) for legal entity setup, dated activities, cross-page mapping, stock-value controls, independent bank deferral and return-export readiness. Use the connected staff workspace, not the historical browser-local preview.
+
 > **Latest connected task procedure:** Task titles open dedicated workspaces with linked Excel upload, mapping, comments and handover. Filing now requires written approval and acknowledgment evidence through the task procedure. Catalogue rates enabled provisionally for UAT are labelled **Approved for testing**, with outputs **TESTING — NOT FOR FILING**. See the connected guide below; older root-page descriptions are historical.
 
 > **Current connected testing release:** See [Consolidated testing suite](supabase/CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. Historical descriptions below refer to earlier releases or browser-local previews. Login persists until manual sign-out; activity affects presence only.

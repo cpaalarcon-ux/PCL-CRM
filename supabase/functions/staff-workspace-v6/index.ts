@@ -1,3 +1,4 @@
+import {improvementAction} from './improvement-actions.ts';
 import {procedureAction} from './procedure-actions.ts';
 import {presenceAction} from './presence-actions.ts';
 import {accountingAction} from './accounting-actions.ts';
@@ -212,6 +213,7 @@ async function action(id:any,p:any){
   const tax=await taxAction(tx,a,p);if(tax!==undefined)return tax;
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
+  const improvements=await improvementAction(tx,a,p);if(improvements!==undefined)return improvements;
   const accounting=await accountingAction(tx,a,p);if(accounting!==undefined)return accounting;
   const workbook=await workbookAction(tx,a,p,admin.storage.from(BUCKET));if(workbook!==undefined)return workbook;
   if(p.action==='task_status'){

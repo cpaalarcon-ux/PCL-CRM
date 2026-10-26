@@ -27,6 +27,14 @@ export async function readWorkbookSheet(bytes,selectedName){
   let active=false,inText=false,phonetic=false,value='';
   xml(await read('xl/sharedStrings.xml'),{opentag:n=>{const tag=local(n.name);if(tag==='si'){active=true;value='';}if(tag==='rPh')phonetic=true;if(tag==='t'&&active&&!phonetic)inText=true;},text:t=>{if(inText)value+=t;},closetag:n=>{const tag=local(n.name);if(tag==='t')inText=false;if(tag==='rPh')phonetic=false;if(tag==='si'){strings.push(value);active=false;}}});
  }
+ // A date-formatted number must stay a date, particularly in amount columns.
+ // Do not guess dates from a numeric value: 46023 can be a genuine KES amount.
+ const formats=new Map(),styles=[];let inCellXfs=false;
+ if(zip.file('xl/styles.xml'))xml(await read('xl/styles.xml'),{opentag:n=>{
+  const tag=local(n.name);if(tag==='numFmt')formats.set(Number(n.attributes.numFmtId),String(n.attributes.formatCode||''));
+  if(tag==='cellXfs')inCellXfs=true;
+  if(tag==='xf'&&inCellXfs){const id=Number(n.attributes.numFmtId||0),fmt=(formats.get(id)||'').replace(/"[^"]*"|\\.|\[[^\]]*\]/g,'');styles.push(id>=14&&id<=22||id>=45&&id<=47||/[yd]/i.test(fmt)||/h.*[ms]|m.*s/i.test(fmt));}
+ },closetag:n=>{if(local(n.name)==='cellXfs')inCellXfs=false;}});
  const cells=new Map();let rowCount=0,columnCount=0,cell=null,mode='';
  xml(await read(target),{opentag:n=>{
   const tag=local(n.name);
@@ -34,12 +42,15 @@ export async function readWorkbookSheet(bytes,selectedName){
    const match=String(n.attributes.r||'').match(/^([A-Z]+)([1-9]\d*)$/);if(!match)fail(400,'A worksheet cell has no valid address.');
    const col=[...match[1]].reduce((v,c)=>v*26+c.charCodeAt(0)-64,0),row=Number(match[2]);
    if(row>20000||col>80)fail(400,'Split the worksheet into at most 80 columns and 20,000 rows.');
-   rowCount=Math.max(rowCount,row);columnCount=Math.max(columnCount,col);cell={row,col,type:n.attributes.t,value:'',inline:'',formula:false};
+   rowCount=Math.max(rowCount,row);columnCount=Math.max(columnCount,col);cell={row,col,type:n.attributes.t,style:Number(n.attributes.s||0),value:'',inline:'',formula:false};
   }else if(cell&&['v','t','f'].includes(tag)){mode=tag;if(tag==='f')cell.formula=true;}
  },text:t=>{if(cell){if(mode==='v')cell.value+=t;if(mode==='t')cell.inline+=t;}},closetag:n=>{
   const tag=local(n.name);if(['v','t','f'].includes(tag))mode='';
   if(tag==='c'&&cell){let value=cell.type==='s'?strings[Number(cell.value)]:cell.type==='inlineStr'?cell.inline:cell.type==='d'?cell.value.slice(0,10):cell.type==='b'?cell.value==='1':cell.type==='str'||cell.type==='e'?cell.value:cell.value===''?'':Number(cell.value);
    if(value===undefined||typeof value==='number'&&!Number.isFinite(value))fail(400,'A worksheet cell contains an invalid value.');
+   if(cell.type==='d')value=new Date(cell.value);
+   else if(typeof value==='number'&&styles[cell.style])value=new Date(Date.UTC(1899,11,30)+Math.round(value*86400000));
+   if(value instanceof Date&&!Number.isFinite(value.getTime()))fail(400,'A worksheet date is invalid.');
    if(cell.formula)value={formula:'cached worksheet formula',result:value};
    cells.set(cell.row+':'+cell.col,value);cell=null;
   }
