@@ -30,12 +30,16 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   if(old?.status==='Archived')fail(400,'Archived projects cannot be scheduled.');
   const c=one(await tx`select company_name from erp_private.clients where client_id=${cid} and deleted_at is null`);
   const svc=one(await tx`select service_name from erp_private.services where service_code=${service} and is_active`);
-  const s=scheduleInput(p),name=text(p.project_name||defaultProjectName(c.company_name,svc.service_name,s.starts_on),200);
+  const s=scheduleInput(service==='TAX-COMP'?{...p,pack:'Tax Compilation'}:p),name=text(p.project_name||defaultProjectName(c.company_name,svc.service_name,s.starts_on),200);
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
   // Partners can explicitly select any registered firm; other categories require existing firm access.
   if(a.category_code==='PARTNER')await tx`insert into erp_private.staff_firm_access(staff_id,firm_id) values(${a.staff_id},${firm}) on conflict(staff_id,firm_id) do update set deleted_at=null`;
   if(old)await tx`update erp_private.projects set project_name=${name},service_code=${service} where project_id=${pid}`;
   else await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${pid},${cid},${firm},${name},${service},${a.staff_id})`;
+  if(service==='TAX-COMP'&&s.pack==='Tax Compilation'){
+   if(s.assigned_to===s.reviewer_id)fail(400,'Choose a different Supervisor, Manager or Partner for independent review.');
+   await tx`update erp_private.projects set tax_master=true where project_id=${pid}`;
+  }
   await assign(tx,pid,firm,a.staff_id);await assign(tx,pid,firm,s.assigned_to);const reviewer=await assign(tx,pid,firm,s.reviewer_id);
   if(!projectEditor(reviewer))fail(400,'Choose a Partner, Manager or Supervisor as reviewer.');
   const prior=(await tx`select * from erp_private.project_schedules where project_id=${pid} for update`)[0];

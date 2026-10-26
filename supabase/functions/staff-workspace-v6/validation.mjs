@@ -24,14 +24,17 @@ export function fileType(name,bytes){
  if(bytes.length<5||bytes.length>10*1024*1024)fail(400,'Upload a file between 5 bytes and 10 MB.');
  const ext=name.toLowerCase().split('.').pop();
  if(ext==='pdf'&&new TextDecoder().decode(bytes.slice(0,5))==='%PDF-')return 'application/pdf';
+ if(ext==='csv'){let csv;try{csv=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{fail(400,'CSV must be UTF-8 text.');}if(csv.includes('\0')||!csv.includes(',')||/^\s*</.test(csv))fail(400,'Use a comma-separated UTF-8 CSV.');return 'text/csv';}
+ if(ext==='zip'&&bytes[0]===0x50&&bytes[1]===0x4b&&bytes[2]===3&&bytes[3]===4)return 'application/zip';
+ if(ext==='docx'&&bytes[0]===0x50&&bytes[1]===0x4b&&bytes[2]===3&&bytes[3]===4)return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
  if(ext==='xlsx'&&bytes[0]===0x50&&bytes[1]===0x4b&&bytes[2]===3&&bytes[3]===4)return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
  if(ext==='png'&&[137,80,78,71,13,10,26,10].every((x,i)=>bytes[i]===x))return 'image/png';
  if(['jpg','jpeg'].includes(ext)&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255)return 'image/jpeg';
- fail(400,'Use a PDF, XLSX, PNG or JPEG matching its file extension.');
+ fail(400,'Use a supported PDF, CSV, XLSX, ZIP, DOCX, PNG or JPEG matching its file extension.');
 }
 export function allowedOrigin(origin){return ['https://backend-staging-foundation.pcl-crm.pages.dev','https://pcl-crm.pages.dev','https://pcl.phamalarcon.com'].includes(origin);}
 export function documentObjectKey(clientId,firmId,documentId,mime){
- const extensions={'application/pdf':'pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'xlsx','image/png':'png','image/jpeg':'jpg'};
+ const extensions={'application/pdf':'pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'xlsx','image/png':'png','image/jpeg':'jpg','text/csv':'csv','application/zip':'zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document':'docx'};
  const extension=extensions[choice(mime,Object.keys(extensions))];
  return `clients/${uuid(clientId)}/firms/${uuid(firmId)}/${uuid(documentId)}.${extension}`;
 }

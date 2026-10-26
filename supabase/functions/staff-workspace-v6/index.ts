@@ -1,3 +1,7 @@
+import JSZip from 'jszip';
+import {referenceAction} from './reference-actions.ts';
+import {discussionAction} from './discussion-actions.ts';
+import {taxPeriodAction} from './tax-period-actions.ts';
 import {improvementAction} from './improvement-actions.ts';
 import {procedureAction} from './procedure-actions.ts';
 import {presenceAction} from './presence-actions.ts';
@@ -160,13 +164,28 @@ async function accountLink(id:any,p:any){
 }
 async function bucket(){
  const r=await admin.storage.getBucket(BUCKET);
- if(r.data){if(r.data.public)throw new Error('Private storage configuration required');return;}
- const made=await admin.storage.createBucket(BUCKET,{public:false,fileSizeLimit:10*1024*1024,allowedMimeTypes:['application/pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','image/png','image/jpeg']});
+ if(r.data){if(r.data.public)throw new Error('Private storage configuration required');const updated=await admin.storage.updateBucket(BUCKET,{public:false,fileSizeLimit:10*1024*1024,allowedMimeTypes:['application/pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document','image/png','image/jpeg']});if(updated.error)throw new Error('Private upload settings unavailable');return;}
+ const made=await admin.storage.createBucket(BUCKET,{public:false,fileSizeLimit:10*1024*1024,allowedMimeTypes:['application/pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document','image/png','image/jpeg']});
  if(made.error){const retry=await admin.storage.getBucket(BUCKET);if(!retry.data||retry.data.public)throw new Error('Private storage unavailable');}
 }
+async function referenceUpload(req:Request,id:any){
+ const f=await req.formData(),file=f.get('file');if(!(file instanceof File))fail(400,'Choose a Word specification or reference document.');
+ const bytes=new Uint8Array(await file.arrayBuffer()),name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_'),mime=fileType(name,bytes);
+ if(!['application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/pdf','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mime))fail(400,'Use DOCX, PDF, XLSX or ZIP for a private reference.');
+ if(mime==='application/vnd.openxmlformats-officedocument.wordprocessingml.document'){const zip=await JSZip.loadAsync(bytes);if(!zip.file('word/document.xml'))fail(400,'This file is not a valid Word document.');}
+ const digest=await sha(bytes),rid=crypto.randomUUID(),key='references/'+rid+'/'+digest+'.'+name.split('.').at(-1);let uploaded=false;
+ try{return await scoped(id,async(tx,a)=>{leader(a);const old=(await tx`select reference_id from erp_private.reference_documents where sha256=${digest}`)[0];if(old)return {...old,duplicate:true};
+  await bucket();const result=await admin.storage.from(BUCKET).upload(key,bytes,{contentType:mime,upsert:false});if(result.error)fail(502,'The private reference could not be stored.');uploaded=true;
+  const prior=f.get('supersedes_id')?uuid(f.get('supersedes_id')):null;
+  await tx`insert into erp_private.reference_documents(reference_id,title,version_label,file_name,object_key,sha256,mime_type,file_size_bytes,supersedes_id,uploaded_by) values(${rid},${text(f.get('title'),200)},${text(f.get('version_label'),80)},${name},${key},${digest},${mime},${bytes.length},${prior},${a.staff_id})`;
+  await tx`insert into erp_private.reference_access_events(reference_id,actor_id,action) values(${rid},${a.staff_id},'UPLOAD')`;return {reference_id:rid};
+ });}catch(e){if(uploaded)await admin.storage.from(BUCKET).remove([key]);throw e;}
+}
+async function referenceDownload(id:any,p:any){return await scoped(id,async(tx,a)=>{leader(a);const r=one(await tx`select * from erp_private.reference_documents where reference_id=${uuid(p.reference_id)}`),file=await admin.storage.from(BUCKET).download(r.object_key);if(file.error||!file.data)fail(404,'This private reference is unavailable.');await tx`insert into erp_private.reference_access_events(reference_id,actor_id,action) values(${r.reference_id},${a.staff_id},'DOWNLOAD')`;return {blob:file.data,name:r.file_name};});}
 async function upload(req:Request,id:any){
  const f=await req.formData(),file=f.get('file');if(!(file instanceof File))fail(400,'Choose a file.');
  const bytes=new Uint8Array(await file.arrayBuffer()),name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_'),mime=fileType(name,bytes);
+ if(mime==='application/vnd.openxmlformats-officedocument.wordprocessingml.document')fail(400,'Upload Word policies through Settings → Reference documents. Project source files use CSV, XLSX or ZIP.');
  const cid=uuid(f.get('client_id')),firm=uuid(f.get('firm_id')),pid=f.get('project_id')?uuid(f.get('project_id')):null,tid=f.get('task_id')?uuid(f.get('task_id')):null;
  const cat=choice(f.get('category'),['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports']);
  const doc=crypto.randomUUID(),key=documentObjectKey(cid,firm,doc,mime),digest=await sha(bytes);
@@ -204,7 +223,10 @@ async function action(id:any,p:any){
   await admin.auth.admin.signOut(id.jwt,'local');return {ok:true};
  }
  return scoped(id,async(tx,a)=>{
-  if(p.action==='workspace')return {...await readWorkspace(tx,a),suite:await suiteRead(tx)};
+  if(p.action==='workspace')return {...await readWorkspace(tx,a),suite:await suiteRead(tx),release:'v10-tax-work-periods-chatter'};
+  const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
+  const discussion=await discussionAction(tx,a,p);if(discussion!==undefined)return discussion;
+  const periods=await taxPeriodAction(tx,a,p);if(periods!==undefined)return periods;
   const presence=await presenceAction(tx,a,p,{session_id:id.claims.session_id,activity_age_ms:id.activity_age_ms});if(presence!==undefined)return presence;
   const exported=await suiteExport(tx,a,p,admin.storage.from(BUCKET));if(exported!==undefined)return exported;
   const config=await taxConfigAction(tx,a,p);if(config!==undefined)return config;
@@ -225,6 +247,7 @@ async function action(id:any,p:any){
    if(filed&&filed>new Date().toLocaleDateString('en-CA',{timeZone:'Africa/Nairobi'}))fail(400,'Filing date cannot be in the future.');
    const t=one(await tx`select template_key from erp_private.tasks where task_id=${task}`);
    const workflow=(await tx`select profile,revision,stage from erp_private.task_procedures where task_id=${task}`)[0];
+   if(status==='Cancelled'&&reason.length<10)fail(400,'Record why this task is cancelled or not applicable (at least 10 characters).');
    if(status==='Completed'&&workflow){if(workflow.profile!=='Supporting task')fail(400,'Use the task workspace review, approval and closure steps.');return procedureAction(tx,a,{action:'procedure_action',task_id:task,revision:workflow.revision,operation:'capture',message:reason||'Supporting capture completed from status update.'},taxAction);}
    if(workflow&&!['Pending preparer','Pending client documents'].includes(workflow.stage))fail(400,'Use the procedure actions to review, return or advance submitted work.');
    if(status==='Completed'&&['monthly-paye','monthly-vat','monthly-tot'].includes(t.template_key)&&!filed)fail(400,'Record the actual filing date. Use the task workflow for written approval, filing evidence and closure.');
@@ -259,7 +282,10 @@ async function action(id:any,p:any){
    for(const firm of firms){
     const [allowed]=await tx`select erp_private.firm_allowed(${firm}::uuid) as ok`;if(!allowed.ok)deny();
     await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${cid},${firm}) on conflict do nothing`;
-   }return {ok:true,client_id:cid};
+   }
+   let tax_project_id=null;
+   if(p.tax_setup){const saved=await workspaceAction(tx,a,{...p.tax_setup,action:'project_save',client_id:cid,service_code:'TAX-COMP',pack:'Tax Compilation'});tax_project_id=saved.project_id;}
+   return {ok:true,client_id:cid,tax_project_id};
   }
   if(p.action==='staff_save'){
    let old=null;if(p.staff_id){old=one(await tx`select * from erp_private.staff_members where staff_id=${uuid(p.staff_id)} for update`);if(old.staff_id===a.staff_id)fail(403,'Another Engagement Partner must edit your account.');}
@@ -306,6 +332,7 @@ Deno.serve(async(req:Request)=>{
   await limit('request-global',2000);
   if(req.headers.get('content-type')?.startsWith('multipart/form-data')){
    const id=await identity(req);
+   if(req.headers.get('x-erp-upload-kind')==='reference'){const result=await referenceUpload(req,id);return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData();const result=await scoped(id,(tx,a)=>masterImport(tx,a,form));return new Response(JSON.stringify(result),{headers});}
    const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
   }
@@ -318,8 +345,8 @@ Deno.serve(async(req:Request)=>{
   else if(p.action==='refresh_session')result=await refreshSession(req,p);
   else{
    const id=await identity(req);
-   if(p.action==='download'){
-    const file=await download(id,p);const h={...headers,'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`};
+   if(p.action==='download'||p.action==='reference_download'){
+    const file=p.action==='reference_download'?await referenceDownload(id,p):await download(id,p);const h={...headers,'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`};
     return new Response(file.blob,{headers:h});
    }
    result=await action(id,p);

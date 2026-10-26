@@ -1,4 +1,4 @@
-import {readWorkbookSheet} from './workbook-reader.mjs';
+import {readSourceSheet} from './source-reader.mjs';
 import categories from './purchase-categories.json' with {type:'json'};
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
 import {checkWorkbookZip,importMap,normalizeImport} from './workspace-rules.mjs';
@@ -39,29 +39,34 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  }
  if(!['workbook_preview','workbook_commit'].includes(p.action))fail(404,'Unknown workbook action.');
  const d=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and deleted_at is null`);
- if(!d.project_id||d.mime_type!=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')fail(400,'Choose an XLSX document linked to a project.');
- const project=one(await tx`select project_id,client_id,status from erp_private.projects where project_id=${d.project_id} and deleted_at is null`);
+ if(!d.project_id||!['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip'].includes(d.mime_type))fail(400,'Choose a CSV, XLSX or ZIP document linked to a project.');
+ const project=one(await tx`select p.project_id,p.client_id,p.status,c.company_name,c.kra_pin from erp_private.projects p join erp_private.clients c using(client_id) where p.project_id=${d.project_id} and p.deleted_at is null`);
  if(project.status==='Archived')fail(400,'Archived projects cannot receive imports.');
  const result=await storage.download(d.object_key);if(result.error||!result.data)fail(404,'The original workbook is unavailable.');
- const bytes=new Uint8Array(await result.data.arrayBuffer());checkWorkbookZip(bytes);
- const {sheet,sheets}=await readWorkbookSheet(bytes,p.sheet_name?text(p.sheet_name,100):null);
+ const bytes=new Uint8Array(await result.data.arrayBuffer());
+ const sourceInfo:any=await readSourceSheet(bytes,d.file_name,p.sheet_name?text(p.sheet_name,500):null);const {sheet,sheets}=sourceInfo;
  if(sheet.columnCount>80||sheet.rowCount>20000)fail(400,'Split the worksheet into at most 80 columns and 20,000 rows.');
  const template=detectTemplate(sheet);
- const header=Math.trunc(Number(p.header_row)||template?.blocks[0].header_row||1);
- if(header<1||header>sheet.rowCount||(!template&&header>200))fail(400,'Choose a valid header row.');
+ const header=p.header_row===0||p.header_row==='0'?0:Math.trunc(Number(p.header_row)||template?.blocks[0].header_row||(sourceInfo.headerless?0:1));
+ if(header<0||header>sheet.rowCount||(!template&&header>200))fail(400,'Choose a valid header row.');
  const block=template?.blocks.find((b:any)=>b.header_row===header);
  if(template&&!block)fail(400,'Choose one of the recognised workbook sections.');
  const values=(i:number)=>sheetValues(sheet,i);
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
- if(p.action==='workbook_preview')return {document_id:d.document_id,project_id:d.project_id,sheets,sheet_name:sheet.name,header_row:header,headers:block?.headers||values(header),template:template?{...template,selected:block}:null,
+ if(p.action==='workbook_preview')return {client_id:project.client_id,client_name:project.company_name,client_pin:project.kra_pin,document_id:d.document_id,project_id:d.project_id,sheets,sheet_name:sheet.name,header_row:header,headers:block?.headers||(header===0?Array.from({length:sheet.columnCount},(_,i)=>'Column '+(i+1)):values(header)),source_inventory:sourceInfo.inventory||null,source_adapter:sourceInfo.adapter||'XLSX',template:template?{...template,selected:block}:null,
   preview:Array.from({length:Math.min(12,Math.max(0,(block?.last_row||sheet.rowCount)-header))},(_,i)=>({row:header+i+1,values:values(header+i+1).slice(0,block?.headers.length||sheet.columnCount)})),categories:allCategories};
+ if(['text/csv','application/zip'].includes(d.mime_type)&&p.confirmed_client_id!==project.client_id)fail(400,'Confirm the legal client before committing this source.');
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.project_id+':tax'},0))`;
  const dataset=template?template.dataset:choice(p.dataset,['Sales','POS','Purchases','Bank','General']);
  if(template&&p.dataset&&p.dataset!==dataset)fail(400,'The import type must match the recognised workbook.');
+ if(sourceInfo.section&&!p.section_contract_confirmed)fail(400,'Confirm the selected KRA CSV section column mapping. A section name alone is not a validated filing contract.');
  const start=date(p.period_start),end=date(p.period_end);
  if(!start||!end||end<start)fail(400,'Choose the import period.');const map=block?block.column_map:importMap(p.column_map,dataset),batch=crypto.randomUUID();
  const first=Math.trunc(Number(p.first_row)||block?.first_row||header+1),last=Math.trunc(Number(p.last_row)||block?.last_row||sheet.rowCount);
  if(first<=header||last<first||last>sheet.rowCount||last-first>=10000||block&&(first<block.first_row||last>block.last_row))fail(400,'Choose up to 10,000 data rows within the selected section.');
+ const signature=await hash(JSON.stringify({version:4,digest:d.sha256,sheet:sheet.name,header,dataset,start,end,first,last,map}));
+ const previous=(await tx`select b.* from erp_private.workbook_import_requests r join erp_private.workbook_batches b using(batch_id) where r.project_id=${project.project_id} and r.signature=${signature}`)[0];
+ if(previous)return {ok:true,batch_id:previous.batch_id,duplicate_upload:true,dataset:previous.dataset,source_count:previous.source_count,new_count:0,duplicate_count:previous.new_count+previous.duplicate_count,rejected_count:previous.rejected_count,rejections:[]};
  const isCost=['Purchases','Expenditure','Non-eTIMS'].includes(dataset);
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':'+(isCost?'Cost':dataset)},0))`;
  let source=0,added=0,duplicates=0;const rejected:any[]=[],parsed:any[]=[];
@@ -101,6 +106,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  }
  await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by)
  values(${batch},${d.project_id},${d.document_id},${sheet.name},${header},${dataset},${start},${end},${tx.json(map)},${source},${added},${duplicates},${rejected.length},${a.staff_id})`;
+ await tx`insert into erp_private.workbook_import_requests(project_id,signature,batch_id,document_id) values(${project.project_id},${signature},${batch},${d.document_id})`;
  for(let i=0;i<rejected.length;i+=500)await tx`insert into erp_private.workbook_rejections(batch_id,source_row,reason,raw_values) select ${batch}::uuid,r.row,r.reason,r.raw from jsonb_to_recordset(${tx.json(rejected.slice(i,i+500))}::jsonb) as r(row integer,reason text,raw jsonb)`;
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
  return {ok:true,batch_id:batch,ignored_count:ignored,dataset,source_count:source,new_count:added,duplicate_count:duplicates,rejected_count:rejected.length,rejections:rejected.slice(0,100).map(r=>({row:r.row,reason:r.reason}))};

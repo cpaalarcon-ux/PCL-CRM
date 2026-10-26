@@ -65,6 +65,7 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   await tx`update erp_private.projects set status='Active' where project_id=${project.project_id}`;return {ok:true};
  }
  if(p.action==='engagement_finalize'){
+  if(project.tax_master&&(await tx`select project_id from erp_private.project_schedules where project_id=${project.project_id} and enabled and ends_on>=(now() at time zone 'Africa/Nairobi')::date and frequency<>'Once-off'`).length)fail(400,'Archive closed monthly periods from Projects & tasks. End or pause the ongoing service schedule before finalising the master engagement.');
   if(project.service_code.startsWith('AUD-')&&a.category_code!=='PARTNER')fail(403,'The Engagement Partner must finalize an audit engagement.');
   if(project.status!=='Active'||!e)fail(400,'Activate the engagement and complete its review controls first.');
   if(project.service_code.startsWith('AUD-')&&e.eqr_required&&(!e.eqr_document_id||!e.eqr_cleared_by))fail(400,'Independent EQR clearance is required.');

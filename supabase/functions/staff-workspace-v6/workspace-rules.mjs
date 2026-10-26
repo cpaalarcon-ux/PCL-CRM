@@ -67,7 +67,7 @@ export function checkWorkbookZip(bytes){
   const size=view.getUint32(pos+24,true),len=view.getUint16(pos+28,true),extra=view.getUint16(pos+30,true),comment=view.getUint16(pos+32,true);
   if(pos+46+len+extra+comment>bytes.length)fail(400,'Invalid workbook component.');
   const name=new TextDecoder().decode(bytes.slice(pos+46,pos+46+len));
-  if(/vbaProject|externalLinks|(^|\/)\.\.(\/|$)/i.test(name)||view.getUint16(pos+8,true)&1)fail(400,'Use an unencrypted XLSX without macros or external workbook links.');
+  if(/vbaProject|(^|\/)\.\.(\/|$)/i.test(name)||view.getUint16(pos+8,true)&1)fail(400,'Use an unencrypted XLSX without macros.');
   total+=size;if(total>25*1024*1024||size>12*1024*1024)fail(400,'Workbook expands beyond the supported limit. Split it into smaller workbooks.');
   pos+=46+len+extra+comment;
  }

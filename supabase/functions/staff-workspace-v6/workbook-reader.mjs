@@ -41,12 +41,11 @@ export async function readWorkbookSheet(bytes,selectedName){
   if(tag==='c'){
    const match=String(n.attributes.r||'').match(/^([A-Z]+)([1-9]\d*)$/);if(!match)fail(400,'A worksheet cell has no valid address.');
    const col=[...match[1]].reduce((v,c)=>v*26+c.charCodeAt(0)-64,0),row=Number(match[2]);
-   if(row>20000||col>80)fail(400,'Split the worksheet into at most 80 columns and 20,000 rows.');
-   rowCount=Math.max(rowCount,row);columnCount=Math.max(columnCount,col);cell={row,col,type:n.attributes.t,style:Number(n.attributes.s||0),value:'',inline:'',formula:false};
+   if(row>1048576||col>16384)fail(400,'Invalid worksheet cell address.');cell={row,col,type:n.attributes.t,style:Number(n.attributes.s||0),value:'',inline:'',formula:false};
   }else if(cell&&['v','t','f'].includes(tag)){mode=tag;if(tag==='f')cell.formula=true;}
  },text:t=>{if(cell){if(mode==='v')cell.value+=t;if(mode==='t')cell.inline+=t;}},closetag:n=>{
   const tag=local(n.name);if(['v','t','f'].includes(tag))mode='';
-  if(tag==='c'&&cell){let value=cell.type==='s'?strings[Number(cell.value)]:cell.type==='inlineStr'?cell.inline:cell.type==='d'?cell.value.slice(0,10):cell.type==='b'?cell.value==='1':cell.type==='str'||cell.type==='e'?cell.value:cell.value===''?'':Number(cell.value);
+  if(tag==='c'&&cell){if(cell.value===''&&cell.inline===''&&!cell.formula){cell=null;return;}if(cell.row>20000||cell.col>80)fail(400,'Business data must fit at most 80 columns and 20,000 rows. Split the worksheet.');rowCount=Math.max(rowCount,cell.row);columnCount=Math.max(columnCount,cell.col);let value=cell.type==='s'?strings[Number(cell.value)]:cell.type==='inlineStr'?cell.inline:cell.type==='d'?cell.value.slice(0,10):cell.type==='b'?cell.value==='1':cell.type==='str'||cell.type==='e'?cell.value:cell.value===''?'':Number(cell.value);
    if(value===undefined||typeof value==='number'&&!Number.isFinite(value))fail(400,'A worksheet cell contains an invalid value.');
    if(cell.type==='d')value=new Date(cell.value);
    else if(typeof value==='number'&&styles[cell.style])value=new Date(Date.UTC(1899,11,30)+Math.round(value*86400000));

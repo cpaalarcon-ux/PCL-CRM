@@ -22,7 +22,7 @@ export function normaliseLines(input,accounts,{allowUnmapped=false,opening=false
   return {line_no:i+1,account_code:code||null,legacy_code:String(r.legacy_code||'').slice(0,80),source_name:String(r.source_name||account?.name||'').slice(0,200),description:String(r.description||'').slice(0,1000),debit:debit/100,credit:credit/100,source_status:r.source_status==='Confirmed'?'Confirmed':'Unverified',source_reference:String(r.source_reference||'').slice(0,1000)};
  });
 }
-export function journalIssues(lines,accounts,{kind='Adjustment',entityType}={}){
+export function journalIssues(lines,accounts,{kind='Adjustment',entityType=''}={}){
  const issues=[],sum=lines.reduce((x,r)=>x+cashAmount(r.debit)-cashAmount(r.credit),0);
  if(!lines.length||!lines.some(l=>Number(l.debit)||Number(l.credit)))issues.push('Enter journal amounts.');
  if(sum!==0)issues.push(`Debits and credits differ by KES ${(sum/100).toFixed(2)}. No suspense entry is created.`);
