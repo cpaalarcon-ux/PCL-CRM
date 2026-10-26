@@ -23,3 +23,13 @@
 
 /* All permitted navigation tabs stay visible, including at browser zoom. */
 #nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(142px,1fr));gap:8px;overflow:visible;position:sticky;top:0;z-index:7;max-width:100%;box-shadow:0 4px 12px #12352814}#nav button{min-width:0;white-space:normal;min-height:44px;padding:10px 12px;line-height:1.35;text-align:center;font-size:13px;overflow-wrap:anywhere}#nav button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}.card,.two-col>*,.task>div{min-width:0}.two-col{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.task-title,.project-title,.project-card,.task-workspace h2{overflow-wrap:anywhere}.section-head{flex-wrap:wrap}.task-row-actions{max-width:48%;flex-shrink:0}.workspace-search{margin:16px 0 10px}.presence-hub{font-size:13px;margin:10px 0 18px}.presence-hub button{padding:7px 11px}.presence-hub .muted{flex:1;min-width:180px}@media(max-width:850px){#nav{position:static;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}.two-col{grid-template-columns:minmax(0,1fr)}}@media(max-width:600px){#nav{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:8px}#nav button{font-size:12px;padding:9px 7px}.task-row-actions{max-width:100%;width:100%}.metrics{gap:9px}.metric{padding:14px}.metric b{font-size:26px}.task-facts{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+/* Client accounting uses the existing project workspace, never the firm billing ledger. */
+#editor.ledger-dialog{width:min(1240px,96vw);max-width:1240px;max-height:94dvh}
+.ledger-tabs{display:flex;flex-wrap:wrap;gap:.5rem;padding:1rem 0;border-bottom:1px solid #d8e2de;position:sticky;top:0;background:white;z-index:2}
+.ledger-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin:1rem 0}
+.ledger-kpis>div{background:#f2f7f5;border-radius:10px;padding:1rem;border-top:3px solid #0b3d2e}
+.ledger-kpis small{display:block;color:#52665d}.ledger-kpis strong{display:block;font-size:clamp(1rem,2vw,1.5rem);margin-top:.5rem}
+.ledger-entry-line{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.6rem;padding:1rem;margin:.7rem 0;border:1px solid #d8e2de;border-radius:8px}
+.ledger-entry-line label{min-width:0}.ledger-entry-line input,.ledger-entry-line select{width:100%}
+.ledger-source{white-space:pre-wrap;max-height:380px;overflow:auto;font-size:.8rem}
+@media(max-width:700px){.ledger-kpis{grid-template-columns:1fr}.ledger-entry-line{grid-template-columns:repeat(2,minmax(0,1fr))}.ledger-tabs button{flex:1 1 40%}}

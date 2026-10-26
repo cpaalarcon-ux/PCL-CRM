@@ -7,6 +7,7 @@ export function mapValue(row,p,accounts,policy){
  if(!isCost(row)||row.is_split_parent)fail(400,'Choose active purchase or expenditure rows.');
  const account=accounts.find(a=>a.code===String(p.account_code)&&a.status==='Active'&&!a.is_legacy);
  if(!account||account.route!==Number(p.route))fail(400,'Choose an active detailed account for this route.');
+ if(row.dataset==='Non-eTIMS'&&(Number(p.route)!==2||Number(account.code)<51000||Number(account.code)>=67000||Number(account.code)>=60000&&Number(account.code)<=60170))fail(400,'Use a specific operating, administrative or finance expense category for non-eTIMS expenditure. Stock, PPE and payroll belong in their own schedules.');
  if(Number(p.route)===1){if(!policy||!['Periodic','Perpetual'].includes(policy.inventory_method))fail(400,'A Manager must configure the client inventory method first.');const asset=account.statement==='Statement of financial position';if(policy.inventory_method==='Perpetual'&&!asset||policy.inventory_method==='Periodic'&&asset)fail(400,'The inventory account does not match the configured accounting method.');if(['50100','50110','50120','50130','50140','50150'].includes(account.code))fail(400,'Cost-of-sales and stock adjustments are not purchase-entry accounts.');}
  const asset=Number(p.route)===3?text(p.asset_details||'',1000):null;
  const use=Number(p.route)===3?choice(p.first_use_status,['In use','Not yet in use']):null;
