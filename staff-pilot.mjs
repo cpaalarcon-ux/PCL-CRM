@@ -7,7 +7,7 @@ import {renderDashboard} from './staff-dashboard.mjs?v=20261026-v4';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261026-v4';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261026-pending';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261026-dropdowns';
 import {createSuiteUI} from './staff-suite.mjs?v=20261026-v4';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v12';
@@ -75,7 +75,7 @@ function render(){bindWorkspaceSearch();const allowed=['home','task','projects',
 function field(name,label,value='',type='text',extra=''){return `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;}
 function select(name,label,items,value='',blank='Choose…'){return `<label>${label}<select name="${name}">${options(items,value,blank)}</select></label>`;}
 function firmChecks(selected=[]){return `<fieldset class="full"><legend>Authorised / handling firms *</legend>${data.firms.map(f=>`<label><input type="checkbox" name="firm_ids" value="${f.firm_id}"${selected.includes(f.firm_id)?' checked':''}>${esc(f.firm_code+' · '+f.legal_name)}</label>`).join('')||'<p>Add a firm first.</p>'}</fieldset>`;}
-function modal(title,html,submit,afterSave){$('#editor').classList.remove('accounting-drawer','ledger-dialog','discussion-dialog','mapping-workspace');$('#editorTitle').textContent=title;$('#editorNotice').textContent='';$('#editorBody').innerHTML=html;$('#editor').showModal();const form=$('#editForm');if(form)form.onsubmit=async e=>{e.preventDefault();const b=form.querySelector('button[type=submit]');b.disabled=true;try{const result=await submit(new FormData(form));$('#editor').close();$('#editorBody').replaceChildren();await load();notice('Saved successfully.');if(afterSave)await afterSave(result);}catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;}};}
+function modal(title,html,submit,afterSave,{refreshWorkspace=true}={}){$('#editor').classList.remove('accounting-drawer','ledger-dialog','discussion-dialog','mapping-workspace');$('#editorTitle').textContent=title;$('#editorNotice').textContent='';$('#editorBody').innerHTML=html;$('#editor').showModal();const form=$('#editForm');if(form)form.onsubmit=async e=>{e.preventDefault();const b=form.querySelector('button[type=submit]');b.disabled=true;try{const result=await submit(new FormData(form));$('#editor').close();$('#editorBody').replaceChildren();if(refreshWorkspace)await load();notice('Saved successfully.');if(afterSave)await afterSave(result);}catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;}};}
 const form=(body,button='Save')=>`<form id="editForm" class="form-grid">${body}<button type="submit" class="primary full">${button}</button></form>`;
 function editClient(c={}){
  const existing=data.projects.find(p=>p.client_id===c.client_id&&p.tax_master&&p.status!=='Archived'),schedule=existing&&data.schedules.find(x=>x.project_id===existing.project_id);

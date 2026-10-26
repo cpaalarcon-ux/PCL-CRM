@@ -69,6 +69,20 @@ test('Period imports: summary-only storage, overlap replacement, independent rev
   const again=await doc('Purchase-standard-again.csv',body);const repeated=await run({action:'workbook_commit',document_id:again});assert.equal(repeated.new_count,0);assert.equal(repeated.duplicate_count,2);
   const bad=await doc('Purchase-standard-invalid.csv',body.replace('51670.552800000005','60000'));const before=(await tx`select count(*)::int n from erp_private.workbook_rows`)[0].n;await assert.rejects(()=>run({action:'workbook_commit',document_id:bad}),/No purchase rows were imported.*Column J/);assert.equal((await tx`select count(*)::int n from erp_private.workbook_rows`)[0].n,before);
  });
+ await t.test('stock categories are manager-configured, scoped, reusable and validated during mapping',async()=>{
+  const activity=id();await tx`insert into erp_private.client_activities(activity_id,client_id,pack_code,activity_name,income_stream,effective_from,evidence,created_by) values(${activity},${C},'Wholesale','Fictional retail','Business','2026-01-01','Fictional verified activity',${actors.MANAGER.staff_id})`;
+  const run=(role,p)=>as(role,a=>accountingAction(tx,a,{project_id:P,...p}));
+  const input={action:'accounting_stock_category_add',activity_id:activity,inventory_use:'Goods for resale',stock_class:'Groceries'};
+  await assert.rejects(()=>run('ASSISTANT',input),/Partner or Manager/);await assert.rejects(()=>run('MANAGER',{...input,project_id:P2}),/unavailable/);
+  const saved=await run('MANAGER',input);assert.equal(saved.stock_categories.length,1);assert.equal(saved.stock_categories[0].stock_class,'Groceries');await run('MANAGER',input);assert.equal((await tx`select count(*)::int n from erp_private.stock_categories`)[0].n,1);
+  const listed=await as('ASSISTANT',a=>workbookAction(tx,a,{action:'workbook_rows',project_id:P},storage));assert.ok(listed.stock_categories.some(x=>x.stock_class==='Groceries'));
+  const row=(await tx`select * from erp_private.workbook_rows where normalized->>'invoice'='PUR-STD-1'`)[0],original=JSON.stringify(row.normalized);
+  const map={action:'workbook_map_bulk',mapping_options_version:1,route:1,activity_id:activity,inventory_use:'Goods for resale',stock_class:'Groceries',account_code:'50000',narration:'',rows:[{row_id:row.row_id,revision:row.revision}]};
+  await assert.rejects(()=>run('ASSISTANT',{...map,stock_class:'Unconfigured'}),/configured product category/);
+  await assert.rejects(()=>run('ASSISTANT',{...map,account_code:'50070'}),/goods-for-resale/);
+  const result=await run('ASSISTANT',map);assert.equal(result.count,1);const after=(await tx`select * from erp_private.workbook_rows where row_id=${row.row_id}`)[0];assert.equal(JSON.stringify(after.normalized),original);assert.equal(after.narration,row.narration);assert.equal(after.review_details.stock_class,'Groceries');assert.equal(after.account_code,'50000');
+  await assert.rejects(()=>as('ASSISTANT',()=>tx`insert into erp_private.stock_categories(client_id,inventory_use,stock_class,created_by) values(${C},'Goods for resale','Direct denied',${actors.ASSISTANT.staff_id})`),/row-level security/);
+ });
  await t.test('pending credits stay outside posting, block tax completion and resolve on corrected reupload',async()=>{
   const good='Local,P000000001A,Example supplier,2026-10-03,PEND-INV,Supplies,,200,32,232,,',credit='Local,P000000001A,Example supplier,2026-10-10,PEND-CN,Returned supplies,,-100,-16,-116,,',body=[purchaseUploadHeaders.join(','),good,credit].join('\n');
   const source=await doc('Purchase-pending.csv',body),input={document_id:source,project_id:P,upload_format:'PCL-PURCHASES-1',period_start:'2026-10-01',period_end:'2026-10-31',vat_category:'16%',confirmed_client_id:C};

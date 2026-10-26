@@ -1,3 +1,4 @@
+import {stockCategoryOptions} from './stock-category-options.ts';
 import {summarySalesRows} from './period-import-actions.ts';
 import {digest} from './improvement-actions.ts';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
@@ -34,6 +35,14 @@ export async function accountingAction(tx:any,a:any,p:any){
  const pid=uuid(p.project_id|| (p.row_id?(await tx`select project_id from erp_private.workbook_rows where row_id=${uuid(p.row_id)}`)[0]?.project_id:null));
  const project=one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null`);
  const policy=(await tx`select * from erp_private.accounting_policies where client_id=${project.client_id}`)[0];
+ if(p.action==='accounting_stock_category_add'){
+  leader(a);const activity=p.activity_id?uuid(p.activity_id):null;
+  if(activity)one(await tx`select activity_id from erp_private.client_activities where activity_id=${activity} and client_id=${project.client_id}`);
+  const use=choice(p.inventory_use,['Goods for resale','Construction raw materials','Other inventory']),name=text(p.stock_class,100);
+  if(/^(?:n\/?a|not applicable|—|-)$/i.test(name))fail(400,'Enter the actual product or material category.');
+  await tx`insert into erp_private.stock_categories(client_id,activity_id,inventory_use,stock_class,created_by) values(${project.client_id},${activity},${use},${name},${a.staff_id}) on conflict do nothing`;
+  return {stock_categories:await stockCategoryOptions(tx,project.client_id)};
+ }
  if(p.action==='accounting_read')return {policy:policy||null,accounts:await tx`select * from erp_private.account_catalog order by code`,reconciliations:await tx`select reconciliation_id,review_type,starts_on,ends_on,status,prepared_by,revision from erp_private.sales_reconciliations where project_id=${pid} order by ends_on desc,review_type limit 100`};
  if(p.action==='accounting_policy_save'){
   leader(a);const method=choice(p.inventory_method,['Periodic','Perpetual']),note=text(p.notes,2000);if(note.length<10)fail(400,'Document the client inventory method and source.');
@@ -72,7 +81,18 @@ export async function accountingAction(tx:any,a:any,p:any){
   }
   // Validate every member before mutating any member. The enclosing transaction is all-or-nothing.
   const activityPolicies=p.activity_id?await tx`select * from erp_private.stock_policy_versions where activity_id=${uuid(p.activity_id)} order by effective_from desc`:[];
-  const values=rows.map((r:any)=>{const at=String(r.normalized.return_month||r.normalized.date||day(r.period_start));const dated=activityPolicies.find((v:any)=>day(v.effective_from)<=at);return mapValue(r,p,accounts,dated||policy);});
+  const activity=p.activity_id?(await tx`select * from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${project.client_id}`)[0]:null;
+  const categoryChoices=Number(p.route)===1&&p.mapping_options_version===1?await stockCategoryOptions(tx,project.client_id):[];
+  const values=rows.map((r:any)=>{
+   const at=String(r.normalized.return_month||r.normalized.date||day(r.period_start));
+   if(activity&&(day(activity.effective_from)>at||activity.effective_to&&day(activity.effective_to)<at))fail(400,'The selected activity does not cover every reporting date. Map the periods separately.');
+   if(Number(p.route)===1&&p.mapping_options_version===1&&p.stock_class){
+    const matching=(x:any)=>x.stock_class===p.stock_class&&(!x.activity_id||x.activity_id===(p.activity_id||''))&&(!x.inventory_use||x.inventory_use===p.inventory_use);
+    const old=r.review_details||{},sameOld=old.stock_class===p.stock_class&&(old.activity_id||'')===(p.activity_id||'')&&(old.inventory_use||(['10200','50010'].includes(r.account_code)?'Construction raw materials':['10190','50000'].includes(r.account_code)?'Goods for resale':'Other inventory'))===p.inventory_use;
+    if(!categoryChoices.some(matching)&&!sameOld)fail(400,'Choose a configured product category for this activity and inventory use. Ask a Manager to add a missing category.');
+   }
+   const dated=activityPolicies.find((v:any)=>day(v.effective_from)<=at);return mapValue(r,p,accounts,activityPolicies.length?dated:policy);
+  });
   const updates=rows.map((r:any,i:number)=>{const details=inventoryDetails(r,p);for(const k of ['legal_category','legal_basis','evidence','activity_id'])if(p[k]!==undefined)details[k]=text(p[k],2000,false);return {row_id:r.row_id,...values[i],review_details:details};});
   for(let i=0;i<updates.length;i+=500)await tx`update erp_private.workbook_rows r set route=v.route,category_code=v.category_code,account_code=v.account_code,narration=v.narration,asset_details=v.asset_details,first_use_status=v.first_use_status,first_use_date=v.first_use_date,review_details=v.review_details from jsonb_to_recordset(${tx.json(updates.slice(i,i+500))}::jsonb) as v(row_id uuid,route integer,category_code text,account_code text,narration text,asset_details text,first_use_status text,first_use_date date,review_details jsonb) where r.row_id=v.row_id`;
   if(selection)await tx`update erp_private.mapping_selections set consumed_at=now(),result=${tx.json({ok:true,count:rows.length,payload_hash:mappingHash})} where selection_id=${selection.selection_id}`;

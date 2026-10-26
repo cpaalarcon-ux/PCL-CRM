@@ -1,7 +1,7 @@
-import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261026-pending';
-import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261026-pending';
-import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261026-pending';
-import {createAccountingUI} from './staff-accounting.mjs?v=20261026-pending';
+import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261026-dropdowns';
+import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261026-dropdowns';
+import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261026-dropdowns';
+import {createAccountingUI} from './staff-accounting.mjs?v=20261026-dropdowns';
 import {createLedgerUI} from './staff-ledger.mjs?v=20261026-v4';
 export function createWorkspaceUI(ctx){
  const purchaseLedgers=createPurchaseLedgerUI(ctx);const periodImports=createPeriodImportUI(ctx);const standardPurchaseImport=createStandardPurchaseImportUI(ctx);

@@ -9,7 +9,9 @@ export function inventoryDetails(row,p){
  const inferred=['10200','50010'].includes(String(p.account_code))?'Construction raw materials':['10190','50000'].includes(String(p.account_code))?'Goods for resale':'Other inventory';
  const use=choice(p.inventory_use||old.inventory_use||inferred,['Goods for resale','Construction raw materials','Other inventory']);
  if(use==='Construction raw materials'&&!['10200','50010'].includes(String(p.account_code)))fail(400,'Use the raw-material purchases or raw-material inventory account for construction materials.');
+ if(use==='Other inventory'&&['10190','50000'].includes(String(p.account_code)))fail(400,'Classify the merchandise account as Goods for resale.');
  if(use!=='Construction raw materials'&&['10200','50010'].includes(String(p.account_code)))fail(400,'Classify this raw-material account as Construction raw materials.');
+ if(use==='Goods for resale'&&!['10190','10240','50000','50020','50030','50040','50050','50060','50090'].includes(String(p.account_code)))fail(400,'Choose a goods-for-resale purchase, merchandise, goods-in-transit or supported landed-cost account.');
  details.inventory_use=use;
  details.stock_class=text(p.stock_class??old.stock_class??'',100,false);
  if(use==='Construction raw materials'){

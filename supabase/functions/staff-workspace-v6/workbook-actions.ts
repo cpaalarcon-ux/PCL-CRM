@@ -1,3 +1,4 @@
+import {stockCategoryOptions} from './stock-category-options.ts';
 import {detectImportProfile,profilePurchase} from './import-profiles.mjs';
 import {purchaseUploadProfile,purchaseUploadRows,purchaseUploadMap,purchaseUploadHeaders,purchaseUploadRates,purchaseUploadValues,purchaseDisplayValues,purchasePendingMatch,purchaseUploadId,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from './purchase-upload.mjs';
 import {pendingPurchases} from './purchase-pending.ts';
@@ -16,7 +17,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
   const pid=uuid(p.project_id),offset=Math.max(0,Math.min(100000,Math.trunc(Number(p.offset)||0)));
   one(await tx`select project_id from erp_private.projects where project_id=${pid}`);
   const search='%'+text(p.search||'',160,false)+'%',mapping=choice(p.mapping||'All',['All','Unmapped','Inventory','Expenditure','PPE']),dataset=choice(p.dataset||'All',['Costs','All','Purchases','Expenditure','Non-eTIMS','Sales','POS','Bank']),rate=choice(p.vat_category||'All',['All','16%','8%','0%','Exempt','Non-eTIMS','Unconfirmed']);
-  const rows=await tx`select r.*,b.sheet_name,b.document_id,v.decision,v.source_revision from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id)
+  const rows=await tx`select r.*,b.sheet_name,b.document_id,b.period_start,b.period_end,v.decision,v.source_revision from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id)
    where r.project_id=${pid} and not r.is_split_parent and (${dataset}='All' or ${dataset}='Costs' and r.dataset in ('Purchases','Expenditure','Non-eTIMS') or r.dataset=${dataset})
    and (${mapping}='All' or ${mapping}='Unmapped' and r.account_code is null or r.account_code is not null and r.route=case ${mapping} when 'Inventory' then 1 when 'Expenditure' then 2 when 'PPE' then 3 else 0 end)
    and (${rate}='All' or (case when r.dataset='Non-eTIMS' then 'Non-eTIMS' else coalesce(r.normalized->>'vat_category','Unconfirmed') end)=${rate})
@@ -27,7 +28,8 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
    and (${mapping}='All' or ${mapping}='Unmapped' and r.account_code is null or r.account_code is not null and r.route=case ${mapping} when 'Inventory' then 1 when 'Expenditure' then 2 when 'PPE' then 3 else 0 end)
    and (${rate}='All' or (case when r.dataset='Non-eTIMS' then 'Non-eTIMS' else coalesce(r.normalized->>'vat_category','Unconfirmed') end)=${rate})
    and concat_ws(' ',r.normalized->>'invoice',r.normalized->>'reference',r.normalized->>'party',r.normalized->>'party_pin',r.normalized->>'description') ilike ${search}`).count;
-  return {policies:await tx`select * from erp_private.stock_policy_versions where client_id=(select client_id from erp_private.projects where project_id=${pid}) order by effective_from desc`,activities:await tx`select * from erp_private.client_activities where client_id=(select client_id from erp_private.projects where project_id=${pid}) order by activity_name`,accounts:await tx`select * from erp_private.account_catalog order by code`,policy:(await tx`select * from erp_private.accounting_policies where client_id=(select client_id from erp_private.projects where project_id=${pid})`)[0]||null,rows:rows.map((r:any)=>({...r,warnings:rowWarnings(r)})),legal_categories:legalCategories,total,
+  const clientId=one(await tx`select client_id from erp_private.projects where project_id=${pid}`).client_id;
+  return {stock_categories:await stockCategoryOptions(tx,clientId),policies:await tx`select * from erp_private.stock_policy_versions where client_id=(select client_id from erp_private.projects where project_id=${pid}) order by effective_from desc`,activities:await tx`select * from erp_private.client_activities where client_id=(select client_id from erp_private.projects where project_id=${pid}) order by activity_name`,accounts:await tx`select * from erp_private.account_catalog order by code`,policy:(await tx`select * from erp_private.accounting_policies where client_id=(select client_id from erp_private.projects where project_id=${pid})`)[0]||null,rows:rows.map((r:any)=>({...r,warnings:rowWarnings(r)})),legal_categories:legalCategories,total,
    categories:allCategories,pending_information:await pendingPurchases(tx,pid),
    rejections:await tx`select r.source_row,r.reason,b.sheet_name,b.dataset from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${pid} and not r.raw_values ? '_pending_purchase' order by b.created_at desc limit 100`};
  }
