@@ -6,6 +6,8 @@
 
 > **Current connected testing release:** See [Consolidated testing suite](supabase/CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. Historical descriptions below refer to earlier releases or browser-local previews. Login persists until manual sign-out; activity affects presence only.
 
+> **Full staff UAT:** Use [Full ERP staff acceptance test plan](supabase/FULL_ERP_STAFF_UAT.md) to test every connected area, record Pass/Fail/Blocked/Not tested, and apply the evidence-based readiness gates. The activity dropdown is part of the client setup-to-mapping acceptance flow.
+
 # PCL CRM — Client, Service and Engagement Lifecycle Foundation
 
 This build provides a browser-local, editable CRM intake module for a consulting and audit practice. Open `index.html` in a current browser.

@@ -4,7 +4,7 @@ This release extends the connected staff workspace (`staff-pilot`) on the review
 
 ## Where staff test
 
-1. **Clients → Entity / activities** (Partner or Manager): confirm legal identity and verified year-end, add dated activities/industry packs, verified reporting periods and stock-policy versions. Partnership agreement windows must total 100%. Identity, industry, client category, KYC type and tax profile remain separate. Missing fields remain visible. Linking a new successor entity closes the predecessor to new engagements while retaining its unfinished work and history.
+1. **Clients → Entity / activities** (Partner or Manager): confirm legal identity and verified year-end, add dated activities/industry packs, verified reporting periods and stock-policy versions. Business activity is selected from a pre-populated list; **Other — specify** requires a description. The industry pack is suggested from the activity and remains reviewable. Partnership agreement windows must total 100%. Identity, industry, client category, KYC type and tax profile remain separate. Missing fields remain visible. Linking a new successor entity closes the predecessor to new engagements while retaining its unfinished work and history.
 2. **Projects & tasks → open project → Imported rows & mapping**: preview the original workbook, check the worksheet and period, then classify source lines. Date-formatted amounts are rejected without treating every number resembling an Excel date as invalid. Imported amounts remain immutable.
 3. Tick rows on the page or choose **Select all matching cost rows**. Check the server-confirmed count/net/VAT/gross. The selection expires after 15 minutes and supports 10,000 matching rows. Changed revisions, locks, scope changes and altered retries are rejected atomically. Identical retries return the existing result.
 4. Map inventory to a business activity and stock class for the stock-value control. PPE and expenditure remain separate from stock; VAT eligibility is independently reviewed. Supplier history is only a contextual prompt from the same client's reviewed rows. It never auto-classifies purchases. **Request missing category** routes a decision to another Manager/Partner. A new master account still needs Partner activation. **Undo my last mapping** applies only to the user's latest unreviewed original row in an unlocked period.
@@ -22,6 +22,8 @@ This release extends the connected staff workspace (`staff-pilot`) on the review
 - No live rate was changed, no statutory approval was granted, and no return is filed by this release. Existing testing-rate warnings remain.
 
 ## Verification
+
+The full staff acceptance matrix is in [FULL_ERP_STAFF_UAT.md](FULL_ERP_STAFF_UAT.md). Test the activity choice in both client setup and the mapping-side setup shortcut, then confirm that the saved dated activity is reused by project mapping.
 
 The Node tests exercise all migrations in an isolated PGlite database, five staff categories, firm isolation, multi-page mapping and idempotent retries, stale revisions, source immutability, undo locks, independent stock approval, canonical return identity, bank deferral and supplemental review. Existing regression tests cover the other connected modules.
 

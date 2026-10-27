@@ -1,11 +1,11 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {mappingDates,inventoryMethod,inventoryAccountAllowed,stockChoices} from '../staff-inventory-options.mjs';
+import {mappingDates,mappingPeriods,inventoryMethod,inventoryAccountAllowed,stockChoices} from '../staff-inventory-options.mjs';
 const activity={activity_id:'a',effective_from:'2026-01-01',effective_to:'2026-12-31'},data={policy:{inventory_method:'Periodic'},activities:[activity],policies:[{activity_id:'a',effective_from:'2026-07-01',inventory_method:'Perpetual'},{activity_id:'a',effective_from:'2026-01-01',inventory_method:'Periodic'}]};
-test('mapping uses each selected reporting date and detects policy boundaries',()=>{
- const rows=[{normalized:{return_month:'2026-06-01',date:'2026-05-01'}},{normalized:{return_month:'2026-07-01'}}];assert.deepEqual(mappingDates(rows),['2026-06-01','2026-07-01']);
+test('inventory policy uses invoice dates while mapping periods use the client VAT month',()=>{
+ const rows=[{normalized:{return_month:'2026-06-01',date:'2026-05-01'}},{normalized:{return_month:'2026-07-01'}}];assert.deepEqual(mappingDates(rows),['2026-05-01','2026-07-01']);assert.deepEqual(mappingPeriods(rows),['2026-06-01','2026-07-01']);
  assert.equal(inventoryMethod(data,'a',['2026-01-01']).method,'Periodic');assert.equal(inventoryMethod(data,'a',['2026-09-01']).method,'Perpetual');
  assert.match(inventoryMethod(data,'a',mappingDates(rows)).error,/different inventory methods/);
- assert.match(inventoryMethod(data,'a',['2025-01-01']).error,/covers every/);assert.match(inventoryMethod({...data,policy:null},'', ['2026-10-01']).error,/Manager/);
+ assert.match(inventoryMethod(data,'a',['2025-01-01']).error,/cover every/);assert.match(inventoryMethod({...data,policy:null},'', ['2026-10-01']).error,/Manager/);
  assert.match(inventoryMethod({...data,policies:[data.policies[0]]},'a',['2026-02-01']).error,/Manager/);
  assert.deepEqual(mappingDates([],{mapping_dates:['2026-08-01','2026-07-01']}),['2026-07-01','2026-08-01']);
 });
