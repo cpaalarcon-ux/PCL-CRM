@@ -24,10 +24,11 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  await assert.rejects(()=>call('ASSISTANT',{action:'v3_identity_save',client_id:C,revision:c.revision}),/Partner or Manager/);
  await call('MANAGER',{action:'v3_identity_save',client_id:C,revision:c.revision,legal_entity_type:'Limited company',entity_evidence:'Fictional incorporation evidence',year_end_month:'6',year_end_day:'30'});
  const activity=await call('MANAGER',{action:'v3_activity_add',client_id:C,pack_code:'Wholesale',activity_name:'Fictional wholesale activity',income_stream:'Business',effective_from:'2026-01-01',evidence:'Fictional client activity evidence'});
- const policyInput={action:'v3_stock_policy_add',client_id:C,activity_id:activity.activity_id,inventory_method:'Periodic',effective_from:'2026-01-01',count_frequency:'Monthly',variance_threshold:100};
+ const policyInput={action:'v3_stock_policy_add',client_id:C,activity_id:activity.activity_id,inventory_method:'Periodic',effective_from:'2026-01-01',count_frequency:'Monthly'};
  await assert.rejects(()=>call('MANAGER',{...policyInput,evidence_type:'Unknown evidence type'}),/Choose a valid option/);
  const policy=await call('MANAGER',policyInput),savedPolicy=(await tx`select valuation_basis,evidence from erp_private.stock_policy_versions where policy_id=${policy.policy_id}`)[0];
- assert.equal(savedPolicy.valuation_basis,'');assert.equal(savedPolicy.evidence,'');
+ assert.equal(savedPolicy.valuation_basis,'');assert.equal(savedPolicy.evidence,'');assert.equal(Number((await tx`select variance_threshold from erp_private.stock_policy_versions where policy_id=${policy.policy_id}`)[0].variance_threshold),100);
+ await assert.rejects(()=>call('PARTNER',{...policyInput,effective_from:'2026-01-01'}),/Choose 2026-01-02 or later/);
  await assert.rejects(()=>call('ASSISTANT',{action:'v3_project_read',project_id:P2}),/unavailable/);
  await assert.rejects(()=>call('INTERN',{action:'v3_project_read',project_id:P}),/Interns/);
  const selection=await call('ASSISTANT',{action:'v3_mapping_select',project_id:P,search:'Fictional supplier',dataset:'Costs',mapping:'Unmapped'});assert.equal(selection.count,205);assert.equal(selection.net,20500);
@@ -47,6 +48,7 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  x=await call('ASSISTANT',{...base,action:'v3_stock_read'});assert.equal(x.record.result.closing_value,3500);await call('ASSISTANT',{...base,action:'v3_stock_submit',revision:x.record.revision});x=await call('ASSISTANT',{...base,action:'v3_stock_read'});
  await assert.rejects(()=>call('ASSISTANT',{...base,action:'v3_stock_review',revision:x.record.revision,status:'Approved',review_note:'Attempted self review'}),/review/);
  await call('MANAGER',{...base,action:'v3_stock_review',revision:x.record.revision,status:'Approved',review_note:'Independently reviewed, retains provisional status.'});x=await call('ASSISTANT',{...base,action:'v3_stock_read'});assert.equal(x.record.status,'Approved');assert.equal(x.result.provisional,true);
+ await assert.rejects(()=>call('PARTNER',{...policyInput,effective_from:'2026-09-30'}),/Choose 2026-10-01 or later/);
  const ready=await call('MANAGER',{action:'v3_export_readiness',project_id:P,kind:'IT2C',starts_on:'2026-01-01',ends_on:'2026-12-31'});assert.equal(ready.ready,false);
  // A bank deferral is an independent monthly control, never a client-supplied bypass.
  const rec=await map('ASSISTANT',{action:'sales_recon_create',project_id:P,review_type:'Monthly',starts_on:'2026-09-01',ends_on:'2026-09-30'}),bankBase={project_id:P,reconciliation_id:rec.reconciliation_id};

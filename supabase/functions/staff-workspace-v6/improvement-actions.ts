@@ -7,6 +7,7 @@ const reviewer=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.categ
 const fresh=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'This record changed. Refresh before saving.');};
 const range=(p:any)=>{const s=date(p.starts_on),e=date(p.ends_on);if(!s||!e||e<s||Date.parse(e)-Date.parse(s)>367*86400000)fail(400,'Choose a valid period of up to 367 days.');return [s,e];};
 const isoDay=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
+const nextStockDay=(v:any)=>{const day=isoDay(v);if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return '';const d=new Date(`${day}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10);};
 const stockPolicyEvidence=(p:any)=>{
  if(p.evidence_type||p.evidence_reference||p.evidence_other){if(!p.evidence_type)fail(400,'Choose the optional policy evidence type before adding a reference.');const types=['Client inventory policy','Approved accounting manual','Management or Board approval','Stock-system settings or report','Stock count or valuation working paper','Other'];const type=choice(p.evidence_type,types),other=type==='Other'?text(p.evidence_other,200):'',reference=text(p.evidence_reference||'',500,false);if(type==='Other'&&other.length<3)fail(400,'Describe the other evidence type.');return `${type==='Other'?`Other — ${other}`:type}${reference?`: ${reference}`:''}`;}
  return text(p.evidence||'',2000,false);
@@ -35,7 +36,7 @@ export async function improvementAction(tx:any,a:any,p:any){
  }
  if(p.action==='v3_client_read'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null`);
-  return {client:c,activities:await tx`select * from erp_private.client_activities where client_id=${c.client_id} order by effective_from desc`,partners:await tx`select * from erp_private.partner_interests where client_id=${c.client_id} order by effective_from desc,partner_name`,periods:await tx`select * from erp_private.client_periods where client_id=${c.client_id} order by ends_on desc`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${c.client_id} order by effective_from desc`,stock_categories:await tx`select * from erp_private.stock_categories where client_id=${c.client_id} order by activity_id,inventory_use,stock_class`};
+  return {client:c,activities:await tx`select * from erp_private.client_activities where client_id=${c.client_id} order by effective_from desc`,partners:await tx`select * from erp_private.partner_interests where client_id=${c.client_id} order by effective_from desc,partner_name`,periods:await tx`select * from erp_private.client_periods where client_id=${c.client_id} order by ends_on desc`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${c.client_id} order by effective_from desc`,stock_policy_block_dates:await tx`select s.activity_id,max(s.ends_on)::text as last_control_end from erp_private.stock_controls s join erp_private.projects p using(project_id) where p.client_id=${c.client_id} and s.status in ('Submitted','Approved') group by s.activity_id`,stock_categories:await tx`select * from erp_private.stock_categories where client_id=${c.client_id} order by activity_id,inventory_use,stock_class`};
  }
  if(p.action==='v3_identity_save'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);const v=entityInput(p);
@@ -61,12 +62,16 @@ export async function improvementAction(tx:any,a:any,p:any){
    const [s,e]=range(p);if((await tx`select period_id from erp_private.client_periods where client_id=${cid} and starts_on<=${e} and ends_on>=${s} limit 1`).length)fail(400,'A verified reporting period already overlaps.');
    return one(await tx`insert into erp_private.client_periods(client_id,starts_on,ends_on,return_due_date,internal_due_date,payment_due_date,deadline_rule_reference,created_by) values(${cid},${s},${e},${p.return_due_date?date(p.return_due_date):null},${p.internal_due_date?date(p.internal_due_date):null},${p.payment_due_date?date(p.payment_due_date):null},${text(p.deadline_rule_reference,2000)},${a.staff_id}) returning period_id`);
   }
-  const activity=one(await tx`select * from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${cid}`),from=date(p.effective_from),threshold=Number(p.variance_threshold);
-  if(!from||from<asDay(activity.effective_from)||activity.effective_to&&from>asDay(activity.effective_to)||!Number.isFinite(threshold)||threshold<0||threshold>1e9)fail(400,'Check the effective date and internal variance threshold.');
+  const activity=one(await tx`select * from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${cid}`),from=date(p.effective_from),threshold=p.variance_threshold==null||p.variance_threshold===''?100:Number(p.variance_threshold);
+  if(!from)fail(400,'Choose the date these stock settings begin.');
+  if(from<asDay(activity.effective_from)||activity.effective_to&&from>asDay(activity.effective_to))fail(400,`Choose a date within the business activity period (${asDay(activity.effective_from)}${activity.effective_to?` to ${asDay(activity.effective_to)}`:' onward'}).`);
+  if(!Number.isFinite(threshold)||threshold<0||threshold>1e9)fail(400,'Enter a valid review threshold in KES, or leave it blank to use KES 100.');
   const previous=(await tx`select effective_from from erp_private.stock_policy_versions where activity_id=${activity.activity_id} order by effective_from desc limit 1`)[0];
-  if(previous&&a.category_code!=='PARTNER')fail(403,'A later policy version requires Partner approval.');
-  if(previous&&from<=asDay(previous.effective_from))fail(400,'A new policy version must start after the preceding version.');
-  if((await tx`select control_id from erp_private.stock_controls where activity_id=${activity.activity_id} and status in ('Submitted','Approved') and ends_on>=${from} limit 1`).length)fail(400,'Start the new policy after the last submitted or approved stock period.');
+  if(previous&&a.category_code!=='PARTNER')fail(403,'Only a Partner can change saved client stock settings. Ask a Partner to make the dated update.');
+  const lastControl=(await tx`select max(ends_on)::text as last_end from erp_private.stock_controls where activity_id=${activity.activity_id} and status in ('Submitted','Approved')`)[0]?.last_end||'';
+  const minimum=[asDay(activity.effective_from),nextStockDay(previous?.effective_from),nextStockDay(lastControl)].filter(Boolean).sort().at(-1)||asDay(activity.effective_from);
+  if(activity.effective_to&&minimum>asDay(activity.effective_to))fail(400,'No stock settings date is available within this activity period. Update the activity dates first.');
+  if(from<minimum)fail(400,`Choose ${minimum} or later. New settings must start after the current settings and any submitted or approved stock period.`);
   const basis=text(p.valuation_basis||'',2000,false),policyEvidence=stockPolicyEvidence(p);
   return one(await tx`insert into erp_private.stock_policy_versions(client_id,activity_id,inventory_method,valuation_basis,effective_from,count_frequency,variance_threshold,evidence,configured_by) values(${cid},${activity.activity_id},${choice(p.inventory_method,['Periodic','Perpetual'])},${basis},${from},${choice(p.count_frequency,['Weekly','Monthly','Annually'])},${threshold},${policyEvidence},${a.staff_id}) returning policy_id`);
  }
