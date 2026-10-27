@@ -21,6 +21,14 @@ async function stockSource(tx:any,c:any){
 export async function improvementAction(tx:any,a:any,p:any){
  if(!String(p.action).startsWith('v3_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Client configuration and working-paper controls are unavailable to Interns.');
+ if(p.action==='v3_client_mapping_readiness'){
+  leader(a);
+  return await tx`select c.client_id,
+   (select count(*)::int from erp_private.client_activities x where x.client_id=c.client_id) as activity_count,
+   (select count(*)::int from erp_private.stock_policy_versions x where x.client_id=c.client_id) as stock_method_count,
+   (select count(*)::int from erp_private.stock_categories x where x.client_id=c.client_id) as category_count
+   from erp_private.clients c where c.deleted_at is null order by c.company_name limit 1000`;
+ }
  if(p.action==='v3_client_read'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null`);
   return {client:c,activities:await tx`select * from erp_private.client_activities where client_id=${c.client_id} order by effective_from desc`,partners:await tx`select * from erp_private.partner_interests where client_id=${c.client_id} order by effective_from desc,partner_name`,periods:await tx`select * from erp_private.client_periods where client_id=${c.client_id} order by ends_on desc`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${c.client_id} order by effective_from desc`,stock_categories:await tx`select * from erp_private.stock_categories where client_id=${c.client_id} order by activity_id,inventory_use,stock_class`};
