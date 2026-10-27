@@ -7,6 +7,10 @@ const reviewer=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.categ
 const fresh=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'This record changed. Refresh before saving.');};
 const range=(p:any)=>{const s=date(p.starts_on),e=date(p.ends_on);if(!s||!e||e<s||Date.parse(e)-Date.parse(s)>367*86400000)fail(400,'Choose a valid period of up to 367 days.');return [s,e];};
 const isoDay=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
+const stockPolicyEvidence=(p:any)=>{
+ if(p.evidence_type){const types=['Client inventory policy','Approved accounting manual','Management or Board approval','Stock-system settings or report','Stock count or valuation working paper','Other'];const type=choice(p.evidence_type,types),other=type==='Other'?text(p.evidence_other,200):'',reference=text(p.evidence_reference,500);if(type==='Other'&&other.length<3)fail(400,'Describe the other evidence type.');if(reference.length<8)fail(400,'Enter the policy document title or reference (at least 8 characters).');return `${type==='Other'?`Other — ${other}`:type}: ${reference}`;}
+ const legacy=text(p.evidence,2000);if(legacy.length<8)fail(400,'Enter the policy document title or reference (at least 8 characters).');return legacy;
+};
 export const digest=async(v:any)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(v))))).map(n=>n.toString(16).padStart(2,'0')).join('');
 async function project(tx:any,id:any){return one(await tx`select * from erp_private.projects where project_id=${uuid(id)} and deleted_at is null`);}
 async function evidence(tx:any,id:any,pid:string){return one(await tx`select document_id from erp_private.documents where document_id=${uuid(id)} and project_id=${pid} and deleted_at is null`);}
@@ -63,7 +67,8 @@ export async function improvementAction(tx:any,a:any,p:any){
   if(previous&&a.category_code!=='PARTNER')fail(403,'A later policy version requires Partner approval.');
   if(previous&&from<=asDay(previous.effective_from))fail(400,'A new policy version must start after the preceding version.');
   if((await tx`select control_id from erp_private.stock_controls where activity_id=${activity.activity_id} and status in ('Submitted','Approved') and ends_on>=${from} limit 1`).length)fail(400,'Start the new policy after the last submitted or approved stock period.');
-  return one(await tx`insert into erp_private.stock_policy_versions(client_id,activity_id,inventory_method,valuation_basis,effective_from,count_frequency,variance_threshold,evidence,configured_by) values(${cid},${activity.activity_id},${choice(p.inventory_method,['Periodic','Perpetual'])},${text(p.valuation_basis,2000)},${from},${choice(p.count_frequency,['Weekly','Monthly','Annually'])},${threshold},${text(p.evidence,2000)},${a.staff_id}) returning policy_id`);
+  const basis=text(p.valuation_basis,2000);if(basis.length<20)fail(400,'Describe the valuation method and how stock counts are reconciled (at least 20 characters).');const policyEvidence=stockPolicyEvidence(p);
+  return one(await tx`insert into erp_private.stock_policy_versions(client_id,activity_id,inventory_method,valuation_basis,effective_from,count_frequency,variance_threshold,evidence,configured_by) values(${cid},${activity.activity_id},${choice(p.inventory_method,['Periodic','Perpetual'])},${basis},${from},${choice(p.count_frequency,['Weekly','Monthly','Annually'])},${threshold},${policyEvidence},${a.staff_id}) returning policy_id`);
  }
  const pr=await project(tx,p.project_id),pid=pr.project_id;
  if(p.action==='v3_project_read')return {activities:await tx`select * from erp_private.client_activities where client_id=${pr.client_id} order by activity_name`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${pr.client_id} order by effective_from desc`,controls:await tx`select * from erp_private.stock_controls where project_id=${pid} order by ends_on desc`,requests:await tx`select * from erp_private.category_requests where project_id=${pid} order by created_at desc limit 100`};
