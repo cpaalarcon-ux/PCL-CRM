@@ -24,10 +24,10 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  await assert.rejects(()=>call('ASSISTANT',{action:'v3_identity_save',client_id:C,revision:c.revision}),/Partner or Manager/);
  await call('MANAGER',{action:'v3_identity_save',client_id:C,revision:c.revision,legal_entity_type:'Limited company',entity_evidence:'Fictional incorporation evidence',year_end_month:'6',year_end_day:'30'});
  const activity=await call('MANAGER',{action:'v3_activity_add',client_id:C,pack_code:'Wholesale',activity_name:'Fictional wholesale activity',income_stream:'Business',effective_from:'2026-01-01',evidence:'Fictional client activity evidence'});
- const policyInput={action:'v3_stock_policy_add',client_id:C,activity_id:activity.activity_id,inventory_method:'Periodic',effective_from:'2026-01-01',count_frequency:'Monthly',variance_threshold:100,valuation_basis:'Fictional supported cost',evidence_type:'Client inventory policy',evidence_reference:'Fictional policy approval'};
- await assert.rejects(()=>call('MANAGER',{...policyInput,evidence_reference:'short'}),/at least 8 characters/);
- await assert.rejects(()=>call('MANAGER',{...policyInput,valuation_basis:'Too short'}),/at least 20 characters/);
- await call('MANAGER',policyInput);
+ const policyInput={action:'v3_stock_policy_add',client_id:C,activity_id:activity.activity_id,inventory_method:'Periodic',effective_from:'2026-01-01',count_frequency:'Monthly',variance_threshold:100};
+ await assert.rejects(()=>call('MANAGER',{...policyInput,evidence_type:'Unknown evidence type'}),/Choose a valid option/);
+ const policy=await call('MANAGER',policyInput),savedPolicy=(await tx`select valuation_basis,evidence from erp_private.stock_policy_versions where policy_id=${policy.policy_id}`)[0];
+ assert.equal(savedPolicy.valuation_basis,'');assert.equal(savedPolicy.evidence,'');
  await assert.rejects(()=>call('ASSISTANT',{action:'v3_project_read',project_id:P2}),/unavailable/);
  await assert.rejects(()=>call('INTERN',{action:'v3_project_read',project_id:P}),/Interns/);
  const selection=await call('ASSISTANT',{action:'v3_mapping_select',project_id:P,search:'Fictional supplier',dataset:'Costs',mapping:'Unmapped'});assert.equal(selection.count,205);assert.equal(selection.net,20500);
