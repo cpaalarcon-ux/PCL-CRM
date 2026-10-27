@@ -290,7 +290,18 @@ async function action(id:any,p:any){
    }
    let tax_project_id=null;
    if(p.tax_setup){const saved=await workspaceAction(tx,a,{...p.tax_setup,action:'project_save',client_id:cid,service_code:'TAX-COMP',pack:'Tax Compilation'});tax_project_id=saved.project_id;}
-   return {ok:true,client_id:cid,tax_project_id};
+   let purchase_activity_id=null;
+   if(p.purchase_setup){
+    const s=p.purchase_setup,activity=await improvementAction(tx,a,{action:'v3_activity_add',client_id:cid,activity_name:s.activity_name,pack_code:s.pack_code,income_stream:s.income_stream,effective_from:s.effective_from,effective_to:s.effective_to||null,evidence:s.activity_evidence});purchase_activity_id=activity.activity_id;
+    if(s.has_inventory===true){
+     await improvementAction(tx,a,{action:'v3_stock_policy_add',client_id:cid,activity_id:purchase_activity_id,inventory_method:s.inventory_method,effective_from:s.policy_effective_from,count_frequency:s.count_frequency,variance_threshold:s.variance_threshold,valuation_basis:s.valuation_basis,evidence:s.policy_evidence});
+     const names=Array.isArray(s.stock_categories)?s.stock_categories.map((x:any)=>text(x,100)):[];
+     if(!names.length||names.length>50||names.some((x:string)=>/^(?:n\/?a|not applicable|—|-)$/i.test(x))||new Set(names.map((x:string)=>x.toLowerCase())).size!==names.length)fail(400,'Enter one or more distinct, actual product or material categories.');
+     const use=choice(s.inventory_use,['Goods for resale','Construction raw materials','Other inventory']);
+     for(const stockClass of names)await tx`insert into erp_private.stock_categories(client_id,activity_id,inventory_use,stock_class,created_by) values(${cid},${purchase_activity_id},${use},${stockClass},${a.staff_id}) on conflict do nothing`;
+    }
+   }
+   return {ok:true,client_id:cid,tax_project_id,purchase_activity_id};
   }
   if(p.action==='staff_save'){
    let old=null;if(p.staff_id){old=one(await tx`select * from erp_private.staff_members where staff_id=${uuid(p.staff_id)} for update`);if(old.staff_id===a.staff_id)fail(403,'Another Engagement Partner must edit your account.');}

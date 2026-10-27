@@ -23,7 +23,7 @@ export async function improvementAction(tx:any,a:any,p:any){
  if(a.category_code==='INTERN')fail(403,'Client configuration and working-paper controls are unavailable to Interns.');
  if(p.action==='v3_client_read'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null`);
-  return {client:c,activities:await tx`select * from erp_private.client_activities where client_id=${c.client_id} order by effective_from desc`,partners:await tx`select * from erp_private.partner_interests where client_id=${c.client_id} order by effective_from desc,partner_name`,periods:await tx`select * from erp_private.client_periods where client_id=${c.client_id} order by ends_on desc`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${c.client_id} order by effective_from desc`};
+  return {client:c,activities:await tx`select * from erp_private.client_activities where client_id=${c.client_id} order by effective_from desc`,partners:await tx`select * from erp_private.partner_interests where client_id=${c.client_id} order by effective_from desc,partner_name`,periods:await tx`select * from erp_private.client_periods where client_id=${c.client_id} order by ends_on desc`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${c.client_id} order by effective_from desc`,stock_categories:await tx`select * from erp_private.stock_categories where client_id=${c.client_id} order by activity_id,inventory_use,stock_class`};
  }
  if(p.action==='v3_identity_save'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);const v=entityInput(p);
