@@ -42,9 +42,11 @@ export function createAccountingUI(ctx){
   if(one){request({action:'v3_suggestions',project_id:pid,row_id:one.row_id}).then(s=>{const target=$('#mappingSuggestion');if(target)target.textContent=s.confidence+': '+s.reason+(s.account_code?' Prior reviewed account '+s.account_code+'.':'');}).catch(e=>{const target=$('#mappingSuggestion');if(target)target.textContent=e.message;});
    $('#requestMappingCategory').onclick=()=>{if($('#editor').open)$('#editor').close();modal('Request a purchase category',form(field('proposed_name','Proposed category / plain name *','','text','required')+area('reason','Why existing categories do not fit')+area('evidence','Source invoice / use evidence')),f=>request({action:'v3_category_request',project_id:pid,row_id:one.row_id,...Object.fromEntries(f)}),()=>imported(pid));};}
 
-  const f=$('#editForm');f.elements.account_code.required=true;if(f.elements.activity_id)f.elements.activity_id.required=true;let firstRefresh=true;
+  const f=$('#editForm');f.elements.account_code.required=true;if(f.elements.activity_id)f.elements.activity_id.required=true;let firstRefresh=true,previousActivity=defaultActivity;
   const refresh=()=>{
-   const aid=f.elements.activity_id?.value||'',use=f.elements.inventory_use?.value||'',method=Number(route)===1?inventoryMethod(r,aid,dates):{},raw=use==='Construction raw materials';
+   const aid=f.elements.activity_id?.value||'';
+   if(f.elements.inventory_use&&aid!==previousActivity){const uses=[...new Set((r.stock_categories||[]).filter(x=>x.activity_id===aid&&x.inventory_use).map(x=>x.inventory_use))];f.elements.inventory_use.value=uses.length===1?uses[0]:'';previousActivity=aid;}
+   const use=f.elements.inventory_use?.value||'',method=Number(route)===1?inventoryMethod(r,aid,dates):{},raw=use==='Construction raw materials';
    const a=accountChoices(Number(route)===1?{...r,policy:{inventory_method:method.method}}:r,route,f.elements.category?.value||'').filter(x=>Number(route)!==1||inventoryAccountAllowed(x.code,use));
    const previous=firstRefresh?defaultCode:f.elements.account_code.value,preferred=a.some(x=>x.code===previous)?previous:a.length===1?a[0].code:'';
    f.elements.account_code.innerHTML=opts(a.map(x=>[x.code,x.code+' · '+x.name]),preferred,a.length?'Choose…':method.error?'Configure dated inventory method first':'No compatible account for this use');
