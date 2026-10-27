@@ -1,5 +1,5 @@
 let documentKind='Evidence';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261028-stock-settings-date';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261028-stock-return';
 import {stockMethodChoices,stockCountChoices} from './staff-stock-policy.mjs?v=20261028-stock-settings-date';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261026-v4';
@@ -8,7 +8,7 @@ import {renderDashboard} from './staff-dashboard.mjs?v=20261026-v4';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261026-v4';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261027-pretest';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261028-stock-return';
 import {createSuiteUI} from './staff-suite.mjs?v=20261027-aligned';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261027-fulluat';
