@@ -22,6 +22,24 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   const name=text(p.name,100),parent=p.parent_id?uuid(p.parent_id):null;
   return {sector:one(await tx`insert into erp_private.sectors(name,parent_id) values(${name},${parent}) returning sector_id,name,parent_id`)};
  }
+ if(p.action==='schedule_state'){
+  editor(a);const pid=uuid(p.project_id),operation=choice(p.operation,['Pause','Resume']),s=one(await tx`select * from erp_private.project_schedules where project_id=${pid} and deleted_at is null for update`),project=one(await tx`select status from erp_private.projects where project_id=${pid} and deleted_at is null`);
+  if(project.status==='Archived')fail(400,'An archived project cannot resume recurring work.');if(String(s.version)!==revision(p.version))fail(409,'The schedule changed. Refresh the project before changing its status.');
+  if(operation==='Pause'&&!s.enabled)return {ok:true,enabled:false};if(operation==='Resume'&&s.enabled)return {ok:true,enabled:true};
+  const today=nairobiDate(),effective=operation==='Pause'?today:new Date(Date.parse(today+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+  if(operation==='Resume'&&s.ends_on<today)fail(400,'This schedule has ended. Extend the dates or create a new project from the client setup.');
+  await tx`update erp_private.project_schedules set enabled=${operation==='Resume'},effective_from=${effective},version=version+1,updated_at=now() where project_id=${pid}`;
+  return {ok:true,enabled:operation==='Resume',effective_from:effective};
+ }
+ if(p.action==='schedule_cancel'){
+  if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must end a recurring service schedule.');const pid=uuid(p.project_id),reason=text(p.reason,1000);
+  if(reason.length<3)fail(400,'Enter why future recurring work is being ended.');const s=one(await tx`select * from erp_private.project_schedules where project_id=${pid} and deleted_at is null for update`),project=one(await tx`select status from erp_private.projects where project_id=${pid} and deleted_at is null`);
+  if(project.status==='Archived')fail(400,'This project is already archived.');if(String(s.version)!==revision(p.version))fail(409,'The schedule changed. Refresh the project before ending it.');
+  const today=nairobiDate();if(!s.enabled&&s.ends_on<=today)fail(400,'This recurring schedule has already ended.');const end=s.ends_on<today?s.ends_on:s.starts_on>today?s.starts_on:today;
+  await tx`update erp_private.project_schedules set enabled=false,ends_on=${end},effective_from=${today},version=version+1,updated_at=now() where project_id=${pid}`;
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'project_schedules','END_RECURRENCE',${pid},${tx.json({reason,ends_on:end,effective_from:today})})`;
+  return {ok:true,enabled:false,ends_on:end};
+ }
  if(p.action==='project_save'){
   editor(a);const pid=p.project_id?uuid(p.project_id):crypto.randomUUID(),cid=uuid(p.client_id),firm=uuid(p.firm_id),service=text(p.service_code,40);
   const old=p.project_id?one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null for update`):null;

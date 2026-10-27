@@ -106,9 +106,9 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
    values(${rid},${ref},${cid},${firm},${pid},${contact},${vals.channel},${vals.subject},${vals.purpose},${vals.details},${when},${vals.followup},${vals.link},${signatory},${a.staff_id},${vals.status}) returning communication_id,reference`);
  }
  if(p.action==='contact_save'){
-  leader(a);const cid=uuid(p.client_id),email=text(p.email_address||'',200,false);if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))fail(400,'Check the contact email.');
-  if(p.contact_id)one(await tx`update erp_private.client_contacts set full_name=${text(p.full_name,160)},email_address=${email},phone_number=${text(p.phone_number||'',40,false)},job_title=${text(p.job_title||'',100,false)} where contact_id=${uuid(p.contact_id)} and client_id=${cid} and revision=${revision(p.revision)} returning contact_id`);
-  else await tx`insert into erp_private.client_contacts(client_id,full_name,email_address,phone_number,job_title) values(${cid},${text(p.full_name,160)},${email},${text(p.phone_number||'',40,false)},${text(p.job_title||'',100,false)})`;return {ok:true};
+  leader(a);const cid=uuid(p.client_id),email=text(p.email_address||'',200,false),role=p.role_in_decision?choice(p.role_in_decision,['Decision Maker','Influencer','Billing Contact','Day-to-Day Contact']):null;if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))fail(400,'Check the contact email.');
+  if(p.contact_id)one(await tx`update erp_private.client_contacts set full_name=${text(p.full_name,160)},email_address=${email},phone_number=${text(p.phone_number||'',40,false)},job_title=${text(p.job_title||'',100,false)},role_in_decision=${role} where contact_id=${uuid(p.contact_id)} and client_id=${cid} and revision=${revision(p.revision)} returning contact_id`);
+  else await tx`insert into erp_private.client_contacts(client_id,full_name,email_address,phone_number,job_title,role_in_decision) values(${cid},${text(p.full_name,160)},${email},${text(p.phone_number||'',40,false)},${text(p.job_title||'',100,false)},${role})`;return {ok:true};
  }
  if(p.action==='firm_details'){
   partner(a);if(typeof p.vat_registered!=='boolean')fail(400,'Confirm whether this firm is VAT registered.');const pin=text(p.kra_pin||'',11,false);if(pin&&!/^[A-Z][0-9]{9}[A-Z]$/.test(pin))fail(400,'Check the firm KRA PIN.');const prefix=text(p.invoice_prefix||'',40,false);if(prefix&&!/^[A-Z0-9/-]+$/.test(prefix))fail(400,'Use a prefix such as INV/PCL.');
