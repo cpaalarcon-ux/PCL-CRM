@@ -1,13 +1,15 @@
 const day=v=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
-export const mappingDates=(rows,snapshot)=>[...new Set(snapshot?.mapping_dates||rows.map(r=>day(r.normalized?.return_month||r.normalized?.date||r.period_start)).filter(Boolean))].sort();
+export const mappingPeriod=row=>day(row.normalized?.return_month||row.period_start||row.normalized?.date);
+export const mappingPeriods=(rows,snapshot)=>[...new Set((snapshot?.mapping_periods||rows.map(mappingPeriod)).map(x=>day(typeof x==='string'?x:x.period)).filter(Boolean))].sort();
+export const mappingDates=(rows,snapshot)=>[...new Set(snapshot?.mapping_dates||rows.map(r=>day(r.normalized?.date||r.period_start||r.normalized?.return_month)).filter(Boolean))].sort();
 export function inventoryMethod(data,activityId,dates){
  const versions=(data.policies||[]).filter(p=>p.activity_id===activityId).sort((a,b)=>day(b.effective_from).localeCompare(day(a.effective_from)));
- if(!dates.length)return {error:'Refresh the purchase selection to confirm its reporting dates.'};
+ if(!dates.length)return {error:'Refresh the purchase selection to confirm its invoice dates.'};
  const activity=(data.activities||[]).find(a=>a.activity_id===activityId);
- if(activityId&&(!activity||dates.some(d=>day(activity.effective_from)>d||activity.effective_to&&day(activity.effective_to)<d)))return {error:'Choose an activity that covers every selected reporting date, or map the periods separately.'};
+ if(activityId&&(!activity||dates.some(d=>day(activity.effective_from)>d||activity.effective_to&&day(activity.effective_to)<d)))return {error:'The selected activity does not cover every invoice date. Choose a valid activity or map the affected rows separately.'};
  const methods=dates.map(d=>(versions.length?versions.find(v=>day(v.effective_from)<=d):data.policy)?.inventory_method);
- if(methods.some(m=>!['Periodic','Perpetual'].includes(m)))return {error:'A Manager must configure the inventory method for the selected activity and reporting dates.'};
- if(new Set(methods).size!==1)return {error:'The selected rows use different inventory methods. Map the periods separately.'};
+ if(methods.some(m=>!['Periodic','Perpetual'].includes(m)))return {error:'A Manager must configure the inventory method effective on each invoice date.'};
+ if(new Set(methods).size!==1)return {error:'The selected invoices use different inventory methods. Map one effective policy period at a time.'};
  return {method:methods[0]};
 }
 export function inventoryAccountAllowed(code,use){

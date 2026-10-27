@@ -102,7 +102,11 @@ export function rowWarnings(row){
    out.push('Tax reviewer confirmation required — no automatic exclusion or VAT claim');
   }
   if(n.legacy_tax_review)out.push('Legacy 8% source — reviewer must confirm the applicable period and treatment');
-  if(n.date&&n.return_month&&n.date.slice(0,7)!==n.return_month.slice(0,7))out.push('Invoice date differs from return month — review eligibility');
+  if(n.date&&n.return_month&&n.date.slice(0,7)!==n.return_month.slice(0,7)){
+   const invoiceMonth=n.date.slice(0,7),claimMonth=n.return_month.slice(0,7);
+   if(claimMonth<invoiceMonth)out.push('Selected client VAT reporting month precedes the invoice month — check the reporting month and supply timing before input VAT review.');
+   else out.push('Invoice date and client VAT reporting month differ — reviewer must establish the actual supply tax period, required documents and supplier declaration, then check whether Section 17(2)’s six-month proviso applies. The six-month period runs from the end of the supply tax period; invoice month alone does not decide it.');
+  }
   if(n.template_kind==='B02'&&!n.party_pin)out.push('Missing supplier PIN — review source');
  }
  return out;

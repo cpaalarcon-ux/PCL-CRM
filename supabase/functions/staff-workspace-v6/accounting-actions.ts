@@ -64,6 +64,7 @@ export async function accountingAction(tx:any,a:any,p:any){
   const mappingHash=await digest([p.route,p.account_code,p.narration||'',p.asset_details||'',p.first_use_status||'',p.first_use_date||'',p.activity_id||'',p.stock_class||'',p.inventory_use||'',p.construction_job||'',p.legal_category||'',p.legal_basis||'',p.evidence||'']);
   if(selection){if(selection.selection_hash!==p.selection_hash)fail(409,'Selection confirmation does not match. Select again.');if(selection.consumed_at){if(selection.result?.payload_hash!==mappingHash)fail(409,'This selection has already been applied with different values.');return selection.result;}if(new Date(selection.expires_at).getTime()<Date.now())fail(409,'Selection expired. Apply the filters and select again.');}
   const items=selection?selection.rows_snapshot:p.action==='workbook_map_bulk'?p.rows:[{row_id:p.row_id,revision:p.revision}];if(!Array.isArray(items)||!items.length||items.length>(selection?10000:500))fail(400,'Select 1–500 rows or confirm all matching rows.');
+  if(Number(p.route)===1&&p.mapping_options_version===1&&!p.activity_id)fail(400,'Choose a configured business activity for stock control.');
   if(p.activity_id){one(await tx`select activity_id from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${project.client_id}`);if(Number(p.route)===1&&!p.stock_class)fail(400,'Enter the stock class for the selected activity.');}
 
   const ids=items.map((r:any)=>uuid(r.row_id));if(new Set(ids).size!==ids.length)fail(400,'A row was selected more than once.');
@@ -84,8 +85,8 @@ export async function accountingAction(tx:any,a:any,p:any){
   const activity=p.activity_id?(await tx`select * from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${project.client_id}`)[0]:null;
   const categoryChoices=Number(p.route)===1&&p.mapping_options_version===1?await stockCategoryOptions(tx,project.client_id):[];
   const values=rows.map((r:any)=>{
-   const at=String(r.normalized.return_month||r.normalized.date||day(r.period_start));
-   if(activity&&(day(activity.effective_from)>at||activity.effective_to&&day(activity.effective_to)<at))fail(400,'The selected activity does not cover every reporting date. Map the periods separately.');
+   const at=String(r.normalized.date||day(r.period_start));
+   if(activity&&(day(activity.effective_from)>at||activity.effective_to&&day(activity.effective_to)<at))fail(400,'The selected activity does not cover every invoice date. Choose a valid activity or map the affected rows separately.');
    if(Number(p.route)===1&&p.mapping_options_version===1&&p.stock_class){
     const matching=(x:any)=>x.stock_class===p.stock_class&&(!x.activity_id||x.activity_id===(p.activity_id||''))&&(!x.inventory_use||x.inventory_use===p.inventory_use);
     const old=r.review_details||{},sameOld=old.stock_class===p.stock_class&&(old.activity_id||'')===(p.activity_id||'')&&(old.inventory_use||(['10200','50010'].includes(r.account_code)?'Construction raw materials':['10190','50000'].includes(r.account_code)?'Goods for resale':'Other inventory'))===p.inventory_use;
