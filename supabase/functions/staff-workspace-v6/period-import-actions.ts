@@ -24,7 +24,7 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
  const kind=choice(p.kind,['Sales','Payroll']),start=date(p.starts_on),end=date(p.ends_on);
  if(!start||!end||end<start||Date.parse(end)-Date.parse(start)>366*86400000)fail(400,'Choose the reporting period.');
  if(kind==='Payroll'&&(start.slice(8)!=='01'||new Date(Date.parse(end)+86400000).toISOString().slice(8,10)!=='01'||start.slice(0,7)!==end.slice(0,7)))fail(400,'Payroll must cover one complete calendar month.');
- const doc=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and project_id=${project.project_id} and deleted_at is null`);
+ const doc=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and project_id=${project.project_id} and deleted_at is null and archived_at is null for share`);
  if(!['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip'].includes(doc.mime_type))fail(400,'Choose CSV, Excel or ZIP import data.');
  const downloaded=await storage.download(doc.object_key);if(downloaded.error||!downloaded.data)fail(404,'The import source is unavailable.');
  const bytes=new Uint8Array(await downloaded.data.arrayBuffer()),first=await readSourceSheet(bytes,doc.file_name,p.sheet_name||null),sheets:any[]=[];
@@ -82,7 +82,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
  if(!String(p.action).startsWith('period_import_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Assigned accounting staff are required.');
  const pid=uuid(p.project_id),project=one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null`);
- if(p.action==='period_import_list')return {imports:await tx`select import_id,kind,starts_on,ends_on,status,prepared_by,reviewed_by,revision,created_at from erp_private.period_imports where project_id=${pid} order by created_at desc limit 500`,documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and mime_type in ('text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') order by uploaded_at desc`,periods:await tx`select period_id,starts_on,ends_on from erp_private.ledger_periods where project_id=${pid} and status='Open'`};
+ if(p.action==='period_import_list')return {imports:await tx`select import_id,kind,starts_on,ends_on,status,prepared_by,reviewed_by,revision,created_at from erp_private.period_imports where project_id=${pid} order by created_at desc limit 500`,documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and archived_at is null and mime_type in ('text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') order by uploaded_at desc`,periods:await tx`select period_id,starts_on,ends_on from erp_private.ledger_periods where project_id=${pid} and status='Open'`};
  if(p.action==='period_import_read')return {record:one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid}`)};
  if(project.status==='Archived')fail(400,'Archived projects retain read-only accounting history.');
  if(p.action==='period_import_preview')return await prepare(tx,a,project,p,storage);
@@ -94,7 +94,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   if(x.source_hash!==p.preview_hash)fail(409,'The source or calculations changed. Preview and confirm again.');
   if(x.payload.issues.length)fail(400,'Resolve the displayed import exceptions before confirming.');
   if(!(await tx`select erp_private.tax_period_open(${pid}::uuid,${x.starts_on}::date,${x.ends_on}::date) open`)[0].open)fail(409,'Return submitted tax work before replacing its inputs. Locked tax periods require a controlled amendment.');
-  if(x.kind==='Sales'&&(await tx`select r.row_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Sales' and b.period_start<=${x.ends_on} and b.period_end>=${x.starts_on} limit 1`).length)fail(409,'This period has legacy invoice-based sales. Reconcile and migrate those sources before adding category totals.');
+  if(x.kind==='Sales'&&(await tx`select r.row_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Sales' and b.archived_at is null and b.period_start<=${x.ends_on} and b.period_end>=${x.starts_on} limit 1`).length)fail(409,'This period has legacy invoice-based sales. Reconcile and migrate those sources before adding category totals.');
   const ids=Array.isArray(p.replaces_ids)?p.replaces_ids.map(uuid):[];
   if(x.overlaps.some((o:any)=>o.project_id!==pid||day(o.starts_on)<x.starts_on||day(o.ends_on)>x.ends_on))fail(409,'The new summary must fully cover the periods it replaces in this project. Partial overlaps are not added.');
   if(ids.length!==x.overlaps.length||x.overlaps.some((o:any)=>!ids.includes(o.import_id)))fail(409,'Explicitly confirm replacement of every overlapping summary.');

@@ -18,12 +18,12 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
   one(await tx`select project_id from erp_private.projects where project_id=${pid}`);
   const search='%'+text(p.search||'',160,false)+'%',mapping=choice(p.mapping||'All',['All','Unmapped','Inventory','Expenditure','PPE']),dataset=choice(p.dataset||'All',['Costs','All','Purchases','Expenditure','Non-eTIMS','Sales','POS','Bank']),rate=choice(p.vat_category||'All',['All','16%','8%','0%','Exempt','Non-eTIMS','Unconfirmed']);
   const rows=await tx`select r.*,b.sheet_name,b.document_id,b.period_start,b.period_end,v.decision,v.source_revision from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id)
-   where r.project_id=${pid} and not r.is_split_parent and (${dataset}='All' or ${dataset}='Costs' and r.dataset in ('Purchases','Expenditure','Non-eTIMS') or r.dataset=${dataset})
+   where r.project_id=${pid} and b.archived_at is null and not r.is_split_parent and (${dataset}='All' or ${dataset}='Costs' and r.dataset in ('Purchases','Expenditure','Non-eTIMS') or r.dataset=${dataset})
    and (${mapping}='All' or ${mapping}='Unmapped' and r.account_code is null or r.account_code is not null and r.route=case ${mapping} when 'Inventory' then 1 when 'Expenditure' then 2 when 'PPE' then 3 else 0 end)
    and (${rate}='All' or (case when r.dataset='Non-eTIMS' then 'Non-eTIMS' else coalesce(r.normalized->>'vat_category','Unconfirmed') end)=${rate})
    and concat_ws(' ',r.normalized->>'invoice',r.normalized->>'reference',r.normalized->>'party',r.normalized->>'party_pin',r.normalized->>'description') ilike ${search}
    order by r.created_at,r.source_row,r.row_id limit 100 offset ${offset}`;
-  const total=one(await tx`select count(*)::int count from erp_private.workbook_rows r where r.project_id=${pid} and not r.is_split_parent
+  const total=one(await tx`select count(*)::int count from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and b.archived_at is null and not r.is_split_parent
    and (${dataset}='All' or ${dataset}='Costs' and r.dataset in ('Purchases','Expenditure','Non-eTIMS') or r.dataset=${dataset})
    and (${mapping}='All' or ${mapping}='Unmapped' and r.account_code is null or r.account_code is not null and r.route=case ${mapping} when 'Inventory' then 1 when 'Expenditure' then 2 when 'PPE' then 3 else 0 end)
    and (${rate}='All' or (case when r.dataset='Non-eTIMS' then 'Non-eTIMS' else coalesce(r.normalized->>'vat_category','Unconfirmed') end)=${rate})
@@ -31,21 +31,21 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
   const clientId=one(await tx`select client_id from erp_private.projects where project_id=${pid}`).client_id;
   return {stock_categories:await stockCategoryOptions(tx,clientId),policies:await tx`select * from erp_private.stock_policy_versions where client_id=(select client_id from erp_private.projects where project_id=${pid}) order by effective_from desc`,activities:await tx`select * from erp_private.client_activities where client_id=(select client_id from erp_private.projects where project_id=${pid}) order by activity_name`,accounts:await tx`select * from erp_private.account_catalog order by code`,policy:(await tx`select * from erp_private.accounting_policies where client_id=(select client_id from erp_private.projects where project_id=${pid})`)[0]||null,rows:rows.map((r:any)=>({...r,warnings:rowWarnings(r)})),legal_categories:legalCategories,total,
    categories:allCategories,pending_information:await pendingPurchases(tx,pid),
-   rejections:await tx`select r.source_row,r.reason,b.sheet_name,b.dataset from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${pid} and not r.raw_values ? '_pending_purchase' order by b.created_at desc limit 100`};
+   rejections:await tx`select r.source_row,r.reason,b.sheet_name,b.dataset from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${pid} and b.archived_at is null and not r.raw_values ? '_pending_purchase' order by b.created_at desc limit 100`};
  }
  if(p.action==='workbook_map'){
-  const target=one(await tx`select project_id from erp_private.workbook_rows where row_id=${uuid(p.row_id)}`);await tx`select pg_advisory_xact_lock(hashtextextended(${target.project_id+':tax'},0))`;
+  const target=one(await tx`select r.project_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=${uuid(p.row_id)} and b.archived_at is null`);await tx`select pg_advisory_xact_lock(hashtextextended(${target.project_id+':tax'},0))`;
   const route=Number(p.route),category=allCategories.find(c=>c.code===p.category_code&&c.route===route&&c.kind==='Purchase');
   if(!category)fail(400,'Choose a category for the selected purchase route.');
   const narration=text(p.narration,1000),asset=text(p.asset_details||'',1000,route===3);
   const details={legal_category:text(p.legal_category||'',100,false),legal_basis:text(p.legal_basis||'',2000,false),evidence:text(p.evidence||'',1000,false)};
   if(details.legal_category&&!legalCategories.includes(details.legal_category))fail(400,'Choose a workbook legal category.');
   const r=await tx`update erp_private.workbook_rows set route=${route},category_code=${category.code},narration=${narration},asset_details=${asset||null},review_details=${tx.json(details)}
-   where row_id=${uuid(p.row_id)} and dataset in ('Purchases','Expenditure','Non-eTIMS') and revision=${revision(p.revision)} returning row_id`;
+   where row_id=${uuid(p.row_id)} and dataset in ('Purchases','Expenditure','Non-eTIMS') and revision=${revision(p.revision)} and exists(select 1 from erp_private.workbook_batches b where b.batch_id=workbook_rows.batch_id and b.archived_at is null) returning row_id`;
   if(!r.length)fail(409,'This purchase changed or is unavailable. Refresh first.');return {ok:true};
  }
  if(!['workbook_preview','workbook_commit'].includes(p.action))fail(404,'Unknown workbook action.');
- const d=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and deleted_at is null`);
+ const d=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and deleted_at is null and archived_at is null for share`);
  if(!d.project_id||!['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip'].includes(d.mime_type))fail(400,'Choose a CSV, XLSX or ZIP document linked to a project.');
  const project=one(await tx`select p.project_id,p.client_id,p.status,c.company_name,c.kra_pin from erp_private.projects p join erp_private.clients c using(client_id) where p.project_id=${d.project_id} and p.deleted_at is null`);
  if(project.status==='Archived')fail(400,'Archived projects cannot receive imports.');
@@ -82,8 +82,10 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  if(standard&&!standardData.rows.length)fail(400,'No purchase transactions found. Keep the headings in row 1 and paste transactions from row 2.');
  if(standard&&!purchaseUploadRates.includes(p.vat_category))fail(400,'Select the VAT category in the ERP: 16%, 8%, 0% or Exempt.');
  const selectedRate=standard?p.vat_category:null;
- const signature=await hash(JSON.stringify({version:6,digest:d.sha256,sheet:sheet.name,header,dataset,start,end,first,last,map,profile:profile?.id||null,vat_category:selectedRate,allow_pending_credit_details:p.allow_pending_credit_details===true}));
- const previous=(await tx`select b.* from erp_private.workbook_import_requests r join erp_private.workbook_batches b using(batch_id) where r.project_id=${project.project_id} and r.signature=${signature}`)[0];
+ const signatureData={digest:d.sha256,sheet:sheet.name,header,dataset,start,end,first,last,map,profile:profile?.id||null,vat_category:selectedRate,allow_pending_credit_details:p.allow_pending_credit_details===true};
+ const legacySignature=await hash(JSON.stringify({version:6,...signatureData}));
+ const signature=await hash(JSON.stringify({version:7,document_id:d.document_id,...signatureData}));
+ const previous=(await tx`select b.* from erp_private.workbook_import_requests r join erp_private.workbook_batches b using(batch_id) where r.project_id=${project.project_id} and r.signature in (${signature},${legacySignature}) and b.archived_at is null order by (r.signature=${signature}) desc limit 1`)[0];
  if(previous){const pending=await pendingPurchases(tx,project.project_id,null,null,previous.batch_id),history=Number((await tx`select count(*)::int n from erp_private.workbook_rejections where batch_id=${previous.batch_id} and raw_values ? '_pending_purchase'`)[0].n);return {ok:true,batch_id:previous.batch_id,duplicate_upload:true,dataset:previous.dataset,source_count:previous.source_count,new_count:0,duplicate_count:previous.new_count+previous.duplicate_count+history-pending.total,pending_count:pending.total,rejected_count:previous.rejected_count-history,rejections:[]};}
  const isCost=['Purchases','Expenditure','Non-eTIMS'].includes(dataset);
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':'+(isCost?'Cost':dataset)},0))`;
@@ -97,19 +99,21 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
   if(standard&&n.pending.length){rejected.push({row:i,raw:{...n.raw,_pending_purchase:{key:await hash(n.key),match:purchasePendingMatch(n.row),row:n.row}},reason:'Pending information: '+n.pending.join(' '),pending:true});continue;}
   parsed.push({...n,source_row:i,row_key:await hash(n.key)});
  }
- const hardErrors=rejected.filter(r=>!r.pending),pendingCount=rejected.filter(r=>r.pending).length;
- if(standard&&hardErrors.length)fail(400,`${hardErrors.length} purchase row(s) need correction. No purchase rows were imported. ${hardErrors.slice(0,3).map(r=>'Row '+r.row+': '+r.reason).join(' ')}`);
+ const pendingCount=rejected.filter(r=>r.pending).length;
+ // Stage each valid row even when another row needs correction. The rejected rows
+ // remain attached to this import batch with their original values and row numbers.
+ // Staff can fix and re-upload them without blocking the clean rows.
  if(pendingCount&&p.allow_pending_credit_details!==true)fail(400,`Confirm that ${pendingCount} credit note(s) will be retained as Pending information, outside posting, until the original invoice details are supplied.`);
  const known=new Map<string,string>();
  for(let i=0;i<parsed.length;i+=500){const keys=parsed.slice(i,i+500).map(n=>n.row_key);
-  const rows=await tx`select row_key,normalized from erp_private.workbook_rows where client_id=${project.client_id} and parent_row_id is null and dataset=${dataset} and row_key=any(${tx.array(keys)}::text[])`;
+  const rows=await tx`select r.row_key,r.normalized from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and b.archived_at is null and r.parent_row_id is null and r.dataset=${dataset} and r.row_key=any(${tx.array(keys)}::text[])`;
   for(const row of rows)known.set(row.row_key,canonical(row.normalized));
  }
  const cross=new Set<string>();
  const refParty=(n:any)=>String(n.invoice||'').trim().toUpperCase()+'|'+String(n.party||'').trim().toUpperCase();
  if(isCost)for(let i=0;i<parsed.length;i+=500){
   const refs=[...new Set(parsed.slice(i,i+500).map(n=>String(n.row.invoice||'').toUpperCase()))];
-  const others=await tx`select normalized from erp_private.workbook_rows where client_id=${project.client_id} and parent_row_id is null and dataset in ('Purchases','Expenditure','Non-eTIMS') and dataset<>${dataset} and upper(normalized->>'invoice')=any(${tx.array(refs)}::text[])`;
+  const others=await tx`select w.normalized from erp_private.workbook_rows w join erp_private.workbook_batches b using(batch_id) where w.client_id=${project.client_id} and b.archived_at is null and w.parent_row_id is null and w.dataset in ('Purchases','Expenditure','Non-eTIMS') and w.dataset<>${dataset} and upper(w.normalized->>'invoice')=any(${tx.array(refs)}::text[])`;
   for(const r of others)cross.add(refParty(r.normalized));
  }
  const accepted:any[]=[];
@@ -123,7 +127,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
   const inserted=await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized,route,category_code,narration)
    select ${batch}::uuid,${d.project_id}::uuid,${project.client_id}::uuid,${dataset},r.source_row,r.row_key,r.raw_values,r.normalized,r.route,r.category_code,r.narration
    from jsonb_to_recordset(${tx.json(accepted.slice(i,i+500))}::jsonb) as r(source_row integer,row_key text,raw_values jsonb,normalized jsonb,route integer,category_code text,narration text)
-   on conflict(client_id,dataset,row_key) do nothing returning row_id`;
+   on conflict(batch_id,row_key) do nothing returning row_id`;
   added+=inserted.length;duplicates+=accepted.slice(i,i+500).length-inserted.length;
  }
  await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by)

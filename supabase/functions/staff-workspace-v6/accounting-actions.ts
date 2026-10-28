@@ -10,11 +10,11 @@ const current=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(
 const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
 const hash=async(v:any)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(v))))).map(n=>n.toString(16).padStart(2,'0')).join('');
 export async function reconSource(tx:any,project:string,start:string,end:string){
- const rows=await tx`select r.*,v.decision,v.source_revision,v.deductible_percentage,v.vat_rate_key,v.income_treatment,v.reviewed_by from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id) where r.project_id=${project} and b.period_start>=${start} and b.period_start<=${end} and (r.dataset not in ('Sales','POS','Bank') or (r.normalized->>'date'>=${start} and r.normalized->>'date'<=${end})) and not r.is_split_parent order by r.row_id limit 10001`;
+ const rows=await tx`select r.*,v.decision,v.source_revision,v.deductible_percentage,v.vat_rate_key,v.income_treatment,v.reviewed_by from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id) where r.project_id=${project} and b.archived_at is null and b.period_start>=${start} and b.period_start<=${end} and (r.dataset not in ('Sales','POS','Bank') or (r.normalized->>'date'>=${start} and r.normalized->>'date'<=${end})) and not r.is_split_parent order by r.row_id limit 10001`;
  rows.push(...await summarySalesRows(tx,project,start,end));
  if(rows.length>10000)fail(400,'Split the review into periods with at most 10,000 rows.');
  const summaryCrossing=(await tx`select count(*)::int n from erp_private.period_imports where project_id=${project} and kind='Sales' and status='Confirmed' and starts_on<=${end} and ends_on>=${start} and (starts_on<${start} or ends_on>${end})`)[0].n;
- return {rows,fingerprint:await hash(rows),crossing:summaryCrossing+(await tx`select count(*)::int n from erp_private.workbook_batches where project_id=${project} and period_start<=${end} and period_end>=${start} and (period_start<${start} or period_end>${end})`)[0].n};
+ return {rows,fingerprint:await hash(rows),crossing:summaryCrossing+(await tx`select count(*)::int n from erp_private.workbook_batches where project_id=${project} and archived_at is null and period_start<=${end} and period_end>=${start} and (period_start<${start} or period_end>${end})`)[0].n};
 }
 async function calculate(tx:any,c:any,inputs:any){const source=await reconSource(tx,c.project_id,day(c.starts_on),day(c.ends_on)),deferral=c.review_type==='Monthly'?(await tx`select * from erp_private.bank_deferrals where reconciliation_id=${c.reconciliation_id}`)[0]:null,result=reconciliation(source.rows,inputs,{bankPendingApproved:!!deferral});
  if(c.review_type==='Monthly'&&source.crossing)result.issues.push('An import batch crosses this review period. Use matching import periods.');
@@ -32,7 +32,7 @@ export async function accountingAction(tx:any,a:any,p:any){
   return one(await tx`insert into erp_private.account_catalog(code,name,route,category_code,statement,account_group,catalog_version,status,tax_note) values(${code},${text(p.name,160)},${route},${category},${choice(p.statement,['Statement of financial position','Profit or loss'])},'Custom account','CUSTOM-2026','Draft',${text(p.notes,2000)}) returning code`);
  }
  if(p.action==='accounting_account_approve'){if(a.category_code!=='PARTNER')fail(403,'Partner approval required.');const r=one(await tx`select * from erp_private.account_catalog where code=${text(p.code,5)} for update`);current(r,p);if(r.status!=='Draft')fail(400,'Choose a draft account.');await tx`update erp_private.account_catalog set status='Active' where code=${r.code}`;return {ok:true};}
- const pid=uuid(p.project_id|| (p.row_id?(await tx`select project_id from erp_private.workbook_rows where row_id=${uuid(p.row_id)}`)[0]?.project_id:null));
+ const pid=uuid(p.project_id|| (p.row_id?(await tx`select r.project_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=${uuid(p.row_id)} and b.archived_at is null`)[0]?.project_id:null));
  const project=one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null`);
  const policy=(await tx`select * from erp_private.accounting_policies where client_id=${project.client_id}`)[0];
  if(p.action==='accounting_stock_category_add'){
@@ -50,7 +50,7 @@ export async function accountingAction(tx:any,a:any,p:any){
  }
  if(p.action==='workbook_mapping_undo'){
   await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
-  const r=one(await tx`select r.*,b.period_start,b.period_end from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=${uuid(p.row_id)} and r.project_id=${pid} for update of r`);current(r,p);
+  const r=one(await tx`select r.*,b.period_start,b.period_end from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=${uuid(p.row_id)} and r.project_id=${pid} and b.archived_at is null for update of r`);current(r,p);
   const history=one(await tx`select * from erp_private.mapping_history where row_id=${r.row_id} order by after_revision desc limit 1`);
   if(history.changed_by!==a.staff_id||history.after_revision!==r.revision||r.is_split_parent||r.parent_row_id)fail(409,'Only your latest unreviewed mapping can be undone. Refresh and review this row.');
   if(!(await tx`select erp_private.tax_period_open(${pid}::uuid,${r.period_start}::date,${r.period_end}::date) as open`)[0].open)fail(400,'Submitted or locked work cannot be undone.');
@@ -68,10 +68,10 @@ export async function accountingAction(tx:any,a:any,p:any){
   if(p.activity_id){one(await tx`select activity_id from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${project.client_id}`);if(Number(p.route)===1&&!p.stock_class)fail(400,'Enter the stock class for the selected activity.');}
 
   const ids=items.map((r:any)=>uuid(r.row_id));if(new Set(ids).size!==ids.length)fail(400,'A row was selected more than once.');
-  const rows=await tx`select r.*,b.period_start,b.period_end from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and r.row_id=any(${tx.array(ids)}::uuid[]) order by r.row_id for update of r`;if(rows.length!==ids.length)fail(403,'All selected rows must belong to this authorised project.');
+  const rows=await tx`select r.*,b.period_start,b.period_end from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and b.archived_at is null and r.row_id=any(${tx.array(ids)}::uuid[]) order by r.row_id for update of r`;if(rows.length!==ids.length)fail(403,'All selected rows must belong to this authorised project.');
   const accounts=await tx`select * from erp_private.account_catalog order by code`;
   const selectedRevisions=new Map(items.map((i:any)=>[i.row_id,i]));for(const r of rows)current(r,selectedRevisions.get(r.row_id));
-  const closed=await tx`select b.batch_id from erp_private.workbook_batches b where b.batch_id=any(${tx.array([...new Set(rows.map((r:any)=>r.batch_id))])}::uuid[]) and not erp_private.tax_period_open(${pid}::uuid,b.period_start,b.period_end) limit 1`;if(closed.length)fail(400,'This period is submitted or locked.');
+  const closed=await tx`select b.batch_id from erp_private.workbook_batches b where b.batch_id=any(${tx.array([...new Set(rows.map((r:any)=>r.batch_id))])}::uuid[]) and b.archived_at is null and not erp_private.tax_period_open(${pid}::uuid,b.period_start,b.period_end) limit 1`;if(closed.length)fail(400,'This period is submitted or locked.');
   const update=async(r:any,v:any,details:any)=>{await tx`update erp_private.workbook_rows set route=${v.route},category_code=${v.category_code},account_code=${v.account_code},narration=${v.narration},asset_details=${v.asset_details},first_use_status=${v.first_use_status},first_use_date=${v.first_use_date},review_details=${tx.json(details)} where row_id=${r.row_id}`;};
   if(p.action==='workbook_split'){
    const r=rows[0],parts=splitValues(r,p.parts),values=parts.map((part:any)=>mapValue(r,part,accounts,policy));
@@ -100,7 +100,7 @@ export async function accountingAction(tx:any,a:any,p:any){
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'workbook_rows','BULK_MAPPING',${pid},${tx.json({row_ids:ids,account_code:p.account_code,count:rows.length})})`;return {ok:true,count:rows.length};
  }
  if(p.action==='accounting_preview'){
-  const rows=await tx`select r.*,v.decision,v.source_revision,v.deductible_percentage from erp_private.workbook_rows r left join erp_private.tax_row_reviews v using(row_id) where r.project_id=${pid} and r.dataset in ('Purchases','Expenditure','Non-eTIMS') and not r.is_split_parent order by r.source_row limit 10001`;
+  const rows=await tx`select r.*,v.decision,v.source_revision,v.deductible_percentage from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id) where r.project_id=${pid} and b.archived_at is null and r.dataset in ('Purchases','Expenditure','Non-eTIMS') and not r.is_split_parent order by r.source_row limit 10001`;
   if(rows.length>10000)fail(400,'Use smaller project periods.');const lines:any[]=[],issues:string[]=[];
   for(const r of rows){if(!r.account_code){issues.push('Unmapped row '+r.source_row);continue;}const net=Number(r.normalized.amount||0),vat=Number(r.normalized.vat||0),reviewed=r.source_revision===r.revision&&['Eligible','Excluded'].includes(r.decision);if(!reviewed)issues.push('Unreviewed row '+r.source_row);const claim=reviewed&&r.decision==='Eligible'?money(vat*Number(r.deductible_percentage)/100):0;const add=(code:string,value:number)=>lines.push({reference:r.normalized.invoice,source_row:r.source_row,account_code:code,debit:Math.max(0,money(value)),credit:Math.max(0,money(-value))});add(r.account_code,net+vat-claim);if(claim)add('10160',claim);add('20000',-net-vat);}
   return {lines,issues,debit:money(lines.reduce((s,l)=>s+l.debit,0)),credit:money(lines.reduce((s,l)=>s+l.credit,0)),label:'DRAFT accounting preview only. No journal or client ledger has been posted.'};

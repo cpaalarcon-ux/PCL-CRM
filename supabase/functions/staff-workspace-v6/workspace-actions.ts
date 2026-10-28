@@ -40,6 +40,16 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'project_schedules','END_RECURRENCE',${pid},${tx.json({reason,ends_on:end,effective_from:today})})`;
   return {ok:true,enabled:false,ends_on:end};
  }
+ if(p.action==='schedule_config_preview'){
+  editor(a);const s=scheduleInput({...p,pack:'Tax Compilation'});
+  if(!s.enabled)return {enabled:false,total:0,due_now:0,upcoming:0,breakdown:[]};
+  const through=`${s.ends_on}T23:59:59+03:00`;
+  const occurrences=await tx`select template_key,task_name,period_start,period_end,release_at,release_at<=now() as due_now
+   from erp_private.schedule_occurrences(${s.frequency},${s.pack},${s.starts_on},${s.ends_on},${s.starts_on},${tx.array(s.obligations)},${through}::timestamptz)
+   order by release_at,template_key limit 2000`;
+  const grouped=new Map<string,any>();for(const occurrence of occurrences){const item=grouped.get(occurrence.template_key)||{template_key:occurrence.template_key,task_name:occurrence.task_name,total:0,due_now:0,upcoming:0};item.total++;if(occurrence.due_now)item.due_now++;else item.upcoming++;grouped.set(occurrence.template_key,item);}
+  return {enabled:true,total:occurrences.length,due_now:occurrences.filter((x:any)=>x.due_now).length,upcoming:occurrences.filter((x:any)=>!x.due_now).length,breakdown:[...grouped.values()]};
+ }
  if(p.action==='project_save'){
   editor(a);const pid=p.project_id?uuid(p.project_id):crypto.randomUUID(),cid=uuid(p.client_id),firm=uuid(p.firm_id),service=text(p.service_code,40);
   const old=p.project_id?one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null for update`):null;
@@ -116,8 +126,8 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   const pid=uuid(p.project_id);one(await tx`select project_id from erp_private.projects where project_id=${pid}`);
   return {tasks:await tx`select status,count(*)::int count,count(*) filter(where due_at<now() and status not in ('Completed','Cancelled'))::int overdue from erp_private.tasks where project_id=${pid} and deleted_at is null group by status`,
    time:await tx`select staff_id,status,sum(hours) hours from erp_private.timesheets where project_id=${pid} and deleted_at is null group by staff_id,status`,
-   imports:await tx`select dataset,sum(source_count) source_rows,sum(new_count) imported,sum(duplicate_count) duplicates,sum(rejected_count) rejected from erp_private.workbook_batches where project_id=${pid} group by dataset`,
-   mapping:await tx`select route,category_code,count(*)::int rows from erp_private.workbook_rows where project_id=${pid} and not is_split_parent and dataset in ('Purchases','Expenditure','Non-eTIMS') group by route,category_code`};
+   imports:await tx`select dataset,sum(source_count) source_rows,sum(new_count) imported,sum(duplicate_count) duplicates,sum(rejected_count) rejected from erp_private.workbook_batches where project_id=${pid} and archived_at is null group by dataset`,
+   mapping:await tx`select r.route,r.category_code,count(*)::int rows from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and b.archived_at is null and not r.is_split_parent and r.dataset in ('Purchases','Expenditure','Non-eTIMS') group by r.route,r.category_code`};
  }
  return undefined;
 }

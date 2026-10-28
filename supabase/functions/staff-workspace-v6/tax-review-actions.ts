@@ -19,17 +19,17 @@ export async function taxSummary(tx:any,c:any){
  const needed=[...((keys as any)[c.kind]||[])];if(c.kind==='WHT'){if(c.inputs.payment_code)needed.push(c.inputs.payment_code);else ruleIssues.push('Select a WHT payment category.');}
  for(const key of needed){const r=use(key);if(r){if(c.kind==='WHT'&&r.tax_type!=='Withholding tax')ruleIssues.push('Select a withholding-tax payment rule.');else rules[key]=r;}}
 
- const batches=await tx`select * from erp_private.workbook_batches where project_id=${c.project_id} and period_start<=${c.ends_on} and period_end>=${c.starts_on}`;
+ const batches=await tx`select * from erp_private.workbook_batches where project_id=${c.project_id} and archived_at is null and period_start<=${c.ends_on} and period_end>=${c.starts_on}`;
  const rows=await tx`select r.*,v.decision,v.deductible_percentage,v.source_revision,v.reviewed_by,v.vat_rate_key,v.vat_difference_reason,v.income_treatment,b.period_start,b.period_end,b.uploaded_by
   from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v on v.row_id=r.row_id
-  where r.project_id=${c.project_id} and not r.is_split_parent and r.dataset<>'POS' and b.period_start>=${c.starts_on} and b.period_end<=${c.ends_on} order by r.source_row limit 10001`;
+  where r.project_id=${c.project_id} and b.archived_at is null and not r.is_split_parent and r.dataset<>'POS' and b.period_start>=${c.starts_on} and b.period_end<=${c.ends_on} order by r.source_row limit 10001`;
  const summaryRows=await summarySalesRows(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on));rows.push(...summaryRows);
  const summaryImports=await tx`select * from erp_private.period_imports where project_id=${c.project_id} and kind='Sales' and status='Confirmed' and starts_on<=${c.ends_on} and ends_on>=${c.starts_on}`;
  for(const s of summaryImports)batches.push({batch_id:s.import_id,dataset:'Sales',period_start:s.starts_on,period_end:s.ends_on,source_count:4,new_count:4,rejected_count:0});
  if(rows.length>10000)fail(400,'Split the tax review into smaller periods (maximum 10,000 rows per case).');
  const issues:string[]=profileIssues(profile,{...c,starts_on:dateText(c.starts_on),ends_on:dateText(c.ends_on)});if(batches.some((b:any)=>dateText(b.period_start)<dateText(c.starts_on)||dateText(b.period_end)>dateText(c.ends_on)))issues.push('An imported batch crosses this case period. Use matching period boundaries.');
  const pending_information=await pendingPurchases(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on));
- const pendingHistory=Number((await tx`select count(*)::int n from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${c.project_id} and b.period_start<=${c.ends_on} and b.period_end>=${c.starts_on} and r.raw_values ? '_pending_purchase'`)[0].n);
+ const pendingHistory=Number((await tx`select count(*)::int n from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${c.project_id} and b.archived_at is null and b.period_start<=${c.ends_on} and b.period_end>=${c.starts_on} and r.raw_values ? '_pending_purchase'`)[0].n);
  const rejected=batches.reduce((s:number,b:any)=>s+b.rejected_count,0)-pendingHistory;
  if(pending_information.total&&['VAT','Company','Individual','Partnership'].includes(c.kind))issues.push(`${pending_information.total} credit note(s) are Pending information. Supply original invoice details and reupload before submitting this tax case.`);
  if(rejected&&!c.inputs.rejection_resolution)issues.push(`${rejected} rejected source rows need a documented reconciliation.`);
@@ -105,8 +105,8 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   return one(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values(${pid},${kind},${start},${end},${a.staff_id}) returning case_id`);
  }
  if(p.action==='tax_row_review'){
-  editor(a);const target=one(await tx`select project_id from erp_private.workbook_rows where row_id=${uuid(p.row_id)}`);await tx`select pg_advisory_xact_lock(hashtextextended(${target.project_id+':tax'},0))`;
-  const r=one(await tx`select r.*,b.uploaded_by,b.period_start,b.period_end from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where row_id=${uuid(p.row_id)} for update of r`);fresh(r,p);if(r.is_split_parent||r.dataset==='POS')fail(400,'Review the active posting allocations, not the source control.');
+  editor(a);const target=one(await tx`select r.project_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=${uuid(p.row_id)} and b.archived_at is null`);await tx`select pg_advisory_xact_lock(hashtextextended(${target.project_id+':tax'},0))`;
+  const r=one(await tx`select r.*,b.uploaded_by,b.period_start,b.period_end from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=${uuid(p.row_id)} and b.archived_at is null for update of r`);fresh(r,p);if(r.is_split_parent||r.dataset==='POS')fail(400,'Review the active posting allocations, not the source control.');
   if(r.uploaded_by===a.staff_id)fail(403,'Another reviewer must review rows you imported.');
   if(!one(await tx`select erp_private.tax_period_open(${r.project_id}::uuid,${r.period_start}::date,${r.period_end}::date) as open`).open)fail(400,'Return the submitted case before changing a row decision. Locked cases cannot change.');
   const cost=['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset),decision=choice(p.decision,cost?['Eligible','Excluded','Unresolved']:['Confirmed','Unresolved']),percent=decision==='Eligible'?number(p.deductible_percentage,0,100):0;

@@ -220,6 +220,36 @@ async function download(id:any,p:any){
 }
 async function action(id:any,p:any){
  if(p.action==='session_activity')return {ok:true,idle_timeout_seconds:null,logout_policy:'manual'};
+ if(p.action==='document_archive')return scoped(id,async(tx,a)=>{
+  const documentId=uuid(p.document_id),reason=text(p.reason,1000);
+  if(p.confirmed!==true)fail(400,'Confirm that this is the wrong upload before removing it from active mapping.');
+  if(reason.length<3)fail(400,'Enter why this import source is being removed from the active list.');
+  const scope=one(await tx`select project_id from erp_private.documents where document_id=${documentId} and deleted_at is null and archived_at is null`);
+  if(scope.project_id){
+   await tx`select pg_advisory_xact_lock(hashtextextended(${scope.project_id+':tax'},0))`;
+   await tx`select pg_advisory_xact_lock(hashtextextended(${scope.project_id+':client-ledger'},0))`;
+  }
+  const doc=one(await tx`select * from erp_private.documents where document_id=${documentId} and deleted_at is null and archived_at is null for update`);
+  if(doc.category!=='Import Sources')fail(400,'Only an import source can be archived from this list.');
+  const batches=await tx`select batch_id from erp_private.workbook_batches where document_id=${documentId} and archived_at is null for update`;
+  const counts=one(await tx`select count(distinct b.batch_id)::int as batch_count,count(r.row_id)::int as row_count,
+   count(r.row_id) filter(where r.route is not null or r.account_code is not null
+    or exists(select 1 from erp_private.tax_row_reviews v where v.row_id=r.row_id)
+    or exists(select 1 from erp_private.mapping_history h where h.row_id=r.row_id)
+    or exists(select 1 from erp_private.ledger_sources s where s.source_kind='Workbook row' and s.source_key=r.row_id::text))::int as protected_rows
+   from erp_private.workbook_batches b left join erp_private.workbook_rows r using(batch_id) where b.document_id=${documentId} and b.archived_at is null`);
+  const protectedImports=Number((await tx`select count(*)::int n from erp_private.period_imports where document_id=${documentId}`)[0].n);
+  const manager=['PARTNER','MANAGER'].includes(a.category_code);
+  if((counts.protected_rows||protectedImports)&&!manager)fail(403,'This upload has mapped, reviewed or used records. Ask a Partner or Manager to archive it as a controlled correction.');
+  if(!manager&&doc.uploaded_by!==a.staff_id)fail(403,'Only the uploader or a Partner or Manager can remove this unused import source.');
+  if(batches.length)await tx`update erp_private.workbook_batches set archived_at=now(),archived_by=${a.staff_id},archive_reason=${reason}
+   where document_id=${documentId} and archived_at is null`;
+  const archived=one(await tx`update erp_private.documents set archived_at=now(),archived_by=${a.staff_id},archive_reason=${reason}
+   where document_id=${documentId} and archived_at is null returning archived_at,archive_reason`);
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,before_values,after_values)
+   values(${a.auth_user_id},current_user,'documents','REMOVE_WRONG_IMPORT_FROM_ACTIVE_MAPPING',${documentId},${tx.json({file_name:doc.file_name,has_import_history:counts.batch_count>0})},${tx.json({...archived,archived_batches:counts.batch_count,retained_rows:counts.row_count,protected_rows:counts.protected_rows,protected_imports:protectedImports})})`;
+  return {ok:true,archived_at:archived.archived_at,archived_batches:counts.batch_count,retained_rows:counts.row_count,protected_rows:counts.protected_rows,protected_imports:protectedImports};
+ });
  if(p.action==='account_link')return accountLink(id,p);
  if(p.action==='logout'){
   await sql`update erp_private.pilot_sessions set revoked_at=now() where session_id=${id.claims.session_id}::uuid`;
@@ -288,8 +318,8 @@ async function action(id:any,p:any){
     const [allowed]=await tx`select erp_private.firm_allowed(${firm}::uuid) as ok`;if(!allowed.ok)deny();
     await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${cid},${firm}) on conflict do nothing`;
    }
-   let tax_project_id=null;
-   if(p.tax_setup){const saved=await workspaceAction(tx,a,{...p.tax_setup,action:'project_save',client_id:cid,service_code:'TAX-COMP',pack:'Tax Compilation'});tax_project_id=saved.project_id;}
+   let tax_project_id=null,tax_generated=0;
+   if(p.tax_setup){const saved=await workspaceAction(tx,a,{...p.tax_setup,action:'project_save',client_id:cid,service_code:'TAX-COMP',pack:'Tax Compilation'});tax_project_id=saved.project_id;tax_generated=Number(saved.generated||0);}
    let purchase_activity_id=null;
    if(p.purchase_setup){
     const s=p.purchase_setup,activity=await improvementAction(tx,a,{action:'v3_activity_add',client_id:cid,activity_name:s.activity_name,pack_code:s.pack_code,income_stream:s.income_stream,effective_from:s.effective_from,effective_to:s.effective_to||null,evidence:s.activity_evidence});purchase_activity_id=activity.activity_id;
@@ -301,7 +331,7 @@ async function action(id:any,p:any){
      for(const stockClass of names)await tx`insert into erp_private.stock_categories(client_id,activity_id,inventory_use,stock_class,created_by) values(${cid},${purchase_activity_id},${use},${stockClass},${a.staff_id}) on conflict do nothing`;
     }
    }
-   return {ok:true,client_id:cid,tax_project_id,purchase_activity_id};
+   return {ok:true,client_id:cid,tax_project_id,tax_generated,purchase_activity_id};
   }
   if(p.action==='staff_save'){
    let old=null;if(p.staff_id){old=one(await tx`select * from erp_private.staff_members where staff_id=${uuid(p.staff_id)} for update`);if(old.staff_id===a.staff_id)fail(403,'Another Engagement Partner must edit your account.');}
