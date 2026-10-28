@@ -25,5 +25,3 @@ ALTER TABLE erp_private.clients
 CREATE INDEX documents_client_opening_tb_idx ON erp_private.documents(client_id,handling_firm_id,uploaded_at DESC)
  WHERE import_purpose='Opening TB' AND archived_at IS NULL AND deleted_at IS NULL;
 
-CREATE TRIGGER clients_audit AFTER INSERT OR UPDATE ON erp_private.clients
- FOR EACH ROW EXECUTE FUNCTION erp_private.log_change('client_id');
