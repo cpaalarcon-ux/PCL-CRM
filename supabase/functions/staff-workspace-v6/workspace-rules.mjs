@@ -1,6 +1,6 @@
 import {fail,date,text,choice,uuid} from './validation.mjs';
 export const frequencies=['Once-off','Weekly','Monthly','Weekly + Monthly','Weekly + Monthly + Annually','Quarterly','Annually'];
-export const obligations=['VAT','PAYE','TOT','Payroll'];
+export const obligations=['VAT','PAYE','TOT','Payroll','MRI','Housing levy','SHIF','NSSF','NITA','Fringe benefit','Deemed interest'];
 export const projectEditor=a=>['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code);
 export const nairobiDate=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export function scheduleInput(p){

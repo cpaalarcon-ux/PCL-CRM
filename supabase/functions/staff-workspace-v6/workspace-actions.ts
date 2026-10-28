@@ -1,5 +1,10 @@
 import {fail,text,uuid,date,revision,choice} from './validation.mjs';
 import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate} from './workspace-rules.mjs';
+const profileForScheduledWork:Record<string,string[]>={
+ VAT:['VAT'],PAYE:['PAYE'],TOT:['TOT'],MRI:['MRI'],
+ 'Housing levy':['Housing levy'],SHIF:['SHIF'],NSSF:['NSSF'],NITA:['NITA'],
+ 'Fringe benefit':['Fringe benefit'],'Deemed interest':['Deemed interest']
+};
 const one=(r:any[])=>{if(!r.length)fail(403,'This record is not available to your account.');return r[0];};
 const editor=(a:any)=>{if(!projectEditor(a))fail(403,'A Partner, Manager or Supervisor must manage this project.');};
 async function assign(tx:any,pid:string,firm:string,sid:string){
@@ -59,6 +64,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   const c=one(await tx`select company_name from erp_private.clients where client_id=${cid} and deleted_at is null`);
   const svc=one(await tx`select service_name from erp_private.services where service_code=${service} and is_active`);
   const s=scheduleInput(service==='TAX-COMP'?{...p,pack:'Tax Compilation'}:p),name=text(p.project_name||defaultProjectName(c.company_name,svc.service_name,s.starts_on),200);
+  if(service!=='TAX-COMP'&&s.obligations.length)fail(400,'Recurring tax work must use the KRA Tax Compilation service.');
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
   // Partners can explicitly select any registered firm; other categories require existing firm access.
   if(a.category_code==='PARTNER')await tx`insert into erp_private.staff_firm_access(staff_id,firm_id) values(${a.staff_id},${firm}) on conflict(staff_id,firm_id) do update set deleted_at=null`;
@@ -71,6 +77,12 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   await assign(tx,pid,firm,a.staff_id);await assign(tx,pid,firm,s.assigned_to);const reviewer=await assign(tx,pid,firm,s.reviewer_id);
   if(!projectEditor(reviewer))fail(400,'Choose a Partner, Manager or Supervisor as reviewer.');
   const prior=(await tx`select * from erp_private.project_schedules where project_id=${pid} for update`)[0];
+  const newlyScheduled=s.obligations.filter((code:string)=>!prior?.obligations?.includes(code)&&code!=='Payroll');
+  if(newlyScheduled.length){
+   const profiles=await tx`select obligations from erp_private.client_tax_profiles where client_id=${cid} and status='Verified' and deleted_at is null and effective_from<=${s.starts_on} and effective_to>=${s.starts_on} order by effective_from desc limit 1`;
+   if(!profiles.length){const needsProfile=newlyScheduled.filter((code:string)=>!['VAT','PAYE','TOT'].includes(code));if(needsProfile.length)fail(400,'Verify the client tax profile for the schedule start date before adding these recurring services.');}
+   else {const confirmed=new Set<string>(profiles[0].obligations||[]);for(const code of newlyScheduled){const required=profileForScheduledWork[code]||[];if(!required.length||!required.some(item=>confirmed.has(item)))fail(400,`${code} is not confirmed in the verified client tax profile for ${s.starts_on}. Update the profile before scheduling this work.`);}}
+  }
   const changed=!prior||['frequency','pack','starts_on','ends_on','enabled','assigned_to','reviewer_id'].some(k=>String(prior[k]).slice(0,k.endsWith('_on')?10:999)!==String((s as any)[k]))||JSON.stringify(prior.obligations.slice().sort())!==JSON.stringify(s.obligations.slice().sort());
   if(changed){
    const effective=prior?new Date(Date.parse(nairobiDate()+'T00:00:00Z')+86400000).toISOString().slice(0,10):s.starts_on;

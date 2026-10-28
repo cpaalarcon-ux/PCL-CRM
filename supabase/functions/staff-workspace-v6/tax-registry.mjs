@@ -2,6 +2,10 @@ import {fail,text,choice} from './validation.mjs';
 import {number,amount,round,graduatedTax} from './suite-rules.mjs';
 
 export const taxKinds=['VAT','PAYE','Company','Partnership','Individual','TOT','MRI','WHT','CGT','Housing levy','SHIF','NSSF','NITA','Fringe benefit','Deemed interest'];
+// Client profile positions are broader than computable tax-case kinds. The extra
+// entries record agent appointments, certificates, and conditional tax positions;
+// they must not become calculation case types by accident.
+export const profileKinds=[...taxKinds,'Withholding VAT agent','Withholding VAT credits received','Withholding income tax credits received','Excise duty','Instalment tax','Advance tax'];
 export const taxTypes=['VAT','PAYE','Corporation tax','Individual income tax','Withholding tax','Levy','Turnover tax','Rental income tax','Capital gains tax','NSSF','Relief / deduction','Interest benchmark'];
 export const testRate=r=>r.is_test===true||/^QA/i.test(r.rate_key)||/FICTIONAL|SYNTHETIC TEST/i.test(r.label||'');
 export const dateString=v=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
@@ -13,7 +17,7 @@ export function pickRate(rates,key,start,end=start){
 }
 export function validateProfile(p){
  const entity_type=choice(p.entity_type,['Company','Partnership','Individual','Other']),residency=choice(p.residency,['Resident','Non-resident']),regime=choice(p.regime,['Standard','TOT','MRI','Special']);
- const obligations=[...new Set(p.obligations||[])].map(x=>choice(x,taxKinds));if(!obligations.length)fail(400,'Select at least one confirmed obligation.');
+ const obligations=[...new Set(p.obligations||[])].map(x=>choice(x,profileKinds));if(!obligations.length)fail(400,'Select at least one confirmed client tax position.');
  if(obligations.includes('Company')&&entity_type!=='Company'||obligations.includes('Individual')&&entity_type!=='Individual'||obligations.includes('Partnership')&&entity_type!=='Partnership')fail(400,'The income-tax obligation does not match the entity type.');
  if(regime==='TOT'&&(!obligations.includes('TOT')||residency!=='Resident'))fail(400,'The TOT profile requires a resident taxpayer and the TOT obligation.');
  if(regime==='MRI'&&(!obligations.includes('MRI')||residency!=='Resident'))fail(400,'The MRI profile requires a resident taxpayer and the MRI obligation.');

@@ -1,6 +1,6 @@
 import {createDiscussionUI} from './staff-discussion.mjs?v=20261026-v4';
 import {communicationQr} from './staff-communication-qr.mjs?v=20261024-qr';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261024-testing';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261028-client-tax-setup';
 export function createSuiteUI(ctx){
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,clientName,projectName,staffName,firmName,today,empty}=ctx;
  const d=()=>ctx.data(),s=()=>d().suite,leader=()=>['PARTNER','MANAGER'].includes(d().me.category_code),partner=()=>d().me.category_code==='PARTNER',editor=()=>['PARTNER','MANAGER','SUPERVISOR'].includes(d().me.category_code);

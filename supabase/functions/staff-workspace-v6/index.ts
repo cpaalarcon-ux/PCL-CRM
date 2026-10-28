@@ -285,7 +285,7 @@ async function action(id:any,p:any){
    if(status==='Cancelled'&&reason.length<10)fail(400,'Record why this task is cancelled or not applicable (at least 10 characters).');
    if(status==='Completed'&&workflow){if(workflow.profile!=='Supporting task')fail(400,'Use the task workspace review, approval and closure steps.');return procedureAction(tx,a,{action:'procedure_action',task_id:task,revision:workflow.revision,operation:'capture',message:reason||'Supporting capture completed from status update.'},taxAction);}
    if(workflow&&!['Pending preparer','Pending client documents'].includes(workflow.stage))fail(400,'Use the procedure actions to review, return or advance submitted work.');
-   if(status==='Completed'&&['monthly-paye','monthly-vat','monthly-tot'].includes(t.template_key)&&!filed)fail(400,'Record the actual filing date. Use the task workflow for written approval, filing evidence and closure.');
+   if(status==='Completed'&&['monthly-paye','monthly-vat','monthly-tot','monthly-mri'].includes(t.template_key)&&!filed)fail(400,'Record the actual filing date. Use the task workflow for written approval, filing evidence and closure.');
    const changed=await tx`update erp_private.tasks set status=${status},blocked_reason=${reason||null},filing_date=${filed}
     where task_id=${task} and revision=${rev} returning task_id`;
    if(!changed.length)fail(409,'Task changed or is no longer assigned to you. Refresh the workspace.');return {ok:true};
