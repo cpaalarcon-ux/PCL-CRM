@@ -1,6 +1,6 @@
 import {automaticBreakMinutes,lateClockIn} from './attendance-rules.mjs';
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
-import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,busySeason,weekdays,round} from './suite-rules.mjs';
+import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,busySeason,weekdays,round,recurringFeePeriods} from './suite-rules.mjs';
 export const one=(rows:any[])=>{if(!rows.length)fail(403,'This record is not available to your account.');return rows[0];};
 export const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must perform this action.');};
 const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Partner approval is required.');};
@@ -17,6 +17,7 @@ export async function suiteRead(tx:any){const [r]=await tx`select jsonb_build_ob
  'tax_profiles',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.client_tax_profiles where deleted_at is null order by effective_from desc)x),
  'staff_rates',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.staff_rates order by effective_from desc limit 1000)x),
  'budgets',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.project_budgets order by effective_from desc limit 1000)x),
+ 'recurring_fees',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.recurring_fee_schedules order by starts_on desc limit 1000)x),
  'invoices',(select coalesce(jsonb_agg(x),'[]') from (select i.*,coalesce((select sum(p.amount) from erp_private.payments p where p.invoice_id=i.invoice_id),0) as paid_amount from erp_private.invoices i where deleted_at is null order by invoice_date desc limit 1000)x),
  'payments',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.payments order by payment_date desc limit 1000)x),
  'communications',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.communications where deleted_at is null order by communication_date desc limit 500)x),
@@ -33,6 +34,48 @@ export async function suiteRead(tx:any){const [r]=await tx`select jsonb_build_ob
  ) as suite`;return r.suite;}
 
 export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
+ if(p.action==='fee_schedule_add'){
+  partner(a);const pid=uuid(p.project_id);await financial(tx,pid,true);
+  const project=one(await tx`select p.project_id,p.project_name,p.status,s.service_name from erp_private.projects p join erp_private.services s using(service_code) where p.project_id=${pid} and p.deleted_at is null`);
+  if(project.status==='Archived')fail(400,'Create the fee schedule from an open project.');
+  const frequency=choice(p.frequency,['Monthly','Quarterly','Annually']),starts=day(p.starts_on),ends=p.ends_on?day(p.ends_on):null;
+  if(ends&&ends<starts)fail(400,'The end date must be on or after the start date.');
+  const net=amount(p.amount_ex_vat);if(net<=0)fail(400,'Enter a recurring fee greater than zero before VAT.');
+  const vat=Number(choice(String(p.vat_rate??''),['0','8','16'])),description=text(`${project.service_name} · ${project.project_name}`,300);
+  const result=await tx`insert into erp_private.recurring_fee_schedules(project_id,frequency,amount_ex_vat,vat_rate,description,starts_on,ends_on,created_by,updated_by)
+   values(${pid},${frequency},${net},${vat},${description},${starts},${ends},${a.staff_id},${a.staff_id}) returning fee_schedule_id`;
+  return {...one(result),description};
+ }
+ if(p.action==='fee_schedule_state'){
+  leader(a);const schedule=one(await tx`select * from erp_private.recurring_fee_schedules where fee_schedule_id=${uuid(p.fee_schedule_id)} for update`);await financial(tx,schedule.project_id,true);current(schedule,p);
+  const operation=choice(p.operation,['Pause','Resume','Cancel']);let status=schedule.status,reason=schedule.status_reason||null;
+  if(schedule.status==='Cancelled'||schedule.status==='Ended')fail(400,'This recurring fee schedule has ended. Create a new schedule to restart fees.');
+  if(operation==='Pause'){if(schedule.status==='Active')status='Paused';reason=text(p.reason||'Paused by authorised staff.',500);}
+  if(operation==='Resume'){if(schedule.status==='Paused')status='Active';if(schedule.ends_on&&day(schedule.ends_on)<today())fail(400,'This fee schedule has passed its end date. Create a new schedule to restart fees.');reason=null;}
+  if(operation==='Cancel'){reason=text(p.reason||'',1000);if(reason.length<3)fail(400,'Explain why future recurring fees are being cancelled.');status='Cancelled';}
+  await tx`update erp_private.recurring_fee_schedules set status=${status},status_reason=${reason},updated_by=${a.staff_id} where fee_schedule_id=${schedule.fee_schedule_id}`;
+  return {ok:true,status};
+ }
+ if(p.action==='fee_schedule_generate_due'){
+  leader(a);const schedule=one(await tx`select * from erp_private.recurring_fee_schedules where fee_schedule_id=${uuid(p.fee_schedule_id)} for update`);await financial(tx,schedule.project_id,true);
+  if(schedule.status!=='Active')fail(400,'Resume this recurring fee schedule before creating drafts.');
+  const project=one(await tx`select * from erp_private.projects where project_id=${schedule.project_id} and deleted_at is null`);
+  if(project.status!=='Active')fail(400,'Activate the verified project before creating recurring invoice drafts.');
+  const todayDate=today(),periods=recurringFeePeriods(day(schedule.starts_on),schedule.ends_on?day(schedule.ends_on):null,schedule.frequency,todayDate,12);
+  if(!periods.length)return {generated:0,already_created:0,more_due:false};
+  const known=await tx`select recurring_period_start from erp_private.invoices where recurring_fee_schedule_id=${schedule.fee_schedule_id} and deleted_at is null`;
+  const have=new Set(known.map((x:any)=>day(x.recurring_period_start))),dueDate=new Date(Date.parse(todayDate+'T00:00:00Z')+14*86400000).toISOString().slice(0,10);let generated=0,already=0;
+  for(const period of periods){if(have.has(period.period_start)){already++;continue;}
+   const periodLabel=`${period.period_start} to ${period.period_end}`,lineDescription=`${schedule.description} · ${periodLabel}`;
+   const lines=invoiceLines([{description:lineDescription,quantity:1,unit_price:schedule.amount_ex_vat,vat_rate:schedule.vat_rate}]);
+   const inserted=await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,recurring_fee_schedule_id,recurring_period_start,created_by)
+    values(${crypto.randomUUID()},${schedule.project_id},${project.client_id},${project.handling_firm_id},${lineDescription},${todayDate},${dueDate},${tx.json(lines)},${lines[0].net},${lines[0].vat},${schedule.fee_schedule_id},${period.period_start},${a.staff_id})
+    on conflict do nothing returning invoice_id`;
+   if(inserted.length){generated++;have.add(period.period_start);}else already++;
+  }
+  const moreDue=periods.length===12&&recurringFeePeriods(day(schedule.starts_on),schedule.ends_on?day(schedule.ends_on):null,schedule.frequency,todayDate,13).length>12;
+  return {generated,already_created:already,more_due:moreDue};
+ }
  if(p.action==='staff_rate_add'){
   partner(a);const sid=uuid(p.staff_id),[from,to]=range(p.effective_from,p.effective_to);one(await tx`select staff_id from erp_private.staff_members where staff_id=${sid}`);
   await tx`select pg_advisory_xact_lock(hashtextextended(${sid+':rates'},0))`;

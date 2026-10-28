@@ -1,12 +1,19 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {money} from '../supabase/functions/staff-workspace-v6/workspace-rules.mjs';
-import {purchaseDisplayValues,purchaseUploadHeaders,purchaseUploadMap,purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from '../supabase/functions/staff-workspace-v6/purchase-upload.mjs';
+import {purchaseDisplayValues,purchaseUploadHeaders,purchaseUploadLegacyHeaders,purchaseUploadMap,purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from '../supabase/functions/staff-workspace-v6/purchase-upload.mjs';
 const sheet=rows=>({name:'Purchase Upload',rowCount:rows.length,columnCount:Math.max(...rows.map(r=>r.length)),getRow:i=>({getCell:c=>({value:rows[i-1]?.[c-1]??null})})});
-const row=()=>['Local','P000000001A','Example supplier','2026-10-03','0000123','Supplies','',100,16,116,'',''];
+const row=()=>['Local','P000000001A','Example supplier','2026-10-03','0000123','Supplies','',100,16,116,'','','',''];
 test('fixed template validates header order but imports only row two onwards, skipping blanks',()=>{
  const s=sheet([purchaseUploadHeaders,[],row(),Array(12).fill('')]);const p=purchaseUploadProfile(s);assert.equal(p.header_row,1);assert.deepEqual(p.column_map,purchaseUploadMap);const data=purchaseUploadRows(s);assert.equal(data.rows.length,1);assert.equal(data.rows[0].source_row,3);assert.equal(data.ignored,2);
  const swapped=[...purchaseUploadHeaders];[swapped[7],swapped[8]]=[swapped[8],swapped[7]];assert.throws(()=>purchaseUploadProfile(sheet([swapped,row()])),/Column H/);
- assert.throws(()=>purchaseUploadProfile(sheet([[...purchaseUploadHeaders,'Account code'],row()])),/12 columns/);
+ assert.throws(()=>purchaseUploadProfile(sheet([[...purchaseUploadHeaders,'Account code'],row()])),/14 columns/);
+});
+test('updated template accepts the legacy 12-column upload but uses M and N for checked account suggestions',()=>{
+ const legacy=sheet([purchaseUploadLegacyHeaders,row().slice(0,12)]);assert.equal(purchaseUploadProfile(legacy).version,1);
+ const v=row();v[12]='EXP02';v[13]='61000';const accounts=[{code:'61000',name:'Office expense',route:2,category_code:'EXP02',status:'Active',is_legacy:false}];
+ const n=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.deepEqual(n.issues,[]);assert.deepEqual(n.row.mapping_suggestion,{route:2,category_code:'EXP02',account_code:'61000',confirmed:false});
+ v[12]='PPE10B';const mismatch=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.equal(mismatch.row.mapping_suggestion,undefined);assert.match(mismatch.row.mapping_suggestion_issue,/do not match/);assert.deepEqual(mismatch.issues,[]);
+ v[12]='';assert.match(normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts).row.mapping_suggestion_issue,/both ERP routing code/);
 });
 test('decimal money rounds half away from zero without rejecting Excel floating tails',()=>{
  for(const [input,expected] of [[7126.9728000000005,7126.97],['10912.478400000002',10912.48],['1.005',1.01],[-1.005,-1.01],['(1,234.565)',-1234.57],[1e-7,0],['0',0],[-0,0]])assert.equal(money(input),expected);

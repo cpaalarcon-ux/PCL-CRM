@@ -190,20 +190,27 @@ async function upload(req:Request,id:any){
  if(mime==='application/vnd.openxmlformats-officedocument.wordprocessingml.document')fail(400,'Upload Word policies through Settings → Reference documents. Project source files use CSV, XLSX or ZIP.');
  const cid=uuid(f.get('client_id')),firm=uuid(f.get('firm_id')),pid=f.get('project_id')?uuid(f.get('project_id')):null,tid=f.get('task_id')?uuid(f.get('task_id')):null;
  const cat=choice(f.get('category'),['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports','Import Sources']);
- if(cat==='Import Sources'&&(!pid||!['text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mime)))fail(400,'Import sources require a project and a CSV, XLSX or ZIP file.');
+ const importPurpose=cat==='Import Sources'?choice(f.get('import_purpose')||'General',['General','Opening TB']):'General';
+ if(cat==='Import Sources'&&(!['text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mime)||!pid&&importPurpose!=='Opening TB'))fail(400,'Import sources require a project and a CSV, XLSX or ZIP file. Only an Opening TB workbook may be staged at client level.');
+ if(importPurpose==='Opening TB'&&(pid||tid||mime!=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))fail(400,'Stage an opening TB as a client-level XLSX with no project or task link.');
  const doc=crypto.randomUUID(),key=documentObjectKey(cid,firm,doc,mime),digest=await sha(bytes);
  await bucket();let uploaded=false;
  try{return await scoped(id,async(tx,a)=>{
   // Read through RLS before checking relationships; never disclose another team's records.
   const project=pid?(await tx`select project_id,client_id,handling_firm_id,status from erp_private.projects where project_id=${pid} and deleted_at is null`)[0]:null;
   const task=tid?(await tx`select task_id,project_id from erp_private.tasks where task_id=${tid} and deleted_at is null`)[0]:null;
+  if(importPurpose==='Opening TB'){
+   leader(a);const client=one(await tx`select legal_entity_type,entity_evidence,year_end_month,year_end_day,opening_balance_status from erp_private.clients where client_id=${cid} and deleted_at is null`);
+   if(!client.legal_entity_type||String(client.entity_evidence||'').trim().length<10||!client.year_end_month||!client.year_end_day)fail(400,'Confirm the client’s legal entity and financial year-end in Clients → Entity / activities before staging the opening TB.');
+   if(client.opening_balance_status==='No opening balances')fail(409,'The client is marked as having no opening balances. Reset that confirmation before uploading a trial balance.');
+  }
   assertDocumentLinks({client_id:cid,firm_id:firm,project_id:pid,task_id:tid},project,task);
   const [allow]=await tx`select erp_private.document_allowed(${cid}::uuid,${firm}::uuid,${pid}::uuid,${tid}::uuid,${cat},true) as allowed`;
   if(!allow.allowed)deny();
   if(tid&&(await tx`select stage from erp_private.task_procedures where task_id=${tid}`)[0]?.stage==='Closed')fail(400,'This task is closed. Use a separate correction task for additional evidence.');
   // Metadata is inserted before storage. Failed storage rolls back metadata.
-  await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by)
-  values(${doc},${cid},${firm},${pid},${tid},${cat},${name},${key},${bytes.length},${digest},${mime},${a.staff_id})`;
+  await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,import_purpose,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by)
+  values(${doc},${cid},${firm},${pid},${tid},${cat},${importPurpose},${name},${key},${bytes.length},${digest},${mime},${a.staff_id})`;
   const result=await admin.storage.from(BUCKET).upload(key,bytes,{contentType:mime,upsert:false});
   if(result.error)fail(502,'The file could not be stored. No document was saved. Try again or ask your Manager.');uploaded=true;
   await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc},${id.claims.sub},'UPLOAD')`;
@@ -224,11 +231,12 @@ async function action(id:any,p:any){
   const documentId=uuid(p.document_id),reason=text(p.reason,1000);
   if(p.confirmed!==true)fail(400,'Confirm that this is the wrong upload before removing it from active mapping.');
   if(reason.length<3)fail(400,'Enter why this import source is being removed from the active list.');
-  const scope=one(await tx`select project_id from erp_private.documents where document_id=${documentId} and deleted_at is null and archived_at is null`);
+  const scope=one(await tx`select project_id,client_id,import_purpose from erp_private.documents where document_id=${documentId} and deleted_at is null and archived_at is null`);
   if(scope.project_id){
    await tx`select pg_advisory_xact_lock(hashtextextended(${scope.project_id+':tax'},0))`;
    await tx`select pg_advisory_xact_lock(hashtextextended(${scope.project_id+':client-ledger'},0))`;
   }
+  if(scope.import_purpose==='Opening TB')await tx`select pg_advisory_xact_lock(hashtextextended(${scope.client_id+':opening-balance'},0))`;
   const doc=one(await tx`select * from erp_private.documents where document_id=${documentId} and deleted_at is null and archived_at is null for update`);
   if(doc.category!=='Import Sources')fail(400,'Only an import source can be archived from this list.');
   const batches=await tx`select batch_id from erp_private.workbook_batches where document_id=${documentId} and archived_at is null for update`;
@@ -238,17 +246,17 @@ async function action(id:any,p:any){
     or exists(select 1 from erp_private.mapping_history h where h.row_id=r.row_id)
     or exists(select 1 from erp_private.ledger_sources s where s.source_kind='Workbook row' and s.source_key=r.row_id::text))::int as protected_rows
    from erp_private.workbook_batches b left join erp_private.workbook_rows r using(batch_id) where b.document_id=${documentId} and b.archived_at is null`);
-  const protectedImports=Number((await tx`select count(*)::int n from erp_private.period_imports where document_id=${documentId}`)[0].n);
+  const protectedImports=Number((await tx`select count(*)::int n from erp_private.period_imports where document_id=${documentId}`)[0].n),protectedOpeningEntries=Number((await tx`select count(*)::int n from erp_private.ledger_journals where source_snapshot->>'document_id'=${documentId}::text`)[0].n);
   const manager=['PARTNER','MANAGER'].includes(a.category_code);
-  if((counts.protected_rows||protectedImports)&&!manager)fail(403,'This upload has mapped, reviewed or used records. Ask a Partner or Manager to archive it as a controlled correction.');
+  if((counts.protected_rows||protectedImports||protectedOpeningEntries)&&!manager)fail(403,'This upload has mapped, reviewed or used records. Ask a Partner or Manager to archive it as a controlled correction.');
   if(!manager&&doc.uploaded_by!==a.staff_id)fail(403,'Only the uploader or a Partner or Manager can remove this unused import source.');
   if(batches.length)await tx`update erp_private.workbook_batches set archived_at=now(),archived_by=${a.staff_id},archive_reason=${reason}
    where document_id=${documentId} and archived_at is null`;
   const archived=one(await tx`update erp_private.documents set archived_at=now(),archived_by=${a.staff_id},archive_reason=${reason}
    where document_id=${documentId} and archived_at is null returning archived_at,archive_reason`);
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,before_values,after_values)
-   values(${a.auth_user_id},current_user,'documents','REMOVE_WRONG_IMPORT_FROM_ACTIVE_MAPPING',${documentId},${tx.json({file_name:doc.file_name,has_import_history:counts.batch_count>0})},${tx.json({...archived,archived_batches:counts.batch_count,retained_rows:counts.row_count,protected_rows:counts.protected_rows,protected_imports:protectedImports})})`;
-  return {ok:true,archived_at:archived.archived_at,archived_batches:counts.batch_count,retained_rows:counts.row_count,protected_rows:counts.protected_rows,protected_imports:protectedImports};
+   values(${a.auth_user_id},current_user,'documents','REMOVE_WRONG_IMPORT_FROM_ACTIVE_MAPPING',${documentId},${tx.json({file_name:doc.file_name,has_import_history:counts.batch_count>0})},${tx.json({...archived,archived_batches:counts.batch_count,retained_rows:counts.row_count,protected_rows:counts.protected_rows,protected_imports:protectedImports,protected_opening_entries:protectedOpeningEntries})})`;
+  return {ok:true,archived_at:archived.archived_at,archived_batches:counts.batch_count,retained_rows:counts.row_count,protected_rows:counts.protected_rows,protected_imports:protectedImports,protected_opening_entries:protectedOpeningEntries};
  });
  if(p.action==='account_link')return accountLink(id,p);
  if(p.action==='logout'){

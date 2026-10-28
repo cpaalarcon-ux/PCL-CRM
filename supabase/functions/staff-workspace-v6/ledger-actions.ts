@@ -40,6 +40,10 @@ async function reviewedRows(tx:any,pid:string,ids:string[]){
 }
 async function sourceCheck(tx:any,j:any){
  if(j.source_snapshot?.kind==='Period import'){const source=one(await tx`select * from erp_private.period_imports where import_id=${j.source_snapshot.import_id} and project_id=${j.project_id}`);if(source.status!=='Confirmed'||source.source_hash!==j.source_snapshot.source_hash)fail(409,'The source summary changed or was superseded.');return;}
+ if(j.source_snapshot?.kind==='Excel'&&j.kind==='Opening'){
+  const source=await tx`select document_id from erp_private.documents where document_id=${uuid(j.source_snapshot.document_id)} and deleted_at is null and archived_at is null`;
+  if(!source.length)fail(409,'The opening TB source was archived. Re-upload the approved source and prepare a new draft.');return;
+ }
  if(j.source_snapshot?.kind!=='Workbook')return;
  const archived=await tx`select b.batch_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=any(${tx.array(j.source_snapshot.rows.map((x:any)=>x.row_id))}::uuid[]) and b.archived_at is not null`;
  if(archived.length)fail(409,'A source in this draft was archived. Return the draft to its preparer and create a corrected posting from active sources.');
@@ -206,13 +210,17 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   await tx`insert into erp_private.ledger_asset_charges(asset_id,journal_id,project_id,starts_on,ends_on,snapshot,book_charge,tax_projection) values(${asset.asset_id},${j.journal_id},${pid},${start},${end},${tx.json({asset,rate:asset.rate_snapshot,result})},${charge},${result.tax_period_projection})`;return j;
  }
  if(['ledger_import_preview','ledger_import_commit'].includes(p.action)){
-  const doc=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and project_id=${pid} and deleted_at is null`);if(doc.mime_type!=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')fail(400,'Upload the XLSX source in this project first.');
+  const requestedKind=String(p.kind||''),documentId=uuid(p.document_id);
+  const doc=one(await tx`select * from erp_private.documents where document_id=${documentId} and deleted_at is null and archived_at is null
+   and (project_id=${pid} or (${requestedKind==='Opening'} and project_id is null and client_id=${project.client_id} and handling_firm_id=${project.handling_firm_id} and category='Import Sources' and import_purpose='Opening TB')) for share`);
+  if(doc.mime_type!=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')fail(400,'Choose an XLSX opening TB or payroll source.');
   const fetched=await storage.download(doc.object_key);if(fetched.error||!fetched.data)fail(404,'Source workbook unavailable.');await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'DOWNLOAD')`;const bytes=new Uint8Array(await fetched.data.arrayBuffer());checkWorkbookZip(bytes);const {sheet,sheets}=await readWorkbookSheet(bytes,p.sheet_name?text(p.sheet_name,100):null);
   const header=Math.trunc(Number(p.header_row)||1);if(header<1||header>200||header>sheet.rowCount)fail(400,'Select the header row.');
   const get=(r:number,c:number)=>{const value=sheet.getRow(r).getCell(c).value;return value&&typeof value==='object'&&!(value instanceof Date)&&'result' in value?value.result:value;};
   const headers=Array.from({length:sheet.columnCount},(_,i)=>String(get(header,i+1)||''));
   if(p.action==='ledger_import_preview')return {sheets,sheet_name:sheet.name,header_row:header,headers,preview:Array.from({length:Math.min(8,sheet.rowCount-header)},(_,i)=>({source_row:header+i+1,values:headers.map((_:any,c:number)=>get(header+i+1,c+1))}))};
   const kind=choice(p.kind,['Opening','Payroll']),map=p.column_map||{},col=(key:string)=>{const n=Number(map[key]);if(!Number.isInteger(n)||n<1||n>sheet.columnCount)return null;return n;},openingConfirmed=p.confirm_opening_source===true||p.confirm_opening_source==='true',sourceEvidence=String(p.evidence||'').trim();
+  if(kind==='Opening')await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':opening-balance'},0))`;
   if(kind==='Opening'&&!openingConfirmed)fail(400,'Confirm the approved prior-year trial balance before importing opening balances.');
   if(kind==='Opening'&&sourceEvidence.length<3)fail(400,'Enter the source workbook and approval reference once for this opening-balance upload.');
   if(!col('source_name')||!col('debit')||!col('credit'))fail(400,'Map account name, debit and credit columns.');

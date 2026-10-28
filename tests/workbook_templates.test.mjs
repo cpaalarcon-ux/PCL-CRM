@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
 import ExcelJS from '../supabase/functions/staff-workspace-v6/node_modules/exceljs/excel.js';
 import {detectTemplate,templateRow,normalizeTemplate,rowWarnings} from '../supabase/functions/staff-workspace-v6/workbook-templates.mjs';
 export const purchaseHeaders=['TYPE OF PURCHASES','PIN OF SUPPLIER','NAME OF SUPPLIER','INVOICE DATE','INVOICE NO.','DESCRIPTION','CUSTOMS ENTRY NO.','TAXABLE VALUE','VAT AMOUNT','Gross','Routing code','Return code','TB code','P&L group','Review status','Class / category code'];
@@ -29,6 +30,7 @@ test('invalid reference, date and amount are held as rejected source rows',()=>{
 
 import {readWorkbookSheet} from '../supabase/functions/staff-workspace-v6/workbook-reader.mjs';
 import JSZip from '../supabase/functions/staff-workspace-v6/node_modules/jszip/lib/index.js';
+import {purchaseUploadHeaders} from '../supabase/functions/staff-workspace-v6/purchase-upload.mjs';
 test('selective XLSX reader preserves shared strings, formulas, dates and template columns',async()=>{
  const w=book(),s=w.addWorksheet('B02A Purchases 16%');s.getRow(5).values=['VAT CLAIM MONTH 10',new Date('2026-10-01Z')];s.getRow(6).values=purchaseHeaders;s.getRow(7).values=sample();s.getCell('C7').value='Fictional & Co';s.getCell('D7').value=new Date('2026-10-03Z');
  const {sheet}=await readWorkbookSheet(await w.xlsx.writeBuffer(),null);assert.equal(sheet.getRow(7).getCell(3).value,'Fictional & Co');assert.ok(sheet.getRow(7).getCell(10).value.formula);assert.equal(parse(sheet,7).row.date,'2026-10-03');assert.deepEqual(parse(sheet,7).issues,[]);
@@ -44,4 +46,16 @@ test('16-column manual non-eTIMS template is recognised without renaming Sheet1'
  for(let i=5;i<=104;i++)s.getCell('M'+i).value={formula:'IF(A'+i+'="","",0)'};
  const t=detectTemplate(s);assert.equal(t.kind,'D09');assert.equal(t.blocks[0].header_row,4);assert.equal(t.blocks[0].headers.length,16);for(let i=5;i<=104;i++)assert.equal(templateRow(s,i,t,t.blocks[0]),null);
  const wrapped={name:'Pack.zip / expenditure.xlsx :: D09 Non eTIMS',rowCount:s.rowCount,columnCount:s.columnCount,getRow:i=>s.getRow(i)};assert.equal(detectTemplate(wrapped).kind,'D09');
+});
+test('standard purchase template has fixed 14 headers and clear routing/account guidance',async()=>{
+ const bytes=new Uint8Array(await fs.readFile(new URL('../Purchase_Upload_Template.xlsx',import.meta.url)));
+ const {sheet}=await readWorkbookSheet(bytes,'Purchase Upload');
+ assert.equal(sheet.columnCount,14);
+ assert.deepEqual(Array.from({length:14},(_,i)=>sheet.getRow(1).getCell(i+1).value),purchaseUploadHeaders);
+ const {sheet:guide}=await readWorkbookSheet(bytes,'Read first');
+ assert.match(guide.getRow(3).getCell(2).value,/14 standard headers.*A-N/i);
+ assert.match(guide.getRow(11).getCell(2).value,/routing code in M.*TB item code in N/i);
+ const excel=new ExcelJS.Workbook();await excel.xlsx.load(bytes);assert.deepEqual(excel.worksheets.map(x=>x.name),['Purchase Upload','Read first','ERP account codes']);
+ const excelSheet=excel.getWorksheet('Purchase Upload');assert.equal(excelSheet.dataValidations.model.M2.formulae[0],'ERPRoutingCodes');assert.equal(excelSheet.dataValidations.model.N2.formulae[0],'ERPTBItemCodes');
+ assert.equal(excel.getWorksheet('ERP account codes').rowCount-1,167);
 });

@@ -54,6 +54,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  const sourceInfo:any=await readSourceSheet(bytes,d.file_name,p.sheet_name?text(p.sheet_name,500):null);const {sheet,sheets}=sourceInfo;
  if(sheet.columnCount>80||sheet.rowCount>20000)fail(400,'Split the worksheet into at most 80 columns and 20,000 rows.');
  const standard=purchaseUploadProfile(sheet,p.upload_format===purchaseUploadId),standardData=standard?purchaseUploadRows(sheet):null;
+ const purchaseAccounts=standard?await tx`select code,name,route,category_code,status,is_legacy from erp_private.account_catalog order by code`:[];
  const template=standard?null:detectTemplate(sheet),profile=standard||detectImportProfile(sheet);
  if(standard&&p.header_row!=null&&Number(p.header_row)!==1)fail(400,'The standard purchase template reserves row 1 for headings. Transactions start on row 2.');
  const header=standard?1:p.header_row===0||p.header_row==='0'?0:Math.trunc(Number(p.header_row)||template?.blocks[0].header_row||profile?.header_row||(sourceInfo.headerless?0:1));
@@ -64,7 +65,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  const previewTotal=standard?standardData.rows.length:Math.max(0,(block?.last_row||sheet.rowCount)-header),previewOffset=Math.max(0,Math.min(previewTotal,Math.trunc(Number(p.preview_offset)||0)));
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
  if(p.action==='workbook_preview')return {client_id:project.client_id,client_name:project.company_name,client_pin:project.kra_pin,document_id:d.document_id,project_id:d.project_id,sheets,sheet_name:sheet.name,header_row:header,headers:standard?purchaseUploadHeaders:block?.headers||(header===0?Array.from({length:sheet.columnCount},(_,i)=>'Column '+(i+1)):values(header)),import_profile:profile,source_inventory:sourceInfo.inventory||null,source_adapter:sourceInfo.adapter||'XLSX',template:template?{...template,selected:block}:null,
-  standard_purchase:standard?{id:purchaseUploadId,rates:purchaseUploadRates,ignored_count:standardData.ignored,summary:p.vat_category&&p.period_start&&p.period_end?purchaseUploadSummary(standardData.rows,choice(p.vat_category,purchaseUploadRates),date(p.period_start),date(p.period_end)):null}:null,
+  standard_purchase:standard?{id:purchaseUploadId,template_version:profile.version,rates:purchaseUploadRates,ignored_count:standardData.ignored,summary:p.vat_category&&p.period_start&&p.period_end?purchaseUploadSummary(standardData.rows,choice(p.vat_category,purchaseUploadRates),date(p.period_start),date(p.period_end),purchaseAccounts):null}:null,
   preview_total:previewTotal,preview_offset:previewOffset,preview_page_size:200,
   preview:standard?standardData.rows.slice(previewOffset,previewOffset+200).map(r=>({row:r.source_row,values:r.values,display_values:purchaseDisplayValues(r.values)})):Array.from({length:Math.min(200,previewTotal-previewOffset)},(_,i)=>({row:header+previewOffset+i+1,values:values(header+previewOffset+i+1).slice(0,block?.headers.length||sheet.columnCount)})),categories:allCategories};
  if((standard||['text/csv','application/zip'].includes(d.mime_type))&&p.confirmed_client_id!==project.client_id)fail(400,'Confirm the legal client before committing this source.');
@@ -84,8 +85,9 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  const selectedRate=standard?p.vat_category:null;
  const signatureData={digest:d.sha256,sheet:sheet.name,header,dataset,start,end,first,last,map,profile:profile?.id||null,vat_category:selectedRate,allow_pending_credit_details:p.allow_pending_credit_details===true};
  const legacySignature=await hash(JSON.stringify({version:6,...signatureData}));
- const signature=await hash(JSON.stringify({version:7,document_id:d.document_id,...signatureData}));
- const previous=(await tx`select b.* from erp_private.workbook_import_requests r join erp_private.workbook_batches b using(batch_id) where r.project_id=${project.project_id} and r.signature in (${signature},${legacySignature}) and b.archived_at is null order by (r.signature=${signature}) desc limit 1`)[0];
+ const priorSignature=await hash(JSON.stringify({version:7,document_id:d.document_id,...signatureData}));
+ const signature=await hash(JSON.stringify({version:8,document_id:d.document_id,...signatureData}));
+ const previous=(await tx`select b.* from erp_private.workbook_import_requests r join erp_private.workbook_batches b using(batch_id) where r.project_id=${project.project_id} and r.signature in (${signature},${priorSignature},${legacySignature}) and b.archived_at is null order by (r.signature=${signature}) desc,(r.signature=${priorSignature}) desc limit 1`)[0];
  if(previous){const pending=await pendingPurchases(tx,project.project_id,null,null,previous.batch_id),history=Number((await tx`select count(*)::int n from erp_private.workbook_rejections where batch_id=${previous.batch_id} and raw_values ? '_pending_purchase'`)[0].n);return {ok:true,batch_id:previous.batch_id,duplicate_upload:true,dataset:previous.dataset,source_count:previous.source_count,new_count:0,duplicate_count:previous.new_count+previous.duplicate_count+history-pending.total,pending_count:pending.total,rejected_count:previous.rejected_count-history,rejections:[]};}
  const isCost=['Purchases','Expenditure','Non-eTIMS'].includes(dataset);
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':'+(isCost?'Cost':dataset)},0))`;
@@ -94,7 +96,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  let ignored=0;
  for(let i=first;i<=last;i++){
   const v=standard?purchaseUploadValues(sheet,i):template?templateRow(sheet,i,template,block):values(i);if(!v||standard&&!v.some(v=>String(v??'').trim())){ignored++;continue;}
-  const n=standard?normalizePurchaseUpload(v,selectedRate,start,end):template?normalizeTemplate(v,template,block,start,end):profile?.recognised?profilePurchase(v,profile,start,end):normalizeImport(v,map,dataset,start,end);if(!n){ignored++;continue;}source++;
+  const n=standard?normalizePurchaseUpload(v,selectedRate,start,end,purchaseAccounts):template?normalizeTemplate(v,template,block,start,end):profile?.recognised?profilePurchase(v,profile,start,end):normalizeImport(v,map,dataset,start,end);if(!n){ignored++;continue;}source++;
   if(n.issues.length){rejected.push({row:i,raw:n.raw,reason:n.issues.join(' ')});continue;}
   if(standard&&n.pending.length){rejected.push({row:i,raw:{...n.raw,_pending_purchase:{key:await hash(n.key),match:purchasePendingMatch(n.row),row:n.row}},reason:'Pending information: '+n.pending.join(' '),pending:true});continue;}
   parsed.push({...n,source_row:i,row_key:await hash(n.key)});

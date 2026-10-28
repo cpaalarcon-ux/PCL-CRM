@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import ExcelJS from '../supabase/functions/staff-workspace-v6/node_modules/exceljs/excel.js';
 import {readWorkbookSheet} from '../supabase/functions/staff-workspace-v6/workbook-reader.mjs';
 
 test('opening TB template uses six ERP-readable columns and one upload-level evidence step',async()=>{
@@ -14,4 +15,8 @@ test('opening TB template uses six ERP-readable columns and one upload-level evi
  const {sheet:guide}=await readWorkbookSheet(bytes,'Read first');
  assert.match(guide.getRow(7).getCell(2).value,/reference once/i);
  assert.match(guide.getRow(10).getCell(2).value,/Do not type N\/A/);
+ const excel=new ExcelJS.Workbook();await excel.xlsx.load(bytes);const opening=excel.getWorksheet('Opening TB');
+ assert.equal(opening.columnCount,6);assert.equal(opening.tables?.items?.length??0,0);
+ assert.equal(opening.dataValidations.model.D2.formulae[0],'ERP_TB_Item_Codes');
+ assert.match(opening.getCell('C2').formula,/VLOOKUP/);
 });

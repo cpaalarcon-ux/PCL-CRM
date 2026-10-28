@@ -1,5 +1,5 @@
 import {fail,text,uuid,date,revision,choice} from './validation.mjs';
-import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate} from './workspace-rules.mjs';
+import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate,openingBalanceReady} from './workspace-rules.mjs';
 const profileForScheduledWork:Record<string,string[]>={
  VAT:['VAT'],PAYE:['PAYE'],TOT:['TOT'],MRI:['MRI'],
  'Housing levy':['Housing levy'],SHIF:['SHIF'],NSSF:['NSSF'],NITA:['NITA'],
@@ -7,6 +7,15 @@ const profileForScheduledWork:Record<string,string[]>={
 };
 const one=(r:any[])=>{if(!r.length)fail(403,'This record is not available to your account.');return r[0];};
 const editor=(a:any)=>{if(!projectEditor(a))fail(403,'A Partner, Manager or Supervisor must manage this project.');};
+async function requireOpeningBalanceSetup(tx:any,cid:string,firm?:string){
+ const c=one(await tx`select legal_entity_type,entity_evidence,year_end_month,year_end_day,opening_balance_status from erp_private.clients where client_id=${cid} and deleted_at is null`);
+ if(!c.legal_entity_type||String(c.entity_evidence||'').trim().length<10||!c.year_end_month||!c.year_end_day)fail(400,'Complete Clients → Entity / activities: confirm legal entity, supporting source and financial year-end before creating project work.');
+ const [source]=await tx`select document_id from erp_private.documents where client_id=${cid} and (${firm||null}::uuid is null or handling_firm_id=${firm||null}::uuid)
+  and project_id is null and category='Import Sources' and import_purpose='Opening TB' and archived_at is null and deleted_at is null limit 1`;
+ const [posted]=await tx`select j.journal_id from erp_private.ledger_journals j join erp_private.ledger_periods lp using(period_id)
+  where lp.client_id=${cid} and j.kind='Opening' and j.status='Posted' limit 1`;
+ if(!openingBalanceReady({status:c.opening_balance_status,hasSource:!!source,hasPostedOpening:!!posted}))fail(400,'Before creating a project or generating tasks, stage the approved prior-year opening TB in Documents → Import sources, or record why the client has no opening balances.');
+}
 async function assign(tx:any,pid:string,firm:string,sid:string){
  const s=one(await tx`select * from erp_private.assignment_candidates() where staff_id=${sid} and firm_id=${firm}`);
  await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${pid},${sid},${firm},${s.category_code}) on conflict(project_id,staff_id) do update set deleted_at=null`;
@@ -61,10 +70,11 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   if(old&&(old.client_id!==cid||old.handling_firm_id!==firm))fail(400,'Create a separate project to change the client or handling firm.');
   if(old&&String(old.revision)!==revision(p.revision))fail(409,'Project changed. Refresh before editing.');
   if(old?.status==='Archived')fail(400,'Archived projects cannot be scheduled.');
-  const c=one(await tx`select company_name from erp_private.clients where client_id=${cid} and deleted_at is null`);
+  const c=one(await tx`select company_name,legal_entity_type,entity_evidence,year_end_month,year_end_day,opening_balance_status from erp_private.clients where client_id=${cid} and deleted_at is null`);
   const svc=one(await tx`select service_name from erp_private.services where service_code=${service} and is_active`);
   const s=scheduleInput(service==='TAX-COMP'?{...p,pack:'Tax Compilation'}:p),name=text(p.project_name||defaultProjectName(c.company_name,svc.service_name,s.starts_on),200);
   if(service!=='TAX-COMP'&&s.obligations.length)fail(400,'Recurring tax work must use the KRA Tax Compilation service.');
+  if(!old||s.enabled&&s.obligations.length)await requireOpeningBalanceSetup(tx,cid,firm);
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
   // Partners can explicitly select any registered firm; other categories require existing firm access.
   if(a.category_code==='PARTNER')await tx`insert into erp_private.staff_firm_access(staff_id,firm_id) values(${a.staff_id},${firm}) on conflict(staff_id,firm_id) do update set deleted_at=null`;
@@ -93,15 +103,15 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   }
   const [r]=await tx`select erp_private.generate_project_tasks(${pid}::uuid) generated`;return {ok:true,project_id:pid,generated:r.generated,schedule_changed:changed};
  }
- if(p.action==='generate_tasks'){editor(a);return one(await tx`select erp_private.generate_project_tasks(${uuid(p.project_id)}::uuid) generated`);}
+ if(p.action==='generate_tasks'){editor(a);const project=one(await tx`select client_id,handling_firm_id from erp_private.projects where project_id=${uuid(p.project_id)} and deleted_at is null`);await requireOpeningBalanceSetup(tx,project.client_id,project.handling_firm_id);return one(await tx`select erp_private.generate_project_tasks(${uuid(p.project_id)}::uuid) generated`);}
  if(p.action==='schedule_preview'){
   const s=one(await tx`select * from erp_private.project_schedules where project_id=${uuid(p.project_id)}`);
   return {occurrences:await tx`select distinct on(o.release_at,o.template_key,o.period_start) o.* from (select * from erp_private.project_schedule_history where project_id=${s.project_id} and enabled union all select * from erp_private.project_schedules where project_id=${s.project_id} and enabled) v cross join lateral erp_private.schedule_occurrences(v.frequency,v.pack,v.starts_on,v.ends_on,v.effective_from,v.obligations,now()+interval '40 days') o where o.release_at>now() order by o.release_at,o.template_key,o.period_start,v.version limit 100`};
  }
  if(p.action==='task_create'){
   editor(a);const pid=uuid(p.project_id),sid=uuid(p.assigned_to),due=date(p.due_date);
-  if(!due)fail(400,'Choose a due date.');const project=one(await tx`select handling_firm_id,status from erp_private.projects where project_id=${pid}`);
-  if(project.status==='Archived')fail(400,'Choose an open project.');await assign(tx,pid,project.handling_firm_id,sid);
+  if(!due)fail(400,'Choose a due date.');const project=one(await tx`select client_id,handling_firm_id,status from erp_private.projects where project_id=${pid}`);
+  if(project.status==='Archived')fail(400,'Choose an open project.');await requireOpeningBalanceSetup(tx,project.client_id,project.handling_firm_id);await assign(tx,pid,project.handling_firm_id,sid);
   return one(await tx`insert into erp_private.tasks(project_id,assigned_to,task_name,description,due_at,requires_document) values(${pid},${sid},${text(p.task_name,200)},${text(p.description||'',2000,false)},${due+'T17:00:00+03:00'},${p.requires_document===true}) returning task_id`);
  }
  if(p.action==='task_recipients')return {recipients:await tx`select * from erp_private.task_recipient_candidates(${uuid(p.task_id)}::uuid)`};

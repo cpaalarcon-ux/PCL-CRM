@@ -93,6 +93,8 @@ export function normalizeTemplate(values,template,block,start,end){
 export function rowWarnings(row){
  const n=row.normalized||{},details=row.review_details||{},out=[];
  if(['Purchases','Expenditure','Non-eTIMS'].includes(row.dataset)){
+  if(n.mapping_suggestion_issue)out.push(n.mapping_suggestion_issue);
+  if(n.mapping_suggestion&&!row.account_code)out.push(`Upload suggests route ${n.mapping_suggestion.route} and TB account ${n.mapping_suggestion.account_code}; confirm both in the ERP mapping screen.`);
   if(!row.route||!row.category_code||!row.account_code)out.push('Missing detailed account classification');
   if(row.route===3&&!row.asset_details)out.push('Missing asset description / use');
   if(row.dataset==='Non-eTIMS'){

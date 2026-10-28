@@ -47,6 +47,22 @@ export async function improvementAction(tx:any,a:any,p:any){
   if(c.legal_entity_type&&c.legal_entity_type!==v.legal_entity_type)fail(400,'A change of legal entity needs a separate successor client. Retain this entity and its outstanding work.');
   await tx`update erp_private.clients set legal_entity_type=${v.legal_entity_type},entity_evidence=${v.entity_evidence},year_end_month=${v.year_end_month},year_end_day=${v.year_end_day},predecessor_client_id=${predecessor} where client_id=${c.client_id}`;if(predecessor)await tx`update erp_private.clients set accepts_new_engagements=false where client_id=${predecessor}`;return {ok:true};
  }
+ if(p.action==='v3_opening_balance_state'){
+  leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);
+  const status=choice(p.status,['Pending','No opening balances']),reason=text(p.reason,2000);
+  if(reason.length<10)fail(400,'Record a reason of at least 10 characters.');
+  if(status==='No opening balances'){
+   if(!c.legal_entity_type||String(c.entity_evidence||'').trim().length<10||!c.year_end_month||!c.year_end_day)fail(400,'Confirm the client legal entity, supporting source and financial year-end in Entity / activities first.');
+   if((await tx`select document_id from erp_private.documents where client_id=${c.client_id} and category='Import Sources' and import_purpose='Opening TB' and archived_at is null and deleted_at is null limit 1`).length)fail(409,'An active opening TB source is already staged. Remove that upload first if it was incorrect.');
+   await tx`update erp_private.clients set opening_balance_status='No opening balances',opening_balance_note=${reason},opening_balance_confirmed_by=${a.staff_id},opening_balance_confirmed_at=now() where client_id=${c.client_id}`;
+  }else{
+   if(c.opening_balance_status!=='No opening balances')fail(409,'This client is already awaiting an opening TB upload or confirmation.');
+   await tx`update erp_private.clients set opening_balance_status='Pending',opening_balance_note='',opening_balance_confirmed_by=null,opening_balance_confirmed_at=null where client_id=${c.client_id}`;
+  }
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,before_values,after_values)
+   values(${a.auth_user_id},current_user,'clients','OPENING_BALANCE_SETUP',${c.client_id},${tx.json({status:c.opening_balance_status,note:c.opening_balance_note})},${tx.json({status,reason,changed_by:a.staff_id})})`;
+  return {ok:true,status};
+ }
  if(['v3_activity_add','v3_partners_add','v3_period_add','v3_stock_policy_add'].includes(p.action)){
   leader(a);const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid} and deleted_at is null`);await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':config'},0))`;
   if(p.action==='v3_activity_add'){
