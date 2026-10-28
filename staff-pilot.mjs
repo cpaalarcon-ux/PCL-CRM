@@ -4,11 +4,11 @@ import {stockMethodChoices,stockCountChoices} from './staff-stock-policy.mjs?v=2
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261026-v4';
 import {createPresenceUI} from './staff-presence.mjs?v=20261026-v4';
-import {renderDashboard} from './staff-dashboard.mjs?v=20261028-home-v59-safe-archive';
+import {renderDashboard} from './staff-dashboard.mjs?v=20261028-pms-uat-align';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261026-v4';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261028-stock-mapping-compact';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261028-opening-tb-six-columns';
 import {createSuiteUI} from './staff-suite.mjs?v=20261027-aligned';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261027-fulluat';

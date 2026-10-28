@@ -32,3 +32,9 @@ test('opening mappings preserve the source and never insert balancing suspense',
  assert.throws(()=>normaliseLines([{account_code:'60000',debit:100}],accounts,{opening:true}),/balance-sheet/);
  const t=trialBalance(accounts,[{account_code:'10000',debit:100,credit:0}],[{account_code:'10000',debit:0,credit:10}]);assert.equal(t.find(r=>r.code==='10000').net,90);
 });
+test('a nonzero prior-year Difference in Books control blocks opening submission even when mapped lines balance',()=>{
+ const lines=normaliseLines([{account_code:'10000',source_name:'Cash',debit:100,credit:0,source_status:'Confirmed',source_reference:'Prior-year close'},{account_code:'20000',source_name:'Trade creditors',debit:0,credit:100,source_status:'Confirmed',source_reference:'Prior-year close'}],accounts,{opening:true});
+ assert.deepEqual(journalIssues(lines,accounts,{kind:'Opening',entityType:'Limited company'}),[]);
+ assert.ok(journalIssues(lines,accounts,{kind:'Opening',entityType:'Limited company',sourceSnapshot:{source_controls:[{type:'difference_in_books',difference_kes:1000.01}]}}).some(s=>s.includes('Difference in Books')));
+ assert.deepEqual(journalIssues(lines,accounts,{kind:'Opening',entityType:'Limited company',sourceSnapshot:{source_controls:[{type:'difference_in_books',difference_kes:0}]}}),[]);
+});

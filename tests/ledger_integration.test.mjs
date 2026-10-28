@@ -64,8 +64,29 @@ test('Client ledger: source integrity, maker/checker, entity profit and shared P
  const ip={...base,document_id:D,sheet_name:'Payroll',header_row:1,kind:'Payroll',reference:'PAY-IMPORT',journal_date:'2026-10-31',evidence:'Fictional legacy balanced payroll schedule',column_map:{legacy_code:1,source_name:2,debit:3,credit:4}};
  assert.equal((await ledger('ASSISTANT',{...ip,action:'ledger_import_preview'})).preview.length,4);
  const imp=await ledger('ASSISTANT',{...ip,action:'ledger_import_commit'});assert.equal(imp.imported_count,4);assert.equal((await ledger('ASSISTANT',{...ip,action:'ledger_import_commit'})).duplicate_count,4);const imported=await jr(imp.journal_id);assert.equal(imported.lines[0].legacy_code,'OLD-SAL');assert.equal(imported.lines[2].source_status,'Unverified');assert.equal(imported.journal.source_snapshot.source_rows[2].original_debit,-50);await assert.rejects(()=>submit(imp.journal_id),/map to an active/);
+ // The standard opening template has six columns. Evidence is captured once in ERP and source rows stay traceable.
+ const openingSheet=w.addWorksheet('Opening TB');openingSheet.addRows([
+  ['Source account code','Source account name','ERP routing code','ERP TB item code','Debit (KES)','Credit (KES)'],
+  ['OLD-CASH','Opening cash','ASSET','10000',100000,0],
+  ['OLD-CAP','Share capital','EQUITY','30000',0,100000],
+  ['', 'Difference in Books','','',100,0],
+ ]);workbookBytes=await w.xlsx.writeBuffer();
+ const secondOpeningSheet=w.addWorksheet('Opening TB Revised');secondOpeningSheet.addRows([
+  ['Source account code','Source account name','ERP routing code','ERP TB item code','Debit (KES)','Credit (KES)'],
+  ['OLD-CASH','Opening cash','ASSET','10000',100000,0],
+  ['OLD-CAP','Share capital','EQUITY','30000',0,100000],
+ ]);workbookBytes=await w.xlsx.writeBuffer();
+ const uploadPeriod=await ledger('MANAGER',{action:'ledger_period_create',project_id:P,starts_on:'2027-01-01',ends_on:'2027-12-31'}),openingBase={project_id:P,period_id:uploadPeriod.period_id};
+ const openingImport={...openingBase,document_id:D,sheet_name:'Opening TB',header_row:1,kind:'Opening',reference:'OPEN-TB-2027',journal_date:'2027-01-01',column_map:{legacy_code:1,source_name:2,routing_code:3,tb_item_code:4,debit:5,credit:6},evidence:'Fictional approved 2026 closing TB and manager sign-off'};
+ const openingPreview=await ledger('ASSISTANT',{...openingImport,action:'ledger_import_preview'});assert.deepEqual(openingPreview.headers,['Source account code','Source account name','ERP routing code','ERP TB item code','Debit (KES)','Credit (KES)']);
+ await assert.rejects(()=>ledger('ASSISTANT',{...openingImport,action:'ledger_import_commit'}),/Confirm the approved prior-year trial balance/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...openingImport,action:'ledger_import_commit',confirm_opening_source:true,evidence:''}),/source workbook and approval reference/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...openingImport,action:'ledger_import_commit',confirm_opening_source:true,column_map:{...openingImport.column_map,routing_code:1}}),/routing code does not match/);
+ const importedOpening=await ledger('ASSISTANT',{...openingImport,action:'ledger_import_commit',confirm_opening_source:true});assert.equal(importedOpening.imported_count,2);assert.equal(importedOpening.source_controls[0].difference_kes,100);
+ await assert.rejects(()=>ledger('ASSISTANT',{...openingImport,action:'ledger_import_commit',sheet_name:'Opening TB Revised',confirm_opening_source:true}),/opening balance entry already exists/);
+ const openingDraft=await ledger('ASSISTANT',{...openingBase,action:'ledger_journal_read',journal_id:importedOpening.journal_id});assert.equal(openingDraft.lines[0].source_status,'Confirmed');assert.equal(openingDraft.lines[0].source_reference,'Fictional.xlsx | Opening TB | row 2');assert.deepEqual(openingDraft.journal.source_snapshot.source_confirmation,{confirmed:true,confirmed_by:actors.ASSISTANT.staff_id,evidence_reference:openingImport.evidence});await assert.rejects(()=>ledger('ASSISTANT',{...openingBase,action:'ledger_journal_submit',journal_id:importedOpening.journal_id,revision:openingDraft.journal.revision}),/Difference in Books/);
  // Snapshot totals are period filtered; no hidden future entries leak into an as-of account view.
  const early=await ledger('ASSISTANT',{...base,action:'ledger_account_read',account_code:'61180',as_of:'2026-09-30'});assert.equal(early.lines.length,1);
- assert.equal((await tx`select count(*)::integer as n from erp_private.document_access_events where document_id=${D} and actor_auth_id=${actors.ASSISTANT.auth_user_id} and action='DOWNLOAD'`)[0].n,3,'Each successful workbook preview/import access is logged');
+ assert.equal((await tx`select count(*)::integer as n from erp_private.document_access_events where document_id=${D} and actor_auth_id=${actors.ASSISTANT.auth_user_id} and action='DOWNLOAD'`)[0].n,5,'Each successful workbook preview/import access is logged');
  const newTables=await db.query(`select relname,relrowsecurity,relforcerowsecurity from pg_class where relname in ('ledger_periods','ledger_journals','ledger_lines','ledger_sources','ledger_assets','ledger_asset_charges','asset_class_rates')`);assert.equal(newTables.rows.length,7);assert.ok(newTables.rows.every(x=>x.relrowsecurity&&x.relforcerowsecurity));
 });

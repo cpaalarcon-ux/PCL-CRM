@@ -2,6 +2,8 @@
 
 Use the [connected staff testing workspace](https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot). The repository's historical root-page modules remain published workflow previews; browser-local preview records are not shared database records. This inventory reconciles the requested modules with the connected release. It is not production sign-off.
 
+**28 October 2026 alignment update:** use [PMS v6.0 alignment and UAT release gate](PMS_V6_UAT_ALIGNMENT_2026_10_28.md) for the newer Testing Firm/multi-tenant plan, opening trial-balance candidate, dashboard-label updates and current publish blockers. This 24 October inventory is retained as a dated baseline, not as the latest readiness status.
+
 **Connected** means an authenticated UI and backend exist for staff acceptance testing. **Partial** means only the listed subset is connected. **Pending** means it must not be represented as a working integration. Real business data and production access require the release checklist below.
 
 | Earlier request | Status and place to test | Outstanding work / limitation |

@@ -3,7 +3,7 @@ import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=2
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
 import {createAccountingUI} from './staff-accounting.mjs?v=20261028-stock-mapping-compact';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261026-v4';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261028-opening-tb-six-columns';
 export function createWorkspaceUI(ctx){
  const purchaseLedgers=createPurchaseLedgerUI(ctx);const periodImports=createPeriodImportUI(ctx);const standardPurchaseImport=createStandardPurchaseImportUI(ctx);
  const accounting=createAccountingUI(ctx);

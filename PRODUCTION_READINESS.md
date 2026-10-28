@@ -1,6 +1,6 @@
 # PCL CRM / ERP production-readiness runbook
 
-> **24 October 2026 status:** This document below includes the original target architecture. It must not be read as evidence that every item is deployed. Use [the connected release inventory](supabase/RELEASE_INVENTORY_2026_10_24.md) and [staff testing guide](supabase/CONNECTED_TESTING_SUITE.md) for the implemented scope. The root UI is a browser-local preview; shared authenticated testing is at `/staff-pilot`. Apply only the versioned `supabase/migrations` to the staging Supabase database, not the historical `database_schema.sql`. Production cutover, restore/load tests, staff UAT and missing integrations remain outstanding.
+> **28 October 2026 status:** This document includes the original target architecture and is not evidence that every item is deployed. Use the [dated release inventory](supabase/RELEASE_INVENTORY_2026_10_24.md), [PMS v6.0 alignment and UAT gate](supabase/PMS_V6_UAT_ALIGNMENT_2026_10_28.md), and [staff testing guide](supabase/CONNECTED_TESTING_SUITE.md) for current scope. The root UI is a browser-local preview; shared authenticated testing is at `/staff-pilot`. Apply only the versioned `supabase/migrations` to the staging Supabase database, not the historical `database_schema.sql`. Production cutover, restore/load tests, staff UAT and missing integrations remain outstanding. The ERP is firm-scoped, not a verified multi-tenant subscription product; production and subscription-ready claims are not authorised.
 
 
 ## Scope of this release

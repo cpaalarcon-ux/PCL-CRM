@@ -3,11 +3,13 @@
 **Target:** connected staff testing workspace only  
 **Use with:** [Consolidated connected testing release](CONNECTED_TESTING_SUITE.md), [Entity/activity and mapping release](ENTITY_ACTIVITY_V3.md), and [Import and ledger release](IMPORT_LEDGER_V12.md)
 
+Use the [PMS v6.0 alignment and additional acceptance gates](PMS_V6_UAT_ALIGNMENT_2026_10_28.md) for the Testing Firm, multi-tenant, subscription and detailed opening-balance status. These additions do not imply that those tests have passed.
+
 ## Purpose and scope
 
 Use this plan to test the features that are connected in the staff workspace from client intake through project work, accounting review, billing, HR and communications. It is an acceptance checklist, not evidence that every listed test has passed. Record the actual build, tester, role, result and issue reference for each case.
 
-Open the shared staging workspace at `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. Confirm that the footer says **Connected ERP testing** before entering data. Use the assigned staff login and an approved fictional client or training copy. Do not use production client records, live filing credentials, or send an actual tax return or payment during UAT.
+Open the shared staging workspace at `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. Confirm the visible banner says **STAGING ONLY — DO NOT FILE OR SEND** before entering data. Use the assigned staff login and approved fictional records. Do not use production client records, live filing credentials, or send an actual return, payment or client communication during UAT.
 
 Use these outcomes:
 
@@ -55,7 +57,7 @@ Run access cases with separate accounts. A role selector in a preview is not pro
 | U21 | Accounting preview, stock control and category request | Preview uses mapped, independently reviewed source rows and displays blockers. Stock controls use dated policy/evidence snapshots. Requests go to an authorised reviewer; they do not activate new accounts automatically. |
 | U22 | VAT reporting month and independent tax review | Client VAT month is visible and separate from the invoice date. Mapping does not approve a VAT claim or post a journal. An independent reviewer records the tax decision and evidence. |
 | U23 | Sales & VAT reconciliation and bank evidence | Sales/POS/bank source totals and explanations are traceable. Missing statements stay missing, not zero. Deferral and late supplement require independent review; a locked month is not silently rewritten. |
-| U24 | Ledger import and period review | Correct worksheet, date range, opening/closing values and control totals are shown. Rejected rows remain identifiable; reconciliation clearance is explicit and reviewer-attributed. |
+| U24 | Ledger import and period review | Use the six-column opening TB template. Confirm the standard columns map automatically, map each source account to an active ERP TB item code, and verify routing. Enter source evidence once in the ERP. Retain each Excel row reference, include any “Difference in Books” control row, reconcile debits/credits and all source differences, then obtain independent approval before posting. Rejected rows remain identifiable; reconciliation clearance is explicit and reviewer-attributed. |
 | U25 | Tax rates and client rule selection | Draft, review and Partner approval permissions work. Effective dates and sources are visible; approved versions cannot be overwritten or overlap. Testing-only rates are clearly labelled and excluded from live filing outputs. |
 | U26 | Supported tax computations and period workflow | Run representative enabled VAT, PAYE, TOT, WHT and income-tax cases. Missing rates or evidence create blockers rather than zero values. Another authorised reviewer returns or locks the case; preparers cannot approve themselves. |
 | U27 | Tax exports and KYC package | Downloads contain the expected PDF/XLSX and applicable supporting documents. Drafts are clearly marked **TESTING — NOT FOR FILING**. Export readiness does not claim that a return has been filed with KRA. |
@@ -66,8 +68,8 @@ Run access cases with separate accounts. A role selector in a preview is not pro
 | U32 | Time & HR: attendance, leave and capacity | Clock-in/out, break, leave approval and roster capacity follow the role rules. Attendance does not sign the user out, create billable client time or calculate payroll. |
 | U33 | Communications, handover and support | Logs retain author, time, client/project and status. Forward/escalate records recipient and message. Support routing and response deadlines are visible. Logging does not send email or meeting invitations. |
 | U34 | Letters and QR | Saved letters retain client/firm scope and produce a printable letter and opaque protected reference. QR access requires authorised staff login; QR is not an electronic signature, invoice QR or external client portal. |
-| U35 | Home dashboard, global search and alerts | Assigned work, upcoming deadlines, unread notes and pending uploads link to the right record. Search obeys the same role and firm restrictions as direct navigation. |
-| U36 | Performance and responsive layout | Record load time, row count, filters, browser/device and viewport. Pagination and selection remain correct; no totals or rows disappear. Test modal scrolling and keyboard/focus behavior at the agreed staff widths. |
+| U35 | Home dashboard, global search and alerts | Assigned work, upcoming deadlines, unread notes and pending uploads link to the right record. Review counts disclose their included queues; reconciliation alert labels match their sources. Search obeys the same role and firm restrictions as direct navigation. |
+| U36 | Performance and responsive layout | Record load time, row count, filters, browser/device and viewport. Verify 25-row server pagination, stable page navigation and correct totals with 1,500 tasks; do not mark this passed based on a client-side slice. Test modal scrolling and keyboard/focus behavior at the agreed staff widths. |
 
 For every **Fail** or **Blocked** result, attach a redacted screenshot or source-row reference and record the actual build. Do not retry a failed import or bulk action until its batch result and row status have been checked.
 

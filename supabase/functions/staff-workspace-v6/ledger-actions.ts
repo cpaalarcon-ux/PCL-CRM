@@ -125,7 +125,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  if(p.action==='ledger_journal_read'){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id}`),items=await lines(tx,j.journal_id);
-  return {journal:j,lines:items,accounts:await catalogue(tx),issues:journalIssues(items,await catalogue(tx),{kind:j.kind,entityType:l.entity_type})};
+  return {journal:j,lines:items,accounts:await catalogue(tx),issues:journalIssues(items,await catalogue(tx),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot})};
  }
  if(p.action==='ledger_asset_read'){const asset=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id}`);return {asset,rate:asset.rate_snapshot,calculation:assetCalculation(asset,asset.rate_snapshot,l.starts_on,l.ends_on)};}
  if(l.status!=='Open')fail(400,'This client year is closed. Its posted snapshot remains available.');
@@ -169,7 +169,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  if(['ledger_journal_submit','ledger_journal_review'].includes(p.action)){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);
-  if(p.action==='ledger_journal_submit'){edit(j,a);const issues=journalIssues(await lines(tx,j.journal_id),await catalogue(tx),{kind:j.kind,entityType:l.entity_type});if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id} where journal_id=${j.journal_id}`;}
+  if(p.action==='ledger_journal_submit'){edit(j,a);const issues=journalIssues(await lines(tx,j.journal_id),await catalogue(tx),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id} where journal_id=${j.journal_id}`;}
   else{leader(a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);if(status==='Posted')await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;}
   return {ok:true,journal_id:j.journal_id};
  }
@@ -212,21 +212,31 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   const get=(r:number,c:number)=>{const value=sheet.getRow(r).getCell(c).value;return value&&typeof value==='object'&&!(value instanceof Date)&&'result' in value?value.result:value;};
   const headers=Array.from({length:sheet.columnCount},(_,i)=>String(get(header,i+1)||''));
   if(p.action==='ledger_import_preview')return {sheets,sheet_name:sheet.name,header_row:header,headers,preview:Array.from({length:Math.min(8,sheet.rowCount-header)},(_,i)=>({source_row:header+i+1,values:headers.map((_:any,c:number)=>get(header+i+1,c+1))}))};
-  const kind=choice(p.kind,['Opening','Payroll']),map=p.column_map||{},col=(key:string)=>{const n=Number(map[key]);if(!Number.isInteger(n)||n<1||n>sheet.columnCount)return null;return n;};
+  const kind=choice(p.kind,['Opening','Payroll']),map=p.column_map||{},col=(key:string)=>{const n=Number(map[key]);if(!Number.isInteger(n)||n<1||n>sheet.columnCount)return null;return n;},openingConfirmed=p.confirm_opening_source===true||p.confirm_opening_source==='true',sourceEvidence=String(p.evidence||'').trim();
+  if(kind==='Opening'&&!openingConfirmed)fail(400,'Confirm the approved prior-year trial balance before importing opening balances.');
+  if(kind==='Opening'&&sourceEvidence.length<3)fail(400,'Enter the source workbook and approval reference once for this opening-balance upload.');
   if(!col('source_name')||!col('debit')||!col('credit'))fail(400,'Map account name, debit and credit columns.');
-  const items:any[]=[],sourceRows:any[]=[];
+  const accounts=await catalogue(tx),items:any[]=[],sourceRows:any[]=[],sourceControls:any[]=[];
   for(let r=header+1;r<=sheet.rowCount;r++){
    const read=(k:string)=>col(k)?get(r,col(k)!):null,name=String(read('source_name')||'').trim(),legacy=String(read('legacy_code')||'').trim();
-   if(!name&&!legacy)continue;if(/^total\b/i.test(name)||/^total\b/i.test(legacy))continue;
+   if(!name&&!legacy)continue;
+   if(/^difference in books$/i.test(name)){const d=amount(read('debit')??0,'debit at source row '+r),c=amount(read('credit')??0,'credit at source row '+r);sourceControls.push({type:'difference_in_books',source_row:r,difference_kes:Number(d)-Number(c)});continue;}
+   if(/^(total|subtotal|grand total|net total|balance check)\b/i.test(name)||/^(total|subtotal|grand total|net total|balance check)\b/i.test(legacy))continue;
    if(items.length>=2000)fail(400,'Split imports into at most 2,000 nonblank source rows.');
-   const debit=amount(read('debit')??0,'debit at source row '+r),credit=amount(read('credit')??0,'credit at source row '+r),net=Number(debit)-Number(credit),negative=Number(debit)<0||Number(credit)<0;
-   items.push({account_code:String(read('account_code')||'').trim()||null,legacy_code:legacy,source_name:name,debit:Math.max(net,0),credit:Math.max(-net,0),source_status:!negative&&read('source_status')==='Confirmed'?'Confirmed':'Unverified',source_reference:String(read('source_reference')||''),description:'Excel row '+r+(negative?' - sign presentation normalised; confirm original source':'')});
-   sourceRows.push({source_row:r,original_debit:debit,original_credit:credit,source_name:name,legacy_code:legacy});
+   const debit=amount(read('debit')??0,'debit at source row '+r),credit=amount(read('credit')??0,'credit at source row '+r);if(!Number(debit)&&!Number(credit))continue;
+   const net=Number(debit)-Number(credit),negative=Number(debit)<0||Number(credit)<0,explicitCode=String(read('tb_item_code')||'').trim(),legacyCode=String(read('account_code')||'').trim(),targetCode=explicitCode||legacyCode;
+   if(explicitCode&&legacyCode&&explicitCode!==legacyCode)fail(400,`Source row ${r}: ERP TB item code and master account code do not match.`);
+   const account=accounts.find(x=>x.code===targetCode),suppliedRouting=String(read('routing_code')||'').trim().toUpperCase();
+   if(suppliedRouting&&account&&suppliedRouting!==String(account.category_code||'').toUpperCase())fail(400,`Source row ${r}: routing code does not match ERP TB item code ${targetCode}.`);
+   items.push({account_code:targetCode||null,legacy_code:legacy,source_name:name,debit:Math.max(net,0),credit:Math.max(-net,0),source_status:kind==='Opening'?(!negative&&openingConfirmed?'Confirmed':'Unverified'):!negative&&read('source_status')==='Confirmed'?'Confirmed':'Unverified',source_reference:kind==='Opening'?`${doc.file_name} | ${sheet.name} | row ${r}`:String(read('source_reference')||doc.file_name),description:'Excel row '+r+(negative?' - sign presentation normalised; confirm original source':'' )});
+   sourceRows.push({source_row:r,original_debit:debit,original_credit:credit,source_name:name,legacy_code:legacy,tb_item_code:targetCode||'',routing_code:suppliedRouting||String(account?.category_code||''),account_code:targetCode||''});
   }
   const key=await digest({document:doc.sha256,sheet:sheet.name,header,kind,period:l.period_id}),existing=(await tx`select journal_id from erp_private.ledger_sources where source_kind=${kind+' workbook'} and source_key=${key}`)[0];if(existing)return {...existing,reused:true,imported_count:0,duplicate_count:items.length};
-  if(!items.length)fail(400,'No nonblank source rows were found.');const parsed=normaliseLines(items,await catalogue(tx),{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll'});
-  const j=await newJournal(tx,a,l,kind,p,parsed,{kind:'Excel',document_id:doc.document_id,document_sha256:doc.sha256,sheet_name:sheet.name,header_row:header,column_map:map,source_rows:sourceRows});
-  await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id) values(${kind+' workbook'},${key},${j.journal_id},${pid})`;return {...j,source_count:items.length,imported_count:items.length,duplicate_count:0};
+  if(kind==='Opening'&&(await tx`select journal_id from erp_private.ledger_journals where period_id=${l.period_id} and kind='Opening' limit 1`)[0])fail(409,'An opening balance entry already exists for this financial year. Open it from Entry register. Edit an unposted draft there; posted opening corrections require a reviewed adjustment.');
+  if(!items.length)fail(400,'No nonzero account rows were found. Check that you selected the prior-year closing columns, not a comparison or total column.');const parsed=normaliseLines(items,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll'});
+  const totals=parsed.reduce((t:any,line:any)=>({debit:t.debit+cashAmount(line.debit),credit:t.credit+cashAmount(line.credit)}),{debit:0,credit:0});
+  const j=await newJournal(tx,a,l,kind,p,parsed,{kind:'Excel',document_id:doc.document_id,document_sha256:doc.sha256,sheet_name:sheet.name,header_row:header,column_map:map,source_rows:sourceRows,source_controls:sourceControls,import_totals:{debit_kes:totals.debit/100,credit_kes:totals.credit/100,difference_kes:(totals.debit-totals.credit)/100},...(kind==='Opening'?{source_confirmation:{confirmed:true,confirmed_by:a.staff_id,evidence_reference:sourceEvidence}}:{})});
+  await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id) values(${kind+' workbook'},${key},${j.journal_id},${pid})`;return {...j,source_count:items.length,imported_count:items.length,duplicate_count:0,totals:{debit_kes:totals.debit/100,credit_kes:totals.credit/100,difference_kes:(totals.debit-totals.credit)/100},source_controls:sourceControls};
  }
  fail(404,'Unknown client working-paper action.');
 }

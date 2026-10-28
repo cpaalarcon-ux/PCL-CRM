@@ -22,10 +22,13 @@ export function normaliseLines(input,accounts,{allowUnmapped=false,opening=false
   return {line_no:i+1,account_code:code||null,legacy_code:String(r.legacy_code||'').slice(0,80),source_name:String(r.source_name||account?.name||'').slice(0,200),description:String(r.description||'').slice(0,1000),debit:debit/100,credit:credit/100,source_status:r.source_status==='Confirmed'?'Confirmed':'Unverified',source_reference:String(r.source_reference||'').slice(0,1000)};
  });
 }
-export function journalIssues(lines,accounts,{kind='Adjustment',entityType=''}={}){
+export function journalIssues(lines,accounts,{kind='Adjustment',entityType='',sourceSnapshot={}}={}){
  const issues=[],sum=lines.reduce((x,r)=>x+cashAmount(r.debit)-cashAmount(r.credit),0);
  if(!lines.length||!lines.some(l=>Number(l.debit)||Number(l.credit)))issues.push('Enter journal amounts.');
  if(sum!==0)issues.push(`Debits and credits differ by KES ${(sum/100).toFixed(2)}. No suspense entry is created.`);
+ if(kind==='Opening')for(const control of sourceSnapshot?.source_controls||[]){
+  if(control.type==='difference_in_books'&&Math.abs(Number(control.difference_kes||0))>0.01)issues.push(`The source trial balance reports a non-zero “Difference in Books” of KES ${Number(control.difference_kes).toFixed(2)}. Reconcile the prior-year closing balance before submitting this opening entry.`);
+ }
  for(const r of lines){if(!Number(r.debit)&&!Number(r.credit))continue;const c=accounts.find(a=>a.code===r.account_code);
   if(!c||c.status!=='Active'||c.is_legacy)issues.push(`Line ${r.line_no}: map to an active detailed account.`);
   const n=Number(r.account_code);
