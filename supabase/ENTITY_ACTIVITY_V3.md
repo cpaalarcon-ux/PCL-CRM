@@ -34,6 +34,6 @@ npm ci
 npm test
 ```
 
-Run `node tests/improvement_browser.cjs` with Playwright installed (`PCL_BROWSER_MODULES` can identify the package directory; `PCL_BROWSER_EXECUTABLE` can identify Chromium). It uses fictional training data, checks native queued dialog-close events, saves an entity profile, maps selected purchases and a confirmed 205-row snapshot, and verifies the unsupported-return gate. It never connects to real client records.
+Run `npx playwright install chromium` once on a local machine, then `npm run test:browser`. The branch CI workflow installs Chromium on its hosted runner and runs both `npm test` and `npm run test:browser`. The browser check uses fictional training data, checks native queued dialog-close events, saves an entity profile, maps selected purchases and a confirmed 205-row snapshot, and verifies the unsupported-return gate. It never connects to real client records.
 
 Before production: reconcile migrated profiles and periods, validate applicable tax rules/templates, complete a restore test, review scope/role tests with staff, and sign off a supported end-to-end client period. Staging success is not production tax clearance.
