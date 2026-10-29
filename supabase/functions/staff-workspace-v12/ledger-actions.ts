@@ -14,6 +14,9 @@ const amount=(v:any,label:string,nullable=false)=>{if(nullable&&(v===''||v==null
 const num=(v:any,min:number,max:number)=>{if(v===''||v==null||!Number.isFinite(Number(v))||Number(v)<min||Number(v)>max)fail(400,'Enter a number between '+min+' and '+max+'.');return Number(v);};
 const sourceShape=(r:any)=>({row_id:r.row_id,revision:r.revision,dataset:r.dataset,normalized:r.normalized,account_code:r.account_code,route:r.route,review_details:r.review_details,decision:r.decision,source_revision:r.source_revision,deductible_percentage:r.deductible_percentage,income_treatment:r.income_treatment,reviewed_by:r.reviewed_by,vat_rate_key:r.vat_rate_key});
 async function catalogue(tx:any){return await tx`select * from erp_private.account_catalog order by code`;}
+async function clientAccountAllowed(tx:any,clientId:string,code:string,at:string){
+ return (await tx`select mapping_id from erp_private.client_account_mappings where client_id=${clientId} and erp_account_code=${code} and status='Active' and effective_from<=${at} and (effective_to is null or effective_to>=${at}) limit 1`).length>0;
+}
 async function period(tx:any,id:string,pid:string){return one(await tx`select * from erp_private.ledger_periods where period_id=${id} and project_id=${pid} for update`);}
 async function lines(tx:any,id:string){return await tx`select * from erp_private.ledger_lines where journal_id=${id} order by line_no`;}
 async function writeLines(tx:any,j:any,items:any[]){
@@ -48,6 +51,10 @@ async function sourceCheck(tx:any,j:any){
  const archived=await tx`select b.batch_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=any(${tx.array(j.source_snapshot.rows.map((x:any)=>x.row_id))}::uuid[]) and b.archived_at is not null`;
  if(archived.length)fail(409,'A source in this draft was archived. Return the draft to its preparer and create a corrected posting from active sources.');
  const r=await reviewedRows(tx,j.project_id,j.source_snapshot.rows.map((x:any)=>x.row_id));
+ const clientId=(await tx`select client_id from erp_private.projects where project_id=${j.project_id}`)[0]?.client_id;
+ for(const row of r.filter((x:any)=>['Purchases','Expenditure','Non-eTIMS'].includes(x.dataset)&&x.account_code)){
+  if(!await clientAccountAllowed(tx,clientId,row.account_code,day(row.normalized.date||row.period_start)))fail(409,`ERP account ${row.account_code} is no longer approved for this client and source date. Review the client account setup and refresh the draft.`);
+ }
  if(await digest(r.map(sourceShape))!==j.source_snapshot.digest)fail(409,'A source or its review changed. Refresh the generated draft before resubmitting.');
 }
 function salesLines(r:any){
@@ -136,6 +143,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(project.status==='Archived')fail(400,'Archived projects cannot change client working papers.');
  if(p.action==='ledger_journal_save'){
   const accounts=await catalogue(tx),kind=choice(p.kind,['Opening','Payroll','Adjustment','Stock']),items=normaliseLines(p.lines,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll'});
+  if(kind==='Opening')for(const line of items.filter((x:any)=>x.account_code))if(!await clientAccountAllowed(tx,project.client_id,line.account_code,day(l.starts_on)))fail(400,`ERP account ${line.account_code} is not approved for this client’s opening balance date. Set it up under Clients → Client accounts first.`);
   if(p.journal_id){const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);if(j.generated||j.kind!==kind)fail(400,'Generated source entries must be refreshed or reversed, not manually overwritten.');
    await writeLines(tx,j,items);await tx`update erp_private.ledger_journals set journal_date=${date(p.journal_date)},reference=${text(p.reference,100)},description=${text(p.description||'',2000,false)},evidence=${text(p.evidence||'',5000,false)},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};
   }return await newJournal(tx,a,l,kind,p,items);
@@ -173,7 +181,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  if(['ledger_journal_submit','ledger_journal_review'].includes(p.action)){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);
-  if(p.action==='ledger_journal_submit'){edit(j,a);const issues=journalIssues(await lines(tx,j.journal_id),await catalogue(tx),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id} where journal_id=${j.journal_id}`;}
+  if(p.action==='ledger_journal_submit'){edit(j,a);const currentLines=await lines(tx,j.journal_id),issues=journalIssues(currentLines,await catalogue(tx),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(j.kind==='Opening')for(const line of currentLines.filter((x:any)=>x.account_code))if(!await clientAccountAllowed(tx,project.client_id,line.account_code,day(l.starts_on)))issues.push(`Line ${line.line_no}: ERP account ${line.account_code} is not approved for this client’s opening balance date.`);if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id} where journal_id=${j.journal_id}`;}
   else{leader(a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);if(status==='Posted')await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;}
   return {ok:true,journal_id:j.journal_id};
  }
@@ -224,7 +232,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   if(kind==='Opening'&&!openingConfirmed)fail(400,'Confirm the approved prior-year trial balance before importing opening balances.');
   if(kind==='Opening'&&sourceEvidence.length<3)fail(400,'Enter the source workbook and approval reference once for this opening-balance upload.');
   if(!col('source_name')||!col('debit')||!col('credit'))fail(400,'Map account name, debit and credit columns.');
-  const accounts=await catalogue(tx),items:any[]=[],sourceRows:any[]=[],sourceControls:any[]=[];
+  const accounts=await catalogue(tx),items:any[]=[],sourceRows:any[]=[],sourceControls:any[]=[],clientMappings=kind==='Opening'?await tx`select mapping_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to from erp_private.client_account_mappings where client_id=${project.client_id} and status='Active' and effective_from<=${day(l.starts_on)} and (effective_to is null or effective_to>=${day(l.starts_on)})`:[];
   for(let r=header+1;r<=sheet.rowCount;r++){
    const read=(k:string)=>col(k)?get(r,col(k)!):null,name=String(read('source_name')||'').trim(),legacy=String(read('legacy_code')||'').trim();
    if(!name&&!legacy)continue;
@@ -232,12 +240,16 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
    if(/^(total|subtotal|grand total|net total|balance check)\b/i.test(name)||/^(total|subtotal|grand total|net total|balance check)\b/i.test(legacy))continue;
    if(items.length>=2000)fail(400,'Split imports into at most 2,000 nonblank source rows.');
    const debit=amount(read('debit')??0,'debit at source row '+r),credit=amount(read('credit')??0,'credit at source row '+r);if(!Number(debit)&&!Number(credit))continue;
-   const net=Number(debit)-Number(credit),negative=Number(debit)<0||Number(credit)<0,explicitCode=String(read('tb_item_code')||'').trim(),legacyCode=String(read('account_code')||'').trim(),targetCode=explicitCode||legacyCode;
-   if(explicitCode&&legacyCode&&explicitCode!==legacyCode)fail(400,`Source row ${r}: ERP TB item code and master account code do not match.`);
-   const account=accounts.find(x=>x.code===targetCode),suppliedRouting=String(read('routing_code')||'').trim().toUpperCase();
+   const net=Number(debit)-Number(credit),negative=Number(debit)<0||Number(credit)<0,explicitCode=String(read('tb_item_code')||'').trim(),legacyCode=String(read('account_code')||'').trim(),sourceNameKey=name.trim().toLowerCase(),sourceCodeKey=legacyCode.trim().toLowerCase();
+   if(kind!=='Opening'&&explicitCode&&legacyCode&&explicitCode!==legacyCode)fail(400,`Source row ${r}: ERP TB item code and master account code do not match.`);
+   const sourceMatches=kind==='Opening'?clientMappings.filter((m:any)=>(legacyCode&&String(m.source_account_code||'').trim().toLowerCase()===sourceCodeKey)||(!m.source_account_code&&String(m.source_account_name||'').trim().toLowerCase()===sourceNameKey)):[],sourceMapping=sourceMatches.length===1?sourceMatches[0]:null;
+   if(sourceMatches.length>1)fail(400,`Source row ${r}: more than one approved client account mapping matches this source. Ask a Manager to resolve the duplicate client setup.`);
+   if(sourceMapping&&explicitCode&&sourceMapping.erp_account_code!==explicitCode)fail(400,`Source row ${r}: ERP TB item code ${explicitCode} differs from the approved client mapping ${sourceMapping.erp_account_code}.`);
+   const targetCode=kind==='Opening'?sourceMapping?.erp_account_code||'':explicitCode||legacyCode,account=accounts.find(x=>x.code===targetCode),suppliedRouting=String(read('routing_code')||'').trim().toUpperCase();
    if(suppliedRouting&&account&&suppliedRouting!==String(account.category_code||'').toUpperCase())fail(400,`Source row ${r}: routing code does not match ERP TB item code ${targetCode}.`);
-   items.push({account_code:targetCode||null,legacy_code:legacy,source_name:name,debit:Math.max(net,0),credit:Math.max(-net,0),source_status:kind==='Opening'?(!negative&&openingConfirmed?'Confirmed':'Unverified'):!negative&&read('source_status')==='Confirmed'?'Confirmed':'Unverified',source_reference:kind==='Opening'?`${doc.file_name} | ${sheet.name} | row ${r}`:String(read('source_reference')||doc.file_name),description:'Excel row '+r+(negative?' - sign presentation normalised; confirm original source':'' )});
-   sourceRows.push({source_row:r,original_debit:debit,original_credit:credit,source_name:name,legacy_code:legacy,tb_item_code:targetCode||'',routing_code:suppliedRouting||String(account?.category_code||''),account_code:targetCode||''});
+   const mappingIssue=kind==='Opening'&&!sourceMapping?'No approved client account mapping matches this source code/name for the financial-year start.':'';
+   items.push({account_code:targetCode||null,legacy_code:legacyCode||legacy,source_name:name,debit:Math.max(net,0),credit:Math.max(-net,0),source_status:kind==='Opening'?(!negative&&openingConfirmed?'Confirmed':'Unverified'):!negative&&read('source_status')==='Confirmed'?'Confirmed':'Unverified',source_reference:kind==='Opening'?`${doc.file_name} | ${sheet.name} | row ${r}`:String(read('source_reference')||doc.file_name),description:'Excel row '+r+(negative?' - sign presentation normalised; confirm original source':'' )});
+   sourceRows.push({source_row:r,original_debit:debit,original_credit:credit,source_name:name,legacy_code:legacyCode||legacy,source_tb_item_code:explicitCode,tb_item_code:targetCode||'',routing_code:suppliedRouting||String(account?.category_code||''),account_code:targetCode||'',client_mapping_id:sourceMapping?.mapping_id||null,mapping_issue:mappingIssue});
   }
   const key=await digest({document:doc.sha256,sheet:sheet.name,header,kind,period:l.period_id}),existing=(await tx`select journal_id from erp_private.ledger_sources where source_kind=${kind+' workbook'} and source_key=${key}`)[0];if(existing)return {...existing,reused:true,imported_count:0,duplicate_count:items.length};
   if(kind==='Opening'&&(await tx`select journal_id from erp_private.ledger_journals where period_id=${l.period_id} and kind='Opening' limit 1`)[0])fail(409,'An opening balance entry already exists for this financial year. Open it from Entry register. Edit an unposted draft there; posted opening corrections require a reviewed adjustment.');

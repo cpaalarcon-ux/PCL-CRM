@@ -31,12 +31,41 @@ export async function improvementAction(tx:any,a:any,p:any){
   return await tx`select c.client_id,
    (select count(*)::int from erp_private.client_activities x where x.client_id=c.client_id) as activity_count,
    (select count(*)::int from erp_private.stock_policy_versions x where x.client_id=c.client_id) as stock_method_count,
-   (select count(*)::int from erp_private.stock_categories x where x.client_id=c.client_id) as category_count
+   (select count(*)::int from erp_private.stock_categories x where x.client_id=c.client_id) as category_count,
+   (select count(*)::int from erp_private.client_account_mappings x where x.client_id=c.client_id and x.status='Active') as approved_account_count,
+   (select count(*)::int from erp_private.client_account_mappings x where x.client_id=c.client_id and x.status='Draft') as pending_account_count
    from erp_private.clients c where c.deleted_at is null order by c.company_name limit 1000`;
  }
  if(p.action==='v3_client_read'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null`);
-  return {client:c,activities:await tx`select * from erp_private.client_activities where client_id=${c.client_id} order by effective_from desc`,partners:await tx`select * from erp_private.partner_interests where client_id=${c.client_id} order by effective_from desc,partner_name`,periods:await tx`select * from erp_private.client_periods where client_id=${c.client_id} order by ends_on desc`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${c.client_id} order by effective_from desc`,stock_policy_block_dates:await tx`select s.activity_id,max(s.ends_on)::text as last_control_end from erp_private.stock_controls s join erp_private.projects p using(project_id) where p.client_id=${c.client_id} and s.status in ('Submitted','Approved') group by s.activity_id`,stock_categories:await tx`select * from erp_private.stock_categories where client_id=${c.client_id} order by activity_id,inventory_use,stock_class`};
+  return {client:c,activities:await tx`select * from erp_private.client_activities where client_id=${c.client_id} order by effective_from desc`,partners:await tx`select * from erp_private.partner_interests where client_id=${c.client_id} order by effective_from desc,partner_name`,periods:await tx`select * from erp_private.client_periods where client_id=${c.client_id} order by ends_on desc`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${c.client_id} order by effective_from desc`,stock_policy_block_dates:await tx`select s.activity_id,max(s.ends_on)::text as last_control_end from erp_private.stock_controls s join erp_private.projects p using(project_id) where p.client_id=${c.client_id} and s.status in ('Submitted','Approved') group by s.activity_id`,stock_categories:await tx`select * from erp_private.stock_categories where client_id=${c.client_id} order by activity_id,inventory_use,stock_class`,account_mappings:await tx`select m.*,a.name as erp_account_name,a.route,a.category_code,a.statement from erp_private.client_account_mappings m join erp_private.account_catalog a on a.code=m.erp_account_code where m.client_id=${c.client_id} order by m.status,m.source_account_name,m.effective_from desc`};
+ }
+ if(p.action==='v3_client_accounts_read'){
+  leader(a);const cid=uuid(p.client_id),client=one(await tx`select client_id,company_name,year_end_month,year_end_day from erp_private.clients where client_id=${cid} and deleted_at is null`);
+  return {client,accounts:await tx`select code,name,route,category_code,statement from erp_private.account_catalog where status='Active' and not is_legacy order by code`,mappings:await tx`select m.*,a.name as erp_account_name,a.route,a.category_code,a.statement from erp_private.client_account_mappings m join erp_private.account_catalog a on a.code=m.erp_account_code where m.client_id=${cid} order by case m.status when 'Draft' then 0 when 'Active' then 1 else 2 end,m.source_account_name,m.effective_from desc`};
+ }
+ if(p.action==='v3_client_account_mapping_add'){
+  leader(a);const cid=uuid(p.client_id),sourceCode=text(p.source_account_code||'',100,false)||null,sourceName=text(p.source_account_name,160),target=text(p.erp_account_code,5),from=date(p.effective_from),to=p.effective_to?date(p.effective_to):null;
+  if(!sourceName||!from||to&&to<from)fail(400,'Enter a source account name and a valid effective date range.');
+  one(await tx`select client_id from erp_private.clients where client_id=${cid} and deleted_at is null`);
+  const account=one(await tx`select code from erp_private.account_catalog where code=${target} and status='Active' and not is_legacy`);
+  await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':client-accounts'},0))`;
+  if((await tx`select mapping_id from erp_private.client_account_mappings where client_id=${cid} and coalesce(source_account_code,'')=coalesce(${sourceCode},'') and status in ('Draft','Active') and effective_from<=coalesce(${to},'infinity'::date) and coalesce(effective_to,'infinity'::date)>=${from} limit 1`).length)fail(409,'A saved account setup already covers this source code and date. Choose a non-overlapping range or review the existing setup.');
+  return one(await tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to,status,created_by) values(${cid},${sourceCode},${sourceName},${account.code},${from},${to},'Draft',${a.staff_id}) returning mapping_id`);
+ }
+ if(p.action==='v3_client_account_mapping_approve'){
+  leader(a);const row=one(await tx`select * from erp_private.client_account_mappings where mapping_id=${uuid(p.mapping_id)} for update`);fresh(row,p);
+  if(row.status!=='Draft')fail(409,'Only a pending client account setup can be approved.');
+  if(row.created_by===a.staff_id)fail(403,'A different Manager or Partner must approve this setup.');
+  await tx`update erp_private.client_account_mappings set status='Active',approved_by=${a.staff_id},approved_at=now() where mapping_id=${row.mapping_id}`;
+  return {ok:true};
+ }
+ if(p.action==='v3_client_account_mapping_end'){
+  leader(a);const row=one(await tx`select * from erp_private.client_account_mappings where mapping_id=${uuid(p.mapping_id)} for update`);fresh(row,p);
+  const to=date(p.effective_to);
+  if(row.status!=='Active'||row.effective_to&&to>=asDay(row.effective_to)||to<asDay(row.effective_from))fail(400,'Choose an earlier valid end date for this active mapping.');
+  await tx`update erp_private.client_account_mappings set effective_to=${to} where mapping_id=${row.mapping_id}`;
+  return {ok:true};
  }
  if(p.action==='v3_identity_save'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);const v=entityInput(p);

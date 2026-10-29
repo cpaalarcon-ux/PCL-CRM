@@ -28,7 +28,7 @@ export function purchaseUploadRows(sheet){
  if(rows.length>10000)fail(400,`This file contains ${rows.length.toLocaleString('en-US')} populated purchase rows. The limit is 10,000 per upload. Split the transactions into separate files, each keeping row 1 as the header.`);
  return {rows,ignored};
 }
-export function normalizePurchaseUpload(values,rate,start,end,accounts=[]){
+export function normalizePurchaseUpload(values,rate,start,end,accounts=[],clientMappings){
  if(!purchaseUploadRates.includes(rate))fail(400,'Select the VAT category in the ERP: 16%, 8%, 0% or Exempt. Use one category per upload.');
  const raw=Object.fromEntries(purchaseUploadHeaders.map((h,i)=>[`${i+1}: ${h}`,values[i]??''])),row={},issues=[],pending=[],rounded=[];
  for(const [key,col] of Object.entries(purchaseUploadMap)){const value=[7,11,12,13,14].includes(col)?optional(values[col-1]??''):values[col-1]??'';row[key]=['amount','vat','gross'].includes(key)?money(value):['date','original_invoice_date'].includes(key)?purchaseDate(value):clean(value);}
@@ -45,8 +45,9 @@ export function normalizePurchaseUpload(values,rate,start,end,accounts=[]){
  else if(row.routing_code||row.tb_code){
   const routingCode=String(row.routing_code).trim().toUpperCase(),code=String(row.tb_code).trim();
   if(!/^[A-Z][A-Z0-9]{1,9}$/.test(routingCode)||!/^\d{5}$/.test(code))row.mapping_suggestion_issue='Columns M and N must contain an ERP routing category code and a five-digit TB item code.';
-  else {const account=accounts.find(x=>String(x.code)===code&&x.status==='Active'&&!x.is_legacy&&[1,2,3].includes(Number(x.route))&&String(x.category_code||'').toUpperCase()===routingCode);
-   if(account)row.mapping_suggestion={route:Number(account.route),category_code:account.category_code,account_code:account.code,confirmed:false};
+  else {const account=accounts.find(x=>String(x.code)===code&&x.status==='Active'&&!x.is_legacy&&[1,2,3].includes(Number(x.route))&&String(x.category_code||'').toUpperCase()===routingCode),clientApproved=clientMappings===undefined||clientMappings.some(m=>String(m.erp_account_code)===code&&String(m.effective_from)<=String(row.date)&&(!m.effective_to||String(m.effective_to)>=String(row.date)));
+   if(account&&clientApproved)row.mapping_suggestion={route:Number(account.route),category_code:account.category_code,account_code:account.code,confirmed:false};
+   else if(account)row.mapping_suggestion_issue='This account code is not approved for the client on the invoice date. Ask a Manager to add or date the client account setup.';
    else row.mapping_suggestion_issue='The uploaded routing code and TB item code do not match an active ERP account. Select a valid account in the mapping screen.';
   }
  }
@@ -72,9 +73,9 @@ export function normalizePurchaseUpload(values,rate,start,end,accounts=[]){
  const key=JSON.stringify([norm(row.invoice),norm(row.party_pin)||norm(row.party),line]);
  return {raw,row,issues,pending,key,route:null,category_code:null,narration:row.description||null};
 }
-export function purchaseUploadSummary(records,rate,start,end,accounts=[]){
- const out={source_count:records.length,valid_count:0,rejected_count:0,pending_count:0,credit_count:0,rounded_count:0,net:0,vat:0,gross:0,source_totals:{net:0,vat:0,gross:0,complete:true},pending_totals:{net:0,vat:0,gross:0},issues:[],pending_issues:[]};
- for(const {source_row,values} of records){const n=normalizePurchaseUpload(values,rate,start,end,accounts);if(n.row.amount<0)out.credit_count++;if(n.row.rounded_fields.length)out.rounded_count++;
+export function purchaseUploadSummary(records,rate,start,end,accounts=[],clientMappings){
+ const out={source_count:records.length,valid_count:0,rejected_count:0,pending_count:0,credit_count:0,rounded_count:0,mapping_hint_count:0,mapping_issue_count:0,mapping_issues:[],net:0,vat:0,gross:0,source_totals:{net:0,vat:0,gross:0,complete:true},pending_totals:{net:0,vat:0,gross:0},issues:[],pending_issues:[]};
+ for(const {source_row,values} of records){const n=normalizePurchaseUpload(values,rate,start,end,accounts,clientMappings);if(n.row.amount<0)out.credit_count++;if(n.row.rounded_fields.length)out.rounded_count++;if(n.row.mapping_suggestion)out.mapping_hint_count++;if(n.row.mapping_suggestion_issue){out.mapping_issue_count++;if(out.mapping_issues.length<100)out.mapping_issues.push({row:source_row,reason:n.row.mapping_suggestion_issue});}
   for(const k of ['net','vat','gross']){const amount=n.row[k==='net'?'amount':k];if(amount===null)out.source_totals.complete=false;else out.source_totals[k]+=Math.round(amount*100);}
   if(n.issues.length){out.rejected_count++;if(out.issues.length<100)out.issues.push({row:source_row,reason:n.issues.join(' ')});continue;}
   if(n.pending.length){out.pending_count++;if(out.pending_issues.length<100)out.pending_issues.push({row:source_row,invoice:n.row.invoice,reason:n.pending.join(' ')});for(const k of ['net','vat','gross'])out.pending_totals[k]+=Math.round(n.row[k==='net'?'amount':k]*100);continue;}
