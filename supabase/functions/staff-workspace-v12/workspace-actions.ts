@@ -30,16 +30,18 @@ export async function workspaceExtra(tx:any){
  task_events:await tx`select * from erp_private.task_events order by created_at desc limit 200`,
  workbook_batches:await tx`select * from erp_private.workbook_batches order by created_at desc limit 200`};
 }
-async function previewSchedule(tx:any,s:any){
+async function previewSchedule(tx:any,s:any,cid:string){
  if(!s.enabled)return {enabled:false,total:0,due_now:0,upcoming:0,breakdown:[]};
+ const client=one(await tx`select year_end_month,year_end_day from erp_private.clients where client_id=${cid} and deleted_at is null`);
+ if(!client.year_end_month||!client.year_end_day)fail(400,'Set the client financial year-end before previewing tasks.');
  const through=`${s.ends_on}T23:59:59+03:00`;
- const breakdown=await tx`select template_key,task_name,count(*)::int total,
-  count(*) filter(where release_at<=now())::int due_now,
-  count(*) filter(where release_at>now())::int upcoming
-  from erp_private.schedule_occurrences(${s.frequency},${s.pack},${s.starts_on},${s.ends_on},${s.starts_on},${tx.array(s.obligations)},${through}::timestamptz)
-  group by template_key,task_name order by min(release_at),template_key`;
+ const occurrences=await tx`select template_key,task_name,period_start,period_end,release_at,release_at<=now() as due_now
+  from erp_private.schedule_occurrences(${s.frequency},${s.pack},${s.starts_on},${s.ends_on},${s.starts_on},${tx.array(s.obligations)},${through}::timestamptz,${client.year_end_month},${client.year_end_day})
+  order by release_at,template_key limit 2000`;
+ const grouped=new Map<string,any>();for(const row of occurrences){const item=grouped.get(row.template_key)||{template_key:row.template_key,task_name:row.task_name,total:0,due_now:0,upcoming:0};item.total++;if(row.due_now)item.due_now++;else item.upcoming++;grouped.set(row.template_key,item);}
+ const breakdown=[...grouped.values()];
  const total=breakdown.reduce((sum:number,row:any)=>sum+Number(row.total),0),due_now=breakdown.reduce((sum:number,row:any)=>sum+Number(row.due_now),0);
- return {enabled:true,total,due_now,upcoming:total-due_now,breakdown};
+ return {enabled:true,total,due_now,upcoming:total-due_now,breakdown,financial_year_end:{month:client.year_end_month,day:client.year_end_day},periods:occurrences.slice(0,3).map((x:any)=>({start:x.period_start,end:x.period_end}))};
 }
 export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='sector_save'){
@@ -67,7 +69,8 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  }
  if(p.action==='schedule_config_preview'){
   editor(a);const s=scheduleInput({...p,pack:p.pack||'Tax Compilation'});
-  return await previewSchedule(tx,s);
+  let cid=p.client_id?uuid(p.client_id):null;if(!cid&&p.project_id)cid=one(await tx`select client_id from erp_private.projects where project_id=${uuid(p.project_id)} and deleted_at is null`).client_id;
+  if(!cid)fail(400,'Choose the client before previewing its reporting schedule.');return await previewSchedule(tx,s,cid);
  }
  if(p.action==='project_save'){
   editor(a);const pid=p.project_id?uuid(p.project_id):crypto.randomUUID(),cid=uuid(p.client_id),firm=uuid(p.firm_id),service=text(p.service_code,40);
@@ -81,7 +84,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   if(service!=='TAX-COMP'&&s.obligations.length)fail(400,'Recurring tax work must use the KRA Tax Compilation service.');
   if(p.require_schedule_preview===true){
    if(p.schedule_previewed!==true)fail(400,'Preview the task schedule before saving.');
-   const preview=await previewSchedule(tx,s);
+   const preview=await previewSchedule(tx,s,cid);
    if(preview.due_now>12&&p.confirm_task_backlog!==true)fail(400,`The schedule would create ${preview.due_now} tasks now. Review the catch-up count and confirm, or change the start date.`);
   }
   if(!old||s.enabled&&s.obligations.length)await requireOpeningBalanceSetup(tx,cid,firm);
@@ -116,7 +119,8 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='generate_tasks'){editor(a);const project=one(await tx`select client_id,handling_firm_id from erp_private.projects where project_id=${uuid(p.project_id)} and deleted_at is null`);await requireOpeningBalanceSetup(tx,project.client_id,project.handling_firm_id);return one(await tx`select erp_private.generate_project_tasks(${uuid(p.project_id)}::uuid) generated`);}
  if(p.action==='schedule_preview'){
   const s=one(await tx`select * from erp_private.project_schedules where project_id=${uuid(p.project_id)}`);
-  return {occurrences:await tx`select distinct on(o.release_at,o.template_key,o.period_start) o.* from (select * from erp_private.project_schedule_history where project_id=${s.project_id} and enabled union all select * from erp_private.project_schedules where project_id=${s.project_id} and enabled) v cross join lateral erp_private.schedule_occurrences(v.frequency,v.pack,v.starts_on,v.ends_on,v.effective_from,v.obligations,now()+interval '40 days') o where o.release_at>now() order by o.release_at,o.template_key,o.period_start,v.version limit 100`};
+  const client=one(await tx`select c.year_end_month,c.year_end_day from erp_private.projects p join erp_private.clients c using(client_id) where p.project_id=${s.project_id}`);
+  return {financial_year_end:{month:client.year_end_month,day:client.year_end_day},occurrences:await tx`select distinct on(o.release_at,o.template_key,o.period_start) o.* from (select * from erp_private.project_schedule_history where project_id=${s.project_id} and enabled union all select * from erp_private.project_schedules where project_id=${s.project_id} and enabled) v cross join lateral erp_private.schedule_occurrences(v.frequency,v.pack,v.starts_on,v.ends_on,v.effective_from,v.obligations,now()+interval '40 days',${client.year_end_month},${client.year_end_day}) o where o.release_at>now() order by o.release_at,o.template_key,o.period_start,v.version limit 100`};
  }
  if(p.action==='task_create'){
   editor(a);const pid=uuid(p.project_id),sid=uuid(p.assigned_to),due=date(p.due_date);
@@ -155,11 +159,36 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    values(${t.staff_id},${t.project_id},${t.task_id},${t.work_date},${-Number(t.hours)},${text(p.reason,2000)},${t.billable},'Approved',${a.staff_id},now(),${text(p.reason,2000)},${t.timesheet_id}) returning timesheet_id`);
  }
  if(p.action==='project_report'){
-  const pid=uuid(p.project_id);one(await tx`select project_id from erp_private.projects where project_id=${pid}`);
+  const pid=uuid(p.project_id),project=one(await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,c.company_name,c.year_end_month,c.year_end_day,c.opening_balance_status,c.opening_balance_note,
+   exists(select 1 from erp_private.documents d where d.client_id=c.client_id and d.handling_firm_id=p.handling_firm_id and d.project_id is null and d.import_purpose='Opening TB' and d.archived_at is null and d.deleted_at is null) has_opening_tb_source,
+   exists(select 1 from erp_private.ledger_periods lp join erp_private.ledger_journals j using(period_id) where lp.client_id=c.client_id and j.kind='Opening' and j.status='Posted') has_posted_opening
+   from erp_private.projects p join erp_private.clients c using(client_id) where p.project_id=${pid} and p.deleted_at is null and c.deleted_at is null`);
+  const [finance]=await tx`select erp_private.finance_allowed(${pid}::uuid) allowed`;
+  const accounting=finance.allowed?await tx`select lp.period_id,lp.starts_on,lp.ends_on,lp.status,
+    count(distinct j.journal_id) filter(where j.status='Posted')::int posted_journals,
+    count(distinct j.journal_id) filter(where j.status in ('Draft','Submitted','Returned'))::int pending_journals,
+    round(coalesce(sum(ll.debit) filter(where j.status='Posted'),0),2)::numeric posted_debits,
+    round(coalesce(sum(ll.credit) filter(where j.status='Posted'),0),2)::numeric posted_credits
+   from erp_private.ledger_periods lp left join erp_private.ledger_journals j on j.period_id=lp.period_id
+   left join erp_private.ledger_lines ll on ll.journal_id=j.journal_id
+   where lp.project_id=${pid} group by lp.period_id,lp.starts_on,lp.ends_on,lp.status order by lp.starts_on desc`:[];
+  const invoices=finance.allowed?await tx`with invoice_totals as (
+    select i.invoice_id,i.status,coalesce(i.recurring_period_start,i.invoice_date) period_start,i.net_amount,i.vat_amount,i.total_amount,coalesce(p.paid,0) paid
+    from erp_private.invoices i left join lateral(select sum(x.amount) paid from erp_private.payments x where x.invoice_id=i.invoice_id)p on true
+    where i.project_id=${pid} and i.deleted_at is null
+   ) select period_start,status,count(*)::int invoice_count,coalesce(sum(net_amount),0)::numeric net,coalesce(sum(vat_amount),0)::numeric vat,
+    coalesce(sum(total_amount),0)::numeric gross,coalesce(sum(paid),0)::numeric paid from invoice_totals group by period_start,status order by period_start desc,status`:[];
+  const feeSchedules=finance.allowed?await tx`select fee_schedule_id,frequency,amount_ex_vat,vat_rate,description,starts_on,ends_on,status
+   from erp_private.recurring_fee_schedules where project_id=${pid} order by starts_on desc`:[];
+  const opening={status:project.opening_balance_status,note:project.opening_balance_note,source_staged:project.has_opening_tb_source,opening_journal_posted:project.has_posted_opening};
   return {tasks:await tx`select status,count(*)::int count,count(*) filter(where due_at<now() and status not in ('Completed','Cancelled'))::int overdue from erp_private.tasks where project_id=${pid} and deleted_at is null group by status`,
+   task_periods:await tx`select period_start,period_end,status,count(*)::int tasks,count(*) filter(where due_at<now() and status not in ('Completed','Cancelled'))::int overdue
+    from erp_private.tasks where project_id=${pid} and deleted_at is null and period_start is not null group by period_start,period_end,status order by period_start desc,status limit 500`,
    time:await tx`select staff_id,status,sum(hours) hours from erp_private.timesheets where project_id=${pid} and deleted_at is null group by staff_id,status`,
-   imports:await tx`select dataset,sum(source_count) source_rows,sum(new_count) imported,sum(duplicate_count) duplicates,sum(rejected_count) rejected from erp_private.workbook_batches where project_id=${pid} and archived_at is null group by dataset`,
-   mapping:await tx`select r.route,r.category_code,count(*)::int rows from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and b.archived_at is null and not r.is_split_parent and r.dataset in ('Purchases','Expenditure','Non-eTIMS') group by r.route,r.category_code`};
+   imports:await tx`select dataset,period_start,period_end,sum(source_count) source_rows,sum(new_count) imported,sum(duplicate_count) duplicates,sum(rejected_count) rejected from erp_private.workbook_batches where project_id=${pid} and archived_at is null group by dataset,period_start,period_end order by period_start desc`,
+   mapping:await tx`select b.period_start,b.period_end,r.route,r.category_code,count(*)::int rows from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and b.archived_at is null and not r.is_split_parent and r.dataset in ('Purchases','Expenditure','Non-eTIMS') group by b.period_start,b.period_end,r.route,r.category_code order by b.period_start desc`,
+   project:{name:project.project_name,client:project.company_name,financial_year_end:project.year_end_month&&project.year_end_day?`${String(project.year_end_day).padStart(2,'0')}/${String(project.year_end_month).padStart(2,'0')}`:'Not set'},
+   opening,accounting_available:!!finance.allowed,accounting,invoices,fee_schedules:feeSchedules};
  }
  return undefined;
 }
