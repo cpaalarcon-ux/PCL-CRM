@@ -1,6 +1,8 @@
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {entityInput,partnerRatios,stockValues,suggestionFor,exportReadiness,packs,streams,asDay} from './improvement-rules.mjs';
 import {money} from './accounting-rules.mjs';
+import {readWorkbookSheet} from './workbook-reader.mjs';
+import {checkWorkbookZip} from './workspace-rules.mjs';
 const one=(r:any[])=>{if(!r.length)fail(403,'Record unavailable to this account.');return r[0];};
 const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must maintain client configuration.');};
 const reviewer=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'Independent Supervisor, Manager or Partner review required.');};
@@ -13,6 +15,69 @@ const stockPolicyEvidence=(p:any)=>{
  return text(p.evidence||'',2000,false);
 };
 export const digest=async(v:any)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(v))))).map(n=>n.toString(16).padStart(2,'0')).join('');
+const headerKey=(v:any)=>String(v??'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+const workbookCell=(sheet:any,row:number,column:number)=>{
+ const value=sheet.getRow(row).getCell(column).value;
+ if(value&&typeof value==='object'&&('formula' in value||'sharedFormula' in value))return {formula:true,value:'Formula'};
+ const raw=value&&typeof value==='object'&&'result' in value?value.result:value;
+ return {formula:false,value:raw instanceof Date?raw.toISOString().slice(0,10):raw};
+};
+async function openingTBMappingPreview(tx:any,a:any,p:any,storage:any){
+ if(!storage)fail(503,'Opening TB mapping suggestions are unavailable. Refresh and try again.');
+ const cid=uuid(p.client_id),docId=uuid(p.document_id),from=date(p.effective_from);
+ if(!from)fail(400,'Choose the date these account mappings should begin.');
+ const client=one(await tx`select client_id,company_name from erp_private.clients where client_id=${cid} and deleted_at is null`);
+ const doc=one(await tx`select document_id,file_name,object_key,sha256,handling_firm_id from erp_private.documents where document_id=${docId} and client_id=${cid} and project_id is null and category='Import Sources' and import_purpose='Opening TB' and archived_at is null and deleted_at is null`);
+ const file=await storage.download(doc.object_key);if(file.error||!file.data)fail(404,'The staged opening TB workbook is unavailable.');
+ await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'DOWNLOAD')`;
+ const bytes=new Uint8Array(await file.data.arrayBuffer());checkWorkbookZip(bytes);
+ let read=await readWorkbookSheet(bytes,p.sheet_name?text(p.sheet_name,100):null),sheets=read.sheets||[];
+ if(!p.sheet_name){
+  const named=sheets.find((s:any)=>/opening\s*tb|trial\s*balance|^b02a\b/i.test(s.name));
+  if(named)read=await readWorkbookSheet(bytes,named.name);
+  else if(sheets.length>1)return {needs_sheet:true,sheets:sheets.map((s:any)=>s.name),file_name:doc.file_name,document_id:doc.document_id,effective_from:from};
+ }
+ const sheet=read.sheet;
+ if(sheet.rowCount>2001)fail(400,'An opening TB mapping sheet can contain at most 2,000 account rows. Split the workbook and try again.');
+ const headerRow=1,headers=Array.from({length:sheet.columnCount},(_,i)=>workbookCell(sheet,headerRow,i+1).value),normalized=headers.map(headerKey);
+ const find=(names:string[])=>normalized.findIndex((v:string)=>names.includes(v))+1;
+ const cols={source_code:find(['source account code','account code','legacy code']),source_name:find(['source account name','account name']),routing:find(['erp routing code','routing code']),tb_code:find(['erp tb item code','tb item code','erp account code'])};
+ if(Object.values(cols).some(x=>!x))fail(400,'Use the opening TB template headings: Source account code, Source account name, ERP routing code and ERP TB item code.');
+ const accounts=await tx`select code,name,category_code,route from erp_private.account_catalog where status='Active' and not is_legacy order by code`;
+ const existing=await tx`select mapping_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to,status,revision from erp_private.client_account_mappings where client_id=${cid} and status in ('Draft','Active') order by mapping_id`;
+ const groups=new Map<string,any>();let blankRows=0;
+ for(let row=2;row<=sheet.rowCount;row++){
+  const values=Object.fromEntries(Object.entries(cols).map(([key,col])=>[key,workbookCell(sheet,row,Number(col))]));
+  if(Object.values(values).every((x:any)=>!x.formula&&!String(x.value??'').trim()))continue;
+  const issue:string[]=[];
+  if(Object.values(values).some((x:any)=>x.formula))issue.push('Mapping columns must contain values, not formulas.');
+  const code=String((values as any).source_code.value??'').trim(),name=String((values as any).source_name.value??'').trim(),routing=String((values as any).routing.value??'').trim().toUpperCase(),target=String((values as any).tb_code.value??'').trim();
+  if(/^(total|subtotal|grand total|net total|balance check|difference in books)\b/i.test(code)||/^(total|subtotal|grand total|net total|balance check|difference in books)\b/i.test(name))continue;
+  if(!code)issue.push('Source account code is missing.');
+  if(!name)issue.push('Source account name is missing.');
+  if(!routing)issue.push('ERP routing code is missing.');
+  if(!/^\d{5}$/.test(target))issue.push('ERP TB item code must be a five-digit account code.');
+  const account=accounts.find((x:any)=>x.code===target);
+  if(target&&!account)issue.push(`ERP TB item code ${target} is not an active ERP account.`);
+  if(account&&routing!==String(account.category_code||'').toUpperCase())issue.push(`Routing code ${routing} does not match account ${target} (${account.category_code}).`);
+  if(!code&&!name){blankRows++;continue;}
+  const key=code.toLowerCase();
+  const item={source_row:row,source_rows:[row],source_account_code:code,source_account_name:name,routing_code:routing,erp_account_code:target,erp_account_name:account?.name||'',category_code:account?.category_code||'',issue:issue.join(' '),state:issue.length?'Exception':'Ready',ready:!issue.length};
+  if(!groups.has(key)){groups.set(key,item);continue;}
+  const prior=groups.get(key);
+  if(prior.erp_account_code===target&&prior.source_account_name.toLowerCase()===name.toLowerCase()&&!prior.issue&&!issue.length){prior.source_rows.push(row);continue;}
+  prior.ready=false;prior.state='Exception';prior.issue='This source account code appears more than once with different account details or mapping codes.';
+  prior.conflicting_rows=[...(prior.conflicting_rows||prior.source_rows),row];
+ }
+ const proposals=[...groups.values()].map((item:any)=>{
+  if(!item.ready)return item;
+  const overlaps=existing.filter((m:any)=>String(m.source_account_code||'').trim().toLowerCase()===item.source_account_code.toLowerCase()&&(!m.effective_to||String(m.effective_to).slice(0,10)>=from));
+  if(overlaps.length){const different=overlaps.some((m:any)=>m.erp_account_code!==item.erp_account_code),active=overlaps.some((m:any)=>m.status==='Active');item.ready=false;item.state=different?'Date conflict':active?'Already mapped':'Awaiting review';item.issue=different?'A saved mapping for this source account overlaps the selected date range but points to a different ERP account. Review the dated setup.':active?'This account is already mapped for the selected start date.':'A draft mapping already exists for this account and start date.';}
+  return item;
+ });
+ const fingerprint=await digest({document_sha256:doc.sha256,sheet:sheet.name,effective_from:from,headers,proposals,existing:existing.map((m:any)=>[m.mapping_id,m.revision,m.status,m.effective_from,m.effective_to,m.erp_account_code])});
+ return {needs_sheet:false,document_id:doc.document_id,file_name:doc.file_name,sheet_name:sheet.name,effective_from:from,client_name:client.company_name,proposals,ready_count:proposals.filter((x:any)=>x.ready).length,exception_count:proposals.filter((x:any)=>!x.ready).length,blank_rows:blankRows,preview_fingerprint:fingerprint};
+}
 async function project(tx:any,id:any){return one(await tx`select * from erp_private.projects where project_id=${uuid(id)} and deleted_at is null`);}
 async function evidence(tx:any,id:any,pid:string){return one(await tx`select document_id from erp_private.documents where document_id=${uuid(id)} and project_id=${pid} and deleted_at is null`);}
 async function stockSource(tx:any,c:any){
@@ -23,7 +88,7 @@ async function stockSource(tx:any,c:any){
  const landed=(r:any)=>['50030','50040','50050'].includes(r.account_code);
  return {rows,fingerprint:await digest(rows),selected_count:selected.length,resale_purchases:money(selected.filter((r:any)=>!landed(r)).reduce((s:number,r:any)=>s+cost(r),0)),landed_costs:money(selected.filter(landed).reduce((s:number,r:any)=>s+cost(r),0)),unreviewed:selected.filter((r:any)=>r.source_revision!==r.revision||!['Eligible','Excluded'].includes(r.decision)).length,unallocated:rows.filter((r:any)=>!r.account_code||r.route===1&&(!r.review_details?.activity_id||!r.review_details?.stock_class)).length};
 }
-export async function improvementAction(tx:any,a:any,p:any){
+export async function improvementAction(tx:any,a:any,p:any,storage?:any){
  if(!String(p.action).startsWith('v3_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Client configuration and working-paper controls are unavailable to Interns.');
  if(p.action==='v3_client_mapping_readiness'){
@@ -42,7 +107,26 @@ export async function improvementAction(tx:any,a:any,p:any){
  }
  if(p.action==='v3_client_accounts_read'){
   leader(a);const cid=uuid(p.client_id),client=one(await tx`select client_id,company_name,year_end_month,year_end_day from erp_private.clients where client_id=${cid} and deleted_at is null`);
-  return {client,accounts:await tx`select code,name,route,category_code,statement from erp_private.account_catalog where status='Active' and not is_legacy order by code`,mappings:await tx`select m.*,a.name as erp_account_name,a.route,a.category_code,a.statement from erp_private.client_account_mappings m join erp_private.account_catalog a on a.code=m.erp_account_code where m.client_id=${cid} order by case m.status when 'Draft' then 0 when 'Active' then 1 else 2 end,m.source_account_name,m.effective_from desc`};
+  return {client,accounts:await tx`select code,name,route,category_code,statement from erp_private.account_catalog where status='Active' and not is_legacy order by code`,mappings:await tx`select m.*,a.name as erp_account_name,a.route,a.category_code,a.statement from erp_private.client_account_mappings m join erp_private.account_catalog a on a.code=m.erp_account_code where m.client_id=${cid} order by case m.status when 'Draft' then 0 when 'Active' then 1 else 2 end,m.source_account_name,m.effective_from desc`,opening_sources:await tx`select document_id,file_name,handling_firm_id,uploaded_at,sha256 from erp_private.documents where client_id=${cid} and project_id is null and category='Import Sources' and import_purpose='Opening TB' and archived_at is null and deleted_at is null order by uploaded_at desc`};
+ }
+ if(p.action==='v3_client_account_mapping_tb_preview'){
+  leader(a);return await openingTBMappingPreview(tx,a,p,storage);
+ }
+ if(p.action==='v3_client_account_mapping_tb_save'){
+  leader(a);const cid=uuid(p.client_id),items=Array.isArray(p.source_rows)?p.source_rows:[],selected=[...new Set(items.map((x:any)=>Number(x)))];
+  if(!selected.length||selected.length>2000||selected.some((x:number)=>!Number.isInteger(x)||x<2||x>2001))fail(400,'Select one or more valid opening TB account rows.');
+  await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':client-accounts'},0))`;
+  const preview=await openingTBMappingPreview(tx,a,p,storage);
+  if(preview.needs_sheet)fail(400,'Choose the opening TB worksheet and preview again.');
+  if(preview.preview_fingerprint!==text(p.preview_fingerprint,100))fail(409,'The TB or client mappings changed after preview. Refresh the preview before saving.');
+  const chosen=preview.proposals.filter((x:any)=>selected.includes(x.source_row));
+  if(chosen.length!==selected.length||chosen.some((x:any)=>!x.ready))fail(400,'Only valid, unmapped TB rows can be saved as drafts. Review the exceptions and select valid rows.');
+  for(const item of chosen){
+   const overlaps=await tx`select mapping_id from erp_private.client_account_mappings where client_id=${cid} and coalesce(source_account_code,'')=coalesce(${item.source_account_code},'') and status in ('Draft','Active') and (effective_to is null or effective_to>=${preview.effective_from}) limit 1`;
+   if(overlaps.length)fail(409,`The mapping for ${item.source_account_code} changed after preview. Refresh the preview.`);
+   await tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to,status,created_by) values(${cid},${item.source_account_code},${item.source_account_name},${item.erp_account_code},${preview.effective_from},null,'Draft',${a.staff_id})`;
+  }
+  return {ok:true,draft_count:chosen.length};
  }
  if(p.action==='v3_client_account_mapping_add'){
   leader(a);const cid=uuid(p.client_id),sourceCode=text(p.source_account_code||'',100,false)||null,sourceName=text(p.source_account_name,160),target=text(p.erp_account_code,5),from=date(p.effective_from),to=p.effective_to?date(p.effective_to):null;
@@ -59,6 +143,22 @@ export async function improvementAction(tx:any,a:any,p:any){
   if(row.created_by===a.staff_id)fail(403,'A different Manager or Partner must approve this setup.');
   await tx`update erp_private.client_account_mappings set status='Active',approved_by=${a.staff_id},approved_at=now() where mapping_id=${row.mapping_id}`;
   return {ok:true};
+ }
+ if(p.action==='v3_client_account_mapping_approve_batch'){
+  leader(a);const cid=uuid(p.client_id),items=Array.isArray(p.items)?p.items:[];
+  if(!items.length||items.length>2000)fail(400,'Select between 1 and 2,000 pending mappings to approve.');
+  const expected=new Map(items.map((x:any)=>[uuid(x.mapping_id),revision(x.revision)]));
+  if(expected.size!==items.length)fail(400,'A mapping was selected more than once. Refresh and try again.');
+  await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':client-accounts'},0))`;
+  const rows=await tx`select * from erp_private.client_account_mappings where client_id=${cid} and mapping_id=any(${tx.array([...expected.keys()])}::uuid[]) order by mapping_id for update`;
+  if(rows.length!==expected.size)fail(409,'One or more selected mappings are no longer available. Refresh the list.');
+  for(const row of rows){
+   fresh(row,{revision:expected.get(row.mapping_id)});
+   if(row.status!=='Draft')fail(409,`${row.source_account_name} is no longer a pending mapping. Refresh the list.`);
+   if(row.created_by===a.staff_id)fail(403,'A different Manager or Partner must approve every selected mapping. Remove your own drafts and try again.');
+  }
+  for(const row of rows)await tx`update erp_private.client_account_mappings set status='Active',approved_by=${a.staff_id},approved_at=now() where mapping_id=${row.mapping_id}`;
+  return {ok:true,approved_count:rows.length};
  }
  if(p.action==='v3_client_account_mapping_end'){
   leader(a);const row=one(await tx`select * from erp_private.client_account_mappings where mapping_id=${uuid(p.mapping_id)} for update`);fresh(row,p);
