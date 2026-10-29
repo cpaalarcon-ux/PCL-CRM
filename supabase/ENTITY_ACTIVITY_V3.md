@@ -27,10 +27,11 @@ The full staff acceptance matrix is in [FULL_ERP_STAFF_UAT.md](FULL_ERP_STAFF_UA
 
 The Node tests exercise all migrations in an isolated PGlite database, five staff categories, firm isolation, multi-page mapping and idempotent retries, stale revisions, source immutability, undo locks, independent stock approval, canonical return identity, bank deferral and supplemental review. Existing regression tests cover the other connected modules.
 
-Run the existing Node test environment with `PCL_TEST_MODULES` pointing to its installed `jsdom` and `@electric-sql/pglite` dependencies:
+Install the test-only dependencies once from the repository root, then run the complete Node suite. The checked-in lockfile pins the same DOM and isolated PostgreSQL test libraries used by the suite; these do not enter the ERP runtime bundle.
 
 ```sh
-node --test tests/*.test.mjs tests/*.test.cjs
+npm ci
+npm test
 ```
 
 Run `node tests/improvement_browser.cjs` with Playwright installed (`PCL_BROWSER_MODULES` can identify the package directory; `PCL_BROWSER_EXECUTABLE` can identify Chromium). It uses fictional training data, checks native queued dialog-close events, saves an entity profile, maps selected purchases and a confirmed 205-row snapshot, and verifies the unsupported-return gate. It never connects to real client records.
