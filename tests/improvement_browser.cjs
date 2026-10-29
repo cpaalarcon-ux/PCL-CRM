@@ -24,7 +24,7 @@ const server=http.createServer((req,res)=>{let f=path.join(root,decodeURICompone
  await page.route('https://yfjiculexbzpkvtapudk.supabase.co/**',async route=>{const body=route.request().postDataJSON()||{},a=body.action;calls.push(body);let r={ok:true};
  if(a==='login')r={access_token:'fictional-training-token',refresh_token:'fictional-refresh',expires_at:Date.now()/1000+3600,session_id:'training'};
  if(a==='workspace')r=data;if(a==='presence_heartbeat')r={status:'Not clocked in',server_time:'2026-10-26T06:15:00Z',attendance:null,presence:null,timer:null};if(a==='procedure_read')r={record:{...workflow,task_id:body.task_id},events:[]};
- if(a==='workbook_rows')r={rows,total:205,accounts,policy:{inventory_method:'Periodic'},policies:[policy],activities:[activity],rejections:[]};
+ if(a==='workbook_rows')r={rows,total:205,accounts,client_account_mappings:[{erp_account_code:'61010',effective_from:'2026-01-01',effective_to:null},{erp_account_code:'10190',effective_from:'2026-01-01',effective_to:null},{erp_account_code:'50000',effective_from:'2026-01-01',effective_to:null}],policy:{inventory_method:'Periodic'},policies:[policy],activities:[activity],rejections:[]};
  if(a==='v3_client_read')r={client:{...data.clients[0],revision:1,entity_evidence:'Training source'},activities:[activity],policies:[policy],partners:[],periods:[]};
  if(a==='v3_identity_save')Object.assign(data.clients[0],body);
  if(a==='v3_project_read')r={activities:[activity],policies:[policy],controls:[],requests:[]};
