@@ -18,6 +18,7 @@ import {workbookAction} from './workbook-actions.ts';
 import {suiteRead,suiteAction} from './suite-actions.ts';
 import {taxAction} from './tax-review-actions.ts';
 import {engagementAction} from './engagement-actions.ts';
+import {auditAction} from './audit-actions.ts';
 import {suiteExport} from './suite-export.ts';
 import {masterImport} from './master-import.ts';
 import { createClient } from 'supabase';
@@ -276,6 +277,7 @@ async function action(id:any,p:any){
   const suite=await suiteAction(tx,a,p);if(suite!==undefined)return suite;
   const tax=await taxAction(tx,a,p);if(tax!==undefined)return tax;
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
+  const audit=await auditAction(tx,a,p,admin.storage.from(BUCKET));if(audit!==undefined)return audit;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
   const improvements=await improvementAction(tx,a,p);if(improvements!==undefined)return improvements;
   const importedPeriod=await periodImportAction(tx,a,p,admin.storage.from(BUCKET));if(importedPeriod!==undefined)return importedPeriod;
