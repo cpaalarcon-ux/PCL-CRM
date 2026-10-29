@@ -31,6 +31,7 @@ Install the test-only dependencies once from the repository root, then run the c
 
 ```sh
 npm ci
+npm ci --prefix supabase/functions/staff-workspace-v6
 npm test
 ```
 

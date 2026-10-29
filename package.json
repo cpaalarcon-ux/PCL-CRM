@@ -2,7 +2,7 @@
   "name": "pcl-crm-staging-workbook",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs tests/*.test.cjs",

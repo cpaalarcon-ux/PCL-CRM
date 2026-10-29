@@ -20,11 +20,17 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            supabase/functions/staff-workspace-v6/package-lock.json
 
-      - name: Install locked dependencies
+      - name: Install browser and database test dependencies
         run: npm ci
+
+      - name: Install ERP function dependencies
+        run: npm ci --prefix supabase/functions/staff-workspace-v6
 
       - name: Run automated regression suite
         run: npm test
