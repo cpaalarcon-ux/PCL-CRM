@@ -1,5 +1,5 @@
 export function createAuditUI(ctx){
- const {esc,field,select,form,modal,request,notice,shortDate,empty,render,data}=ctx;
+ const {esc,field,select,form,modal,request,notice,shortDate,empty,data}=ctx;
  const areas=['Permanent file','Acceptance and ethics','Planning','Risk assessment','Cash and bank','Trade receivables','Inventories','Property, plant and equipment','Trade payables','Borrowings','Taxation','Revenue','Payroll and expenses','Equity','Commitments and contingencies','Completion','Reporting and quality'];
  const lines=['Assets','Liabilities','Equity','Revenue','Cost of sales','Operating expenses','Finance costs','Tax expense','Cash flows','Disclosure only','Not applicable'];
  let snapshot=null,selected='',activeTab='Overview',selectedImport='',lineData={rows:[],total:0,unmapped:0,offset:0,page_size:100},loading=null;
