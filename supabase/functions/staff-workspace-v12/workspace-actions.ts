@@ -30,6 +30,17 @@ export async function workspaceExtra(tx:any){
  task_events:await tx`select * from erp_private.task_events order by created_at desc limit 200`,
  workbook_batches:await tx`select * from erp_private.workbook_batches order by created_at desc limit 200`};
 }
+async function previewSchedule(tx:any,s:any){
+ if(!s.enabled)return {enabled:false,total:0,due_now:0,upcoming:0,breakdown:[]};
+ const through=`${s.ends_on}T23:59:59+03:00`;
+ const breakdown=await tx`select template_key,task_name,count(*)::int total,
+  count(*) filter(where release_at<=now())::int due_now,
+  count(*) filter(where release_at>now())::int upcoming
+  from erp_private.schedule_occurrences(${s.frequency},${s.pack},${s.starts_on},${s.ends_on},${s.starts_on},${tx.array(s.obligations)},${through}::timestamptz)
+  group by template_key,task_name order by min(release_at),template_key`;
+ const total=breakdown.reduce((sum:number,row:any)=>sum+Number(row.total),0),due_now=breakdown.reduce((sum:number,row:any)=>sum+Number(row.due_now),0);
+ return {enabled:true,total,due_now,upcoming:total-due_now,breakdown};
+}
 export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='sector_save'){
   if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must add sectors.');
@@ -55,14 +66,8 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   return {ok:true,enabled:false,ends_on:end};
  }
  if(p.action==='schedule_config_preview'){
-  editor(a);const s=scheduleInput({...p,pack:'Tax Compilation'});
-  if(!s.enabled)return {enabled:false,total:0,due_now:0,upcoming:0,breakdown:[]};
-  const through=`${s.ends_on}T23:59:59+03:00`;
-  const occurrences=await tx`select template_key,task_name,period_start,period_end,release_at,release_at<=now() as due_now
-   from erp_private.schedule_occurrences(${s.frequency},${s.pack},${s.starts_on},${s.ends_on},${s.starts_on},${tx.array(s.obligations)},${through}::timestamptz)
-   order by release_at,template_key limit 2000`;
-  const grouped=new Map<string,any>();for(const occurrence of occurrences){const item=grouped.get(occurrence.template_key)||{template_key:occurrence.template_key,task_name:occurrence.task_name,total:0,due_now:0,upcoming:0};item.total++;if(occurrence.due_now)item.due_now++;else item.upcoming++;grouped.set(occurrence.template_key,item);}
-  return {enabled:true,total:occurrences.length,due_now:occurrences.filter((x:any)=>x.due_now).length,upcoming:occurrences.filter((x:any)=>!x.due_now).length,breakdown:[...grouped.values()]};
+  editor(a);const s=scheduleInput({...p,pack:p.pack||'Tax Compilation'});
+  return await previewSchedule(tx,s);
  }
  if(p.action==='project_save'){
   editor(a);const pid=p.project_id?uuid(p.project_id):crypto.randomUUID(),cid=uuid(p.client_id),firm=uuid(p.firm_id),service=text(p.service_code,40);
@@ -74,6 +79,11 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   const svc=one(await tx`select service_name from erp_private.services where service_code=${service} and is_active`);
   const s=scheduleInput(service==='TAX-COMP'?{...p,pack:'Tax Compilation'}:p),name=text(p.project_name||defaultProjectName(c.company_name,svc.service_name,s.starts_on),200);
   if(service!=='TAX-COMP'&&s.obligations.length)fail(400,'Recurring tax work must use the KRA Tax Compilation service.');
+  if(p.require_schedule_preview===true){
+   if(p.schedule_previewed!==true)fail(400,'Preview the task schedule before saving.');
+   const preview=await previewSchedule(tx,s);
+   if(preview.due_now>12&&p.confirm_task_backlog!==true)fail(400,`The schedule would create ${preview.due_now} tasks now. Review the catch-up count and confirm, or change the start date.`);
+  }
   if(!old||s.enabled&&s.obligations.length)await requireOpeningBalanceSetup(tx,cid,firm);
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
   // Partners can explicitly select any registered firm; other categories require existing firm access.
