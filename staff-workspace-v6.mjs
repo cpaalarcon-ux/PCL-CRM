@@ -1,5 +1,5 @@
 import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261027-aligned';
-import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261029-client-account-hints';
+import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261030-fast-purchase-preview-v1';
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
 import {createAccountingUI} from './staff-accounting.mjs?v=20261029-client-account-mapping';
 
@@ -131,7 +131,9 @@ export function createWorkspaceUI(ctx){
  }
  async function preview(id){const r=await request({action:'schedule_preview',project_id:id}),fye=r.financial_year_end?`Client financial year ends ${String(r.financial_year_end.day).padStart(2,'0')}/${String(r.financial_year_end.month).padStart(2,'0')}. Quarterly and annual tasks follow that year-end; weekly periods run Monday–Sunday.`:'Schedule periods follow the client reporting settings.';modal('Upcoming schedule',`<p>Preview only. These tasks will be created when their release dates arrive. All times use East Africa Time.</p><p class="muted">${fye}</p>${r.occurrences.map(o=>`<div class="task"><div><b>${esc(o.task_name)}</b><small>Period ${shortDate(o.period_start)}–${shortDate(o.period_end)}</small><small>Creates ${shortDate(o.release_at)} · Due ${shortDate(o.due_at)}</small></div></div>`).join('')||empty('No future occurrences in the next 40 days.')}`);}
  async function importWorkbook(id,settings={}){
-  const r=await request({action:'workbook_preview',document_id:id,...settings}),t=r.template,b=t?.selected,profile=r.import_profile?.recognised?r.import_profile:null;
+  notice('Opening the workbook and preparing its preview…');
+  let r;try{r=await request({action:'workbook_preview',document_id:id,...settings});}catch(e){notice(e.message,true);throw e;}notice('');
+  const t=r.template,b=t?.selected,profile=r.import_profile?.recognised?r.import_profile:null;
   if(r.standard_purchase)return standardPurchaseImport(r,settings);
   if(profile&&['Sales','Payroll'].includes(profile.dataset))return periodImports.newImport(r.project_id,{kind:profile.dataset,document_id:id,...(profile.dataset==='Payroll'?{sheet_name:r.sheet_name}:{})});
   const section=t?select('header_row','Workbook section',t.blocks.map(x=>[String(x.header_row),`${x.period_start?.slice(0,7)||t.kind+' direct input'} · rows ${x.first_row}–${x.last_row}`]),String(r.header_row)):field('header_row','Header row',r.header_row,'number','min="0" max="200"');
