@@ -182,6 +182,15 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
     coalesce(sum(total_amount),0)::numeric gross,coalesce(sum(paid),0)::numeric paid from invoice_totals group by period_start,status order by period_start desc,status`:[];
   const feeSchedules=finance.allowed?await tx`select fee_schedule_id,frequency,amount_ex_vat,vat_rate,description,starts_on,ends_on,status
    from erp_private.recurring_fee_schedules where project_id=${pid} order by starts_on desc`:[];
+  const periodImports=await tx`select import_id,kind,starts_on,ends_on,status,prepared_by,reviewed_by,
+    coalesce((payload->>'source_count')::int,0)::int source_rows,
+    case when kind='Sales' then coalesce((select sum((g.value->>'net')::numeric) from jsonb_array_elements(coalesce(payload->'groups','[]'::jsonb)) as g(value)),0)
+      else coalesce((payload #>> '{totals,gross}')::numeric,0) end net_or_gross,
+    case when kind='Sales' then coalesce((select sum((g.value->>'vat')::numeric) from jsonb_array_elements(coalesce(payload->'groups','[]'::jsonb)) as g(value)),0)
+      else coalesce((payload #>> '{totals,paye}')::numeric,0) end vat_or_paye,
+    case when kind='Sales' then coalesce((select sum((g.value->>'gross')::numeric) from jsonb_array_elements(coalesce(payload->'groups','[]'::jsonb)) as g(value)),0)
+      else coalesce((payload #>> '{totals,employer_nssf}')::numeric,0)+coalesce((payload #>> '{totals,employer_ahl}')::numeric,0)+coalesce((payload #>> '{totals,nita}')::numeric,0) end gross_or_employer_costs
+   from erp_private.period_imports where project_id=${pid} and (kind='Sales' or ${!!finance.allowed}) order by starts_on desc,created_at desc limit 500`;
   const opening={status:project.opening_balance_status,note:project.opening_balance_note,source_staged:project.has_opening_tb_source,opening_journal_posted:project.has_posted_opening};
   return {tasks:await tx`select status,count(*)::int count,count(*) filter(where due_at<now() and status not in ('Completed','Cancelled'))::int overdue from erp_private.tasks where project_id=${pid} and deleted_at is null group by status`,
    task_periods:await tx`select period_start,period_end,status,count(*)::int tasks,count(*) filter(where due_at<now() and status not in ('Completed','Cancelled'))::int overdue
@@ -190,7 +199,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    imports:await tx`select dataset,period_start,period_end,sum(source_count) source_rows,sum(new_count) imported,sum(duplicate_count) duplicates,sum(rejected_count) rejected from erp_private.workbook_batches where project_id=${pid} and archived_at is null group by dataset,period_start,period_end order by period_start desc`,
    mapping:await tx`select b.period_start,b.period_end,r.route,r.category_code,count(*)::int rows from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and b.archived_at is null and not r.is_split_parent and r.dataset in ('Purchases','Expenditure','Non-eTIMS') group by b.period_start,b.period_end,r.route,r.category_code order by b.period_start desc`,
    project:{name:project.project_name,client:project.company_name,financial_year_end:project.year_end_month&&project.year_end_day?`${String(project.year_end_day).padStart(2,'0')}/${String(project.year_end_month).padStart(2,'0')}`:'Not set'},
-   opening,accounting_available:!!finance.allowed,accounting,invoices,fee_schedules:feeSchedules};
+   opening,accounting_available:!!finance.allowed,accounting,invoices,fee_schedules:feeSchedules,period_imports:periodImports};
  }
  return undefined;
 }

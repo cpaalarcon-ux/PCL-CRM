@@ -121,12 +121,22 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
   if(preview.preview_fingerprint!==text(p.preview_fingerprint,100))fail(409,'The TB or client mappings changed after preview. Refresh the preview before saving.');
   const chosen=preview.proposals.filter((x:any)=>selected.includes(x.source_row));
   if(chosen.length!==selected.length||chosen.some((x:any)=>!x.ready))fail(400,'Only valid, unmapped TB rows can be saved as drafts. Review the exceptions and select valid rows.');
-  for(const item of chosen){
-   const overlaps=await tx`select mapping_id from erp_private.client_account_mappings where client_id=${cid} and coalesce(source_account_code,'')=coalesce(${item.source_account_code},'') and status in ('Draft','Active') and (effective_to is null or effective_to>=${preview.effective_from}) limit 1`;
-   if(overlaps.length)fail(409,`The mapping for ${item.source_account_code} changed after preview. Refresh the preview.`);
-   await tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to,status,created_by) values(${cid},${item.source_account_code},${item.source_account_name},${item.erp_account_code},${preview.effective_from},null,'Draft',${a.staff_id})`;
-  }
-  return {ok:true,draft_count:chosen.length};
+  // Locking serializes changes for this client. Check every selected account
+  // in one query, then insert the full batch in one statement instead of
+  // issuing a round trip per TB row.
+  const chosenJson=tx.json(chosen.map((item:any)=>({source_account_code:item.source_account_code,source_account_name:item.source_account_name,erp_account_code:item.erp_account_code})));
+  const overlaps=await tx`select m.mapping_id from jsonb_to_recordset(${chosenJson}::jsonb) x(source_account_code text,source_account_name text,erp_account_code text)
+   join erp_private.client_account_mappings m on m.client_id=${cid} and m.status in ('Draft','Active')
+    and (m.effective_to is null or m.effective_to>=${preview.effective_from})
+    and ((nullif(trim(x.source_account_code),'') is not null and m.source_account_code=x.source_account_code)
+      or (nullif(trim(x.source_account_code),'') is null and m.source_account_code is null and lower(trim(m.source_account_name))=lower(trim(x.source_account_name))))
+   limit 1`;
+  if(overlaps.length)fail(409,'One of these source accounts was mapped after preview. Refresh the suggestions and try again.');
+  const inserted=await tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to,status,created_by)
+   select ${cid},x.source_account_code,x.source_account_name,x.erp_account_code,${preview.effective_from},null,'Draft',${a.staff_id}
+   from jsonb_to_recordset(${chosenJson}::jsonb) x(source_account_code text,source_account_name text,erp_account_code text)
+   returning mapping_id`;
+  return {ok:true,draft_count:inserted.length};
  }
  if(p.action==='v3_client_account_mapping_add'){
   leader(a);const cid=uuid(p.client_id),sourceCode=text(p.source_account_code||'',100,false)||null,sourceName=text(p.source_account_name,160),target=text(p.erp_account_code,5),from=date(p.effective_from),to=p.effective_to?date(p.effective_to):null;

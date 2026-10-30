@@ -5,6 +5,7 @@ const {accountingAction}=await import('../supabase/functions/staff-workspace-v6/
 const {taxSummary}=await import('../supabase/functions/staff-workspace-v6/tax-review-actions.ts');
 const {workbookAction}=await import('../supabase/functions/staff-workspace-v6/workbook-actions.ts');
 const {periodImportAction,summarySalesRows}=await import('../supabase/functions/staff-workspace-v6/period-import-actions.ts');
+const {workspaceAction}=await import('../supabase/functions/staff-workspace-v12/workspace-actions.ts');
 const {ledgerAction}=await import('../supabase/functions/staff-workspace-v6/ledger-actions.ts');
 const {reconSource}=await import('../supabase/functions/staff-workspace-v6/accounting-actions.ts');
 const {inventoryDetails}=await import('../supabase/functions/staff-workspace-v6/accounting-rules.mjs');
@@ -52,9 +53,15 @@ test('Period imports: summary-only storage, overlap replacement, independent rev
  const third=await doc('Sales-third.csv','Sales category,Net sales,Output VAT\n16%,3000,480');await assert.rejects(()=>save({...base,document_id:third},[replacement.import_id]),/reversal/);
  for(const rule of JSON.parse(fs.readFileSync(root+'/supabase/functions/staff-workspace-v6/kenya-tax-catalog.json'))){await tx`insert into erp_private.tax_rates(rate_key,label,tax_type,effective_from,effective_to,parameters,source_url,source_note,status,created_by) values(${rule.rate_key},${rule.label},${rule.tax_type},${rule.effective_from},${rule.effective_to},${tx.json(rule.parameters)},${rule.source_url},${rule.source_note},'Testing',${actors.PARTNER.staff_id})`;}
  const pay=await doc('Payroll.csv','Employee name,KRA PIN,Basic pay,Allowances,Deductions,Gross pay,NSSF,SHIF,AHL,NITA levy,Taxable pay,Income tax,P.M relief,PAYE deduction,Net amount\nFictional Employee,A000000000A,100000,0,100,100000,0,0,0,50,0,0,2400,0,0');
- const pb={kind:'Payroll',document_id:pay,starts_on:'2026-10-01',ends_on:'2026-10-31',residents_confirmed:true,use_calculated:true,notes:'Fictional source differences explained and calculated payroll confirmed'};
+ const pb={kind:'Payroll',document_id:pay,starts_on:'2026-10-01',ends_on:'2026-10-31',residents_confirmed:true};
  const pp=await imp('ASSISTANT',{action:'period_import_preview',...pb});assert.deepEqual(pp.payload.issues,[]);assert.equal(pp.payload.rows.length,1);assert.ok(pp.payload.differences.length>0);assert.ok(pp.payload.totals.paye>0);
- const payroll=await save(pb);await approve(payroll.import_id);const pj=await ledger('ASSISTANT',{action:'ledger_period_import_create',period_id:l.period_id,import_id:payroll.import_id});await post(pj.journal_id);
+ const confirmedPreview=await imp('ASSISTANT',{action:'period_import_preview',...pb,use_calculated:true,notes:'Fictional differences reviewed and source values explained'});assert.equal(confirmedPreview.source_hash,pp.source_hash,'post-preview attestations do not invalidate the comparison');
+ await assert.rejects(()=>imp('ASSISTANT',{action:'period_import_save',...pb,preview_hash:pp.source_hash,confirmed_client_id:C}),/confirm the displayed ERP calculations/);
+ await assert.rejects(()=>imp('ASSISTANT',{action:'period_import_save',...pb,use_calculated:true,preview_hash:pp.source_hash,confirmed_client_id:C}),/short note explaining/);
+ const payroll=await save({...pb,use_calculated:true,notes:'Fictional source differences reviewed and explained'});assert.deepEqual((await read(payroll.import_id)).payload.review_attestations,{use_calculated_confirmed:true,source_comparison_reviewed:true});await approve(payroll.import_id);
+ const projectReport=await as('PARTNER',a=>workspaceAction(tx,a,{action:'project_report',project_id:P}));assert.ok(projectReport.period_imports.some(x=>x.kind==='Sales'&&x.status==='Confirmed'&&Number(x.net_or_gross)===2150));assert.ok(projectReport.period_imports.some(x=>x.kind==='Payroll'&&Number(x.net_or_gross)===100000&&Number(x.vat_or_paye)>0));
+ const staffReport=await as('ASSISTANT',a=>workspaceAction(tx,a,{action:'project_report',project_id:P}));assert.equal(staffReport.period_imports.some(x=>x.kind==='Payroll'),false,'payroll totals are withheld from non-finance staff');
+ const pj=await ledger('ASSISTANT',{action:'ledger_period_import_create',period_id:l.period_id,import_id:payroll.import_id});await post(pj.journal_id);
  const net=await ledger('ASSISTANT',{action:'ledger_read',period_id:l.period_id});assert.equal(net.profit.gross_profit,2150);assert.equal(net.profit.payroll,100000+pp.payload.totals.employer_nssf+pp.payload.totals.employer_ahl+pp.payload.totals.nita);
  let pr=await read(payroll.import_id);const tax=await imp('ASSISTANT',{action:'period_import_payroll_tax',import_id:pr.import_id,revision:pr.revision});assert.ok(tax.case_id);assert.equal((await tx`select inputs from erp_private.tax_cases where case_id=${tax.case_id}`)[0].inputs.employees.length,1);
  await t.test('standard purchase upload stores rounded amounts, requires ERP category and prevents repeats',async()=>{

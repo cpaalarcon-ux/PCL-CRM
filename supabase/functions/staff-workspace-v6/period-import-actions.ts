@@ -59,21 +59,19 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
    const resident=r.resident==null?p.residents_confirmed===true:r.resident;
    if(r.resident==null&&p.residents_confirmed!==true)payload.issues.push(`Row ${r.source_row}: confirm employee residence before calculating relief.`);
    if(r.insurance_relief>0)payload.issues.push(`Row ${r.source_row}: insurance relief needs a supported premium in the payroll tax computation.`);
-   const e={name:r.name,pin:r.pin,employee_id:r.employee_id,gross:r.gross,taxable_benefits:r.benefits||0,resident,other_pension:r.other_pension||0,postretirement_medical:r.postretirement_medical||0,mortgage_interest:r.mortgage_interest||0,source_paye:r.paye??0,evidence_reference:text(p.notes||'',4000,false)};
+   const e={name:r.name,pin:r.pin,employee_id:r.employee_id,gross:r.gross,taxable_benefits:r.benefits||0,resident,other_pension:r.other_pension||0,postretirement_medical:r.postretirement_medical||0,mortgage_interest:r.mortgage_interest||0,source_paye:r.paye??0,evidence_reference:doc.file_name};
    payload.employees.push(e);
    if(r.issues.length||Object.keys(rules).length!==keys.PAYE.length)continue;
    try{const c:any=payrollFromRules({employees:[e]},rules).employees[0];c.net_pay=round(c.net_before_other_deductions-(r.other_deductions||0));c.other_deductions=r.other_deductions||0;c.source_row=r.source_row;payload.calculated.push(c);
     for(const [s,k] of [['gross','gross'],['taxable','taxable'],['gross_tax','gross_tax'],['personal_relief','personal_relief'],['paye','paye'],['employee_nssf','employee_nssf'],['employee_ahl','employee_ahl'],['shif','shif'],['net','net_pay']])if(r[s]==null)payload.differences.push({row:r.source_row,field:s,source:null,calculated:c[k],difference:null});else if(Math.abs(Number(r[s])-c[k])>.011)payload.differences.push({row:r.source_row,field:s,source:r[s],calculated:c[k],difference:round(c[k]-r[s])});
    }catch(e){payload.issues.push(`Row ${r.source_row}: ${(e as Error).message}`);}
   }
-  if(p.use_calculated!==true)payload.issues.push('Confirm use of the displayed ERP calculations after reviewing uploaded differences.');
-  if(payload.differences.length&&cleanNote(p.notes).length<10)payload.issues.push('Explain the payroll differences and supporting review evidence.');
   payload.testing=payload.rules.some((r:any)=>r.approval_scope==='Testing');
   for(const key of ['gross','taxable','gross_tax','paye','shif','employee_nssf','employee_ahl','employer_nssf','employer_ahl','nita','net_pay','other_deductions'])payload.totals[key]=round(payload.calculated.reduce((n:number,c:any)=>n+Number(c[key]||0),0));
   payload.totals.employee_pension=round(payload.employees.reduce((n:number,e:any)=>n+Number(e.other_pension||0),0));
   payload.source_count=source.rows.length;
  }
- const members=sheets.map(s=>({name:s.sheet.name,profile:s.profile.id})),hash=await digest({sha:doc.sha256,kind,start,end,members,credit_basis:p.credit_basis,credits:p.credits,residents_confirmed:p.residents_confirmed,use_calculated:p.use_calculated,payload});
+ const members=sheets.map(s=>({name:s.sheet.name,profile:s.profile.id})),hash=await digest({sha:doc.sha256,kind,start,end,members,credit_basis:p.credit_basis,credits:p.credits,residents_confirmed:p.residents_confirmed,payload});
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'DOWNLOAD')`;
  return {kind,starts_on:start,ends_on:end,document_id:doc.document_id,payload,source_hash:hash,source_members:members,available,overlaps:await coverage(tx,project.client_id,kind,start,end)};
 }
@@ -93,6 +91,9 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   const existing=(await tx`select import_id from erp_private.period_imports where project_id=${pid} and source_hash=${x.source_hash}`)[0];if(existing)return {...existing,reused:true};
   if(x.source_hash!==p.preview_hash)fail(409,'The source or calculations changed. Preview and confirm again.');
   if(x.payload.issues.length)fail(400,'Resolve the displayed import exceptions before confirming.');
+  if(x.kind==='Payroll'&&p.use_calculated!==true)fail(400,'Review the source and ERP calculations, then confirm the displayed ERP calculations before saving.');
+  if(x.kind==='Payroll'&&x.payload.differences.length&&cleanNote(p.notes).length<10)fail(400,'Add a short note explaining the payroll differences before saving.');
+  if(x.kind==='Payroll')x.payload.review_attestations={use_calculated_confirmed:true,source_comparison_reviewed:true};
   if(!(await tx`select erp_private.tax_period_open(${pid}::uuid,${x.starts_on}::date,${x.ends_on}::date) open`)[0].open)fail(409,'Return submitted tax work before replacing its inputs. Locked tax periods require a controlled amendment.');
   if(x.kind==='Sales'&&(await tx`select r.row_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Sales' and b.archived_at is null and b.period_start<=${x.ends_on} and b.period_end>=${x.starts_on} limit 1`).length)fail(409,'This period has legacy invoice-based sales. Reconcile and migrate those sources before adding category totals.');
   const ids=Array.isArray(p.replaces_ids)?p.replaces_ids.map(uuid):[];
