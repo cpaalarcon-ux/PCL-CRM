@@ -131,7 +131,8 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   return {communication:c};
  }
  if(p.action==='communication_qr'){
-  const c=one(await tx`select communication_id,opaque_reference,reference from erp_private.communications where communication_id=${uuid(p.communication_id)} and deleted_at is null`);
+  const c=one(await tx`select communication_id,opaque_reference,reference,channel from erp_private.communications where communication_id=${uuid(p.communication_id)} and deleted_at is null`);
+  if(c.channel!=='Letter')fail(400,'Staff QR codes are available for letters only.');
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'communications','QR_GENERATE',${c.communication_id},'{}')`;
   return c;
  }
