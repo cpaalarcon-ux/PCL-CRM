@@ -8,7 +8,7 @@ import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligation
 export function createWorkspaceUI(ctx){
  const purchaseLedgers=createPurchaseLedgerUI(ctx);const periodImports=createPeriodImportUI(ctx);const standardPurchaseImport=createStandardPurchaseImportUI(ctx);
  const accounting=createAccountingUI(ctx);
- createLedgerUI(ctx,{onPayrollImport:projectId=>periodImports.newImport(projectId,{kind:'Payroll'})});
+ const ledger=createLedgerUI(ctx,{onPayrollImport:projectId=>periodImports.newImport(projectId,{kind:'Payroll'})});
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty}=ctx;
  const d=()=>ctx.data(),editor=()=>['PARTNER','MANAGER','SUPERVISOR'].includes(d().me.category_code),leader=()=>['PARTNER','MANAGER'].includes(d().me.category_code);
  let selected='',selectedPeriod='',showSchedules=false,taskFilter='All',timeFilter='My time',week='',importPage=0;
@@ -182,5 +182,5 @@ export function createWorkspaceUI(ctx){
   if(b.dataset.v6==='reverse-time')modal('Reverse approved time',form(`<p class="info full">The approved entry remains locked. This adds an equal negative entry for an auditable correction.</p>`+field('reason','Reason *','','text','required maxlength="2000"')),f=>request({...Object.fromEntries(f),action:'timesheet_reverse',timesheet_id:id}));
   if(b.dataset.v6==='sector')modal('Add primary sector',form(field('name','Sector name *','','text','required maxlength="100"')+select('parent_id','Parent category',d().sectors.map(s=>[s.sector_id,s.name]))),f=>request({...Object.fromEntries(f),action:'sector_save'}));
  }catch(err){notice(err.message,true);}finally{b.disabled=false;}});
- return {projects,time,bind,editProject,newTask,editTime,importWorkbook,selectProject(id){if(selected!==id)selectedPeriod='';selected=id;taskFilter='All';},selectPeriod(id){selectedPeriod=id;}};
+ return {projects,time,bind,editProject,newTask,editTime,importWorkbook,openLedger:id=>ledger.open(id),openPurchases:id=>imported(id),openPeriodImports:id=>periodImports.open(id),selectProject(id){if(selected!==id)selectedPeriod='';selected=id;taskFilter='All';},selectPeriod(id){selectedPeriod=id;}};
 }

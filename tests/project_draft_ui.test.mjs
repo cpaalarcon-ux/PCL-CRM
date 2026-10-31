@@ -13,7 +13,7 @@ test('draft project explains that retained UAT tasks do not mean the project is 
  assert.match(projectUi,/financial outputs are not ready/);
 });
 
-test('staging build cache key changes with the draft status clarification',()=>{
- assert.match(appHtml,/2026-10-31\.5/);
- assert.match(appHtml,/20261031-staging-readiness-v1/);
+test('staging build cache key changes with the setup guide',()=>{
+ assert.match(appHtml,/2026-10-31\.6/);
+ assert.match(appHtml,/20261031-setup-guide-v1/);
 });
