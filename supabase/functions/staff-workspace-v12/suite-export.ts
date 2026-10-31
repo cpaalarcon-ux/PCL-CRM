@@ -6,6 +6,34 @@ import {taxSummary} from './tax-review-actions.ts';
 import {one,leader} from './suite-actions.ts';
 const clean=(v:any)=>typeof v==='object'&&v!==null?JSON.stringify(v):v??'';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
+const annualKinds=['Company','Individual','Partnership'];
+function kraForm(kind:string,profile:any){
+ if(kind==='Company')return 'IT2C · Company income tax return';
+ if(kind==='Partnership')return 'IT2P · Partnership income tax return';
+ if(kind==='Individual')return profile?.residency==='Non-resident'?'ITNR · Individual non-resident return':'IT1 · Individual resident return';
+ if(kind==='VAT')return 'VAT3 · VAT return';
+ if(kind==='PAYE')return 'PAYE return';
+ return `${kind} · use the applicable KRA return or payment workflow`;
+}
+function returnLines(kind:string,result:any,profile:any){
+ const confirm='Confirm the exact field in the current KRA return workbook for this period';
+ if(annualKinds.includes(kind)){
+  const rows:any[]=[
+   ['Accounting profit / (loss)',result.accounting_profit,'Posted annual ledger and financial statements',confirm],
+   ['Supported tax add-backs',result.addbacks,'Reviewed tax adjustments and linked evidence',confirm],
+   ['Deductions / capital allowances',result.deductions,'Reviewed deductions and approved asset schedule',confirm],
+   ['Losses utilised',result.losses,'Approved loss schedule',confirm],
+   ['Chargeable / taxable income',result.chargeable,'Calculated from the above lines',confirm]
+  ];
+  if(kind==='Partnership')rows.push(['Partnership tax at entity level',result.tax_at_entity,'Partnership computation; see Partner allocations sheet','Confirm the partnership return treatment']);
+  else rows.push(['Tax before credits',result.gross_tax,'ERP tax calculation using the effective approved rate',confirm],['Reliefs',result.reliefs,'Verified client profile and supported relief inputs',confirm],['Tax credits',result.credits,'Certified withholding / instalment credits',confirm],['Balance payable',result.payable??result.balance,'Calculated after reliefs and credits',confirm],['Overpayment',result.overpayment,'Calculated after reliefs and credits',confirm]);
+  return rows.map(([label,value,basis,locator])=>[label,value??'',basis,locator,'Preparation mapping only']);
+ }
+ return Object.entries(result||{}).filter(([,v])=>v===null||['string','number','boolean'].includes(typeof v)).map(([key,value])=>[
+  key.replaceAll('_',' ').replace(/\b\w/g,(x:string)=>x.toUpperCase()),value,
+  'Tax case calculation and reviewed source rows',confirm,'Preparation mapping only'
+ ]);
+}
 async function workbook(sheets:any[]){const book=new ExcelJS.Workbook();for(const [name,headers,rows] of sheets){const sheet=book.addWorksheet(name.slice(0,31));sheet.addRow(headers);for(const r of rows)sheet.addRow(r.map(clean));sheet.eachRow((r:any)=>{r.eachCell((c:any)=>{c.font={name:'Arial',size:9};c.alignment={wrapText:true,vertical:'top'};});});sheet.columns.forEach((c:any)=>c.width=24);sheet.getRow(1).font={name:'Arial',size:9,bold:true};sheet.pageSetup={paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0};}return new Uint8Array(await book.xlsx.writeBuffer());}
 async function pdf(title:string,lines:string[]){const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica);let page=doc.addPage(),y=790;
  for(const original of [title,'',...lines])for(const line0 of String(original).split('\n')){
@@ -21,12 +49,38 @@ export async function suiteExport(tx:any,a:any,p:any,storage:any){
  if(p.action!=='suite_export')return undefined;
  const id=uuid(p.record_id),zip=new JSZip();let name='',bytes:Uint8Array,mime='application/zip';let docs:any[]=[];
  if(p.kind==='Tax'){
-  const c=one(await tx`select * from erp_private.tax_cases where case_id=${id}`),project=one(await tx`select * from erp_private.projects where project_id=${c.project_id}`),client=one(await tx`select company_name from erp_private.clients where client_id=${project.client_id}`);
+  const c=one(await tx`select * from erp_private.tax_cases where case_id=${id}`),project=one(await tx`select * from erp_private.projects where project_id=${c.project_id}`),client=one(await tx`select company_name,kra_pin,legal_entity_type from erp_private.clients where client_id=${project.client_id}`),staffIds=[c.prepared_by,c.reviewed_by].filter(Boolean),staff=staffIds.length?await tx`select staff_id,full_name from erp_private.staff_members where staff_id=any(${tx.array(staffIds)}::uuid[])`:[],staffNames=new Map(staff.map((x:any)=>[x.staff_id,x.full_name]));
   const locked=['Locked','Filed'].includes(c.status),snapshot=c.review_snapshot;
   const current=await taxSummary(tx,c),rows=current.rows;
-  const calculated=locked?c.result:current.result,testing=calculated.testing_only===true;
+  const calculated=locked?c.result:current.result,testing=calculated.testing_only===true,profile=locked?(snapshot?.profile||current.profile):current.profile,sourceApp=locked?(snapshot?.source_application||current.source_application):current.source_application;
   if(rows.length>10000)fail(400,'Split exports into smaller reviewed periods.');
-  const summary=Object.entries(calculated).filter(([,v])=>!Array.isArray(v)).map(([k,v])=>[k,clean(v)]),sourceApp=locked?(snapshot?.source_application||current.source_application):current.source_application,sheets:any[]=[['Summary',['Metric','Value'],[['Client',client.company_name],['Tax',c.kind],['Status',c.status],['Use',testing?'TESTING - NOT FOR FILING':locked?'Reviewed compilation; verify filing separately':'DRAFT - NOT FOR FILING'],...summary,...(sourceApp?[['Source & Application status',sourceApp.balanced?'Balanced':'Review required'],['Source total KES',sourceApp.source_total],['Application total KES',sourceApp.application_total],['Source less application KES',sourceApp.difference],['Trial balance difference KES',sourceApp.trial_balance_difference],['Source / application tie-out KES',sourceApp.tie_out_difference]]:[])]]];
+  const statusText=testing?'TESTING — NOT FOR FILING':c.status==='Filed'?'ERP filing status recorded — confirm the KRA acknowledgment in the linked task':locked?'Manager-reviewed working pack — complete the current KRA return separately':c.status==='Submitted'?'Submitted for internal review':'Draft — complete the preparation and review';
+  const formName=kraForm(c.kind,profile),summary=Object.entries(calculated).filter(([,v])=>!Array.isArray(v)).map(([k,v])=>[k,clean(v)]),sheets:any[]=[
+   ['Start Here',['Read before using this pack','Instruction'],[
+    ['Purpose','Staff working pack to prepare and review figures for the applicable KRA obligation.'],
+    ['Important','This workbook/PDF is not an official KRA return, submission file, or filing receipt. Do not upload this pack to iTax unless KRA specifically accepts this format.'],
+    ['Next step',locked?'Use the current official KRA return for the period, enter the reviewed figures from Return Lines, complete KRA validation, and retain the acknowledgment and PRN in the linked filing task.':'Resolve the Review blockers, obtain independent review, and lock the computation before using it to complete a return.'],
+    ['KRA return type',formName],
+    ['KRA form version','Not embedded in the ERP. Confirm the official form version applicable to this tax period before filing.'],
+    ['Changing a figure','Do not overwrite a reviewed amount. Reopen the computation through the authorised correction process, update the basis, and obtain review again.'],
+    ['Source files','Imported TB, purchases, payroll and other working data are not supporting evidence by themselves. Link original evidence separately.']
+   ]],
+   ['Return Control',['Control','Value'],[
+    ['Client',client.company_name],['KRA PIN',client.kra_pin||'Not recorded'],['Legal entity type',client.legal_entity_type||profile?.entity_type||'Not verified'],
+    ['Project',project.project_name],['Obligation',c.kind],['Suggested KRA return',formName],['Tax period from',dateText(c.starts_on)],['Tax period through',dateText(c.ends_on)],
+    ['ERP case status',c.status],['Use status',statusText],['Case reference',c.case_id],['Prepared by',staffNames.get(c.prepared_by)||'Not recorded'],['Reviewed by',staffNames.get(c.reviewed_by)||'Not recorded'],
+    ['KRA filing date recorded',c.filing_date?dateText(c.filing_date):'Not recorded'],['Official KRA form version','Confirm current version for the period; not embedded in the ERP'],
+    ['Income-tax year basis',annualKinds.includes(c.kind)?`${dateText(c.starts_on)} to ${dateText(c.ends_on)}`:'Not an annual income-tax case']
+   ]],
+   ['Summary',['Metric','Value'],[['Client',client.company_name],['Tax',c.kind],['Status',c.status],['Use',statusText],...summary,...(sourceApp?[['Source & Application status',sourceApp.balanced?'Balanced':'Review required'],['Source total KES',sourceApp.source_total],['Application total KES',sourceApp.application_total],['Source less application KES',sourceApp.difference],['Trial balance difference KES',sourceApp.trial_balance_difference],['Source / application tie-out KES',sourceApp.tie_out_difference]]:[])]],
+   ['Return Lines',['ERP schedule line','Calculated value KES','Source / calculation basis','KRA field locator','Mapping status'],returnLines(c.kind,calculated,profile)],
+   ['Control Checks',['Check','Status / value'],[
+    ['Testing rate used',testing?'YES — NOT FOR FILING':'No testing rate identified'],['Source rows',current.source_count??rows.length],['Rejected rows',current.rejected_count??0],
+    ['Unreviewed rows',current.unreviewed??0],['Unmapped rows',current.unmapped??0],['Trial balance difference KES',sourceApp?.trial_balance_difference??'Not available for this obligation'],
+    ['Source & Application difference KES',sourceApp?.difference??'Not applicable / not available'],['Open preparation issues',(current.issues||[]).length],
+    ...(current.issues||[]).map((issue:string)=>['Action required',issue])
+   ]]
+  ];
   for(const dataset of ['Sales','Purchases','Expenditure','Non-eTIMS','Bank','General']){const selected=rows.filter((r:any)=>r.dataset===dataset||locked&&snapshot.batches.find((b:any)=>b.batch_id===r.batch_id)?.dataset===dataset);if(selected.length)sheets.push([dataset,['Reference','Date','Party','Net / amount','VAT','Decision','Deductible %','VAT rule','Income treatment','Account code','Account name','Catalog version','Allocation source','Original values'],selected.map((r:any)=>[r.normalized.invoice||r.normalized.reference,r.normalized.date,r.normalized.party,r.normalized.amount,r.normalized.vat,r.decision||'',r.deductible_percentage??'',r.vat_rate_key||'',r.income_treatment||'',r.account_code||'',r.account_name||'',r.catalog_version||'',r.parent_row_id||'',r.raw_values||r.normalized])]);}
   if(sourceApp){const sections=[...sourceApp.sources,...sourceApp.applications,...(sourceApp.memo||[])];sheets.push(['Source & Application',['Section','Item','KES','Account detail'],sections.map((x:any)=>[x.section,x.label,x.amount,x.accounts])]);const details=sections.flatMap((x:any)=>x.accounts.map((a:any)=>[x.section,x.label,a.code,a.name,a.opening,a.closing,a.movement_debit,a.movement_credit,a.amount]));sheets.push(['S&A account detail',['Section','Item','Account code','Account name','Opening KES','Closing KES','Debit movement KES','Credit movement KES','Schedule amount KES'],details]);sheets.push(['S&A checks',['Control','KES / status'],[['Total sources',sourceApp.source_total],['Total applications',sourceApp.application_total],['Sources less applications',sourceApp.difference],['Closing trial-balance difference',sourceApp.trial_balance_difference],['Opening trial-balance difference',sourceApp.opening_trial_balance_difference],['Source / application tie-out',sourceApp.tie_out_difference],['Balanced',sourceApp.balanced?'Yes':'No'],...(sourceApp.issues||[]).map((x:string)=>['Review issue',x]),['Basis',sourceApp.basis]]]);sheets.push(['S&A evidence',['Requirement','Applicability','Status','Linked file'],(sourceApp.requirements||[]).map((x:any)=>[x.label,x.required?'Required by posted ledger activity':'No matching ledger activity recorded',x.status||'Check applicability',x.file_name||''])]);}
   if(current.reconciliation){const cr=current.reconciliation;sheets.push(['Sales bank review',['Field','Reviewed value'],Object.entries(cr).filter(([k])=>k!=='inputs'&&k!=='result')]);sheets.push(['Bank bridge',['Category','Amount KES','Reference','Note','Evidence'],(cr.result?.allocations||[]).map((x:any)=>[x.category,x.amount,x.reference,x.note,x.evidence_id])]);}
@@ -35,9 +89,48 @@ export async function suiteExport(tx:any,a:any,p:any,storage:any){
   sheets.push(['Applied tax rules',['Code','Label','From','Through','Parameters','Official source','Approval'],(current.applied_rates||[]).map((r:any)=>[r.rate_key,r.label,dateText(r.effective_from),dateText(r.effective_to),r.parameters,r.source_url,r.approved_at])]);
   if(current.profile)sheets.push(['Client tax profile',['Field','Value'],Object.entries(current.profile).filter(([k])=>['entity_type','residency','regime','obligations','effective_from','effective_to','notes','verified_at'].includes(k))]);
   if(!locked)sheets.push(['Review blockers',['Issue'],current.issues.map((i:string)=>[i])]);
-  const xlsx=await workbook(sheets);if(p.format==='xlsx'){bytes=xlsx;mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';name=`${c.kind}_${id.slice(0,8)}.xlsx`;}
-  else {const saLines=sourceApp?[`Source & Application of Funds: ${sourceApp.balanced?'BALANCED':'REVIEW REQUIRED'}`,`Total sources: KES ${sourceApp.source_total}`,`Total applications: KES ${sourceApp.application_total}`,`Source less application: KES ${sourceApp.difference}`,`Closing trial-balance difference: KES ${sourceApp.trial_balance_difference}`,`Opening trial-balance difference: KES ${sourceApp.opening_trial_balance_difference}`,`Source / application tie-out: KES ${sourceApp.tie_out_difference}`,sourceApp.basis,'Supporting documents:',...(sourceApp.requirements||[]).map((x:any)=>`${x.label}: ${x.status||'Check applicability'}${x.file_name?' | '+x.file_name:''}`),...(sourceApp.issues||[]).map((i:string)=>'S&A REVIEW: '+i)]:[];zip.file('01_Summary_Report.pdf',await pdf((testing?'TESTING - NOT FOR FILING | ':locked?'':'DRAFT - NOT FOR FILING | ')+c.kind+' compilation',[client.company_name,`Period ${dateText(c.starts_on)} to ${dateText(c.ends_on)}`,`Status: ${c.status}`,...summary.map(([k,v])=>`${k}: ${v}`),...saLines,...(current.applied_rates||[]).map((r:any)=>`Applied ${r.rate_key} | ${dateText(r.effective_from)} to ${dateText(r.effective_to)} | ${JSON.stringify(r.parameters)} | ${r.source_url}`),...(!locked?current.issues.map((i:string)=>'REVIEW: '+i):[])]));zip.file('02_Working_Papers.xlsx',xlsx);
-   const findings=locked?snapshot.findings:await tx`select summary,status,resolution from erp_private.tax_findings where project_id=${c.project_id} and (case_id=${c.case_id} or case_id is null)`;zip.file('03_Findings.pdf',await pdf('Findings',findings.map((f:any)=>`${f.status}: ${f.summary} | ${f.resolution||''}`)));
+  const xlsx=await workbook(sheets);
+  if(p.format==='xlsx'){
+   bytes=xlsx;mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';name=`${testing?'TESTING_':locked?'Reviewed_':'DRAFT_'}${c.kind}_Filing_Pack_${id.slice(0,8)}.xlsx`;
+  }else{
+   const saLines=sourceApp?[`Source & Application of Funds: ${sourceApp.balanced?'BALANCED':'REVIEW REQUIRED'}`,`Total sources: KES ${sourceApp.source_total}`,`Total applications: KES ${sourceApp.application_total}`,`Source less application: KES ${sourceApp.difference}`,`Closing trial-balance difference: KES ${sourceApp.trial_balance_difference}`,`Opening trial-balance difference: KES ${sourceApp.opening_trial_balance_difference}`,`Source / application tie-out: KES ${sourceApp.tie_out_difference}`,sourceApp.basis,'Supporting documents:',...(sourceApp.requirements||[]).map((x:any)=>`${x.label}: ${x.status||'Check applicability'}${x.file_name?' | '+x.file_name:''}`),...(sourceApp.issues||[]).map((i:string)=>'SOURCE & APPLICATION REVIEW: '+i)]:[];
+   const packLines=[
+    `Client: ${client.company_name}`,
+    `KRA PIN: ${client.kra_pin||'Not recorded'}`,
+    `Project: ${project.project_name}`,
+    `Obligation: ${c.kind}`,
+    `Suggested KRA return: ${formName}`,
+    `Period: ${dateText(c.starts_on)} to ${dateText(c.ends_on)}`,
+    `ERP case status: ${c.status}`,
+    `Pack status: ${statusText}`,
+    'KRA template version: not embedded; confirm and use the official KRA version for this period.',
+    'This is a staff preparation pack. It is not an official KRA return, iTax upload file or filing receipt.',
+    'Use the Return Lines worksheet to transfer reviewed values to the current KRA return. Resolve all review blockers before filing.',
+    'After filing, save the KRA acknowledgment, filing date and PRN/payment reference in the linked task.',
+    ...returnLines(c.kind,calculated,profile).map((x:any)=>`${x[0]}: ${x[1]===null||x[1]===''?'Not available':x[1]} | Basis: ${x[2]} | ${x[3]}`),
+    ...saLines,
+    ...(current.issues||[]).map((i:string)=>'ACTION REQUIRED: '+i)
+   ];
+   zip.file('00_START_HERE.txt',[
+    'PCL ERP — TAX RETURN PREPARATION PACK',
+    `Client: ${client.company_name} | ${client.kra_pin||'KRA PIN not recorded'}`,
+    `Obligation: ${c.kind} | Period: ${dateText(c.starts_on)} to ${dateText(c.ends_on)}`,
+    `Suggested KRA return: ${formName}`,
+    'The ERP creates the reviewed preparation schedules. It does not submit this return to KRA.',
+    'Open 01_Tax_Return_Preparation.pdf for the concise case summary.',
+    'Open 02_Tax_Filing_Workpapers.xlsx and use Return Lines to populate the current official KRA return.',
+    'Confirm the KRA form version that applies to this tax period. KRA field locators are deliberately not guessed.',
+    'Do not upload this ZIP or the working-paper workbook to iTax unless KRA specifically accepts that file format.',
+    'Retain the final KRA acknowledgment, filing date and PRN/payment reference in the linked filing task.',
+    'Imported TB, purchase, payroll and other working files are working data, not supporting evidence by themselves.',
+    testing?'TEST DATA ONLY — DO NOT FILE.':'',
+    c.status==='Locked'?'The ERP review is locked. Any changed amount must go through the authorised correction and review process.':'',
+    c.status==='Filed'?'ERP filing status is recorded. Verify that the KRA acknowledgment is attached to the linked task.':''
+   ].filter(Boolean).join('\r\n'));
+   zip.file('01_Tax_Return_Preparation.pdf',await pdf((testing?'TESTING — NOT FOR FILING | ':'')+c.kind+' return preparation pack',packLines));
+   zip.file('02_Tax_Filing_Workpapers.xlsx',xlsx);
+   const findings=locked?snapshot.findings:await tx`select summary,status,resolution from erp_private.tax_findings where project_id=${c.project_id} and (case_id=${c.case_id} or case_id is null)`;
+   zip.file('03_Findings.pdf',await pdf('Findings',findings.map((f:any)=>`${f.status}: ${f.summary} | ${f.resolution||''}`)));
    if(locked){const docIds=[...new Set([...snapshot.batches.map((b:any)=>b.document_id),c.source_document_id].filter(Boolean))];docs=docIds.length?await tx`select * from erp_private.documents where document_id=any(${tx.array(docIds)}::uuid[])`:[];}
    name=`${testing?'TESTING':locked?'Reviewed':'DRAFT'}_${c.kind}_${id.slice(0,8)}.zip`;bytes=new Uint8Array();
   }
