@@ -18,6 +18,18 @@ test('purchase selection, dynamic accounts and balanced invoice splitting are us
  await ui.reconciliations(pid);assert.match($('#editorBody').textContent,/Weekly month-to-date/);await ui.catalog();assert.equal(document.querySelector('[data-accounting=account-new]'),null);assert.match($('#editorBody').textContent,/273 accounts/);
 });
 
+test('approved uploaded routing and TB codes group rows and require explicit staff confirmation',async()=>{
+ state.me.category_code='ASSISTANT';
+ const hint={route:2,category_code:'EXP01',account_code:'61010',confirmed:false};
+ rows=[1,2].map(n=>({row_id:'00000000-0000-4000-8000-00000000000'+(n+20),dataset:'Purchases',revision:1,source_row:n+20,sheet_name:'Purchase Upload',normalized:{date:'2026-09-01',invoice:'HINT-'+n,party:'Example supplier',amount:1000,vat:160,mapping_suggestion:hint},raw_values:{Invoice:'HINT-'+n},warnings:[]}));
+ await ui.imported(pid);
+ const group=$('[data-map-hint="0"]');assert.ok(group);assert.match(group.textContent,/Confirm 2 rows/);group.click();await pause();
+ assert.match($('#title').textContent,/Confirm uploaded account/);assert.equal($('#editForm').elements.account_code.value,'61010');assert.match($('#editorBody').textContent,/routing EXP01 · TB item 61010/);
+ const confirm=$('#editForm [name=confirm_uploaded_mapping]');assert.ok(confirm);confirm.checked=true;
+ $('#editForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
+ const saved=calls.findLast(x=>x.action==='workbook_map_bulk');assert.equal(saved.rows.length,2);assert.equal(saved.account_code,'61010');assert.equal(saved.category,'EXP01');assert.equal(saved.confirm_uploaded_mapping,true);
+});
+
 test('mapping setup offers controlled activity choices and saves the selected activity for reuse',async()=>{
  state.me.category_code='MANAGER';state.projects=[{project_id:pid,client_id:'client-1'}];
  rows=[{row_id:'00000000-0000-4000-8000-000000000003',dataset:'Purchases',revision:1,source_row:9,sheet_name:'B02A',normalized:{date:'2026-09-01',invoice:'INV-ACTIVITY',party:'Example supplier',amount:1000,vat:160},raw_values:{Invoice:'INV-ACTIVITY'},warnings:[]}];

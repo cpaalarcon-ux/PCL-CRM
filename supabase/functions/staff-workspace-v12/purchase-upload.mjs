@@ -45,9 +45,10 @@ export function normalizePurchaseUpload(values,rate,start,end,accounts=[],client
  else if(row.routing_code||row.tb_code){
   const routingCode=String(row.routing_code).trim().toUpperCase(),code=String(row.tb_code).trim();
   if(!/^[A-Z][A-Z0-9]{1,9}$/.test(routingCode)||!/^\d{5}$/.test(code))row.mapping_suggestion_issue='Columns M and N must contain an ERP routing category code and a five-digit TB item code.';
-  else {const account=accounts.find(x=>String(x.code)===code&&x.status==='Active'&&!x.is_legacy&&[1,2,3].includes(Number(x.route))&&String(x.category_code||'').toUpperCase()===routingCode),clientApproved=clientMappings===undefined||clientMappings.some(m=>String(m.erp_account_code)===code&&String(m.effective_from)<=String(row.date)&&(!m.effective_to||String(m.effective_to)>=String(row.date)));
+  else {const activeAccount=accounts.find(x=>String(x.code)===code&&x.status==='Active'&&!x.is_legacy&&[1,2,3].includes(Number(x.route))),account=activeAccount&&String(activeAccount.category_code||'').toUpperCase()===routingCode?activeAccount:null,clientApproved=clientMappings===undefined||clientMappings.some(m=>String(m.erp_account_code)===code&&String(m.effective_from)<=String(row.date)&&(!m.effective_to||String(m.effective_to)>=String(row.date)));
    if(account&&clientApproved)row.mapping_suggestion={route:Number(account.route),category_code:account.category_code,account_code:account.code,confirmed:false};
-   else if(account)row.mapping_suggestion_issue='This account code is not approved for the client on the invoice date. Ask a Manager to add or date the client account setup.';
+   else if(account)row.mapping_suggestion_issue=`ERP routing code ${routingCode} and TB item code ${code} are valid, but this account is not approved for the client on invoice date ${row.date}. Ask a Manager to approve or date this client account.`;
+   else if(activeAccount)row.mapping_suggestion_issue=`Routing code ${routingCode} does not match ERP TB item code ${code}. This TB account uses routing code ${activeAccount.category_code}; correct column M or N.`;
    else row.mapping_suggestion_issue='The uploaded routing code and TB item code do not match an active ERP account. Select a valid account in the mapping screen.';
   }
  }
