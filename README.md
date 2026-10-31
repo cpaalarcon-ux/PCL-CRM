@@ -1,3 +1,13 @@
+> **Import and ledger testing release:** See [Sales totals, payroll imports and purchase ledgers](supabase/IMPORT_LEDGER_V12.md).
+
+> **Entity/activity and mapping testing release:** See [V3 testing procedures and boundaries](supabase/ENTITY_ACTIVITY_V3.md) for legal entity setup, dated activities, cross-page mapping, stock-value controls, independent bank deferral and return-export readiness. Use the connected staff workspace, not the historical browser-local preview.
+
+> **Latest connected task procedure:** Task titles open dedicated workspaces with linked Excel upload, mapping, comments and handover. Filing now requires written approval and acknowledgment evidence through the task procedure. Catalogue rates enabled provisionally for UAT are labelled **Approved for testing**, with outputs **TESTING — NOT FOR FILING**. See the connected guide below; older root-page descriptions are historical.
+
+> **Current connected testing release:** See [Consolidated testing suite](supabase/CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. Historical descriptions below refer to earlier releases or browser-local previews. Login persists until manual sign-out; activity affects presence only.
+
+> **Full staff UAT:** Use [Full ERP staff acceptance test plan](supabase/FULL_ERP_STAFF_UAT.md) to test every connected area, record Pass/Fail/Blocked/Not tested, and apply the evidence-based readiness gates. The activity dropdown is part of the client setup-to-mapping acceptance flow.
+
 # PCL CRM — Client, Service and Engagement Lifecycle Foundation
 
 This build provides a browser-local, editable CRM intake module for a consulting and audit practice. Open `index.html` in a current browser.
@@ -34,7 +44,7 @@ This build provides a browser-local, editable CRM intake module for a consulting
 - Practice Group shared workspace: one login and a central Projects & Tasks workboard across authorised firms. Engagement ownership remains immutable, and every project, task, time entry, document, communication, invoice and payment visibly retains its Handling Firm.
 - Receivables Centre for combined all-firm invoice visibility, Cash / M-Pesa / Bank Transfer / Cheque receipt capture, reference-prefix validation, payment reconciliation, aging, CSV export, immutable firm-statement snapshots and non-legal client relationship summaries. Every payment reference begins with the same invoice number, then its receipt or transaction identifier. eTIMS is not integrated into Receivables Centre.
 - Centralized Communication Hub across leads, engagements, primary client contacts and tax invoices; it records Email, phone, meeting, WhatsApp, internal-note and formal-letter activity, vault attachment references, position-routed follow-ups, open/resolved status and branch/service filters. Formal communications inherit their firm from the selected lead or engagement rather than accepting a free-text issuer
-- Controlled Communication QR register for letters and other communications. Each QR reference records its linked client, issuing firm, issue date, purpose, approved signatory position or staff identifier and opaque token; no client or communication details are encoded in the QR payload
+- Controlled QR access for formal letters only. The opaque staff QR is displayed separately in the ERP preview, requires authorised sign-in and record access, and is excluded from the client-ready printout; calls, emails and meetings do not offer QR generation.
 - Client document vault with controlled categories, immutable-final-report logic, document-access audit records, PBC request and ICPAK export-manifest controls
 - Executive dashboard for WIP, approved-time cost, branch revenue, Potential PIE / EQR queue, loss and document-lock controls, with the required alert-queue logic
 - Firm-filtered CRM analytics for customer (sector), service-line margin, marketing-source conversion and sales conversion by branch

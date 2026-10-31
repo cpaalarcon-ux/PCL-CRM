@@ -1,0 +1,61 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import ExcelJS from '../supabase/functions/staff-workspace-v6/node_modules/exceljs/excel.js';
+import {detectTemplate,templateRow,normalizeTemplate,rowWarnings} from '../supabase/functions/staff-workspace-v6/workbook-templates.mjs';
+export const purchaseHeaders=['TYPE OF PURCHASES','PIN OF SUPPLIER','NAME OF SUPPLIER','INVOICE DATE','INVOICE NO.','DESCRIPTION','CUSTOMS ENTRY NO.','TAXABLE VALUE','VAT AMOUNT','Gross','Routing code','Return code','TB code','P&L group','Review status','Class / category code'];
+export const expenseHeaders=['Return month','Invoice / UID','Supplier','Invoice date','Source','Return code','Routing code','P&L group','Net cost','VAT treatment','TB code','Evidence','Reviewer','Filing treatment','Status'];
+export const nonEtimsHeaders=['Month incurred','Payee / supplier','PIN / country','Date','Document reference','Description','Legal non-eTIMS category','Gross amount','Input VAT claim','Legal basis / evidence','Return code','TB code','Tax treatment','Reviewer','Evidence file / reference','Review status'];
+const book=()=>new ExcelJS.Workbook();
+const sample=(ref='TEST-CU-001',description='Paper')=>['Local','P000000001A','Fictional supplier','2026-10-03',ref,description,'',100,16,{formula:'H7+I7',result:116},2,'02-OPEX','61000','Operating expenditure','Approved','EXP01'];
+function purchase(){const w=book(),s=w.addWorksheet('B02A Purchases 16%');s.getRow(5).values=['VAT CLAIM MONTH 10','2026-10-01'];s.getRow(6).values=purchaseHeaders;return s;}
+const parse=(s,i)=>{const t=detectTemplate(s),b=t.blocks[0],v=templateRow(s,i,t,b);return v&&normalizeTemplate(v,t,b,'2026-10-01','2026-10-31');};
+test('purchase routing and category are ERP inputs, not imported workbook classifications',()=>{const s=purchase();s.getRow(7).values=sample();const t=detectTemplate(s),n=parse(s,7);assert.equal(t.blocks[0].column_map.route,undefined);assert.equal(t.blocks[0].column_map.category_code,undefined);assert.equal(n.route,null);assert.equal(n.category_code,null);assert.equal(n.row.route,undefined);assert.equal(n.row.category_code,undefined);assert.equal(n.raw['11: Routing code'],2);assert.equal(n.raw['16: Class / category code'],'EXP01');assert.equal(n.raw['15: Review status'],'Approved');assert.ok(!('approved' in n));assert.deepEqual(n.issues,[]);});
+test('V8 reference columns map by header without importing shifted routing or category',()=>{const s=purchase();s.getRow(6).values=[...purchaseHeaders.slice(0,9),'RELEVANT INVOICE NUMBER','RELEVANT INVOICE DATE','TYPE OF IMPORT',...purchaseHeaders.slice(9)];const m=detectTemplate(s).blocks[0].column_map;assert.equal(m.original_invoice,10);assert.equal(m.gross,13);assert.equal(m.route,undefined);assert.equal(m.category_code,undefined);});
+test('purchase workbook imports with K and P physically removed',()=>{const s=purchase(),keep=(_,i)=>![10,15].includes(i);s.getRow(6).values=purchaseHeaders.filter(keep);s.getRow(7).values=sample().filter(keep);const n=parse(s,7);assert.deepEqual(n.issues,[]);assert.equal(n.row.amount,100);assert.equal(n.row.vat,16);assert.equal(n.row.invoice,'TEST-CU-001');assert.equal(n.route,null);assert.equal(n.category_code,null);assert.equal(n.row.tb_code,'61000');});
+test('compact A-L purchase source adds only original invoice number and date across all four sheets',()=>{
+ for(const [name,vat] of [['B02A Purchases 16%',-16],['B02B Purchases 8%',-8],['B02C Purchases 0%',0],['B02D Purchases Exempt',0]]){
+  const s=book().addWorksheet(name);s.getRow(1).values=[...purchaseHeaders.slice(0,10),'Original invoice number','Original invoice date'];s.getRow(2).values=['Local','P000000001A','Supplier','03/10/2026','CN-001','Returned goods','',-100,vat,-100+vat,'0000123','24/09/2026'];const n=parse(s,2);assert.deepEqual(n.issues,[]);assert.equal(n.row.original_invoice,'0000123');assert.equal(n.row.original_invoice_date,'2026-09-24');assert.equal(n.route,null);assert.equal(n.category_code,null);
+ }
+});
+test('source inventory and PPE selections cannot preclassify new ERP purchases',()=>{for(const [route,category] of [[1,'STOCK'],[3,'PPE25C']]){const s=purchase();s.getRow(7).values=sample();s.getCell('K7').value=route;s.getCell('P7').value=category;const t=detectTemplate(s),b=t.blocks[0];b.column_map.route=11;b.column_map.category_code=16;const n=normalizeTemplate(templateRow(s,7,t,b),t,b,'2026-10-01','2026-10-31');assert.equal(n.route,null);assert.equal(n.category_code,null);assert.equal(n.row.route,undefined);assert.equal(n.row.category_code,undefined);assert.ok(rowWarnings({dataset:'Purchases',normalized:n.row}).includes('Missing detailed account classification'));}});
+test('monthly sections beyond row 200 are selectable, with independent claim month',()=>{const s=purchase();s.getRow(306).values=['VAT CLAIM MONTH 11','2026-11-01'];s.getRow(307).values=purchaseHeaders;s.getRow(308).values=sample();const t=detectTemplate(s);assert.equal(t.blocks.length,2);assert.equal(t.blocks[1].period_start,'2026-11-01');assert.equal(t.blocks[1].period_end,'2026-11-30');assert.equal(t.blocks[0].last_row,306);});
+test('blank formula templates and total rows do not count as source records',()=>{const s=purchase();s.getRow(7).values=[,,,,,,,,0,{formula:'H7+I7',result:0},,,,'Pending'];s.getRow(8).values=['TOTAL',,,,,,,{formula:'SUM(H7:H7)',result:0}];assert.equal(parse(s,7),null);assert.equal(parse(s,8),null);});
+test('B03 imports direct input only, excludes side summary and linked purchase feed',()=>{const w=book(),s=w.addWorksheet('B03 Expenditure Review');s.getRow(5).values=[...expenseHeaders,'','Return month','TB code','Expense class'];s.getRow(6).values=['2026-10-01','DIRECT-01','Fictional supplier','2026-09-21','Direct','02-OPEX',2,'Operating expenditure',100];s.getRow(7).values=[,,,,,'02-OPEX',2,,,,,'eTIMS source','Example reviewer','Review'];s.getRow(9).values=purchaseHeaders;s.getRow(10).values=sample();const t=detectTemplate(s);assert.equal(t.blocks[0].last_row,8);assert.equal(t.blocks[0].headers.length,15);assert.equal(parse(s,7),null);assert.equal(parse(s,6).row.return_month,'2026-10-01');assert.deepEqual(parse(s,6).issues,[]);});
+test('D09 starts with manual section; country, legal basis and evidence preserved without CU/PIN requirement',()=>{const w=book(),s=w.addWorksheet('D09 Non-eTIMS Expenditure');s.getRow(5).values=['Month incurred','Source','Payee / bank','Statement reference'];s.getRow(6).values=[{formula:'B01!A1',result:46023},'Banking test'];s.getRow(21).values=nonEtimsHeaders;s.getRow(22).values=['2026-10-01','Fictional issuing authority','Kenya','2026-10-02','RECEIPT-001','Annual licence','Other supported exception',1000,0,'Reviewer to verify applicable rule','02-OPEX','61000','Pending','Example reviewer','receipt.pdf','Approved'];const t=detectTemplate(s),n=parse(s,22);assert.equal(t.blocks[0].first_row,22);assert.deepEqual(n.issues,[]);assert.equal(n.row.evidence,'receipt.pdf');assert.ok(rowWarnings({dataset:'Non-eTIMS',normalized:n.row}).some(x=>x.includes('reviewer confirmation')));});
+test('credit notes retain negative amounts and invoice lines retain distinct identities',()=>{const s=purchase();s.getRow(7).values=sample('CU-1','Paper');s.getRow(8).values=sample('CU-1','Pens');s.getRow(9).values=sample('CN-1');s.getCell('H9').value=-100;s.getCell('I9').value=-16;assert.notEqual(parse(s,7).key,parse(s,8).key);assert.equal(parse(s,9).row.amount,-100);assert.deepEqual(parse(s,9).issues,[]);});
+test('amount edits cannot silently become a new identity and repeat import keys are stable',()=>{const s=purchase();s.getRow(7).values=sample();const n=parse(s,7);s.getCell('H7').value=150;assert.equal(n.key,parse(s,7).key);});
+test('missing source headers fail closed; imports cannot fall back to generic mapping',()=>{const s=purchase();s.getCell('H6').value='Unexpected amount';assert.throws(()=>detectTemplate(s),/expected workbook headers/);});
+test('invalid reference, date and amount are held as rejected source rows',()=>{const s=purchase();s.getRow(7).values=sample();s.getCell('E7').value='';s.getCell('D7').value='2026-02-31';s.getCell('H7').value='bad';assert.equal(parse(s,7).issues.length,3);});
+
+import {readWorkbookSheet} from '../supabase/functions/staff-workspace-v6/workbook-reader.mjs';
+import JSZip from '../supabase/functions/staff-workspace-v6/node_modules/jszip/lib/index.js';
+import {purchaseUploadHeaders} from '../supabase/functions/staff-workspace-v6/purchase-upload.mjs';
+test('selective XLSX reader preserves shared strings, formulas, dates and template columns',async()=>{
+ const w=book(),s=w.addWorksheet('B02A Purchases 16%');s.getRow(5).values=['VAT CLAIM MONTH 10',new Date('2026-10-01Z')];s.getRow(6).values=purchaseHeaders;s.getRow(7).values=sample();s.getCell('C7').value='Fictional & Co';s.getCell('D7').value=new Date('2026-10-03Z');
+ const {sheet}=await readWorkbookSheet(await w.xlsx.writeBuffer(),null);assert.equal(sheet.getRow(7).getCell(3).value,'Fictional & Co');assert.ok(sheet.getRow(7).getCell(10).value.formula);assert.equal(parse(sheet,7).row.date,'2026-10-03');assert.deepEqual(parse(sheet,7).issues,[]);
+});
+test('selective reader ignores unrelated oversized worksheets but rejects choosing one',async()=>{
+ const w=book(),s=w.addWorksheet('B02A Purchases 16%');s.getRow(6).values=purchaseHeaders;s.getRow(7).values=sample();w.addWorksheet('Unrelated').getCell('CC25000').value='outside import limits';const bytes=await w.xlsx.writeBuffer();const {sheets}=await readWorkbookSheet(bytes,null);assert.equal(sheets.length,2);await assert.rejects(()=>readWorkbookSheet(bytes,'Unrelated'),/at most 80 columns/);
+});
+test('XML document types are rejected before processing entity declarations',async()=>{
+ const z=new JSZip();z.file('xl/workbook.xml','<!DOCTYPE workbook [<!ENTITY external SYSTEM "file:///private">]><workbook/>');const bytes=await z.generateAsync({type:'uint8array'});await assert.rejects(()=>readWorkbookSheet(bytes,null),/document types/);
+});
+test('16-column manual non-eTIMS template is recognised without renaming Sheet1',()=>{
+ const w=book(),s=w.addWorksheet('Sheet1');s.getRow(4).values=['Month incurred','Payee / supplier','PIN / country','Date','Document reference','Description','Legal non-eTIMS category','Gross amount','Input VAT claim','Legal basis / evidence','Return code','TB code','Tax treatment','Reviewer','Evidence file / reference','Review status'];
+ for(let i=5;i<=104;i++)s.getCell('M'+i).value={formula:'IF(A'+i+'="","",0)'};
+ const t=detectTemplate(s);assert.equal(t.kind,'D09');assert.equal(t.blocks[0].header_row,4);assert.equal(t.blocks[0].headers.length,16);for(let i=5;i<=104;i++)assert.equal(templateRow(s,i,t,t.blocks[0]),null);
+ const wrapped={name:'Pack.zip / expenditure.xlsx :: D09 Non eTIMS',rowCount:s.rowCount,columnCount:s.columnCount,getRow:i=>s.getRow(i)};assert.equal(detectTemplate(wrapped).kind,'D09');
+});
+test('standard purchase template has fixed 14 headers and clear routing/account guidance',async()=>{
+ const bytes=new Uint8Array(await fs.readFile(new URL('../Purchase_Upload_Template.xlsx',import.meta.url)));
+ const {sheet}=await readWorkbookSheet(bytes,'Purchase Upload');
+ assert.equal(sheet.columnCount,14);
+ assert.deepEqual(Array.from({length:14},(_,i)=>sheet.getRow(1).getCell(i+1).value),purchaseUploadHeaders);
+ const {sheet:guide}=await readWorkbookSheet(bytes,'Read first');
+ assert.match(guide.getRow(3).getCell(2).value,/14 standard headers.*A-N/i);
+ assert.match(guide.getRow(11).getCell(2).value,/routing code in M.*TB item code in N/i);
+ const excel=new ExcelJS.Workbook();await excel.xlsx.load(bytes);assert.deepEqual(excel.worksheets.map(x=>x.name),['Purchase Upload','Read first','ERP account codes']);
+ const excelSheet=excel.getWorksheet('Purchase Upload');assert.equal(excelSheet.dataValidations.model.M2.formulae[0],'ERPRoutingCodes');assert.equal(excelSheet.dataValidations.model.N2.formulae[0],'ERPTBItemCodes');
+ assert.equal(excel.getWorksheet('ERP account codes').rowCount-1,167);
+});

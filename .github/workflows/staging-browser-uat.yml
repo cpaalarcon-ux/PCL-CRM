@@ -1,0 +1,42 @@
+name: Staging browser UAT
+
+on:
+  push:
+    branches:
+      - backend/staging-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-uat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out staging branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            supabase/functions/staff-workspace-v6/package-lock.json
+
+      - name: Install browser and database test dependencies
+        run: npm ci
+
+      - name: Install ERP function dependencies
+        run: npm ci --prefix supabase/functions/staff-workspace-v6
+
+      - name: Run automated regression suite
+        run: npm test
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser UAT
+        run: npm run test:browser

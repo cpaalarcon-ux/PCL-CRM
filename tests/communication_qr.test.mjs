@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {communicationUrl,communicationQr} from '../staff-communication-qr.mjs';
+const ref='00000000-0000-4000-8000-000000000011';
+test('communication QR encodes only the existing opaque reference and secure ERP route',()=>{const q=communicationQr(ref,'https://backend-staging-foundation.pcl-crm.pages.dev');assert.equal(q.url,'https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot#communication='+ref);assert.match(q.svg,/<svg/);assert.match(q.svg,/<path/);assert.doesNotMatch(q.svg,/client|invoice|token|script/i);});
+test('invalid references and insecure production URLs cannot generate a QR',()=>{assert.throws(()=>communicationUrl('javascript:alert(1)','https://pcl.phamalarcon.com'));assert.throws(()=>communicationUrl(ref,'http://pcl.phamalarcon.com'));});
