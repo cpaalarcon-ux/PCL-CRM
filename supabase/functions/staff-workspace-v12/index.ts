@@ -265,7 +265,7 @@ async function action(id:any,p:any){
   await admin.auth.admin.signOut(id.jwt,'local');return {ok:true};
  }
  return scoped(id,async(tx,a)=>{
-  if(p.action==='workspace')return {...await readWorkspace(tx,a),suite:await suiteRead(tx),release:'v12-recognised-imports-sales-payroll-ledgers'};
+  if(p.action==='workspace')return {...await readWorkspace(tx,a),suite:await suiteRead(tx),release:'v12-uat-gates-payroll-preview'};
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
   const discussion=await discussionAction(tx,a,p);if(discussion!==undefined)return discussion;
   const periods=await taxPeriodAction(tx,a,p);if(periods!==undefined)return periods;
@@ -312,6 +312,8 @@ async function action(id:any,p:any){
   if(p.action==='client_save'){
    const cid=p.client_id?uuid(p.client_id):crypto.randomUUID();
    const name=text(p.company_name,200),pin=p.kra_pin?text(p.kra_pin,11).toUpperCase():null;
+   const [uatScope]=await tx`select erp_private.uat_scope_enabled() enabled`,isUatFixture=!!uatScope.enabled&&/^UAT Fictional\b/i.test(name);
+   if(uatScope.enabled&&!p.client_id&&!isUatFixture)fail(400,'This staging workspace accepts fictional test clients only. Start the company name with “UAT Fictional”.');
    if(pin&&!/^[A-Z][0-9]{9}[A-Z]$/.test(pin))fail(400,'Check the KRA PIN format.');
    const sector=p.primary_sector?text(p.primary_sector,100):null,branch=p.branch_location?choice(p.branch_location,branches):null;
    if(sector&&!(await tx`select sector_id from erp_private.sectors where name=${sector} and deleted_at is null`).length)fail(400,'Choose a saved sector, or add it with Add sector before saving this client.');
@@ -321,15 +323,15 @@ async function action(id:any,p:any){
     const rows=await tx`update erp_private.clients set company_name=${name},kra_pin=${pin},primary_sector=${sector},branch_location=${branch},client_category=${cat}
     where client_id=${cid} and revision=${rev} returning client_id`;
     if(!rows.length)fail(409,'Client changed or is unavailable. Refresh before editing.');
-   }else await tx`insert into erp_private.clients(client_id,company_name,kra_pin,primary_sector,branch_location,client_category,record_status,owner_staff_id)
-    values(${cid},${name},${pin},${sector},${branch},${cat},'Existing',${a.staff_id})`;
+   }else await tx`insert into erp_private.clients(client_id,company_name,kra_pin,primary_sector,branch_location,client_category,record_status,owner_staff_id,is_uat_fixture)
+    values(${cid},${name},${pin},${sector},${branch},${cat},'Existing',${a.staff_id},${isUatFixture})`;
    const firms=Array.isArray(p.firm_ids)?p.firm_ids.map(uuid):[];if(!firms.length)fail(400,'Select at least one handling firm.');
    for(const firm of firms){
     const [allowed]=await tx`select erp_private.firm_allowed(${firm}::uuid) as ok`;if(!allowed.ok)deny();
     await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${cid},${firm}) on conflict do nothing`;
    }
-   let tax_project_id=null,tax_generated=0;
-   if(p.tax_setup){const saved=await workspaceAction(tx,a,{...p.tax_setup,action:'project_save',client_id:cid,service_code:'TAX-COMP',pack:'Tax Compilation'});tax_project_id=saved.project_id;tax_generated=Number(saved.generated||0);}
+   let tax_project_id=null,tax_generated=0,tax_project_status=null;
+   if(p.tax_setup){const saved=await workspaceAction(tx,a,{...p.tax_setup,action:'project_save',client_id:cid,service_code:'TAX-COMP',pack:'Tax Compilation'});tax_project_id=saved.project_id;tax_generated=Number(saved.generated||0);tax_project_status=saved.project_status;}
    let purchase_activity_id=null;
    if(p.purchase_setup){
     const s=p.purchase_setup,activity=await improvementAction(tx,a,{action:'v3_activity_add',client_id:cid,activity_name:s.activity_name,pack_code:s.pack_code,income_stream:s.income_stream,effective_from:s.effective_from,effective_to:s.effective_to||null,evidence:s.activity_evidence});purchase_activity_id=activity.activity_id;
@@ -341,7 +343,7 @@ async function action(id:any,p:any){
      for(const stockClass of names)await tx`insert into erp_private.stock_categories(client_id,activity_id,inventory_use,stock_class,created_by) values(${cid},${purchase_activity_id},${use},${stockClass},${a.staff_id}) on conflict do nothing`;
     }
    }
-   return {ok:true,client_id:cid,tax_project_id,tax_generated,purchase_activity_id};
+   return {ok:true,client_id:cid,tax_project_id,tax_project_status,tax_generated,purchase_activity_id};
   }
   if(p.action==='staff_save'){
    let old=null;if(p.staff_id){old=one(await tx`select * from erp_private.staff_members where staff_id=${uuid(p.staff_id)} for update`);if(old.staff_id===a.staff_id)fail(403,'Another Engagement Partner must edit your account.');}

@@ -6,6 +6,7 @@ import {one,leader} from './suite-actions.ts';
 const fields:any={Clients:['company_name','kra_pin','primary_sector','branch_location','client_category'],Staff:['staff_identifier','login_id','full_name','category_code','employment_type','billing_status','branch_location','contract_start_date','contract_end_date']};
 export async function masterImport(tx:any,a:any,f:FormData){
  leader(a);const dataset=choice(f.get('dataset'),['Clients','Staff']),file=f.get('file');if(!(file instanceof File))fail(400,'Choose an Excel workbook.');
+ if(dataset==='Clients'&&(await tx`select erp_private.uat_scope_enabled() enabled`)[0]?.enabled)fail(400,'Client master imports are paused in the isolated UAT workspace. Add approved fictional test clients from Clients → Add client; use names beginning “UAT Fictional”.');
  const bytes=new Uint8Array(await file.arrayBuffer());if(fileType(file.name,bytes)!=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')fail(400,'Use an XLSX workbook.');checkWorkbookZip(bytes);
  const {sheet,sheets}=await readWorkbookSheet(bytes,f.get('sheet_name')||null),header=Number(f.get('header_row')||1);if(!Number.isInteger(header)||header<1||header>200)fail(400,'Choose a header row from 1 to 200.');
  const row=(n:number)=>Array.from({length:sheet.columnCount},(_,i)=>sheet.getRow(n).getCell(i+1).value);

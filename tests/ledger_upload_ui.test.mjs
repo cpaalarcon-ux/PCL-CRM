@@ -25,7 +25,8 @@ const request=async p=>{
  throw new Error('Unexpected action '+p.action);
 };
 function modal(title,body,save,after){$('#title').textContent=title;$('#editorBody').innerHTML=body;const f=$('#editForm');if(f)f.onsubmit=async e=>{e.preventDefault();const result=await save(new FormData(f));if(after)await after(result);};}
-const ui=createLedgerUI({$,esc,field,select,form,modal,request,notice:()=>{},shortDate:v=>String(v).slice(0,10),projectName:()=> 'Example project',data:()=>state});
+const payrollImports=[];
+const ui=createLedgerUI({$,esc,field,select,form,modal,request,notice:()=>{},shortDate:v=>String(v).slice(0,10),projectName:()=> 'Example project',data:()=>state},{onPayrollImport:projectId=>payrollImports.push(projectId)});
 const pause=()=>new Promise(resolve=>setTimeout(resolve,20));
 async function click(selector){const element=$(selector);assert.ok(element,selector);element.click();await pause();}
 
@@ -47,5 +48,13 @@ test('standard opening template auto-maps six columns and asks for evidence once
  const commit=calls.find(x=>x.action==='ledger_import_commit');assert.ok(commit);
  assert.deepEqual(commit.column_map,{legacy_code:'1',source_name:'2',routing_code:'3',tb_item_code:'4',debit:'5',credit:'6'});
  assert.equal(commit.confirm_opening_source,true);assert.equal(commit.journal_date,'2026-01-01');
+});
+
+test('payroll import opens the recognised preview workflow for the selected project',async()=>{
+ await ui.open('project-1');
+ await click('[data-ledger-tab="Payroll"]');
+ await click('[data-ledger="import-payroll"]');
+ assert.deepEqual(payrollImports,['project-1']);
+ assert.equal(calls.some(x=>x.action==='workbook_commit'&&x.dataset==='Payroll'),false);
  dom.window.close();
 });

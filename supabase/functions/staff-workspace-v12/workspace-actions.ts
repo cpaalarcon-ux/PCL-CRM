@@ -1,5 +1,5 @@
 import {fail,text,uuid,date,revision,choice} from './validation.mjs';
-import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate,openingBalanceReady} from './workspace-rules.mjs';
+import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate,openingBalanceReady,openingBalanceSetupReady} from './workspace-rules.mjs';
 const profileForScheduledWork:Record<string,string[]>={
  VAT:['VAT'],PAYE:['PAYE'],TOT:['TOT'],MRI:['MRI'],
  'Housing levy':['Housing levy'],SHIF:['SHIF'],NSSF:['NSSF'],NITA:['NITA'],
@@ -7,7 +7,7 @@ const profileForScheduledWork:Record<string,string[]>={
 };
 const one=(r:any[])=>{if(!r.length)fail(403,'This record is not available to your account.');return r[0];};
 const editor=(a:any)=>{if(!projectEditor(a))fail(403,'A Partner, Manager or Supervisor must manage this project.');};
-async function requireOpeningBalanceSetup(tx:any,cid:string,firm?:string,effectiveOn?:string){
+async function requireProjectSetup(tx:any,cid:string,firm?:string,effectiveOn?:string){
  const c=one(await tx`select legal_entity_type,entity_evidence,year_end_month,year_end_day,opening_balance_status from erp_private.clients where client_id=${cid} and deleted_at is null`);
  if(!c.legal_entity_type||String(c.entity_evidence||'').trim().length<10||!c.year_end_month||!c.year_end_day)fail(400,'Complete Clients → Entity / activities: confirm legal entity, supporting source and financial year-end before creating project work.');
  const accountDate=effectiveOn||nairobiDate(),[account]=await tx`select mapping_id from erp_private.client_account_mappings where client_id=${cid} and status='Active' and effective_from<=${accountDate} and (effective_to is null or effective_to>=${accountDate}) limit 1`;
@@ -15,8 +15,17 @@ async function requireOpeningBalanceSetup(tx:any,cid:string,firm?:string,effecti
  const [source]=await tx`select document_id from erp_private.documents where client_id=${cid} and (${firm||null}::uuid is null or handling_firm_id=${firm||null}::uuid)
   and project_id is null and category='Import Sources' and import_purpose='Opening TB' and archived_at is null and deleted_at is null limit 1`;
  const [posted]=await tx`select j.journal_id from erp_private.ledger_journals j join erp_private.ledger_periods lp using(period_id)
-  where lp.client_id=${cid} and j.kind='Opening' and j.status='Posted' limit 1`;
- if(!openingBalanceReady({status:c.opening_balance_status,hasSource:!!source,hasPostedOpening:!!posted}))fail(400,'Before creating a project or generating tasks, stage the approved prior-year opening TB in Documents → Import sources, or record why the client has no opening balances.');
+  where lp.client_id=${cid} and lp.starts_on<=${accountDate} and lp.ends_on>=${accountDate} and j.kind='Opening' and j.status='Posted' limit 1`;
+ if(!openingBalanceSetupReady({status:c.opening_balance_status,hasSource:!!source,hasPostedOpening:!!posted}))fail(400,'Before creating the draft project, stage the opening TB under the handling firm or record “No opening balances apply”. Then approve the client account mappings. Staging is not posting; tasks remain locked until an opening journal is independently posted.');
+}
+async function projectTaskGate(tx:any,pid:string,cid:string,effectiveOn:string){
+ const project=one(await tx`select status from erp_private.projects where project_id=${pid} and deleted_at is null`);
+ if(project.status!=='Active')return {ready:false,reason:'Project is Draft. Complete the engagement checks and activate it after resolving the opening-balance step.'};
+ const client=one(await tx`select opening_balance_status from erp_private.clients where client_id=${cid} and deleted_at is null`);
+ if(client.opening_balance_status==='No opening balances')return {ready:true,reason:''};
+ const [posted]=await tx`select j.journal_id from erp_private.ledger_journals j join erp_private.ledger_periods lp using(period_id)
+  where lp.client_id=${cid} and lp.starts_on<=${effectiveOn} and lp.ends_on>=${effectiveOn} and j.kind='Opening' and j.status='Posted' limit 1`;
+ return posted?{ready:true,reason:''}:{ready:false,reason:'The opening TB source is not yet posted for the financial year covering this schedule. Import it, map and balance it, then have a different Manager or Partner post it.'};
 }
 async function assign(tx:any,pid:string,firm:string,sid:string){
  const s=one(await tx`select * from erp_private.assignment_candidates() where staff_id=${sid} and firm_id=${firm}`);
@@ -89,7 +98,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    const preview=await previewSchedule(tx,s,cid);
    if(preview.due_now>12&&p.confirm_task_backlog!==true)fail(400,`The schedule would create ${preview.due_now} tasks now. Review the catch-up count and confirm, or change the start date.`);
   }
-  if(!old||s.enabled&&s.obligations.length)await requireOpeningBalanceSetup(tx,cid,firm,s.starts_on);
+  if(!old||s.enabled&&s.obligations.length)await requireProjectSetup(tx,cid,firm,s.starts_on);
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
   // Partners can explicitly select any registered firm; other categories require existing firm access.
   if(a.category_code==='PARTNER')await tx`insert into erp_private.staff_firm_access(staff_id,firm_id) values(${a.staff_id},${firm}) on conflict(staff_id,firm_id) do update set deleted_at=null`;
@@ -116,9 +125,11 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
     on conflict(project_id) do update set frequency=excluded.frequency,pack=excluded.pack,starts_on=excluded.starts_on,ends_on=excluded.ends_on,effective_from=excluded.effective_from,
     enabled=excluded.enabled,obligations=excluded.obligations,assigned_to=excluded.assigned_to,reviewer_id=excluded.reviewer_id,version=project_schedules.version+1,updated_at=now()`;
   }
-  const [r]=await tx`select erp_private.generate_project_tasks(${pid}::uuid) generated`;return {ok:true,project_id:pid,generated:r.generated,schedule_changed:changed};
+  const projectStatus=old?.status||'Draft',gate=projectStatus==='Active'?await projectTaskGate(tx,pid,cid,s.starts_on):{ready:false,reason:'Project is Draft. Its schedule is saved, but no tasks or reports are activated yet.'};
+  const [r]=gate.ready&&projectStatus==='Active'?await tx`select erp_private.generate_project_tasks(${pid}::uuid) generated`:[{generated:0}];
+  return {ok:true,project_id:pid,project_status:projectStatus,generated:r.generated,schedule_changed:changed,task_generation_blocked_reason:gate.ready?'':gate.reason};
  }
- if(p.action==='generate_tasks'){editor(a);const project=one(await tx`select p.client_id,p.handling_firm_id,s.starts_on from erp_private.projects p left join erp_private.project_schedules s using(project_id) where p.project_id=${uuid(p.project_id)} and p.deleted_at is null`);await requireOpeningBalanceSetup(tx,project.client_id,project.handling_firm_id,project.starts_on||nairobiDate());return one(await tx`select erp_private.generate_project_tasks(${uuid(p.project_id)}::uuid) generated`);}
+ if(p.action==='generate_tasks'){editor(a);const pid=uuid(p.project_id),project=one(await tx`select p.client_id,p.handling_firm_id,s.starts_on from erp_private.projects p left join erp_private.project_schedules s using(project_id) where p.project_id=${pid} and p.deleted_at is null`),gate=await projectTaskGate(tx,pid,project.client_id,project.starts_on||nairobiDate());if(!gate.ready)fail(400,gate.reason);return one(await tx`select erp_private.generate_project_tasks(${pid}::uuid) generated`);}
  if(p.action==='schedule_preview'){
   const s=one(await tx`select * from erp_private.project_schedules where project_id=${uuid(p.project_id)}`);
   const client=one(await tx`select c.year_end_month,c.year_end_day from erp_private.projects p join erp_private.clients c using(client_id) where p.project_id=${s.project_id}`);
@@ -127,7 +138,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='task_create'){
   editor(a);const pid=uuid(p.project_id),sid=uuid(p.assigned_to),due=date(p.due_date);
   if(!due)fail(400,'Choose a due date.');const project=one(await tx`select client_id,handling_firm_id,status from erp_private.projects where project_id=${pid}`);
-  if(project.status==='Archived')fail(400,'Choose an open project.');await requireOpeningBalanceSetup(tx,project.client_id,project.handling_firm_id,due);await assign(tx,pid,project.handling_firm_id,sid);
+  if(project.status==='Archived')fail(400,'Choose an open project.');const gate=await projectTaskGate(tx,pid,project.client_id,due);if(!gate.ready)fail(400,gate.reason);await assign(tx,pid,project.handling_firm_id,sid);
   return one(await tx`insert into erp_private.tasks(project_id,assigned_to,task_name,description,due_at,requires_document) values(${pid},${sid},${text(p.task_name,200)},${text(p.description||'',2000,false)},${due+'T17:00:00+03:00'},${p.requires_document===true}) returning task_id`);
  }
  if(p.action==='task_recipients')return {recipients:await tx`select * from erp_private.task_recipient_candidates(${uuid(p.task_id)}::uuid)`};
@@ -161,10 +172,10 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    values(${t.staff_id},${t.project_id},${t.task_id},${t.work_date},${-Number(t.hours)},${text(p.reason,2000)},${t.billable},'Approved',${a.staff_id},now(),${text(p.reason,2000)},${t.timesheet_id}) returning timesheet_id`);
  }
  if(p.action==='project_report'){
-  const pid=uuid(p.project_id),project=one(await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,c.company_name,c.year_end_month,c.year_end_day,c.opening_balance_status,c.opening_balance_note,
+  const pid=uuid(p.project_id),project=one(await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,p.status,ps.starts_on schedule_starts_on,c.company_name,c.year_end_month,c.year_end_day,c.opening_balance_status,c.opening_balance_note,
    exists(select 1 from erp_private.documents d where d.client_id=c.client_id and d.handling_firm_id=p.handling_firm_id and d.project_id is null and d.import_purpose='Opening TB' and d.archived_at is null and d.deleted_at is null) has_opening_tb_source,
-   exists(select 1 from erp_private.ledger_periods lp join erp_private.ledger_journals j using(period_id) where lp.client_id=c.client_id and j.kind='Opening' and j.status='Posted') has_posted_opening
-   from erp_private.projects p join erp_private.clients c using(client_id) where p.project_id=${pid} and p.deleted_at is null and c.deleted_at is null`);
+   exists(select 1 from erp_private.ledger_periods lp join erp_private.ledger_journals j using(period_id) where lp.client_id=c.client_id and lp.starts_on<=coalesce(ps.starts_on,(now() at time zone 'Africa/Nairobi')::date) and lp.ends_on>=coalesce(ps.starts_on,(now() at time zone 'Africa/Nairobi')::date) and j.kind='Opening' and j.status='Posted') has_posted_opening
+   from erp_private.projects p join erp_private.clients c using(client_id) left join erp_private.project_schedules ps on ps.project_id=p.project_id and ps.deleted_at is null where p.project_id=${pid} and p.deleted_at is null and c.deleted_at is null`);
   const [finance]=await tx`select erp_private.finance_allowed(${pid}::uuid) allowed`;
   const accounting=finance.allowed?await tx`select lp.period_id,lp.starts_on,lp.ends_on,lp.status,
     count(distinct j.journal_id) filter(where j.status='Posted')::int posted_journals,
@@ -191,14 +202,14 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
     case when kind='Sales' then coalesce((select sum((g.value->>'gross')::numeric) from jsonb_array_elements(coalesce(payload->'groups','[]'::jsonb)) as g(value)),0)
       else coalesce((payload #>> '{totals,employer_nssf}')::numeric,0)+coalesce((payload #>> '{totals,employer_ahl}')::numeric,0)+coalesce((payload #>> '{totals,nita}')::numeric,0) end gross_or_employer_costs
    from erp_private.period_imports where project_id=${pid} and (kind='Sales' or ${!!finance.allowed}) order by starts_on desc,created_at desc limit 500`;
-  const opening={status:project.opening_balance_status,note:project.opening_balance_note,source_staged:project.has_opening_tb_source,opening_journal_posted:project.has_posted_opening};
+  const opening={status:project.opening_balance_status,note:project.opening_balance_note,source_staged:project.has_opening_tb_source,opening_journal_posted:project.has_posted_opening,task_gate_ready:project.opening_balance_status==='No opening balances'||project.has_posted_opening};
   return {tasks:await tx`select status,count(*)::int count,count(*) filter(where due_at<now() and status not in ('Completed','Cancelled'))::int overdue from erp_private.tasks where project_id=${pid} and deleted_at is null group by status`,
    task_periods:await tx`select period_start,period_end,status,count(*)::int tasks,count(*) filter(where due_at<now() and status not in ('Completed','Cancelled'))::int overdue
     from erp_private.tasks where project_id=${pid} and deleted_at is null and period_start is not null group by period_start,period_end,status order by period_start desc,status limit 500`,
    time:await tx`select staff_id,status,sum(hours) hours from erp_private.timesheets where project_id=${pid} and deleted_at is null group by staff_id,status`,
    imports:await tx`select dataset,period_start,period_end,sum(source_count) source_rows,sum(new_count) imported,sum(duplicate_count) duplicates,sum(rejected_count) rejected from erp_private.workbook_batches where project_id=${pid} and archived_at is null group by dataset,period_start,period_end order by period_start desc`,
    mapping:await tx`select b.period_start,b.period_end,r.route,r.category_code,count(*)::int rows from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and b.archived_at is null and not r.is_split_parent and r.dataset in ('Purchases','Expenditure','Non-eTIMS') group by b.period_start,b.period_end,r.route,r.category_code order by b.period_start desc`,
-   project:{name:project.project_name,client:project.company_name,financial_year_end:project.year_end_month&&project.year_end_day?`${String(project.year_end_day).padStart(2,'0')}/${String(project.year_end_month).padStart(2,'0')}`:'Not set'},
+   project:{name:project.project_name,client:project.company_name,status:project.status,financial_year_start:project.schedule_starts_on,financial_year_end:project.year_end_month&&project.year_end_day?`${String(project.year_end_day).padStart(2,'0')}/${String(project.year_end_month).padStart(2,'0')}`:'Not set'},
    opening,accounting_available:!!finance.allowed,accounting,invoices,fee_schedules:feeSchedules,period_imports:periodImports};
  }
  return undefined;

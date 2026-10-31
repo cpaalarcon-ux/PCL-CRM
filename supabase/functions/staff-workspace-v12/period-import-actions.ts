@@ -34,12 +34,12 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
   const out=item.name===first.sheet.name?first:await readSourceSheet(bytes,doc.file_name,item.name),profile:any=detectImportProfile(out.sheet);
   if(profile?.id==='INVOICE-HEADERS-v1'&&kind==='Sales')profile.dataset='Sales';
   available.push({name:out.sheet.name,profile:profile?.name||'Review format',kind:profile?.dataset||null,recognised:!!profile?.recognised});
-  if(selection?!selection.includes(out.sheet.name):kind==='Payroll'&&out.sheet.name!==first.sheet.name)continue;
+  if(selection&&!selection.includes(out.sheet.name))continue;
   if(profile?.recognised&&profile.dataset===kind)sheets.push({sheet:out.sheet,profile});
   else if(selection?.includes(out.sheet.name)||kind==='Sales'&&/SEC_(B|C|D|D1|E)_/i.test(out.sheet.name))fail(400,'Review the source layout for '+out.sheet.name+'. It cannot be recognised safely.');
  }
- if(!sheets.length)fail(400,'No recognised '+kind.toLowerCase()+' layout was found in the selected source.');
- if(kind==='Payroll'&&sheets.length!==1)fail(400,'Choose one employee payroll worksheet.');
+ if(!sheets.length){const candidates=available.filter(x=>x.kind===kind&&x.recognised).map(x=>x.name);fail(400,candidates.length?`No ${kind.toLowerCase()} worksheet was selected. Choose: ${candidates.join(', ')}.`:`No recognised ${kind.toLowerCase()} worksheet was found. Check that the approved template and employee worksheet were uploaded.`);}
+ if(kind==='Payroll'&&sheets.length!==1)fail(400,`More than one payroll worksheet was recognised (${sheets.map(s=>s.sheet.name).join(', ')}). Choose one worksheet and preview again.`);
  let payload:any;
  if(kind==='Sales'){
   payload=salesTotals(sheets,start,end);

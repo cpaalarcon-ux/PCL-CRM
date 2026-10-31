@@ -58,11 +58,20 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='engagement_activate'){
   const k=(await tx`select * from erp_private.client_compliance where client_id=${project.client_id}`)[0];
   const iso=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
+  const [opening]=await tx`select c.opening_balance_status,s.starts_on from erp_private.clients c left join erp_private.project_schedules s on s.project_id=${project.project_id} and s.deleted_at is null where c.client_id=${project.client_id}`;
+  if(opening.opening_balance_status!=='No opening balances'){
+   const effectiveOn=opening.starts_on?iso(opening.starts_on):today();
+   const posted=await tx`select j.journal_id from erp_private.ledger_journals j join erp_private.ledger_periods lp using(period_id)
+    where lp.client_id=${project.client_id} and lp.starts_on<=${effectiveOn} and lp.ends_on>=${effectiveOn} and j.kind='Opening' and j.status='Posted' limit 1`;
+   if(!posted.length)fail(400,'The project stays Draft until the opening TB for its financial year is independently posted. Create the client year, import and balance the staged TB, then have a different Manager or Partner post it.');
+  }
   if(!k?.verified_by||!k.review_due||iso(k.review_due)<today())fail(400,'Verify the current client KYC file before activation. Open Clients → KYC / contacts.');
   if((k.is_pep||k.risk_rating==='High')&&!k.edd_approved_by)fail(400,'The Engagement Partner must approve enhanced due diligence.');
   if(!e?.signed_letter_id||!e.letter_verified_by||e.letter_expires_on&&iso(e.letter_expires_on)<today())fail(400,'Upload and verify a current signed engagement letter PDF, then save the engagement controls.');
   if(project.sme_audit_exempt&&project.service_code.startsWith('AUD-')&&!project.audit_requested)fail(400,'Confirm that the client has requested an optional audit before activating it.');
-  await tx`update erp_private.projects set status='Active' where project_id=${project.project_id}`;return {ok:true};
+  await tx`update erp_private.projects set status='Active' where project_id=${project.project_id}`;
+  const [generated]=await tx`select erp_private.generate_project_tasks(${project.project_id}::uuid) generated`;
+  return {ok:true,project_status:'Active',generated:generated.generated};
  }
  if(p.action==='engagement_finalize'){
   if(project.tax_master&&(await tx`select project_id from erp_private.project_schedules where project_id=${project.project_id} and enabled and ends_on>=(now() at time zone 'Africa/Nairobi')::date and frequency<>'Once-off'`).length)fail(400,'Archive closed monthly periods from Projects & tasks. End or pause the ongoing service schedule before finalising the master engagement.');
