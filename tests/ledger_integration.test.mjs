@@ -1,6 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {ledgerAction}=await import('../supabase/functions/staff-workspace-v6/ledger-actions.ts');
+const {annualTaxLedgerControl}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
 const {improvementAction}=await import('../supabase/functions/staff-workspace-v6/improvement-actions.ts');
 const {accountingAction}=await import('../supabase/functions/staff-workspace-v6/accounting-actions.ts');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),F2=id(),C=id(),P=id(),P2=id(),D=id(),B=id(),T=id(),actors={};
@@ -59,6 +60,8 @@ test('Client ledger: source integrity, maker/checker, entity profit and shared P
  await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_journal_review',journal_id:reversal.journal_id,revision:rv.journal.revision,status:'Posted',review_note:'Self review attempt from a manager'}),/different Manager/);
  await ledger('PARTNER',{...base,action:'ledger_journal_review',journal_id:reversal.journal_id,revision:rv.journal.revision,status:'Posted',review_note:'Fictional independent correction approval'});
  report=await ledger('ASSISTANT',{...base,action:'ledger_read'});assert.equal(report.profit.operating_expenses,0);assert.equal(report.profit.profit_before_tax,-128000);
+ const annual=await annualTaxLedgerControl(tx,P,'2026-01-01','2026-12-31');assert.equal(annual.source_application.balanced,true);assert.equal(annual.source_application.trial_balance_difference,0);assert.equal(annual.profit_before_tax,report.profit.profit_before_tax);
+ assert.equal((await annualTaxLedgerControl(tx,P,'2025-01-01','2025-12-31')).source_application,null,'annual tax control requires the exact client financial-year ledger');
  // Imported legacy names, negative sign presentation and all source rows remain auditable.
  const ExcelJS=require(require.resolve('exceljs',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]})),w=new ExcelJS.Workbook(),sheet=w.addWorksheet('Payroll');sheet.addRow(['Old code','Original name','Debit','Credit']);sheet.addRow(['OLD-SAL','Gross wages',1000,0]);sheet.addRow(['OLD-WAGE','Net wages',0,1000]);sheet.addRow(['OLD-REV','Original signed credit',-50,0]);sheet.addRow(['OLD-BANK','Original offset',50,0]);workbookBytes=await w.xlsx.writeBuffer();
  const ip={...base,document_id:D,sheet_name:'Payroll',header_row:1,kind:'Payroll',reference:'PAY-IMPORT',journal_date:'2026-10-31',evidence:'Fictional legacy balanced payroll schedule',column_map:{legacy_code:1,source_name:2,debit:3,credit:4}};

@@ -178,122 +178,136 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
   return {ok:true};
  }
  if(p.action==='v3_identity_save'){
-  leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);const v=entityInput(p);
-  const predecessor=p.predecessor_client_id?uuid(p.predecessor_client_id):null;if(predecessor){if(predecessor===c.client_id)fail(400,'Choose a different predecessor client.');one(await tx`select client_id from erp_private.clients where client_id=${predecessor} and deleted_at is null`);
-   const cycle=await tx`with recursive chain as (select client_id,predecessor_client_id,ARRAY[client_id] as seen from erp_private.clients where client_id=${predecessor} union all select c.client_id,c.predecessor_client_id,chain.seen||c.client_id from erp_private.clients c join chain on c.client_id=chain.predecessor_client_id where not c.client_id=any(chain.seen) and cardinality(chain.seen)<100) select client_id from chain where client_id=${c.client_id} limit 1`;if(cycle.length)fail(400,'A successor link cannot create a cycle.');
+  leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);const v=entityI…11147 tokens truncated…,${start},${end},${c.legal_entity_type},${c.entity_evidence},${a.staff_id}) returning period_id`);
+ }
+ const l=await period(tx,uuid(p.period_id),pid);
+ if(p.action==='ledger_read')return {...await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)),rates};
+ if(p.action==='ledger_account_read'){
+  const code=text(p.account_code,5),to=p.as_of?date(p.as_of):day(l.ends_on);if(to<day(l.starts_on)||to>day(l.ends_on))fail(400,'Choose an as-of date inside this financial year.');return {lines:await tx`select x.*,j.reference,j.kind,j.journal_date,j.status,j.reviewed_by from erp_private.ledger_lines x join erp_private.ledger_journals j using(journal_id) where j.period_id=${l.period_id} and x.account_code=${code} and j.status='Posted' and j.journal_date<=${to} order by j.journal_date,j.reference,x.line_no limit 2001`};
+ }
+ if(p.action==='ledger_journal_read'){
+  const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id}`),items=await lines(tx,j.journal_id);
+  return {journal:j,lines:items,accounts:await catalogue(tx),issues:journalIssues(items,await catalogue(tx),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot})};
+ }
+ if(p.action==='ledger_asset_read'){const asset=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id}`);return {asset,rate:asset.rate_snapshot,calculation:assetCalculation(asset,asset.rate_snapshot,l.starts_on,l.ends_on)};}
+ if(l.status!=='Open')fail(400,'This client year is closed. Its posted snapshot remains available.');
+ if(project.status==='Archived')fail(400,'Archived projects cannot change client working papers.');
+ if(p.action==='ledger_journal_save'){
+  const accounts=await catalogue(tx),kind=choice(p.kind,['Opening','Payroll','Adjustment','Stock']),items=normaliseLines(p.lines,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll'});
+  if(kind==='Opening')for(const line of items.filter((x:any)=>x.account_code))if(!await clientAccountAllowed(tx,project.client_id,line.account_code,day(l.starts_on)))fail(400,`ERP account ${line.account_code} is not approved for this client’s opening balance date. Set it up under Clients → Client accounts first.`);
+  if(p.journal_id){const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);if(j.generated||j.kind!==kind)fail(400,'Generated source entries must be refreshed or reversed, not manually overwritten.');
+   await writeLines(tx,j,items);await tx`update erp_private.ledger_journals set journal_date=${date(p.journal_date)},reference=${text(p.reference,100)},description=${text(p.description||'',2000,false)},evidence=${text(p.evidence||'',5000,false)},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};
+  }return await newJournal(tx,a,l,kind,p,items);
+ }
+ if(p.action==='ledger_period_import_create'){
+  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':period-import'},0))`;
+  const source=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid}`);
+  if(source.status!=='Confirmed'||day(source.starts_on)<day(l.starts_on)||day(source.ends_on)>day(l.ends_on))fail(400,'Choose an independently confirmed import within this financial year.');
+  const used=(await tx`select journal_id from erp_private.ledger_sources where source_kind='Period import' and source_key=${source.import_id}`)[0];if(used)return {...used,reused:true};
+  let items:any[]=[];
+  if(source.kind==='Sales'){
+   const codes:any={'16%':'40000','8%':'40010','0%':'40020',Exempt:'40030'};
+   const signed=(code:string,value:number,description:string)=>({account_code:code,debit:Math.max(value,0)/100,credit:Math.max(-value,0)/100,source_status:'Confirmed',source_reference:source.import_id,description});
+   for(const g of source.payload.groups){const net=cashAmount(g.net),vat=cashAmount(g.vat);if(net||vat)items.push(signed('10060',net+vat,'Sales summary '+g.vat_category),signed(codes[g.vat_category],-net,'Net sales '+g.vat_category),...(vat?[signed('21020',-vat,'Output VAT '+g.vat_category)]:[]));}
+  }else{const t=source.payload.totals;items=payrollJournal({gross_pay:t.gross,paye:t.paye,shif:t.shif,employee_ahl:t.employee_ahl,employee_nssf:t.employee_nssf,employee_pension:t.employee_pension,other_deductions:t.other_deductions,employer_ahl:t.employer_ahl,employer_nssf:t.employer_nssf,employer_nita:t.nita,evidence:source.import_id});}
+  if(!items.length)fail(400,'A zero summary needs no accounting entry.');
+  const result=await newJournal(tx,a,l,source.kind,{journal_date:day(source.ends_on),reference:source.kind.toUpperCase()+'-'+day(source.starts_on)+'-'+source.import_id.slice(0,8),evidence:'Confirmed import '+source.import_id+'; '+source.review_note,description:'Reviewed '+source.kind.toLowerCase()+' category/control totals'},items,{kind:'Period import',import_id:source.import_id,source_hash:source.source_hash},true);
+  await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id,source_revision) values('Period import',${source.import_id},${result.journal_id},${pid},${source.revision})`;return result;
+ }
+ if(p.action==='ledger_generate_sources')return await generateSource(tx,a,l,p);
+ if(p.action==='ledger_payroll_create'){
+  const items=payrollJournal(p),snapshot={kind:'Payroll control',inputs:{...p,action:undefined}};
+  if(p.journal_id){const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);if(j.kind!=='Payroll'||j.source_snapshot.kind!=='Payroll control')fail(400,'Edit a draft payroll control entry.');await writeLines(tx,j,items);await tx`update erp_private.ledger_journals set reference=${text(p.reference,100)},journal_date=${date(p.journal_date)},evidence=${text(p.evidence,5000)},source_snapshot=${tx.json(snapshot)},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};}
+  return await newJournal(tx,a,l,'Payroll',p,items,snapshot,true);
+ }
+ if(p.action==='ledger_journal_metadata'){
+  const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);const at=date(p.journal_date);if(j.kind==='Depreciation'&&at!==day(j.journal_date))fail(400,'The depreciation date follows its reserved calculation period.');
+  await tx`update erp_private.ledger_journals set reference=${text(p.reference,100)},journal_date=${at},description=${text(p.description||'',2000,false)},evidence=${text(p.evidence,5000)},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};
+ }
+ if(p.action==='ledger_journal_refresh'){
+  const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);
+  if(j.source_snapshot.kind!=='Workbook')fail(400,'Only a generated workbook journal can refresh its sources.');
+  const rows=await reviewedRows(tx,pid,j.source_snapshot.rows.map((r:any)=>r.row_id)),items=rows.flatMap((r:any)=>j.kind==='Sales'?salesLines(r):costJournal(r));
+  await writeLines(tx,j,items);await tx`update erp_private.ledger_journals set source_snapshot=${tx.json({kind:'Workbook',rows:rows.map(sourceShape),digest:await digest(rows.map(sourceShape))})},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};
+ }
+ if(['ledger_journal_submit','ledger_journal_review'].includes(p.action)){
+  const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);
+  if(p.action==='ledger_journal_submit'){edit(j,a);const currentLines=await lines(tx,j.journal_id),issues=journalIssues(currentLines,await catalogue(tx),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(j.kind==='Opening')for(const line of currentLines.filter((x:any)=>x.account_code))if(!await clientAccountAllowed(tx,project.client_id,line.account_code,day(l.starts_on)))issues.push(`Line ${line.line_no}: ERP account ${line.account_code} is not approved for this client’s opening balance date.`);if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id} where journal_id=${j.journal_id}`;}
+  else{leader(a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);if(status==='Posted')await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;}
+  return {ok:true,journal_id:j.journal_id};
+ }
+ if(p.action==='ledger_reverse'){
+  leader(a);const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id}`);if(j.status!=='Posted'||j.kind==='Opening'||j.kind==='Reversal')fail(400,'Choose a posted movement journal. Opening corrections use an evidenced adjustment.');
+  const original=await lines(tx,j.journal_id);return await newJournal(tx,a,l,'Reversal',{...p,reversal_of:j.journal_id},original.map((r:any)=>({...r,debit:r.credit,credit:r.debit,source_reference:j.reference})),{kind:'Reversal',original_journal_id:j.journal_id},true);
+ }
+ if(p.action==='ledger_asset_save'){
+  const rate=one(rates.filter((r:any)=>r.rate_id===uuid(p.rate_id))),assetAccount=one((await catalogue(tx)).filter((x:any)=>x.code===String(p.asset_account)&&x.route===3&&x.status==='Active'&&!x.is_legacy));
+  if(!assetClassAllowed(assetAccount.code,rate.class_code))fail(400,'Select the shared-rate class matching this asset account. Special assets require a supported separate adjustment.');
+  const accountRate={...rate,expense_account:assetAccount.code==='15008'?'67060':rate.expense_account,contra_account:assetAccount.code==='15008'?'15970':rate.contra_account};
+  let cost=amount(p.cost,'capitalised cost'),source=p.source_row_id?one(await reviewedRows(tx,pid,[uuid(p.source_row_id)])):null;
+  if(source){costJournal(source);if(source.route!==3||source.account_code!==assetAccount.code)fail(400,'Map this purchase to the same PPE class account first.');const entry=costJournal(source)[0];cost=Number(entry.debit)-Number(entry.credit);if(cost<0)fail(400,'Asset credits and disposals need a controlled adjustment, not a new asset.');}
+  const values={asset_name:text(p.asset_name,200),asset_account:assetAccount.code,first_use_date:source?.first_use_date?day(source.first_use_date):date(p.first_use_date),cost,business_percentage:num(p.business_percentage,0,100),noncommercial_vehicle:p.noncommercial_vehicle===true||p.noncommercial_vehicle==='true',opening_book_value:amount(p.opening_book_value,'opening carrying amount',true),opening_tax_value:amount(p.opening_tax_value,'opening tax value',true),complex_case:p.complex_case===true||p.complex_case==='true'};
+  if(!values.first_use_date)fail(400,'Confirm the date first brought into use.');const calculation=assetCalculation(values,accountRate,l.starts_on,l.ends_on),evidence=text(p.evidence,5000);
+  if(p.asset_id){const r=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id} for update`);rev(r,p);edit(r,a);if(r.source_row_id!==(source?.row_id||null))fail(400,'An asset source cannot be reassigned.');await tx`update erp_private.ledger_assets set asset_name=${values.asset_name},asset_account=${values.asset_account},first_use_date=${values.first_use_date},cost=${cost},business_percentage=${values.business_percentage},noncommercial_vehicle=${values.noncommercial_vehicle},opening_book_value=${values.opening_book_value},opening_tax_value=${values.opening_tax_value},complex_case=${values.complex_case},rate_id=${rate.rate_id},rate_snapshot=${tx.json(accountRate)},evidence=${evidence},last_prepared_by=${a.staff_id},status='Draft' where asset_id=${r.asset_id}`;return {asset_id:r.asset_id,calculation};}
+  const result=one(await tx`insert into erp_private.ledger_assets(period_id,project_id,source_row_id,asset_name,asset_account,first_use_date,cost,business_percentage,noncommercial_vehicle,opening_book_value,opening_tax_value,complex_case,rate_id,rate_snapshot,evidence,prepared_by,last_prepared_by) values(${l.period_id},${pid},${source?.row_id||null},${values.asset_name},${values.asset_account},${values.first_use_date},${cost},${values.business_percentage},${values.noncommercial_vehicle},${values.opening_book_value},${values.opening_tax_value},${values.complex_case},${rate.rate_id},${tx.json(accountRate)},${evidence},${a.staff_id},${a.staff_id}) returning asset_id`);return {...result,calculation};
+ }
+ if(['ledger_asset_submit','ledger_asset_review','ledger_asset_read'].includes(p.action)){
+  const asset=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id} for update`),rate=asset.rate_snapshot,result=assetCalculation(asset,rate,l.starts_on,l.ends_on);
+  if(p.action==='ledger_asset_read')return {asset,rate,calculation:result};rev(asset,p);
+  if(p.action==='ledger_asset_submit'){edit(asset,a);if(result.issues.length)fail(400,result.issues.join(' '));await tx`update erp_private.ledger_assets set status='Submitted',last_prepared_by=${a.staff_id} where asset_id=${asset.asset_id}`;}
+  else{leader(a);if(asset.status!=='Submitted'||[asset.prepared_by,asset.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review this asset.');const status=choice(p.status,['Approved','Returned']);if(status==='Approved'&&result.issues.length)fail(400,result.issues.join(' '));await tx`update erp_private.ledger_assets set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where asset_id=${asset.asset_id}`;}
+  return {ok:true};
+ }
+ if(p.action==='ledger_depreciation_create'){
+  const asset=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id}`);if(asset.status!=='Approved')fail(400,'Obtain independent asset and class-rate approval first.');const start=date(p.starts_on),end=date(p.ends_on);if(start<day(l.starts_on)||end>day(l.ends_on)||end<start)fail(400,'Choose charge dates within the financial year.');
+  const result=periodAssetCharge(assetCalculation(asset,asset.rate_snapshot,l.starts_on,l.ends_on),asset,l.starts_on,l.ends_on,start,end);if(result.issues.length||result.book_period==null||result.tax_period_projection==null)fail(400,result.issues.join(' ')||'Complete the asset calculation.');
+  if(!result.book_period)fail(400,'No book depreciation arises for these dates.');
+  const posted=await tx`select c.*,j.status from erp_private.ledger_asset_charges c join erp_private.ledger_journals j using(journal_id) where c.asset_id=${asset.asset_id} order by c.starts_on`;
+  if(posted.some((x:any)=>day(x.starts_on)<=end&&day(x.ends_on)>=start))fail(409,'A depreciation charge already covers these dates. Open the existing journal.');
+  const remaining=money(Number(result.book_annual)-posted.reduce((sum:number,x:any)=>sum+Number(x.book_charge),0)),charge=money(Math.min(result.book_period,remaining));if(charge<=0)fail(400,'The annual book charge has already been allocated.');
+  const j=await newJournal(tx,a,l,'Depreciation',{...p,journal_date:end},[{account_code:asset.rate_snapshot.expense_account,debit:charge,credit:0,source_status:'Confirmed',source_reference:asset.asset_id},{account_code:asset.rate_snapshot.contra_account,debit:0,credit:charge,source_status:'Confirmed',source_reference:asset.asset_id}],{kind:'Depreciation',asset,calculation:result},true);
+  await tx`insert into erp_private.ledger_asset_charges(asset_id,journal_id,project_id,starts_on,ends_on,snapshot,book_charge,tax_projection) values(${asset.asset_id},${j.journal_id},${pid},${start},${end},${tx.json({asset,rate:asset.rate_snapshot,result})},${charge},${result.tax_period_projection})`;return j;
+ }
+ if(['ledger_import_preview','ledger_import_commit'].includes(p.action)){
+  const requestedKind=String(p.kind||''),documentId=uuid(p.document_id);
+  const doc=one(await tx`select * from erp_private.documents where document_id=${documentId} and deleted_at is null and archived_at is null
+   and (project_id=${pid} or (${requestedKind==='Opening'} and project_id is null and client_id=${project.client_id} and handling_firm_id=${project.handling_firm_id} and category='Import Sources' and import_purpose='Opening TB')) for share`);
+  if(doc.mime_type!=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')fail(400,'Choose an XLSX opening TB or payroll source.');
+  const fetched=await storage.download(doc.object_key);if(fetched.error||!fetched.data)fail(404,'Source workbook unavailable.');await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'DOWNLOAD')`;const bytes=new Uint8Array(await fetched.data.arrayBuffer());checkWorkbookZip(bytes);const {sheet,sheets}=await readWorkbookSheet(bytes,p.sheet_name?text(p.sheet_name,100):null);
+  const header=Math.trunc(Number(p.header_row)||1);if(header<1||header>200||header>sheet.rowCount)fail(400,'Select the header row.');
+  const get=(r:number,c:number)=>{const value=sheet.getRow(r).getCell(c).value;return value&&typeof value==='object'&&!(value instanceof Date)&&'result' in value?value.result:value;};
+  const headers=Array.from({length:sheet.columnCount},(_,i)=>String(get(header,i+1)||''));
+  if(p.action==='ledger_import_preview')return {sheets,sheet_name:sheet.name,header_row:header,headers,preview:Array.from({length:Math.min(8,sheet.rowCount-header)},(_,i)=>({source_row:header+i+1,values:headers.map((_:any,c:number)=>get(header+i+1,c+1))}))};
+  const kind=choice(p.kind,['Opening','Payroll']),map=p.column_map||{},col=(key:string)=>{const n=Number(map[key]);if(!Number.isInteger(n)||n<1||n>sheet.columnCount)return null;return n;},openingConfirmed=p.confirm_opening_source===true||p.confirm_opening_source==='true',sourceEvidence=String(p.evidence||'').trim();
+  if(kind==='Opening')await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':opening-balance'},0))`;
+  if(kind==='Opening'&&!openingConfirmed)fail(400,'Confirm the approved prior-year trial balance before importing opening balances.');
+  if(kind==='Opening'&&sourceEvidence.length<3)fail(400,'Enter the source workbook and approval reference once for this opening-balance upload.');
+  if(!col('source_name')||!col('debit')||!col('credit'))fail(400,'Map account name, debit and credit columns.');
+  const accounts=await catalogue(tx),items:any[]=[],sourceRows:any[]=[],sourceControls:any[]=[],clientMappings=kind==='Opening'?await tx`select mapping_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to from erp_private.client_account_mappings where client_id=${project.client_id} and status='Active' and effective_from<=${day(l.starts_on)} and (effective_to is null or effective_to>=${day(l.starts_on)})`:[];
+  for(let r=header+1;r<=sheet.rowCount;r++){
+   const read=(k:string)=>col(k)?get(r,col(k)!):null,name=String(read('source_name')||'').trim(),legacy=String(read('legacy_code')||'').trim();
+   if(!name&&!legacy)continue;
+   if(/^difference in books$/i.test(name)){const d=amount(read('debit')??0,'debit at source row '+r),c=amount(read('credit')??0,'credit at source row '+r);sourceControls.push({type:'difference_in_books',source_row:r,difference_kes:Number(d)-Number(c)});continue;}
+   if(/^(total|subtotal|grand total|net total|balance check)\b/i.test(name)||/^(total|subtotal|grand total|net total|balance check)\b/i.test(legacy))continue;
+   if(items.length>=2000)fail(400,'Split imports into at most 2,000 nonblank source rows.');
+   const debit=amount(read('debit')??0,'debit at source row '+r),credit=amount(read('credit')??0,'credit at source row '+r);if(!Number(debit)&&!Number(credit))continue;
+   const net=Number(debit)-Number(credit),negative=Number(debit)<0||Number(credit)<0,explicitCode=String(read('tb_item_code')||'').trim(),legacyCode=String(read('account_code')||'').trim(),sourceCode=kind==='Opening'?legacy:legacyCode;
+   if(kind!=='Opening'&&explicitCode&&legacyCode&&explicitCode!==legacyCode)fail(400,`Source row ${r}: ERP TB item code and master account code do not match.`);
+   const sourceMatches=kind==='Opening'?openingTbMappingMatches(clientMappings,sourceCode,name):[],sourceMapping=sourceMatches.length===1?sourceMatches[0]:null;
+   if(sourceMatches.length>1)fail(400,`Source row ${r}: more than one approved client account mapping matches this source. Ask a Manager to resolve the duplicate client setup.`);
+   if(sourceMapping&&explicitCode&&sourceMapping.erp_account_code!==explicitCode)fail(400,`Source row ${r}: ERP TB item code ${explicitCode} differs from the approved client mapping ${sourceMapping.erp_account_code}.`);
+   const targetCode=kind==='Opening'?sourceMapping?.erp_account_code||'':explicitCode||legacyCode,account=accounts.find(x=>x.code===targetCode),suppliedRouting=String(read('routing_code')||'').trim().toUpperCase();
+   if(suppliedRouting&&account&&suppliedRouting!==String(account.category_code||'').toUpperCase())fail(400,`Source row ${r}: routing code does not match ERP TB item code ${targetCode}.`);
+   const mappingIssue=kind==='Opening'&&!sourceMapping?'No approved client account mapping matches this source code/name for the financial-year start.':'';
+   items.push({account_code:targetCode||null,legacy_code:sourceCode||legacy,source_name:name,debit:Math.max(net,0),credit:Math.max(-net,0),source_status:kind==='Opening'?(!negative&&openingConfirmed?'Confirmed':'Unverified'):!negative&&read('source_status')==='Confirmed'?'Confirmed':'Unverified',source_reference:kind==='Opening'?`${doc.file_name} | ${sheet.name} | row ${r}`:String(read('source_reference')||doc.file_name),description:'Excel row '+r+(negative?' - sign presentation normalised; confirm original source':'' )});
+   sourceRows.push({source_row:r,original_debit:debit,original_credit:credit,source_name:name,legacy_code:sourceCode||legacy,source_tb_item_code:explicitCode,tb_item_code:targetCode||'',routing_code:suppliedRouting||String(account?.category_code||''),account_code:targetCode||'',client_mapping_id:sourceMapping?.mapping_id||null,mapping_issue:mappingIssue});
   }
-  if(c.predecessor_client_id&&c.predecessor_client_id!==predecessor)fail(400,'The predecessor link is retained. Use a separate controlled entity correction.');
-  if(c.legal_entity_type&&c.legal_entity_type!==v.legal_entity_type)fail(400,'A change of legal entity needs a separate successor client. Retain this entity and its outstanding work.');
-  await tx`update erp_private.clients set legal_entity_type=${v.legal_entity_type},entity_evidence=${v.entity_evidence},year_end_month=${v.year_end_month},year_end_day=${v.year_end_day},predecessor_client_id=${predecessor} where client_id=${c.client_id}`;if(predecessor)await tx`update erp_private.clients set accepts_new_engagements=false where client_id=${predecessor}`;return {ok:true};
+  const key=await digest({document:doc.sha256,sheet:sheet.name,header,kind,period:l.period_id}),existing=(await tx`select journal_id from erp_private.ledger_sources where source_kind=${kind+' workbook'} and source_key=${key}`)[0];if(existing)return {...existing,reused:true,imported_count:0,duplicate_count:items.length};
+  if(kind==='Opening'&&(await tx`select journal_id from erp_private.ledger_journals where period_id=${l.period_id} and kind='Opening' limit 1`)[0])fail(409,'An opening balance entry already exists for this financial year. Open it from Entry register. Edit an unposted draft there; posted opening corrections require a reviewed adjustment.');
+  if(!items.length)fail(400,'No nonzero account rows were found. Check that you selected the prior-year closing columns, not a comparison or total column.');const parsed=normaliseLines(items,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll'});
+  const totals=parsed.reduce((t:any,line:any)=>({debit:t.debit+cashAmount(line.debit),credit:t.credit+cashAmount(line.credit)}),{debit:0,credit:0});
+  const j=await newJournal(tx,a,l,kind,p,parsed,{kind:'Excel',document_id:doc.document_id,document_sha256:doc.sha256,sheet_name:sheet.name,header_row:header,column_map:map,source_rows:sourceRows,source_controls:sourceControls,import_totals:{debit_kes:totals.debit/100,credit_kes:totals.credit/100,difference_kes:(totals.debit-totals.credit)/100},...(kind==='Opening'?{source_confirmation:{confirmed:true,confirmed_by:a.staff_id,evidence_reference:sourceEvidence}}:{})});
+  await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id) values(${kind+' workbook'},${key},${j.journal_id},${pid})`;return {...j,source_count:items.length,imported_count:items.length,duplicate_count:0,totals:{debit_kes:totals.debit/100,credit_kes:totals.credit/100,difference_kes:(totals.debit-totals.credit)/100},source_controls:sourceControls};
  }
- if(p.action==='v3_opening_balance_state'){
-  leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);
-  const status=choice(p.status,['Pending','No opening balances']),reason=text(p.reason,2000);
-  if(reason.length<10)fail(400,'Record a reason of at least 10 characters.');
-  if(status==='No opening balances'){
-   if(!c.legal_entity_type||String(c.entity_evidence||'').trim().length<10||!c.year_end_month||!c.year_end_day)fail(400,'Confirm the client legal entity, supporting source and financial year-end in Entity / activities first.');
-   if((await tx`select document_id from erp_private.documents where client_id=${c.client_id} and category='Import Sources' and import_purpose='Opening TB' and archived_at is null and deleted_at is null limit 1`).length)fail(409,'An active opening TB source is already staged. Remove that upload first if it was incorrect.');
-   await tx`update erp_private.clients set opening_balance_status='No opening balances',opening_balance_note=${reason},opening_balance_confirmed_by=${a.staff_id},opening_balance_confirmed_at=now() where client_id=${c.client_id}`;
-  }else{
-   if(c.opening_balance_status!=='No opening balances')fail(409,'This client is already awaiting an opening TB upload or confirmation.');
-   await tx`update erp_private.clients set opening_balance_status='Pending',opening_balance_note='',opening_balance_confirmed_by=null,opening_balance_confirmed_at=null where client_id=${c.client_id}`;
-  }
-  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,before_values,after_values)
-   values(${a.auth_user_id},current_user,'clients','OPENING_BALANCE_SETUP',${c.client_id},${tx.json({status:c.opening_balance_status,note:c.opening_balance_note})},${tx.json({status,reason,changed_by:a.staff_id})})`;
-  return {ok:true,status};
- }
- if(['v3_activity_add','v3_partners_add','v3_period_add','v3_stock_policy_add'].includes(p.action)){
-  leader(a);const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid} and deleted_at is null`);await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':config'},0))`;
-  if(p.action==='v3_activity_add'){
-   const start=date(p.effective_from),end=p.effective_to?date(p.effective_to):null;if(!start||end&&end<start)fail(400,'Choose valid activity effective dates.');
-   return one(await tx`insert into erp_private.client_activities(client_id,pack_code,activity_name,income_stream,effective_from,effective_to,evidence,created_by) values(${cid},${choice(p.pack_code,packs)},${text(p.activity_name,160)},${choice(p.income_stream,streams)},${start},${end},${text(p.evidence,2000)},${a.staff_id}) returning activity_id`);
-  }
-  if(p.action==='v3_partners_add'){
-   const c=one(await tx`select legal_entity_type from erp_private.clients where client_id=${cid}`);if(c.legal_entity_type!=='Partnership')fail(400,'Confirm Partnership as the legal entity type first.');const [s,e]=range(p),group=crypto.randomUUID(),rows=partnerRatios(p.partners),ref=text(p.agreement_reference,2000);
-   if((await tx`select interest_id from erp_private.partner_interests where client_id=${cid} and effective_from<=${e} and effective_to>=${s} limit 1`).length)fail(400,'A ratio window overlaps. Existing agreements remain unchanged; use a new non-overlapping window.');
-   for(const r of rows)await tx`insert into erp_private.partner_interests(client_id,partner_name,partner_pin,recipient_type,profit_percentage,effective_from,effective_to,agreement_reference,created_by,group_id) values(${cid},${r.partner_name},${r.partner_pin},${r.recipient_type},${r.profit_percentage},${s},${e},${ref},${a.staff_id},${group})`;return {ok:true};
-  }
-  if(p.action==='v3_period_add'){
-   const [s,e]=range(p);if((await tx`select period_id from erp_private.client_periods where client_id=${cid} and starts_on<=${e} and ends_on>=${s} limit 1`).length)fail(400,'A verified reporting period already overlaps.');
-   return one(await tx`insert into erp_private.client_periods(client_id,starts_on,ends_on,return_due_date,internal_due_date,payment_due_date,deadline_rule_reference,created_by) values(${cid},${s},${e},${p.return_due_date?date(p.return_due_date):null},${p.internal_due_date?date(p.internal_due_date):null},${p.payment_due_date?date(p.payment_due_date):null},${text(p.deadline_rule_reference,2000)},${a.staff_id}) returning period_id`);
-  }
-  const activity=one(await tx`select * from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${cid}`),from=date(p.effective_from),threshold=p.variance_threshold==null||p.variance_threshold===''?100:Number(p.variance_threshold);
-  if(!from)fail(400,'Choose the date these stock settings begin.');
-  if(from<asDay(activity.effective_from)||activity.effective_to&&from>asDay(activity.effective_to))fail(400,`Choose a date within the business activity period (${asDay(activity.effective_from)}${activity.effective_to?` to ${asDay(activity.effective_to)}`:' onward'}).`);
-  if(!Number.isFinite(threshold)||threshold<0||threshold>1e9)fail(400,'Enter a valid review threshold in KES, or leave it blank to use KES 100.');
-  const previous=(await tx`select effective_from from erp_private.stock_policy_versions where activity_id=${activity.activity_id} order by effective_from desc limit 1`)[0];
-  if(previous&&a.category_code!=='PARTNER')fail(403,'Only a Partner can change saved client stock settings. Ask a Partner to make the dated update.');
-  const lastControl=(await tx`select max(ends_on)::text as last_end from erp_private.stock_controls where activity_id=${activity.activity_id} and status in ('Submitted','Approved')`)[0]?.last_end||'';
-  const minimum=[asDay(activity.effective_from),nextStockDay(previous?.effective_from),nextStockDay(lastControl)].filter(Boolean).sort().at(-1)||asDay(activity.effective_from);
-  if(activity.effective_to&&minimum>asDay(activity.effective_to))fail(400,'No stock settings date is available within this activity period. Update the activity dates first.');
-  if(from<minimum)fail(400,`Choose ${minimum} or later. New settings must start after the current settings and any submitted or approved stock period.`);
-  const basis=text(p.valuation_basis||'',2000,false),policyEvidence=stockPolicyEvidence(p);
-  return one(await tx`insert into erp_private.stock_policy_versions(client_id,activity_id,inventory_method,valuation_basis,effective_from,count_frequency,variance_threshold,evidence,configured_by) values(${cid},${activity.activity_id},${choice(p.inventory_method,['Periodic','Perpetual'])},${basis},${from},${choice(p.count_frequency,['Weekly','Monthly','Annually'])},${threshold},${policyEvidence},${a.staff_id}) returning policy_id`);
- }
- const pr=await project(tx,p.project_id),pid=pr.project_id;
- if(p.action==='v3_project_read')return {activities:await tx`select * from erp_private.client_activities where client_id=${pr.client_id} order by activity_name`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${pr.client_id} order by effective_from desc`,controls:await tx`select * from erp_private.stock_controls where project_id=${pid} order by ends_on desc`,requests:await tx`select * from erp_private.category_requests where project_id=${pid} order by created_at desc limit 100`};
- if(p.action==='v3_mapping_select'){
-  const search='%'+text(p.search||'',160,false)+'%',mapping=choice(p.mapping||'All',['All','Unmapped','Inventory','Expenditure','PPE']),dataset=choice(p.dataset||'Costs',['Costs','Purchases','Expenditure','Non-eTIMS']),rate=choice(p.vat_category||'All',['All','16%','8%','0%','Exempt','Non-eTIMS','Unconfirmed']);
-  const mappingPeriod=p.mapping_period?date(p.mapping_period):null;
-  const rows=await tx`select r.row_id,r.revision,r.normalized,b.period_start from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and b.archived_at is null and not r.is_split_parent and r.dataset in ('Purchases','Expenditure','Non-eTIMS') and (${dataset}='Costs' or r.dataset=${dataset}) and (${mapping}='All' or ${mapping}='Unmapped' and r.account_code is null or r.account_code is not null and r.route=case ${mapping} when 'Inventory' then 1 when 'Expenditure' then 2 when 'PPE' then 3 else 0 end) and (${rate}='All' or (case when r.dataset='Non-eTIMS' then 'Non-eTIMS' else coalesce(r.normalized->>'vat_category','Unconfirmed') end)=${rate}) and (${mappingPeriod||''}='' or coalesce(nullif(left(r.normalized->>'return_month',10),''),b.period_start::text,left(r.normalized->>'date',10))=${mappingPeriod||''}) and concat_ws(' ',r.normalized->>'invoice',r.normalized->>'reference',r.normalized->>'party',r.normalized->>'party_pin',r.normalized->>'description') ilike ${search} order by r.row_id limit 10001`;
-  if(!rows.length||rows.length>10000)fail(400,'Select 1–10,000 matching cost rows. Narrow the filters if necessary.');
-  const snapshot=rows.map((r:any)=>({row_id:r.row_id,revision:r.revision})),periods=new Map<string,any>();for(const r of rows){const period=String(r.normalized.return_month||isoDay(r.period_start)||r.normalized.date||'').slice(0,10);if(!period)continue;const g=periods.get(period)||{period,count:0,net:0,vat:0};g.count++;g.net+=Number(r.normalized.amount||0);g.vat+=Number(r.normalized.vat||0);periods.set(period,g);}
-  const totals={mapping_dates:[...new Set(rows.map((r:any)=>String(r.normalized.date||isoDay(r.period_start)||r.normalized.return_month||'').slice(0,10)).filter(Boolean))].sort(),mapping_periods:[...periods.values()].sort((x:any,y:any)=>x.period.localeCompare(y.period)).map((g:any)=>({...g,net:money(g.net),vat:money(g.vat)})),mapping_period:mappingPeriod,count:rows.length,net:money(rows.reduce((s:number,r:any)=>s+Number(r.normalized.amount||0),0)),vat:money(rows.reduce((s:number,r:any)=>s+Number(r.normalized.vat||0),0))},hash=await digest(snapshot);
-  return {...one(await tx`insert into erp_private.mapping_selections(project_id,selected_by,filters,rows_snapshot,totals,selection_hash) values(${pid},${a.staff_id},${tx.json({search:p.search||'',mapping,dataset,vat_category:rate,mapping_period:mappingPeriod})},${tx.json(snapshot)},${tx.json(totals)},${hash}) returning selection_id,expires_at`),selection_hash:hash,...totals};
- }
- if(p.action==='v3_suggestions'){
-  const row=one(await tx`select r.* from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=${uuid(p.row_id)} and r.project_id=${pid} and b.archived_at is null`);
-  const history=await tx`select r.row_id,r.account_code,r.normalized,r.narration,b.period_start from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) join erp_private.tax_row_reviews v using(row_id) where b.archived_at is null and r.client_id=${pr.client_id} and r.row_id<>${row.row_id} and v.source_revision=r.revision and v.decision in ('Eligible','Excluded') and r.normalized->>'party_pin'=${row.normalized.party_pin||''} and r.account_code is not null and not r.is_split_parent order by b.period_start desc limit 200`;
-  return suggestionFor(row,history);
- }
- if(p.action==='v3_category_request'){
-  one(await tx`select r.row_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=${uuid(p.row_id)} and r.project_id=${pid} and b.archived_at is null and not r.is_split_parent`);
-  return one(await tx`insert into erp_private.category_requests(project_id,row_id,reason,proposed_name,evidence,requested_by) values(${pid},${uuid(p.row_id)},${text(p.reason,2000)},${text(p.proposed_name,160)},${text(p.evidence,2000)},${a.staff_id}) returning request_id`);
- }
- if(p.action==='v3_category_decide'){
-  leader(a);const r=one(await tx`select * from erp_private.category_requests where request_id=${uuid(p.request_id)} and project_id=${pid} for update`);fresh(r,p);if(r.status!=='Pending'||r.requested_by===a.staff_id)fail(400,'Another Manager or Partner must decide the pending request.');
-  const status=choice(p.status,['Approved','Rejected']),code=status==='Approved'?text(p.account_code,5):null;if(code)one(await tx`select code from erp_private.account_catalog where code=${code} and status='Active' and not is_legacy`);
-  await tx`update erp_private.category_requests set status=${status},account_code=${code},decision_note=${text(p.decision_note,2000)},decided_by=${a.staff_id} where request_id=${r.request_id}`;return {ok:true};
- }
- if(p.action==='v3_stock_create'){
-  const [s,e]=range(p),activity=one(await tx`select * from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${pr.client_id} and effective_from<=${s} and (effective_to is null or effective_to>=${e})`),policy=one(await tx`select * from erp_private.stock_policy_versions where activity_id=${activity.activity_id} and effective_from<=${s} order by effective_from desc limit 1`);
-  return one(await tx`insert into erp_private.stock_controls(project_id,activity_id,policy_id,stock_class,starts_on,ends_on,prepared_by) values(${pid},${activity.activity_id},${policy.policy_id},${text(p.stock_class,100)},${s},${e},${a.staff_id}) returning control_id`);
- }
- if(['v3_stock_read','v3_stock_save','v3_stock_submit','v3_stock_review'].includes(p.action)){
-  await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;const c=one(await tx`select * from erp_private.stock_controls where control_id=${uuid(p.control_id)} and project_id=${pid} for update`),policy=one(await tx`select * from erp_private.stock_policy_versions where policy_id=${c.policy_id}`),src=await stockSource(tx,c);
-  if(p.action==='v3_stock_read')return {record:c,policy,source:{...src,rows:undefined},result:c.status==='Approved'?c.snapshot?.result:c.result};
-  fresh(c,p);
-  if(p.action==='v3_stock_review'){
-   reviewer(a);if(c.status!=='Submitted'||c.prepared_by===a.staff_id)fail(403,'Another reviewer must review the submitted stock control.');const status=choice(p.status,['Approved','Returned']),note=text(p.review_note,2000);if(note.length<10)fail(400,'Explain the independent review conclusion in at least 10 characters.');
-   if(status==='Approved'&&c.snapshot?.source_fingerprint!==src.fingerprint)fail(400,'Source rows changed. Return and reconcile the stock control.');
-   if(status==='Approved'&&c.result?.issues?.length&&!p.variance_evidence_id)fail(400,'Resolve the stock issues or link independent variance evidence.');
-   if(status==='Approved'){if(c.result?.opening_value===null||c.result?.closing_value===null||src.unreviewed||src.unallocated||!src.selected_count)fail(400,'Support openings, source mapping and independent tax row reviews first.');if(c.result.closing_value<0)fail(400,'Resolve negative closing stock before approval.');if(p.variance_evidence_id)await evidence(tx,p.variance_evidence_id,pid);}
-   await tx`update erp_private.stock_controls set status=${status},review_note=${note},reviewed_by=${a.staff_id},snapshot=${tx.json({...c.snapshot,review_note:note,reviewed_by:a.staff_id,variance_evidence_id:p.variance_evidence_id||null})} where control_id=${c.control_id}`;return {ok:true};
-  }
-  if(!['Draft','Returned'].includes(c.status)||c.prepared_by!==a.staff_id)fail(403,'Only the assigned preparer can change unsubmitted stock work.');
-  const inputs=p.action==='v3_stock_save'?p.inputs:c.inputs;if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||JSON.stringify(inputs).length>20000)fail(400,'Invalid stock values.');
-  const result=stockValues({...inputs,resale_purchases:src.resale_purchases,landed_costs:src.landed_costs},policy);
-  if(p.action==='v3_stock_submit'&&(result.opening_value===null||result.closing_value===null||!String(inputs.evidence_reference||'').trim()||!String(inputs.reconciliation_note||'').trim()||!src.selected_count||src.unreviewed||src.unallocated))fail(400,'Complete supported opening, cost, evidence, source allocation and row review before submission.');
-  await tx`update erp_private.stock_controls set inputs=${tx.json(inputs)},result=${tx.json(result)},status=${p.action==='v3_stock_submit'?'Submitted':'Draft'},snapshot=${tx.json({inputs,result,policy,source_fingerprint:src.fingerprint,source_rows:src.rows})} where control_id=${c.control_id}`;return {ok:true};
- }
- if(['v3_bank_defer','v3_bank_read','v3_bank_supplement','v3_bank_review'].includes(p.action)){
-  const c=one(await tx`select * from erp_private.sales_reconciliations where reconciliation_id=${uuid(p.reconciliation_id)} and project_id=${pid} for update`);
-  if(p.action==='v3_bank_read')return {deferral:(await tx`select * from erp_private.bank_deferrals where reconciliation_id=${c.reconciliation_id}`)[0]||null,supplements:await tx`select * from erp_private.bank_supplements where reconciliation_id=${c.reconciliation_id} order by created_at desc`};
-  if(p.action==='v3_bank_defer'){
-   leader(a);if(c.review_type!=='Monthly'||!['Draft','Returned'].includes(c.status)||c.prepared_by===a.staff_id)fail(400,'A different Manager/Partner must approve deferral on an unsubmitted monthly review.');
-   const expected=date(p.expected_on);if(!expected||expected<new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date()))fail(400,'Enter a current/future expected statement date.');await evidence(tx,p.evidence_id,pid);
-   one(await tx`select staff_id from erp_private.assignment_candidates() where staff_id=${uuid(p.owner_id)}`);
-   return one(await tx`insert into erp_private.bank_deferrals(reconciliation_id,project_id,requested_by,expected_on,owner_id,evidence_id,reason,alternative_control,approved_by) values(${c.reconciliation_id},${pid},${c.prepared_by},${expected},${uuid(p.owner_id)},${uuid(p.evidence_id)},${text(p.reason,2000)},${text(p.alternative_control,4000)},${a.staff_id}) returning reconciliation_id`);
-  }
-  if(p.action==='v3_bank_supplement'){
-   if(c.status!=='Locked'||!(await tx`select reconciliation_id from erp_private.bank_deferrals where reconciliation_id=${c.reconciliation_id}`).length)fail(400,'Create a supplement only against a locked deferred-bank review.');await evidence(tx,p.document_id,pid);
-   return one(await tx`insert into erp_private.bank_supplements(reconciliation_id,project_id,document_id,conclusion,amendment_required,prepared_by) values(${c.reconciliation_id},${pid},${uuid(p.document_id)},${text(p.conclusion,4000)},${p.amendment_required===true},${a.staff_id}) returning supplement_id`);
-  }
-  reviewer(a);const s=one(await tx`select * from erp_private.bank_supplements where supplement_id=${uuid(p.supplement_id)} and reconciliation_id=${c.reconciliation_id} for update`);fresh(s,p);if(s.prepared_by===a.staff_id||s.status!=='Pending')fail(403,'Another reviewer must review a pending bank supplement.');await tx`update erp_private.bank_supplements set status=${choice(p.status,['Approved','Returned'])},review_note=${text(p.review_note,2000)},reviewed_by=${a.staff_id} where supplement_id=${s.supplement_id}`;return {ok:true};
- }
- if(p.action==='v3_export_readiness'){
-  const c=one(await tx`select * from erp_private.clients where client_id=${pr.client_id}`),kind=choice(p.kind,['VAT3','P10','IT1','IT2P','IT2C']),[s,e]=range(p),period=(await tx`select * from erp_private.client_periods where client_id=${pr.client_id} and starts_on<=${s} and ends_on>=${e} limit 1`)[0],stock=await tx`select result,status from erp_private.stock_controls where project_id=${pid} and starts_on>=${s} and ends_on<=${e}`;
-  return exportReadiness({client:c,kind,period,stock});
- }
- fail(404,'Unknown improvement control action.');
+ fail(404,'Unknown client working-paper action.');
 }

@@ -3,7 +3,7 @@ import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
 import {readWorkbookSheet} from './workbook-reader.mjs';
 import {checkWorkbookZip} from './workspace-rules.mjs';
-import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal} from './ledger-rules.mjs';
+import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal} from './ledger-rules.mjs';
 import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
 
@@ -53,8 +53,10 @@ async function sourceCheck(tx:any,j:any){
  if(archived.length)fail(409,'A source in this draft was archived. Return the draft to its preparer and create a corrected posting from active sources.');
  const r=await reviewedRows(tx,j.project_id,j.source_snapshot.rows.map((x:any)=>x.row_id));
  const clientId=(await tx`select client_id from erp_private.projects where project_id=${j.project_id}`)[0]?.client_id;
+ const accounts=await tx`select code,route,category_code,status,is_legacy from erp_private.account_catalog`;
  for(const row of r.filter((x:any)=>['Purchases','Expenditure','Non-eTIMS'].includes(x.dataset)&&x.account_code)){
-  if(!await clientAccountAllowed(tx,clientId,row.account_code,day(row.normalized.date||row.period_start)))fail(409,`ERP account ${row.account_code} is no longer approved for this client and source date. Review the client account setup and refresh the draft.`);
+  const hint=row.normalized?.mapping_suggestion,confirmation=row.review_details?.mapping_confirmation,account=accounts.find((x:any)=>x.code===row.account_code),confirmed=confirmation?.method==='Uploaded routing and TB codes'&&hint&&String(confirmation.tb_item_code)===String(row.account_code)&&String(hint.account_code)===String(row.account_code)&&String(confirmation.routing_code)===String(hint.category_code)&&String(account?.category_code)===String(hint.category_code)&&Number(account?.route)===Number(hint.route)&&account?.status==='Active'&&!account?.is_legacy;
+  if(!confirmed&&!await clientAccountAllowed(tx,clientId,row.account_code,day(row.normalized.date||row.period_start)))fail(409,`ERP account ${row.account_code} is no longer approved for this client and source date, and its uploaded code confirmation is not valid. Review the client account setup and refresh the draft.`);
  }
  if(await digest(r.map(sourceShape))!==j.source_snapshot.digest)fail(409,'A source or its review changed. Refresh the generated draft before resubmitting.');
 }
@@ -106,6 +108,13 @@ async function report(tx:any,l:any,to:string){
  if(!journals.some((j:any)=>j.kind==='Stock'&&j.status==='Posted'))issues.push('Confirm stock / cost-of-sales completeness separately before relying on gross profit.');
  const balance=money(tb.reduce((sum:any,r:any)=>sum+r.net,0));if(balance!==0)issues.push('The trial balance is not balanced.');
  return {period:l,pending_information,as_of:to,accounts,tb,profit,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
+}
+
+export async function annualTaxLedgerControl(tx:any,projectId:string,start:string,end:string){
+ const periods=await tx`select * from erp_private.ledger_periods where project_id=${projectId} and starts_on=${start} and ends_on=${end}`;
+ if(periods.length!==1)return {source_application:null,profit_before_tax:null,issues:['Set up the client financial-year ledger for this exact annual tax period before preparing the Source & Application schedule.']};
+ const l=periods[0],data=await report(tx,l,day(l.ends_on)),schedule=sourceApplicationSchedule(data.tb);
+ return {period_id:l.period_id,source_application:schedule,profit_before_tax:data.profit.profit_before_tax,issues:[...data.issues,...schedule.issues],disclosure:data.disclosure};
 }
 
 export async function ledgerAction(tx:any,a:any,p:any,storage:any){

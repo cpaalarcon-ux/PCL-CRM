@@ -5,11 +5,12 @@ import {taxKinds,pickRate,profileIssues,keys,testRate,payrollFromRules,simpleTax
 import {fail,text,uuid,choice,revision,date} from './validation.mjs';
 import {range,day,number,amount,round,filingKinds,vatCalculation,incomeCalculation,payrollCalculation} from './suite-rules.mjs';
 import {one,leader,today} from './suite-actions.ts';
+import {annualTaxLedgerControl} from './ledger-actions.ts';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
 const editor=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner must review this work.');};
 const fresh=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'This record changed. Refresh before saving.');};
 export async function taxSummary(tx:any,c:any){
- if(['Locked','Filed'].includes(c.status)&&c.review_snapshot){const x=c.review_snapshot;return {result:x.result,issues:[],rows:x.rows||[],batches:x.batches||[],findings:x.findings||[],rate:x.rate,applied_rates:x.applied_rates||[x.rate].filter(Boolean),profile:x.profile,reconciliation:x.reconciliation||null,source_count:(x.batches||[]).reduce((n:number,b:any)=>n+b.source_count,0),rejected_count:0,unreviewed:0,unmapped:0};}
+ if(['Locked','Filed'].includes(c.status)&&c.review_snapshot){const x=c.review_snapshot;return {result:x.result,issues:[],rows:x.rows||[],batches:x.batches||[],findings:x.findings||[],rate:x.rate,applied_rates:x.applied_rates||[x.rate].filter(Boolean),profile:x.profile,reconciliation:x.reconciliation||null,source_application:x.source_application||null,source_count:(x.batches||[]).reduce((n:number,b:any)=>n+b.source_count,0),rejected_count:0,unreviewed:0,unmapped:0};}
  const project=one(await tx`select client_id from erp_private.projects where project_id=${c.project_id}`);
  const profiles=await tx`select * from erp_private.client_tax_profiles where client_id=${project.client_id} and status='Verified' and deleted_at is null and effective_from<=${c.starts_on} and effective_to>=${c.ends_on}`;
  const profile=profiles.length===1?profiles[0]:null;
@@ -49,7 +50,7 @@ export async function taxSummary(tx:any,c:any){
   if(r.dataset==='Sales'&&approved&&r.decision==='Confirmed')output+=Number(r.normalized.vat||0);
   if(['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset)&&approved&&r.decision==='Eligible')input+=round(Number(r.normalized.vat||0)*Number(r.deductible_percentage)/100);
  }
- let result:any={},salesReview:any=null,rate=rules[needed[0]]||null;
+ let result:any={},salesReview:any=null,source_application:any=null,annualLedger:any=null,rate=rules[needed[0]]||null;
  if(c.rate_id){const selected=available.find((r:any)=>r.rate_id===c.rate_id);if(!selected||testRate(selected))issues.push('The previously selected rate is unavailable or test-only. Preview and save the current applicable rules.');else if(rate&&selected.rate_id!==rate.rate_id)issues.push('The selected rate does not match the current client/period rules. Preview and save again.');}
  if(c.kind==='VAT'){
   const reconciliation=await tx`select reconciliation_id,reviewed_by,review_note,inputs,result,source_fingerprint from erp_private.sales_reconciliations where project_id=${c.project_id} and review_type='Monthly' and starts_on=${c.starts_on} and ends_on=${c.ends_on} and status='Locked'`;salesReview=reconciliation[0]||null;if(!reconciliation.length)issues.push('Complete independent monthly sales and bank reconciliation before tax submission.');
@@ -79,13 +80,31 @@ export async function taxSummary(tx:any,c:any){
    else if(interests.some((x:any)=>!c.inputs.partners?.some((p:any)=>p.name===x.partner_name&&Math.abs(Number(p.share)-Number(x.profit_percentage))<0.00001)))issues.push('Tie each partner allocation to the dated agreement; preserve company recipients.');
   }
   const annualStock=await tx`select result,status from erp_private.stock_controls where project_id=${c.project_id} and starts_on>=${c.starts_on} and ends_on<=${c.ends_on}`;if(annualStock.some((s:any)=>s.status!=='Approved'||s.result?.provisional||s.result?.count_value==null))issues.push('Tie out supported stock counts and costs: provisional stock cannot certify annual stock.');
-  if(!c.inputs.annual_bank_review_document_id)issues.push('Link the completed annual bank review evidence. Monthly Bank pending is not annual clearance.');
-  else if(!(await tx`select document_id from erp_private.documents where document_id=${uuid(c.inputs.annual_bank_review_document_id)} and project_id=${c.project_id} and deleted_at is null`).length)issues.push('Annual bank review evidence is unavailable.');
+  if(!c.inputs.annual_bank_review_document_id)issues.push('Link the annual bank statements and completed bank-review evidence. Monthly Bank pending is not annual clearance.');
+  else if(!(await tx`select document_id from erp_private.documents where document_id=${uuid(c.inputs.annual_bank_review_document_id)} and project_id=${c.project_id} and archived_at is null and deleted_at is null`).length)issues.push('Annual bank statement / review evidence is unavailable.');
   const outstanding=await tx`select d.reconciliation_id from erp_private.bank_deferrals d join erp_private.sales_reconciliations r using(reconciliation_id) where d.project_id=${c.project_id} and r.starts_on>=${c.starts_on} and r.ends_on<=${c.ends_on} and not exists(select 1 from erp_private.bank_supplements s where s.reconciliation_id=d.reconciliation_id and s.status='Approved' and not s.amendment_required)`;
   if(outstanding.length)issues.push('Complete deferred bank supplements and resolve any required amendments before annual completion.');
-  if(c.inputs.accounting_profit===undefined||c.inputs.accounting_profit==='')issues.push('Enter accounting profit and supported tax adjustments.');
-  else if(c.kind==='Partnership'&&!c.inputs.partners?.length)issues.push('Add partner profit-sharing percentages.');
-  else if(c.kind==='Partnership'||rate){const reliefs=c.kind==='Individual'?Number(rate.parameters.personal_relief||0)+Number(c.inputs.other_reliefs||0):0;result=incomeCalculation(c.kind,{...c.inputs,reliefs},rate?.parameters);if(c.kind==='Individual')result.personal_relief=Number(rate.parameters.personal_relief||0);}
+  annualLedger=await annualTaxLedgerControl(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on));source_application=annualLedger.source_application;
+  if(!annualLedger.source_application)issues.push(...annualLedger.issues);
+  else {for(const issue of annualLedger.issues)issues.push('Annual ledger: '+issue);}
+  if(source_application){
+   const evidenceFields:any={bank_statements:{id:c.inputs.annual_bank_review_document_id,notApplicable:false},loan_statements:{id:c.inputs.loan_statements_document_id,notApplicable:c.inputs.loan_statements_not_applicable_confirmed===true},other_expenses:{id:c.inputs.other_expenses_document_id,notApplicable:c.inputs.other_expenses_not_applicable_confirmed===true},stock_movement:{id:c.inputs.stock_movement_document_id,notApplicable:c.inputs.stock_movement_not_applicable_confirmed===true}};
+   const ids=[...new Set(Object.values(evidenceFields).map((x:any)=>x.id).filter(Boolean).map((x:any)=>uuid(x)))],documents=ids.length?await tx`select document_id,file_name from erp_private.documents where project_id=${c.project_id} and document_id=any(${tx.array(ids)}::uuid[]) and archived_at is null and deleted_at is null`:[],linked=new Map(documents.map((d:any)=>[d.document_id,d.file_name]));
+   source_application.requirements=source_application.requirements.map((requirement:any)=>{
+    const evidence=evidenceFields[requirement.key]||{},documentId=evidence.id?uuid(evidence.id):null,fileName=documentId?linked.get(documentId):null;
+    let status='';
+    if(documentId&&!fileName){status='Selected file unavailable';issues.push(`${requirement.label}: selected evidence is unavailable or belongs to another project.`);}
+    else if(fileName)status='Linked · '+fileName;
+    else if(requirement.required){status='Missing';issues.push(`${requirement.label}: link the supporting evidence before submitting this annual tax review.`);}
+    else if(evidence.notApplicable)status='Not applicable confirmed';
+    else {status='Confirm not applicable';issues.push(`${requirement.label}: no activity appears in the posted TB. Confirm that no related activity or evidence exists outside the ERP.`);}
+    return {...requirement,document_id:documentId,file_name:fileName||null,status};
+   });
+  }
+  if(annualLedger.profit_before_tax===null||annualLedger.profit_before_tax===undefined)issues.push('Accounting profit is unavailable. Post the verified annual ledger before calculating income tax.');
+  if(c.kind==='Partnership'&&!c.inputs.partners?.length)issues.push('Add partner profit-sharing percentages.');
+  if(['addbacks','deductions','losses','credits','other_reliefs'].some(k=>Number(c.inputs[k]||0)!==0)&&!String(c.inputs.tax_adjustment_basis||'').trim())issues.push('Explain every nonzero tax adjustment, loss, relief or credit and cite the supporting evidence.');
+  if(rate&&annualLedger.profit_before_tax!==null&&annualLedger.profit_before_tax!==undefined&&(c.kind!=='Partnership'||c.inputs.partners?.length)){const reliefs=c.kind==='Individual'?Number(rate.parameters.personal_relief||0)+Number(c.inputs.other_reliefs||0):0;result=incomeCalculation(c.kind,{...c.inputs,accounting_profit:annualLedger.profit_before_tax,reliefs},rate.parameters);if(c.kind==='Individual')result.personal_relief=Number(rate.parameters.personal_relief||0);}
  }else if(needed.length&&needed.every(k=>rules[k])){try{result=simpleTax(c.kind,c.inputs,rules);}catch(e){issues.push((e as Error).message);}}
  if(['TOT','MRI','CGT'].includes(c.kind)&&(!c.inputs.eligibility_confirmed||!c.inputs.evidence_reference))issues.push('Confirm tax-regime eligibility / exemptions and provide the evidence reference.');
  issues.push(...ruleIssues);
@@ -93,7 +112,7 @@ export async function taxSummary(tx:any,c:any){
  if(c.kind!=='VAT'&&!c.source_document_id)issues.push('Link the supporting working-paper document.');
  if(!c.inputs.return_tied)issues.push('Confirm that the draft return agrees to the reviewed computation.');
  if(applied.some(r=>r.approval_scope==='Testing'))result.testing_only=true;
- return {result,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
+ return {result,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
 }
 export async function taxAction(tx:any,a:any,p:any):Promise<any>{
  if(!String(p.action).startsWith('tax_'))return undefined;
@@ -124,18 +143,24 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   await tx`update erp_private.tax_findings set status='Resolved',resolution=${text(p.resolution,2000)},resolved_by=${a.staff_id} where finding_id=${f.finding_id}`;return {ok:true};
  }
  const c=one(await tx`select * from erp_private.tax_cases where case_id=${uuid(p.case_id)} for update`);await tx`select pg_advisory_xact_lock(hashtextextended(${c.project_id+':tax'},0))`;
- if(p.action==='tax_read'){const summary=await taxSummary(tx,c);return {case:c,...summary,rows:summary.rows.map((r:any)=>({row_id:r.row_id,revision:r.revision,dataset:r.dataset,source_row:r.source_row,normalized:r.normalized,route:r.route,category_code:r.category_code,account_code:r.account_code,account_name:r.account_name,catalog_version:r.catalog_version,parent_row_id:r.parent_row_id,first_use_date:r.first_use_date,first_use_status:r.first_use_status,decision:r.decision,deductible_percentage:r.deductible_percentage,reviewed_by:r.reviewed_by,source_revision:r.source_revision,vat_rate_key:r.vat_rate_key,vat_difference_reason:r.vat_difference_reason,income_treatment:r.income_treatment,applied_rate:r.applied_rate}))};}
+ if(p.action==='tax_read'){
+  const summary=await taxSummary(tx,c),frozen=['Locked','Filed'].includes(c.status)?c.review_snapshot:null;
+  return {case:c,...summary,...(frozen?{result:frozen.result||c.result,source_application:frozen.source_application||summary.source_application,applied_rates:frozen.applied_rates||summary.applied_rates,profile:frozen.profile||summary.profile,reconciliation:frozen.reconciliation||summary.reconciliation}:{}),rows:summary.rows.map((r:any)=>({row_id:r.row_id,revision:r.revision,dataset:r.dataset,source_row:r.source_row,normalized:r.normalized,route:r.route,category_code:r.category_code,account_code:r.account_code,account_name:r.account_name,catalog_version:r.catalog_version,parent_row_id:r.parent_row_id,first_use_date:r.first_use_date,first_use_status:r.first_use_status,decision:r.decision,deductible_percentage:r.deductible_percentage,reviewed_by:r.reviewed_by,source_revision:r.source_revision,vat_rate_key:r.vat_rate_key,vat_difference_reason:r.vat_difference_reason,income_treatment:r.income_treatment,applied_rate:r.applied_rate}))};
+ }
  fresh(c,p);
  if(p.action==='tax_save'||p.action==='tax_preview'){
   if(!['Draft','Returned'].includes(c.status))fail(400,'Only a draft or returned case can be changed.');if(c.prepared_by!==a.staff_id)fail(403,'The assigned preparer must update the computation.');
   let inputs=p.inputs;if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||JSON.stringify(inputs).length>20000)fail(400,'Invalid computation inputs.');
   // Strip arbitrary metadata; computed results and approvals never come from browser input.
-  const allowed=c.kind==='VAT'?['opening_credit','opening_credit_basis','withholding_credit','reverse_charge','adjustments','adjustment_basis','bank_reconciliation','rejection_resolution','return_tied']:c.kind==='PAYE'?['employees','return_tied','period_import_id']:['accounting_profit','addbacks','deductions','losses','partners','other_reliefs','credits','return_tied','gross_receipts','proceeds','acquisition_cost','improvement_cost','transfer_cost','payment_code','taxable_payment','eligibility_confirmed','evidence_reference','loan_balance','actual_interest_rate','gross_pay','headcount','employees'];
+  const allowed=c.kind==='VAT'?['opening_credit','opening_credit_basis','withholding_credit','reverse_charge','adjustments','adjustment_basis','bank_reconciliation','rejection_resolution','return_tied']:c.kind==='PAYE'?['employees','return_tied','period_import_id']:['addbacks','deductions','losses','partners','other_reliefs','credits','tax_adjustment_basis','return_tied','gross_receipts','proceeds','acquisition_cost','improvement_cost','transfer_cost','payment_code','taxable_payment','eligibility_confirmed','evidence_reference','loan_balance','actual_interest_rate','gross_pay','headcount','employees','annual_bank_review_document_id','loan_statements_document_id','loan_statements_not_applicable_confirmed','other_expenses_document_id','other_expenses_not_applicable_confirmed','stock_movement_document_id','stock_movement_not_applicable_confirmed'];
   inputs=Object.fromEntries(Object.entries(inputs).filter(([k])=>allowed.includes(k)));inputs.return_tied=inputs.return_tied===true;inputs.eligibility_confirmed=inputs.eligibility_confirmed===true;
-  const source=p.source_document_id?uuid(p.source_document_id):null;if(source)one(await tx`select document_id from erp_private.documents where document_id=${source} and project_id=${c.project_id}`);
+  for(const key of ['loan_statements_not_applicable_confirmed','other_expenses_not_applicable_confirmed','stock_movement_not_applicable_confirmed'])inputs[key]=inputs[key]===true;
+  for(const key of ['annual_bank_review_document_id','loan_statements_document_id','other_expenses_document_id','stock_movement_document_id'])inputs[key]=inputs[key]?uuid(inputs[key]):null;
+  if(Object.hasOwn(inputs,'tax_adjustment_basis'))inputs.tax_adjustment_basis=text(inputs.tax_adjustment_basis||'',4000,false);
+  const source=p.source_document_id?uuid(p.source_document_id):null;if(source)one(await tx`select document_id from erp_private.documents where document_id=${source} and project_id=${c.project_id} and archived_at is null and deleted_at is null`);
   const rid=null; // Applicable versions are resolved on the server from client, tax and period.
   const next={...c,inputs,source_document_id:source,rate_id:rid};const s=await taxSummary(tx,next);
-  if(p.action==='tax_preview')return {result:s.result,issues:s.issues,applied_rates:s.applied_rates,profile:s.profile};
+  if(p.action==='tax_preview')return {result:s.result,issues:s.issues,applied_rates:s.applied_rates,profile:s.profile,source_application:s.source_application};
   await tx`update erp_private.tax_cases set inputs=${tx.json(inputs)},source_document_id=${source},rate_id=${s.rate?.rate_id||null},result=${tx.json(s.result)},status='Draft',review_note=null where case_id=${c.case_id}`;return {ok:true,issues:s.issues};
  }
  if(p.action==='tax_submit'){
@@ -145,7 +170,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='tax_review'){
   editor(a);if(c.prepared_by===a.staff_id)fail(403,'Another reviewer must approve your computation.');if(c.status!=='Submitted')fail(400,'Choose a submitted case.');const status=choice(p.status,['Locked','Returned']),note=text(p.review_note,2000);
   const s=await taxSummary(tx,c);if(status==='Locked'&&s.issues.length)fail(400,s.issues.join(' '));
-  const snapshot={result:s.result,rate:s.rate,applied_rates:s.applied_rates,profile:s.profile,reconciliation:s.reconciliation,rows:s.rows.map((r:any)=>({row_id:r.row_id,source_row:r.source_row,revision:r.revision,batch_id:r.batch_id,dataset:r.dataset,normalized:r.normalized,raw_values:r.raw_values,account_code:r.account_code,account_name:r.account_name,catalog_version:r.catalog_version,parent_row_id:r.parent_row_id,decision:r.decision,deductible_percentage:r.deductible_percentage,reviewed_by:r.reviewed_by,vat_rate_key:r.vat_rate_key,vat_difference_reason:r.vat_difference_reason,income_treatment:r.income_treatment,applied_rate:r.applied_rate})),batches:s.batches,findings:s.findings,inputs:c.inputs,reviewed_by:a.staff_id,reviewed_at:new Date().toISOString()};
+  const snapshot={result:s.result,rate:s.rate,applied_rates:s.applied_rates,profile:s.profile,reconciliation:s.reconciliation,source_application:s.source_application,rows:s.rows.map((r:any)=>({row_id:r.row_id,source_row:r.source_row,revision:r.revision,batch_id:r.batch_id,dataset:r.dataset,normalized:r.normalized,raw_values:r.raw_values,account_code:r.account_code,account_name:r.account_name,catalog_version:r.catalog_version,parent_row_id:r.parent_row_id,decision:r.decision,deductible_percentage:r.deductible_percentage,reviewed_by:r.reviewed_by,vat_rate_key:r.vat_rate_key,vat_difference_reason:r.vat_difference_reason,income_treatment:r.income_treatment,applied_rate:r.applied_rate})),batches:s.batches,findings:s.findings,inputs:c.inputs,reviewed_by:a.staff_id,reviewed_at:new Date().toISOString()};
   await tx`update erp_private.tax_cases set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note},result=${tx.json(s.result)},review_snapshot=${status==='Locked'?tx.json(snapshot):null} where case_id=${c.case_id}`;return {ok:true};
  }
  if(p.action==='tax_file')fail(400,'Open the linked task workspace to log written client approval, acknowledgment PDF and PRN before recording filing.');

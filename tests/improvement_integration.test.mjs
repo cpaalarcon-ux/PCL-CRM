@@ -2,6 +2,9 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {improvementAction}=await import('../supabase/functions/staff-workspace-v6/improvement-actions.ts');
 const {accountingAction}=await import('../supabase/functions/staff-workspace-v6/accounting-actions.ts');
+const {improvementAction:improvementActionV12}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
+const {accountingAction:accountingActionV12}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
+const {taxAction:taxActionV12}=await import('../supabase/functions/staff-workspace-v12/tax-review-actions.ts');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),F2=id(),C=id(),P=id(),P2=id(),D=id(),B=id(),T=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
 async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}
@@ -66,5 +69,22 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  // A second handling firm must not create another return for the same taxpayer and period.
  await as('ASSISTANT',async a=>tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values(${P},'VAT','2026-09-01','2026-09-30',${a.staff_id})`);
  await assert.rejects(()=>db.query(`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values($1,'VAT','2026-09-01','2026-09-30',$2)`,[P2,actors.MANAGER.staff_id]),/overlaps/);
+ // The v12 purchase workflow must accept an exact, active uploaded route/TB
+ // pair after staff confirmation, without requiring per-account client setup.
+ const hinted=(await tx`select code,route,category_code from erp_private.account_catalog where code='61010' and status='Active' and not is_legacy`)[0];
+ const B2=id();await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by) values(${B2},${P},${D},'Purchases',1,'Purchases','2026-10-01','2026-10-31','{}',1,1,0,0,${actors.ASSISTANT.staff_id})`;
+ const hintedRow=(await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B2},${P},${C},'Purchases',2,'V12-HINT','{}',${tx.json({date:'2026-10-10',invoice:'V12-HINT-1',party:'Fictional supplier',party_pin:'P000000001A',description:'Fictional utilities',amount:100,vat:16,gross:116,mapping_suggestion:{route:hinted.route,category_code:hinted.category_code,account_code:hinted.code}})}) returning row_id,revision`)[0];
+ const v12Select=await as('ASSISTANT',a=>improvementActionV12(tx,a,{action:'v3_mapping_select',project_id:P,mapping:'Unmapped',dataset:'Costs',mapping_hint:{route:hinted.route,category_code:hinted.category_code,account_code:hinted.code}}));
+ assert.equal(v12Select.count,1);assert.equal(v12Select.net,100);
+ const v12Mapped=await as('ASSISTANT',a=>accountingActionV12(tx,a,{action:'workbook_map',project_id:P,selection_id:v12Select.selection_id,selection_hash:v12Select.selection_hash,route:hinted.route,account_code:hinted.code,confirm_uploaded_mapping:true,narration:'Fictional utilities'}));
+ assert.equal(v12Mapped.count,1);assert.equal(v12Mapped.confirmed_uploaded_hint_count,1);
+ const confirmed=(await tx`select route,category_code,account_code,review_details from erp_private.workbook_rows where row_id=${hintedRow.row_id}`)[0];
+ assert.equal(confirmed.route,hinted.route);assert.equal(confirmed.category_code,hinted.category_code);assert.equal(confirmed.account_code,hinted.code);assert.equal(confirmed.review_details.mapping_confirmation.tb_item_code,hinted.code);
+ const v12Preview=await as('ASSISTANT',a=>accountingActionV12(tx,a,{action:'accounting_preview',project_id:P}));assert.ok(v12Preview.lines.some(x=>x.reference==='V12-HINT-1'&&x.account_code===hinted.code),'the confirmed uploaded pair is carried into the accounting preview');
+ const annualCase=(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values(${P},'Company','2026-01-01','2026-12-31',${actors.ASSISTANT.staff_id}) returning case_id,revision`)[0];
+ globalThis.Deno={env:{get:()=>''}};
+ await as('ASSISTANT',a=>taxActionV12(tx,a,{action:'tax_save',case_id:annualCase.case_id,revision:annualCase.revision,source_document_id:D,inputs:{annual_bank_review_document_id:D,loan_statements_document_id:D,other_expenses_document_id:D,stock_movement_document_id:D,loan_statements_not_applicable_confirmed:true,other_expenses_not_applicable_confirmed:false,stock_movement_not_applicable_confirmed:false,tax_adjustment_basis:'Fictional evidence reference'}}));
+ const savedAnnual=(await tx`select inputs,source_document_id from erp_private.tax_cases where case_id=${annualCase.case_id}`)[0];assert.equal(savedAnnual.inputs.annual_bank_review_document_id,D);assert.equal(savedAnnual.inputs.loan_statements_document_id,D);assert.equal(savedAnnual.inputs.other_expenses_document_id,D);assert.equal(savedAnnual.inputs.stock_movement_document_id,D);assert.equal(savedAnnual.inputs.other_expenses_not_applicable_confirmed,false);assert.equal(savedAnnual.source_document_id,D);
+ delete globalThis.Deno;
  const tables=await db.query(`select tablename from pg_tables where schemaname='erp_private' and not rowsecurity`);assert.deepEqual(tables.rows,[]);
 });

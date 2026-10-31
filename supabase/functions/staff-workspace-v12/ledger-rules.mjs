@@ -78,6 +78,60 @@ export function profitReport(lines){
  return {sales,other_income,cost_of_sales,gross_profit,operating_expenses:other_expenses,payroll,finance,depreciation,total_expenses:all_expenses,profit_before_tax,income_tax,profit_after_tax:money(profit_before_tax-income_tax),statement:'Client accounting profit from posted entries only. Source schedules and tax wear and tear are not deducted a second time.'};
 }
 
+// Annual source-and-application control modeled on the client worksheet. It is
+// calculated from posted TB balances and movements, with no suspense/plug line.
+export function sourceApplicationSchedule(tb){
+ const accounts=(tb||[]).filter(a=>Number(a.opening)||Number(a.net)||Number(a.movement_debit)||Number(a.movement_credit));
+ const code=a=>Number(a.code),sum=(list,fn)=>money(list.reduce((n,a)=>n+fn(a),0));
+ const rows=[];
+ const add=(section,label,list,amountFn)=>{const amount=sum(list,amountFn);if(amount||list.length)rows.push({section,label,amount,accounts:list.map(a=>({code:a.code,name:a.name,opening:money(Number(a.opening||0)),closing:money(Number(a.net||0)),movement_debit:money(Number(a.movement_debit||0)),movement_credit:money(Number(a.movement_credit||0)),amount:money(amountFn(a))})).filter(a=>a.amount||a.opening||a.closing)});};
+ const cash=accounts.filter(a=>code(a)>=10000&&code(a)<=10050),assetGroups=[
+  ['Receivables, tax credits and prepayments',a=>code(a)>=10060&&code(a)<=10189],
+  ['Inventory and stock',a=>code(a)>=10190&&code(a)<=10299],
+  ['Other current assets',a=>code(a)>=10300&&code(a)<15000],
+  ['Property and other non-current assets',a=>code(a)>=15000&&code(a)<20000&&a.account_group!=='Contra assets']
+ ];
+ const nonCashAssets=accounts.filter(a=>code(a)>=10060&&code(a)<20000&&a.account_group!=='Contra assets');
+ const liabilities=accounts.filter(a=>code(a)>=20000&&code(a)<30000),equity=accounts.filter(a=>code(a)>=30000&&code(a)<40000),income=accounts.filter(a=>code(a)>=40000&&code(a)<50000),expenses=accounts.filter(a=>code(a)>=50000&&code(a)<=69999),contraAssets=accounts.filter(a=>a.account_group==='Contra assets');
+ const nonCashExpenses=expenses.filter(a=>(code(a)>=67010&&code(a)<=67070)||code(a)===68000),cashExpenses=expenses.filter(a=>!((code(a)>=67010&&code(a)<=67070)||code(a)===68000));
+ add('Source','Opening cash and bank',cash,a=>Number(a.opening||0));
+ add('Source','Sales and other income',income,a=>Number(a.movement_credit||0)-Number(a.movement_debit||0));
+ for(const [label,predicate] of assetGroups){const group=nonCashAssets.filter(predicate);add('Source',`Decrease in ${label.toLowerCase()}`,group,a=>Math.max(0,Number(a.opening||0)-Number(a.net||0)));add('Application',`Increase in ${label.toLowerCase()}`,group,a=>Math.max(0,Number(a.net||0)-Number(a.opening||0)));}
+ add('Source','Increase in creditors, tax liabilities and loans',liabilities,a=>Math.max(0,Number(a.opening||0)-Number(a.net||0)));
+ add('Application','Decrease in creditors, tax liabilities and loans',liabilities,a=>Math.max(0,Number(a.net||0)-Number(a.opening||0)));
+ add('Source','Increase in capital and other equity',equity,a=>Math.max(0,Number(a.opening||0)-Number(a.net||0)));
+ add('Application','Decrease in capital and other equity',equity,a=>Math.max(0,Number(a.net||0)-Number(a.opening||0)));
+ add('Memo','Non-cash depreciation and impairment (excluded from cash applications)',nonCashExpenses,a=>Number(a.movement_debit||0)-Number(a.movement_credit||0));
+ // A disposal or prior-period contra-asset adjustment can move accumulated
+ // depreciation without a current-year depreciation expense. Show that net
+ // ledger-derived adjustment explicitly; it is never a user-entered plug.
+ const assetAdjustment=money([...contraAssets,...nonCashExpenses].reduce((n,a)=>n+Number(a.movement_debit||0)-Number(a.movement_credit||0),0));
+ if(assetAdjustment>0)add('Application','Asset disposal / accumulated depreciation adjustment',[...contraAssets,...nonCashExpenses],a=>Number(a.movement_debit||0)-Number(a.movement_credit||0));
+ else if(assetAdjustment<0)add('Source','Asset disposal / accumulated depreciation adjustment',[...contraAssets,...nonCashExpenses],a=>Number(a.movement_credit||0)-Number(a.movement_debit||0));
+ add('Application','Purchases, cost of sales and expenses (excluding non-cash depreciation / impairment)',cashExpenses,a=>Math.max(0,Number(a.movement_debit||0)-Number(a.movement_credit||0)));
+ add('Application','Closing cash and bank',cash,a=>Number(a.net||0));
+ const sources=rows.filter(r=>r.section==='Source'),applications=rows.filter(r=>r.section==='Application'),memo=rows.filter(r=>r.section==='Memo'),source_total=sum(sources,r=>r.amount),application_total=sum(applications,r=>r.amount),difference=money(source_total-application_total);
+ const trial_balance_difference=money(accounts.reduce((n,a)=>n+Number(a.net||0),0)),opening_trial_balance_difference=money(accounts.reduce((n,a)=>n+Number(a.opening||0),0)),tie_out_difference=money(difference+trial_balance_difference);
+ const unclassified=accounts.filter(a=>{const n=code(a);return !(n>=10000&&n<=69999);}).map(a=>({code:a.code,name:a.name,opening:money(Number(a.opening||0)),closing:money(Number(a.net||0))}));
+ const suspense=accounts.filter(a=>String(a.code)==='37000'&&(Number(a.opening)||Number(a.net))).map(a=>({code:a.code,name:a.name,opening:money(Number(a.opening||0)),closing:money(Number(a.net||0))}));
+ const hasActivity=list=>list.some(a=>Number(a.opening)||Number(a.net)||Number(a.movement_debit)||Number(a.movement_credit));
+ const loanAccounts=accounts.filter(a=>['20070','20080','20090'].includes(String(a.code)));
+ const stockAccounts=accounts.filter(a=>Number(a.code)>=10190&&Number(a.code)<=10250);
+ const expenseAccounts=expenses.filter(a=>!(code(a)>=67010&&code(a)<=67070));
+ const requirements=[
+  {key:'bank_statements',label:'Bank statements and annual bank review',required:true,ledger_signal:'Annual bank evidence is required for the tax review.'},
+  {key:'loan_statements',label:'Loan / overdraft statements',required:hasActivity(loanAccounts),ledger_signal:hasActivity(loanAccounts)?'Loan or overdraft balances/activity appear in the posted trial balance.':'No loan or overdraft balance/activity appears in the posted trial balance; confirm against client records.'},
+  {key:'other_expenses',label:'Other expense support',required:hasActivity(expenseAccounts),ledger_signal:hasActivity(expenseAccounts)?'Expense or purchase activity appears in the posted trial balance.':'No expense activity appears in the posted trial balance; confirm completeness.'},
+  {key:'stock_movement',label:'Stock movement report',required:hasActivity(stockAccounts),ledger_signal:hasActivity(stockAccounts)?'Inventory balances/activity appear in the posted trial balance.':'No inventory balance/activity appears in the posted trial balance; confirm completeness.'}
+ ];
+ const issues=[];if(unclassified.length)issues.push('Map nonzero balances outside the supported Source & Application account ranges before annual review.');if(suspense.length)issues.push('Clear the opening-balance suspense account before annual review.');
+ if(Math.abs(opening_trial_balance_difference)>0.01)issues.push('The opening trial balance is out by KES '+opening_trial_balance_difference.toFixed(2)+'. Reconcile opening balances before relying on this annual schedule.');
+ if(Math.abs(difference)>0.01)issues.push('Source & Application of Funds does not balance. Review posted balances and movements; the ERP will not create a balancing entry.');
+ if(Math.abs(trial_balance_difference)>0.01)issues.push('The closing trial balance is out by KES '+trial_balance_difference.toFixed(2)+'.');
+ if(Math.abs(tie_out_difference)>0.01)issues.push('Source & Application does not tie to the closing trial balance. Check that the opening trial balance balanced and all account classes are included.');
+ return {name:'Source & Application of Funds',sources,applications,memo,source_total,application_total,difference,trial_balance_difference,opening_trial_balance_difference,tie_out_difference,balanced:Math.abs(difference)<=0.01&&Math.abs(trial_balance_difference)<=0.01&&Math.abs(opening_trial_balance_difference)<=0.01&&Math.abs(tie_out_difference)<=0.01,unclassified,suspense,requirements,issues,basis:'Calculated from posted annual opening balances and posted journal movements. Non-cash depreciation is shown separately and excluded from cash applications, as in the supplied schedule. VAT/input tax, tax credits, inventory, payables, loans, PPE and equity movements remain traceable in account details. This control does not prove source completeness or approve a tax claim.'};
+}
+
 export function assetCalculation(asset,rate,start,end){
  const cost=cashAmount(asset.cost)/100,business=finite(asset.business_percentage,'business-use percentage',0,100)/100,first=day(asset.first_use_date),fyStart=day(start),fyEnd=day(end),issues=[];
  if(!first||first>fyEnd)issues.push('Confirm a first-use date within or before this financial year.');
