@@ -24,7 +24,7 @@ async function calculate(tx:any,c:any,inputs:any){const source=await reconSource
 }
 export async function accountingAction(tx:any,a:any,p:any){
  if(!String(p.action).startsWith('accounting_')&&!String(p.action).startsWith('sales_recon_')&&!['workbook_map','workbook_map_bulk','workbook_split','workbook_mapping_undo'].includes(p.action))return undefined;
- if(a.category_code==='INTERN')fail(403,'A staff preparer must handle purchase and tax working papers.');
+ if(a.category_code==='INTERN'&&p.action!=='accounting_catalog')fail(403,'A staff preparer must handle purchase and tax working papers.');
  if(p.action==='accounting_catalog')return {accounts:await tx`select * from erp_private.account_catalog order by code`};
  if(p.action==='accounting_account_add'){
   leader(a);const code=text(p.code,5);if(!/^\d{5}$/.test(code))fail(400,'Use a unique five-digit account code.');const route=Number(p.route);if(![1,2,3].includes(route))fail(400,'Choose a purchase route.');
