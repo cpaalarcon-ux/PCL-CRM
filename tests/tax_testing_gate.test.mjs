@@ -35,3 +35,10 @@ test('staging authorization requires a test purpose and confirmation, not source
  assert.match(testingAuthorizationIssue(false,note),/Confirm/);
  assert.match(testingAuthorizationIssue(true,'short'),/test purpose/);
 });
+
+test('a rate version outside the requested period is not used as a fallback',()=>{
+ const nssfYear4={rate_id:'nssf-year4',rate_key:'KE_NSSF',status:'Testing',effective_from:'2026-02-01',effective_to:'2027-01-31',parameters:{lower_limit:9000,upper_limit:108000,employee_rate:6,employer_rate:6}};
+ const stage=stagingRates([nssfYear4],TAX_TESTING_PROJECT_URL);
+ assert.deepEqual(preferredRates(stage,'KE_NSSF','2026-01-01','2026-01-31'),[]);
+ assert.equal(preferredRates(stage,'KE_NSSF','2026-02-01','2026-02-28')[0].rate_id,'nssf-year4');
+});
