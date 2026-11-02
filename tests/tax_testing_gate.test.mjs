@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {stagingRates,preferredRates,taxTestingEnabled,TAX_TESTING_PROJECT_URL} from '../supabase/functions/staff-workspace-v12/testing-rates.mjs';
+
+const formal={rate_id:'formal',rate_key:'KE_CIT_RES',status:'Approved',effective_from:'2021-01-01',effective_to:'9999-12-31',parameters:{rate:30}};
+const testing={rate_id:'testing',rate_key:'KE_CIT_RES',status:'Testing',effective_from:'2021-01-01',effective_to:'9999-12-31',parameters:{rate:25}};
+
+test('only the configured staging project loads Testing rules',()=>{
+ assert.equal(taxTestingEnabled(TAX_TESTING_PROJECT_URL),true);
+ assert.equal(taxTestingEnabled('https://production.example.supabase.co'),false);
+ const stage=stagingRates([formal,testing],TAX_TESTING_PROJECT_URL);
+ assert.equal(stage.length,2);
+ assert.equal(stage.find(r=>r.rate_id==='testing').approval_scope,'Testing');
+ assert.equal(stage.find(r=>r.rate_id==='testing').status,'Approved');
+ const production=stagingRates([formal,testing],'https://production.example.supabase.co');
+ assert.deepEqual(production.map(r=>r.rate_id),['formal']);
+});
+
+test('an authorized staged test rule is used for UAT and excluded from production',()=>{
+ const stage=stagingRates([formal,testing],TAX_TESTING_PROJECT_URL);
+ assert.equal(preferredRates(stage,'KE_CIT_RES','2026-01-01','2026-12-31')[0].rate_id,'testing');
+ const production=stagingRates([formal,testing],'https://production.example.supabase.co');
+ assert.equal(preferredRates(production,'KE_CIT_RES','2026-01-01','2026-12-31')[0].rate_id,'formal');
+});
