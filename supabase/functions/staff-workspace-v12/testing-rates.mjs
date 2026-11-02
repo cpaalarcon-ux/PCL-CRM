@@ -15,5 +15,5 @@ export function preferredRates(rows,key,start,end){
  const testing=matching.filter(r=>r.approval_scope==='Testing');
  if(testing.length)return testing;
  const formal=matching.filter(r=>r.approval_scope!=='Testing');
- return formal.length?formal:rows.filter(r=>r.rate_key===key);
+ return formal.length?formal:[];
 }
