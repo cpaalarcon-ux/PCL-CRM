@@ -82,3 +82,54 @@ export function filterWorkspaceAccess(workspace,areas){
   w.suite=s;
   return w;
 }
+
+export function scopeWorkspaceRecords(workspace,role,staffId){
+  const fullAccess=['PARTNER','MANAGER','SUPERVISOR'].includes(role);
+  const projects=Array.isArray(workspace.projects)?workspace.projects:[];
+  const tasks=Array.isArray(workspace.tasks)?workspace.tasks:[];
+  const procedures=Array.isArray(workspace.task_procedures)?workspace.task_procedures:[];
+  const schedules=Array.isArray(workspace.schedules)?workspace.schedules:[];
+  const assignments=Array.isArray(workspace.assignments)?workspace.assignments:[];
+  const clients=Array.isArray(workspace.clients)?workspace.clients:[];
+  if(fullAccess)return {...workspace,clients:clients.map(c=>({...c,details_visible:true}))};
+  const intern=role==='INTERN';
+  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date());
+  const allocatedProjectIds=new Set(intern?[]:assignments.filter(a=>a.staff_id===staffId&&(!a.start_date||String(a.start_date).slice(0,10)<=today)&&(!a.end_date||String(a.end_date).slice(0,10)>=today)).map(a=>a.project_id));
+  const ownedTaskIds=new Set(tasks.filter(t=>t.assigned_to===staffId).map(t=>t.task_id));
+  const reviewTaskIds=new Set(intern?[]:procedures.filter(p=>p.reviewer_id===staffId&&p.prepared_by!==staffId).map(p=>p.task_id));
+  const reviewProjects=new Set(intern?[]:schedules.filter(s=>s.reviewer_id===staffId).map(s=>s.project_id));
+  const reviewScheduleTaskIds=new Set(tasks.filter(t=>reviewProjects.has(t.project_id)&&t.status==='In Review').map(t=>t.task_id));
+  const taskAccessIds=new Set([...ownedTaskIds,...reviewTaskIds,...reviewScheduleTaskIds]);
+  const visibleProjectIds=new Set([...allocatedProjectIds,...tasks.filter(t=>taskAccessIds.has(t.task_id)).map(t=>t.project_id)]);
+  const visibleProjects=projects.filter(p=>visibleProjectIds.has(p.project_id));
+  const visibleClientIds=new Set(visibleProjects.map(p=>p.client_id));
+  const visibleTasks=tasks.filter(t=>visibleProjectIds.has(t.project_id)&&(allocatedProjectIds.has(t.project_id)||taskAccessIds.has(t.task_id)));
+  const visibleTaskIds=new Set(visibleTasks.map(t=>t.task_id));
+  const visiblePeriods=(workspace.work_periods||[]).filter(w=>visibleProjectIds.has(w.project_id));
+  const visiblePeriodIds=new Set(visiblePeriods.map(w=>w.work_period_id));
+  const scoped={...workspace,
+    projects:visibleProjects,
+    tasks:visibleTasks,
+    clients:intern?clients.filter(c=>visibleClientIds.has(c.client_id)).map(c=>({...c,details_visible:true})):clients.map(c=>visibleClientIds.has(c.client_id)?({...c,details_visible:true}):({client_id:c.client_id,company_name:c.company_name,details_visible:false})),
+    assignments:assignments.filter(a=>visibleProjectIds.has(a.project_id)&&(a.staff_id===staffId||allocatedProjectIds.has(a.project_id))),
+    schedules:schedules.filter(s=>visibleProjectIds.has(s.project_id)),
+    work_periods:visiblePeriods,
+    work_period_tasks:(workspace.work_period_tasks||[]).filter(x=>visiblePeriodIds.has(x.work_period_id)&&visibleTaskIds.has(x.task_id)),
+    task_procedures:procedures.filter(x=>visibleTaskIds.has(x.task_id)),
+    sales_reviews:(workspace.sales_reviews||[]).filter(x=>visibleProjectIds.has(x.project_id)),
+    task_events:(workspace.task_events||[]).filter(x=>visibleTaskIds.has(x.task_id)),
+    workbook_batches:(workspace.workbook_batches||[]).filter(x=>visibleProjectIds.has(x.project_id)),
+    documents:(workspace.documents||[]).filter(x=>(x.project_id&&visibleProjectIds.has(x.project_id))||(x.task_id&&visibleTaskIds.has(x.task_id))||(!x.project_id&&!x.task_id&&visibleClientIds.has(x.client_id))),
+    timesheets:(workspace.timesheets||[]).filter(x=>visibleProjectIds.has(x.project_id)&&x.staff_id===staffId),
+    notifications:(workspace.notifications||[]).filter(x=>!x.task_id||visibleTaskIds.has(x.task_id)),
+    suite:{...(workspace.suite||{})}
+  };
+  for(const [key,value] of Object.entries(scoped.suite)){
+    if(!Array.isArray(value))continue;
+    if(value.some(row=>row&&Object.prototype.hasOwnProperty.call(row,'project_id')))scoped.suite[key]=value.filter(row=>!row?.project_id||visibleProjectIds.has(row.project_id));
+    else if(value.some(row=>row&&Object.prototype.hasOwnProperty.call(row,'client_id')))scoped.suite[key]=value.filter(row=>!row?.client_id||visibleClientIds.has(row.client_id));
+  }
+  if(!fullAccess)for(const key of ['leave','attendance','credentials','reviews'])if(Array.isArray(scoped.suite[key]))scoped.suite[key]=scoped.suite[key].filter(row=>row.staff_id===staffId);
+  if(intern){scoped.assignments=[];scoped.schedules=scoped.schedules.filter(s=>visibleTaskIds.size>0&&visibleProjectIds.has(s.project_id));}
+  return scoped;
+}
