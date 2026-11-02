@@ -15,7 +15,7 @@ test('home and staff access pages show the reconciled, role-based guide',()=>{
  assert.deepEqual(ACCESS_ROLES.map(x=>x.code),['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN']);
  assert.match(renderAccessGuide('ASSISTANT',x=>x),/Your access · Audit Assistant/);
  assert.match(renderAccessGuide('INTERN',x=>x),/Assigned task-level support work only/);
- assert.match(renderAccessGuide('MANAGER',x=>x),/individual permission overrides are not enabled/);
+ assert.match(renderAccessGuide('MANAGER',x=>x),/can restrict ERP areas for an individual from Staff &amp; access/);
 });
 
 test('approval guide distinguishes different server approval boundaries',()=>{
