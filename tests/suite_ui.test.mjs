@@ -20,7 +20,7 @@ let failLetterSave=false;const calls=[];globalThis.fetch=async(url,opts)=>{const
 const result=p.action==='login'?{access_token:'qa',refresh_token:'refresh',expires_at:Date.now()/1000+3600,session_id:'qa',idle_timeout_seconds:1800}:p.action==='workspace'?data:p.action==='statement'?{opening:0,closing:0,rows:[],currency:'KES'}:{ok:true};return {ok:true,json:async()=>result};};
 const pause=()=>new Promise(r=>setTimeout(r,40));const click=async s=>{const b=document.querySelector(s);assert.ok(b,'Missing control '+s);b.click();await pause();};
 await import('../staff-pilot.mjs');
-test('connected navigation, activation controls, tax bands and invoice form are usable',async()=>{
+test('connected navigation, activation controls, tax bands and invoice form are usable',async t=>{t.after(()=>dom.window.close());
  document.querySelector('#loginForm [name=login_id]').value='qa.partner';document.querySelector('#loginForm [name=password]').value='testing';document.querySelector('#loginForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
  assert.equal(document.querySelector('#workspace').hidden,false);
  for(const page of ['leads','clients','projects','time','documents','communications','finance','staff','firms']){await click(`[data-view="${page}"]`);assert.ok(document.querySelector('#content').textContent.trim(),page);}
@@ -51,5 +51,5 @@ test('connected navigation, activation controls, tax bands and invoice form are 
  const savedLetter=suite.communications.at(-1),reference=savedLetter.reference,opaque=savedLetter.opaque_reference;
  await click(`[data-suite="communication-edit"][data-id="${savedLetter.communication_id}"]`);assert.match(document.querySelector('#editorTitle').textContent,/Edit letter/);const edit=document.querySelector('#editForm');for(const key of ['client_id','firm_id','project_id'])assert.equal(edit.querySelector(`select[name="${key}"]`).disabled,true);edit.elements.details.value='Updated letter text.';edit.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await new Promise(r=>setTimeout(r,100));assert.match(document.querySelector('.print-report').textContent,/Updated letter text/);assert.equal(savedLetter.reference,reference);assert.equal(savedLetter.opaque_reference,opaque);document.querySelector('#editor').close();
  me.category_code='INTERN';await click('[data-view="home"]');await click('[data-view="communications"]');assert.equal(document.querySelector('[data-suite="letter-new"]'),null);assert.equal(document.querySelector('[data-suite="comms-tab"][data-id="Letters & QR"]'),null);assert.ok(document.querySelector('[data-suite="ticket-new"]'));
- dom.window.close();
+ 
 });
