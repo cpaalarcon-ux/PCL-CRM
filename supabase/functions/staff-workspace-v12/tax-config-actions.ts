@@ -2,13 +2,13 @@ import {fail,text,uuid,choice,revision} from './validation.mjs';
 import {range,safeUrl,rateParameters,amount} from './suite-rules.mjs';
 import {taxTypes,testRate,validateProfile,registryParameters,dateString,keys,validateCanonicalRate,rateApprovalIssue} from './tax-registry.mjs';
 import {one,leader} from './suite-actions.ts';
-import {taxTestingEnabled} from './testing-rates.mjs';
+import {taxTestingEnabled,testingAuthorizationIssue} from './testing-rates.mjs';
 const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Partner approval is required.');};
 const current=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'Refresh this record before saving.');};
 export async function taxConfigAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='rate_save'){
   leader(a);const type=choice(p.tax_type,taxTypes),key=text(p.rate_key,60).toUpperCase();if(!/^[A-Z0-9_-]+$/.test(key))fail(400,'Use a stable code with letters, numbers, underscore or hyphen.');
-  const [from,to]=range(p.effective_from,p.effective_to),url=safeUrl(p.source_url),note=text(p.source_note,4000);if(!url)fail(400,'Add the official legal source URL.');if(note.trim().length<20)fail(400,'Add the legal instrument, section or other source basis in the notes.');
+  const [from,to]=range(p.effective_from,p.effective_to),rawUrl=text(p.source_url||'',1000,false),url=rawUrl?safeUrl(rawUrl):'',note=text(p.source_note||'',4000,false);
   const old=p.rate_id?one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`):null;if(old){current(old,p);if(!['Draft','Testing'].includes(old.status))fail(400,'Approved versions cannot change. Create a new dated version.');}
   const merged={...old?.parameters,...p.parameters};const params=['PAYE','Individual income tax'].includes(type)?{...rateParameters(type,merged),period:type==='PAYE'?'Monthly':'Annual'}:registryParameters(type,merged);
   validateCanonicalRate(key,type,params);
@@ -21,9 +21,8 @@ export async function taxConfigAction(tx:any,a:any,p:any):Promise<any>{
   leader(a);if(!taxTestingEnabled(Deno.env.get('SUPABASE_URL')||''))fail(403,'Rule testing can be enabled only in the staging ERP.');
   const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`);current(r,p);
   if(r.status!=='Draft')fail(400,'Only a saved draft can be enabled for staging testing.');
-  if(p.confirm_staging!==true)fail(400,'Confirm this rate is for staging tests only.');
-  const note=text(p.testing_note,2000);if(note.trim().length<20)fail(400,'Record the test purpose, period and expected result (at least 20 characters).');
-  if(!safeUrl(r.source_url))fail(400,'Add a valid HTTPS source before enabling testing.');
+  const testingIssue=testingAuthorizationIssue(p.confirm_staging,p.testing_note);if(testingIssue)fail(400,testingIssue);
+  const note=text(p.testing_note,2000);
   validateCanonicalRate(r.rate_key,r.tax_type,r.parameters);
   if(['PAYE','Individual income tax'].includes(r.tax_type))rateParameters(r.tax_type,r.parameters);else registryParameters(r.tax_type,r.parameters);
   await tx`select pg_advisory_xact_lock(hashtextextended(${r.rate_key},0))`;
