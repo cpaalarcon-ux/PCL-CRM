@@ -13,7 +13,7 @@ export async function taxConfigAction(tx:any,a:any,p:any):Promise<any>{
   validateCanonicalRate(key,type,params);
   if(JSON.stringify(params).length>5000)fail(400,'The rate configuration is too large.');
   if(old){const changed=await tx`update erp_private.tax_rates set rate_key=${key},tax_type=${type},label=${text(p.label,160)},effective_from=${from},effective_to=${to},parameters=${tx.json(params)},source_url=${url},source_note=${note},is_test=${p.is_test===true} where rate_id=${old.rate_id} returning rate_id`;if(!changed.length)fail(403,'This testing rule is not editable by your account.');}
-  else await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by,is_test) values(${key},${type},${text(p.label,160)},${from},${to},${tx.json(params)},${url},${text(p.source_note,4000)},${a.staff_id},${p.is_test===true})`;
+  else await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by,is_test) values(${key},${type},${text(p.label,160)},${from},${to},${tx.json(params)},${url},${note},${a.staff_id},${p.is_test===true})`;
   return {ok:true};
  }
  if(p.action==='rate_approve'){
