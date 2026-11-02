@@ -282,7 +282,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.view)navigateWorkspace(b.dataset.view);
  if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload,firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}
  if(b.dataset.clientSetup)editClient(data.clients.find(x=>x.client_id===b.dataset.clientSetup),true);
- if(b.dataset.setupGuide)await setupGuide.open(b.dataset.setupGuide);
+ if(b.dataset.setupGuide){setupGuideReturnClientId=null;await setupGuide.open(b.dataset.setupGuide);}
  if(b.dataset.client)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
  if(b.dataset.clientView)viewClientFile(b.dataset.clientView);
  if(b.dataset.clientAccounts){clientAccountReturn=null;await clientAccountSetup(b.dataset.clientAccounts);}
