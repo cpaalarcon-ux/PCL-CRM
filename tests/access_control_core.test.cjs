@@ -14,13 +14,15 @@ test('Managers and Supervisors can see every project in their firm but cannot ed
   for (const role of ['MANAGER', 'SUPERVISOR', 'PARTNER']) {
     const actor = staff(`u-${role}`, role);
     assert.equal(access.can(actor, 'projects', 'V', project()).ok, true, `${role} should see the project`);
-    assert.equal(access.can(actor, 'projects', 'E', project()).ok, false, `${role} must request allocation before editing`);
+    assert.equal(access.can(actor, 'opening_tb', 'V', project()).ok, true, `${role} should read project working data`);
+    assert.equal(access.can(actor, 'opening_tb', 'E', project()).ok, false, `${role} must request allocation before editing`);
   }
 });
 
 test('Assistants can see the client directory, while client details require allocation or task assignment', () => {
   const assistant = staff('assistant-1', 'ASSISTANT');
   assert.equal(access.can(assistant, 'clients', 'V', { firmId: 'F1', scope: 'directory' }).ok, true);
+  assert.equal(access.can(assistant, 'projects', 'V', project({ scope: 'summary' })).ok, true);
   assert.equal(access.can(assistant, 'clients', 'V', project()).ok, false);
   assert.equal(access.can(assistant, 'clients', 'V', project({ taskAssigneeIds: ['assistant-1'] })).ok, true);
   assert.equal(access.can(assistant, 'ledger', 'V', project({ projectStaffIds: ['assistant-1'] })).ok, true);
@@ -85,11 +87,12 @@ test('Approved takeover ends the prior allocation the day before and keeps draft
   }).request;
   const result = access.decideAllocationRequest({
     approver: staff('partner-1', 'PARTNER'), request, decision: 'APPROVE', effectiveDate: '2026-11-05',
-    currentAssignments: [{ id: 'ASG-1', projectId: 'P1', staffId: 'assistant-1', startDate: '2026-10-01', endDate: null }],
+    currentAssignments: [{ id: 'ASG-1', projectId: 'P1', staffId: 'assistant-1', role: 'PREPARER', startDate: '2026-10-01', endDate: null }],
   });
   assert.equal(result.ok, true);
   assert.equal(result.assignmentChanges[0].endDate, '2026-11-04');
-  assert.deepEqual(result.assignmentChanges[1], { type: 'ADD', projectId: 'P1', firmId: 'F1', staffId: 'assistant-2', startDate: '2026-11-05', endDate: null, approvedBy: 'partner-1' });
+  assert.equal(result.assignmentChanges[0].projectId, 'P1');
+  assert.deepEqual(result.assignmentChanges[1], { type: 'ADD', projectId: 'P1', firmId: 'F1', staffId: 'assistant-2', id: 'allocation-REQ-2', role: 'PREPARER', startDate: '2026-11-05', endDate: null, approvedBy: 'partner-1' });
   assert.equal(result.draftsRemainWithOriginalOwner, true);
 });
 
