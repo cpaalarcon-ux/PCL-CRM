@@ -31,6 +31,9 @@ BEGIN
   IF NEW.is_test OR NEW.rate_key ~* '^QA' OR NEW.label ~* '(FICTIONAL|SYNTHETIC TEST)' THEN
    RAISE EXCEPTION 'Test-only rates cannot be approved' USING ERRCODE='23514';
   END IF;
+  IF (erp_private.actor()).category_code<>'PARTNER' THEN
+   RAISE EXCEPTION 'Only an Engagement Partner may approve tax rules' USING ERRCODE='42501';
+  END IF;
   IF NEW.approved_by IS DISTINCT FROM (erp_private.actor()).staff_id THEN
    RAISE EXCEPTION 'Rate approver identity mismatch' USING ERRCODE='42501';
   END IF;
