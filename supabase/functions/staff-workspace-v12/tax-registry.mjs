@@ -8,6 +8,20 @@ export const taxKinds=['VAT','PAYE','Company','Partnership','Individual','TOT','
 export const profileKinds=[...taxKinds,'Withholding VAT agent','Withholding VAT credits received','Withholding income tax credits received','Excise duty','Instalment tax','Advance tax'];
 export const taxTypes=['VAT','PAYE','Corporation tax','Individual income tax','Withholding tax','Levy','Turnover tax','Rental income tax','Capital gains tax','NSSF','Relief / deduction','Interest benchmark'];
 export const testRate=r=>r.is_test===true||/^QA/i.test(r.rate_key)||/FICTIONAL|SYNTHETIC TEST/i.test(r.label||'');
+const officialTaxSourceRoots=['kenyalaw.org','kra.go.ke','nssf.or.ke','nita.or.ke','nita.go.ke','epra.go.ke','parliament.go.ke','treasury.go.ke','sha.go.ke'];
+export function taxSourceIssue(sourceUrl,sourceNote){
+ let url;try{url=new URL(String(sourceUrl||''));}catch{return 'Link an official Kenya Law, KRA, Gazette or competent regulator source before approval.';}
+ const host=url.hostname.toLowerCase();
+ if(url.protocol!=='https:'||url.username||url.password||url.port||!officialTaxSourceRoots.some(root=>host===root||host.endsWith('.'+root)))
+  return 'Rate approval requires an HTTPS official source hosted by Kenya Law, KRA, the Gazette or a competent regulator; secondary research links can support testing only.';
+ if(!/\b(?:act|section|s\.|legal notice|ln\b|regulation|schedule|gazette|court order|judgment)\b/i.test(String(sourceNote||'')))
+  return 'Add the applicable Act, section, Legal Notice, regulation, Schedule or Gazette citation to the source note.';
+ return null;
+}
+export function rateApprovalIssue(rate,approverId){
+ if(rate?.created_by&&String(rate.created_by)===String(approverId))return 'The person who prepared this tax rule cannot approve it.';
+ return taxSourceIssue(rate?.source_url,rate?.source_note);
+}
 export const dateString=v=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 export const keys={Company:['KE_CIT_RES'],Individual:['KE_IIT_ANNUAL'],TOT:['KE_TOT'],MRI:['KE_MRI'],CGT:['KE_CGT'],PAYE:['KE_PAYE_MONTHLY','KE_AHL_EMPLOYEE','KE_AHL_EMPLOYER','KE_SHIF','KE_NSSF','KE_NITA','KE_PAYROLL_LIMITS'],'Housing levy':['KE_AHL_EMPLOYEE','KE_AHL_EMPLOYER'],SHIF:['KE_SHIF'],NSSF:['KE_NSSF'],NITA:['KE_NITA'],'Fringe benefit':['KE_FBT_BENCHMARK','KE_CIT_RES'],'Deemed interest':['KE_DEEMED_BENCHMARK','KE_WHT_DEEMED']};
 export function pickRate(rates,key,start,end=start){

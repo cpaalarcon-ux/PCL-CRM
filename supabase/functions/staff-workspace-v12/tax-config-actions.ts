@@ -1,29 +1,43 @@
 import {fail,text,uuid,choice,revision} from './validation.mjs';
 import {range,safeUrl,rateParameters,amount} from './suite-rules.mjs';
-import {taxTypes,testRate,validateProfile,registryParameters,dateString,keys,validateCanonicalRate} from './tax-registry.mjs';
+import {taxTypes,testRate,validateProfile,registryParameters,dateString,keys,validateCanonicalRate,rateApprovalIssue} from './tax-registry.mjs';
 import {one,leader} from './suite-actions.ts';
+import {taxTestingEnabled,testingAuthorizationIssue} from './testing-rates.mjs';
 const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Partner approval is required.');};
 const current=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'Refresh this record before saving.');};
 export async function taxConfigAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='rate_save'){
   leader(a);const type=choice(p.tax_type,taxTypes),key=text(p.rate_key,60).toUpperCase();if(!/^[A-Z0-9_-]+$/.test(key))fail(400,'Use a stable code with letters, numbers, underscore or hyphen.');
-  const [from,to]=range(p.effective_from,p.effective_to),url=safeUrl(p.source_url);if(!url)fail(400,'Add the official legal source URL.');
+  const [from,to]=range(p.effective_from,p.effective_to),rawUrl=text(p.source_url||'',1000,false),url=rawUrl?safeUrl(rawUrl):'',note=text(p.source_note||'',4000,false);
   const old=p.rate_id?one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`):null;if(old){current(old,p);if(!['Draft','Testing'].includes(old.status))fail(400,'Approved versions cannot change. Create a new dated version.');}
   const merged={...old?.parameters,...p.parameters};const params=['PAYE','Individual income tax'].includes(type)?{...rateParameters(type,merged),period:type==='PAYE'?'Monthly':'Annual'}:registryParameters(type,merged);
   validateCanonicalRate(key,type,params);
   if(JSON.stringify(params).length>5000)fail(400,'The rate configuration is too large.');
-  if(old){const changed=await tx`update erp_private.tax_rates set rate_key=${key},tax_type=${type},label=${text(p.label,160)},effective_from=${from},effective_to=${to},parameters=${tx.json(params)},source_url=${url},source_note=${text(p.source_note,4000)},is_test=${p.is_test===true} where rate_id=${old.rate_id} returning rate_id`;if(!changed.length)fail(403,'This testing rule is not editable by your account.');}
-  else await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by,is_test) values(${key},${type},${text(p.label,160)},${from},${to},${tx.json(params)},${url},${text(p.source_note,4000)},${a.staff_id},${p.is_test===true})`;
+  if(old){const changed=await tx`update erp_private.tax_rates set rate_key=${key},tax_type=${type},label=${text(p.label,160)},effective_from=${from},effective_to=${to},parameters=${tx.json(params)},source_url=${url},source_note=${note},is_test=${p.is_test===true},status=${old.status==='Testing'?'Draft':old.status},testing_authorized_at=${old.status==='Testing'?null:old.testing_authorized_at},testing_authorization_note=${old.status==='Testing'?'':old.testing_authorization_note} where rate_id=${old.rate_id} returning rate_id`;if(!changed.length)fail(403,'This testing rule is not editable by your account.');}
+  else await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by,is_test) values(${key},${type},${text(p.label,160)},${from},${to},${tx.json(params)},${url},${note},${a.staff_id},${p.is_test===true})`;
   return {ok:true};
+ }
+ if(p.action==='rate_test'){
+  leader(a);if(!taxTestingEnabled(Deno.env.get('SUPABASE_URL')||''))fail(403,'Rule testing can be enabled only in the staging ERP.');
+  const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`);current(r,p);
+  if(r.status!=='Draft')fail(400,'Only a saved draft can be enabled for staging testing.');
+  const testingIssue=testingAuthorizationIssue(p.confirm_staging,p.testing_note);if(testingIssue)fail(400,testingIssue);
+  const note=text(p.testing_note,2000);
+  validateCanonicalRate(r.rate_key,r.tax_type,r.parameters);
+  if(['PAYE','Individual income tax'].includes(r.tax_type))rateParameters(r.tax_type,r.parameters);else registryParameters(r.tax_type,r.parameters);
+  await tx`select pg_advisory_xact_lock(hashtextextended(${r.rate_key},0))`;
+  if((await tx`select rate_id from erp_private.tax_rates where rate_key=${r.rate_key} and status='Testing' and deleted_at is null and rate_id<>${r.rate_id} and effective_from<=${r.effective_to} and effective_to>=${r.effective_from}`).length)fail(400,'Another staging-test version overlaps these dates.');
+  await tx`update erp_private.tax_rates set status='Testing',testing_authorized_at=now(),testing_authorization_note=${note} where rate_id=${r.rate_id}`;
+  return {ok:true,staging_only:true};
  }
  if(p.action==='rate_approve'){
   partner(a);const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`);current(r,p);if(!['Draft','Testing'].includes(r.status))fail(400,'Choose a draft or provisional testing rate.');
-  if(testRate(r))fail(400,'Test-only rates cannot be approved for client computations.');
+  if(testRate(r))fail(400,'Test-only rates cannot be approved for client computations.');if(r.created_by&&String(r.created_by)===String(a.staff_id))fail(403,'The person who prepared this tax rule cannot approve it.');const sourceIssue=rateApprovalIssue(r,a.staff_id);if(sourceIssue)fail(400,sourceIssue);
   if(p.confirm_legal_basis!==true)fail(400,'Confirm the statutory rate, eligibility conditions and effective dates against the linked source.');
   validateCanonicalRate(r.rate_key,r.tax_type,r.parameters);registryParameters(r.tax_type,r.parameters);if(['PAYE','Individual income tax'].includes(r.tax_type))rateParameters(r.tax_type,r.parameters);
   await tx`select pg_advisory_xact_lock(hashtextextended(${r.rate_key},0))`;
   if((await tx`select rate_id from erp_private.tax_rates where rate_key=${r.rate_key} and status='Approved' and effective_from<=${r.effective_to} and effective_to>=${r.effective_from}`).length)fail(400,'Approved dates overlap for this rule. Choose a non-overlapping validity period.');
-  await tx`update erp_private.tax_rates set status='Approved',approved_by=${a.staff_id},approved_at=now() where rate_id=${r.rate_id}`;return {ok:true};
+  await tx`update erp_private.tax_rates set status='Approved',approved_by=${a.staff_id},approved_at=now(),partner_source_verified_on=current_date where rate_id=${r.rate_id}`;return {ok:true};
  }
  if(p.action==='rate_impact'){
   leader(a);const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)}`);
