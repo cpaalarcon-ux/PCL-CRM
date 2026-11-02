@@ -145,8 +145,9 @@ function can(staff, area, action, record) {
     if (record.firmId && !(staff.firmIds || []).includes(record.firmId)) return deny("Record belongs to a firm you are not authorised for.");
     const taskAccess = hasTaskAccess(staff, record);
     const allocated = hasProjectAllocation(staff, record);
-    const broadProjectRead = action === "V" && ["clients", "projects"].includes(area) && RANK[staff.role] >= RANK.SUPERVISOR;
+    const broadProjectRead = action === "V" && RANK[staff.role] >= RANK.SUPERVISOR;
     const assistantClientDirectory = staff.role === "ASSISTANT" && action === "V" && area === "clients" && ["directory", "summary"].includes(record.scope);
+    const assistantProjectDirectory = staff.role === "ASSISTANT" && action === "V" && area === "projects" && record.scope === "summary";
 
     // Partner, Manager and Supervisor roles can find every company and project in
     // their authorised firm. This read access does not grant editing authority.
@@ -160,7 +161,7 @@ function can(staff, area, action, record) {
       return deny("Client details and working data open when the work is allocated or a task is sent to you.");
     if (record.scope === "detail" && staff.role === "INTERN" && !taskAccess)
       return deny("Client details are available only through your assigned task.");
-    if (assistantClientDirectory) return { ok: true };
+    if (assistantClientDirectory || assistantProjectDirectory) return { ok: true };
     if (action === "A" || action === "P") {
       if (!HARD.approveRoles.includes(staff.role) && !(area === "vat_recon" || area === "payroll" || area === "bank_analysis"))
         return deny("Only a Manager or Partner can approve this work.");
@@ -298,11 +299,11 @@ function decideAllocationRequest({ approver, request, decision, reason = "", eff
   if (request.takeover) for (const assignment of currentAssignments) {
     if (assignment.projectId === request.projectId && assignment.staffId !== request.requesterId && !assignment.endDate) {
       if (assignment.startDate && assignment.startDate >= effectiveDate) return { ok: false, reason: "The takeover date must follow the current allocation start date." };
-      assignmentChanges.push({ type: "END", assignmentId: assignment.id, staffId: assignment.staffId, endDate: dayBefore(effectiveDate) });
+      assignmentChanges.push({ type: "END", assignmentId: assignment.id, projectId: request.projectId, staffId: assignment.staffId, endDate: dayBefore(effectiveDate) });
     }
   }
   assignmentChanges.push({ type: "ADD", projectId: request.projectId, firmId: request.firmId, staffId: request.requesterId,
-    startDate: effectiveDate, endDate: null, approvedBy: approver.id });
+    id: `allocation-${request.id}`, role: "PREPARER", startDate: effectiveDate, endDate: null, approvedBy: approver.id });
   return { ok: true, request: decided, assignmentChanges, draftsRemainWithOriginalOwner: true };
 }
 
