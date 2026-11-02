@@ -56,7 +56,7 @@ BEGIN
    RAISE EXCEPTION 'Tax rule approval requires an official Kenya Law, KRA, Gazette or competent regulator URL' USING ERRCODE='23514';
   END IF;
   IF length(btrim(coalesce(NEW.source_note,'')))<20
-    OR NEW.source_note !~* '\\m(act|sections?|legal notices?|ln|regulations?|schedules?|gazette|court order|judgment)\\M' THEN
+    OR NEW.source_note !~* '\m(act|sections?|legal notices?|ln|regulations?|schedules?|gazette|court order|judgment)\M' THEN
    RAISE EXCEPTION 'Add the applicable Act, section, Legal Notice, regulation, Schedule or Gazette reference' USING ERRCODE='23514';
   END IF;
   IF NEW.partner_source_verified_on IS NULL THEN
