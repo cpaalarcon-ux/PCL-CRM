@@ -3,11 +3,12 @@ import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
 import {readWorkbookSheet} from './workbook-reader.mjs';
 import {checkWorkbookZip} from './workspace-rules.mjs';
-import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal} from './ledger-rules.mjs';
+import {cashAmount,day,normaliseLines,journalIssues,openingAccountMappingIssue,costJournal,trialBalance,profitReport,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal} from './ledger-rules.mjs';
 import {money} from './accounting-rules.mjs';
 
 const one=(r:any[])=>{if(!r.length)fail(403,'This working paper is not available to your account.');return r[0];};
 const leader=(a:any)=>{if(!staffReviewer(a))fail(403,'A Manager or Partner must approve client accounting.');};
+const independentReviewer=async(tx:any,a:any)=>{leader(a);const rows=await tx`select login_id from erp_private.staff_members where staff_id=${a.staff_id}`;if(['EP012','EP013'].includes(String(rows[0]?.login_id||'').toUpperCase()))fail(403,'UAT test accounts EP012 and EP013 cannot independently approve or post. Assign a real Manager or Partner as reviewer.');};
 const rev=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'This working paper changed. Refresh before continuing.');};
 const edit=(r:any,a:any)=>{if(!['Draft','Returned'].includes(r.status)||r.prepared_by!==a.staff_id&&!staffReviewer(a))fail(403,'Only the preparer or a Manager may edit an open draft.');};
 const amount=(v:any,label:string,nullable=false)=>{if(nullable&&(v===''||v==null))return null;try{return cashAmount(v)/100;}catch{fail(400,'Enter a valid '+label+'.');}};
@@ -174,7 +175,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(['ledger_journal_submit','ledger_journal_review'].includes(p.action)){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);
   if(p.action==='ledger_journal_submit'){edit(j,a);const issues=journalIssues(await lines(tx,j.journal_id),await catalogue(tx),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id} where journal_id=${j.journal_id}`;}
-  else{leader(a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);if(status==='Posted')await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;}
+  else{await independentReviewer(tx,a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);if(status==='Posted')await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;}
   return {ok:true,journal_id:j.journal_id};
  }
  if(p.action==='ledger_reverse'){
@@ -196,7 +197,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   const asset=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id} for update`),rate=asset.rate_snapshot,result=assetCalculation(asset,rate,l.starts_on,l.ends_on);
   if(p.action==='ledger_asset_read')return {asset,rate,calculation:result};rev(asset,p);
   if(p.action==='ledger_asset_submit'){edit(asset,a);if(result.issues.length)fail(400,result.issues.join(' '));await tx`update erp_private.ledger_assets set status='Submitted',last_prepared_by=${a.staff_id} where asset_id=${asset.asset_id}`;}
-  else{leader(a);if(asset.status!=='Submitted'||[asset.prepared_by,asset.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review this asset.');const status=choice(p.status,['Approved','Returned']);if(status==='Approved'&&result.issues.length)fail(400,result.issues.join(' '));await tx`update erp_private.ledger_assets set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where asset_id=${asset.asset_id}`;}
+  else{await independentReviewer(tx,a);if(asset.status!=='Submitted'||[asset.prepared_by,asset.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review this asset.');const status=choice(p.status,['Approved','Returned']);if(status==='Approved'&&result.issues.length)fail(400,result.issues.join(' '));await tx`update erp_private.ledger_assets set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where asset_id=${asset.asset_id}`;}
   return {ok:true};
  }
  if(p.action==='ledger_depreciation_create'){
@@ -218,7 +219,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   const header=Math.trunc(Number(p.header_row)||1);if(header<1||header>200||header>sheet.rowCount)fail(400,'Select the header row.');
   const get=(r:number,c:number)=>{const value=sheet.getRow(r).getCell(c).value;return value&&typeof value==='object'&&!(value instanceof Date)&&'result' in value?value.result:value;};
   const headers=Array.from({length:sheet.columnCount},(_,i)=>String(get(header,i+1)||''));
-  if(p.action==='ledger_import_preview')return {sheets,sheet_name:sheet.name,header_row:header,headers,preview:Array.from({length:Math.min(8,sheet.rowCount-header)},(_,i)=>({source_row:header+i+1,values:headers.map((_:any,c:number)=>get(header+i+1,c+1))}))};
+  if(p.action==='ledger_import_preview'){const total=Math.max(0,sheet.rowCount-header),offset=Math.max(0,Math.min(total,Math.trunc(Number(p.preview_from)||0))),limit=Math.max(1,Math.min(500,Math.trunc(Number(p.preview_limit)||100))),start=header+offset+1,count=Math.min(limit,total-offset);return {sheets,sheet_name:sheet.name,header_row:header,headers,preview_total:total,preview_offset:offset,preview:Array.from({length:count},(_,i)=>{const row=start+i;return {source_row:row,values:headers.map((_:any,c:number)=>get(row,c+1))};})};}
   const kind=choice(p.kind,['Opening','Payroll']),map=p.column_map||{},col=(key:string)=>{const n=Number(map[key]);if(!Number.isInteger(n)||n<1||n>sheet.columnCount)return null;return n;},openingConfirmed=p.confirm_opening_source===true||p.confirm_opening_source==='true',sourceEvidence=String(p.evidence||'').trim();
   if(kind==='Opening')await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':opening-balance'},0))`;
   if(kind==='Opening'&&!openingConfirmed)fail(400,'Confirm the approved prior-year trial balance before importing opening balances.');
@@ -236,8 +237,9 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
    if(explicitCode&&legacyCode&&explicitCode!==legacyCode)fail(400,`Source row ${r}: ERP TB item code and master account code do not match.`);
    const account=accounts.find(x=>x.code===targetCode),suppliedRouting=String(read('routing_code')||'').trim().toUpperCase();
    if(suppliedRouting&&account&&suppliedRouting!==String(account.category_code||'').toUpperCase())fail(400,`Source row ${r}: routing code does not match ERP TB item code ${targetCode}.`);
-   items.push({account_code:targetCode||null,legacy_code:legacy,source_name:name,debit:Math.max(net,0),credit:Math.max(-net,0),source_status:kind==='Opening'?(!negative&&openingConfirmed?'Confirmed':'Unverified'):!negative&&read('source_status')==='Confirmed'?'Confirmed':'Unverified',source_reference:kind==='Opening'?`${doc.file_name} | ${sheet.name} | row ${r}`:String(read('source_reference')||doc.file_name),description:'Excel row '+r+(negative?' - sign presentation normalised; confirm original source':'' )});
-   sourceRows.push({source_row:r,original_debit:debit,original_credit:credit,source_name:name,legacy_code:legacy,tb_item_code:targetCode||'',routing_code:suppliedRouting||String(account?.category_code||''),account_code:targetCode||''});
+   const mappingIssue=kind==='Opening'?openingAccountMappingIssue(legacy,name,targetCode,account?.name):'',mappedCode=mappingIssue?null:targetCode||null;
+   items.push({account_code:mappedCode,legacy_code:legacy,source_name:name,debit:Math.max(net,0),credit:Math.max(-net,0),source_status:kind==='Opening'?(!negative&&openingConfirmed&&!mappingIssue?'Confirmed':'Unverified'):!negative&&read('source_status')==='Confirmed'?'Confirmed':'Unverified',source_reference:kind==='Opening'?`${doc.file_name} | ${sheet.name} | row ${r}`:String(read('source_reference')||doc.file_name),description:'Excel row '+r+(negative?' - sign presentation normalised; confirm original source':'' )});
+   sourceRows.push({source_row:r,original_debit:debit,original_credit:credit,source_name:name,legacy_code:legacy,tb_item_code:mappedCode||'',requested_tb_item_code:mappingIssue?targetCode||'':'',mapping_issue:mappingIssue||'',routing_code:suppliedRouting||String(account?.category_code||''),account_code:mappedCode||''});
   }
   const key=await digest({document:doc.sha256,sheet:sheet.name,header,kind,period:l.period_id}),existing=(await tx`select journal_id from erp_private.ledger_sources where source_kind=${kind+' workbook'} and source_key=${key}`)[0];if(existing)return {...existing,reused:true,imported_count:0,duplicate_count:items.length};
   if(kind==='Opening'&&(await tx`select journal_id from erp_private.ledger_journals where period_id=${l.period_id} and kind='Opening' limit 1`)[0])fail(409,'An opening balance entry already exists for this financial year. Open it from Entry register. Edit an unposted draft there; posted opening corrections require a reviewed adjustment.');
