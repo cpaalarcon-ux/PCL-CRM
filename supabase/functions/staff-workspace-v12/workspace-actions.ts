@@ -42,7 +42,8 @@ export async function workspaceExtra(tx:any){
  workbook_batches:await tx`select * from erp_private.workbook_batches order by created_at desc limit 200`};
 }
 async function previewSchedule(tx:any,s:any,cid:string){
- if(!s.enabled)return {enabled:false,total:0,due_now:0,upcoming:0,breakdown:[]};
+ const catchup_task=s.enabled&&s.catchup_starts_on?{starts_on:s.catchup_starts_on,ends_on:s.catchup_ends_on}:null;
+ if(!s.enabled)return {enabled:false,total:0,due_now:0,upcoming:0,breakdown:[],catchup_task:null};
  const client=one(await tx`select year_end_month,year_end_day from erp_private.clients where client_id=${cid} and deleted_at is null`);
  if(!client.year_end_month||!client.year_end_day)fail(400,'Set the client financial year-end before previewing tasks.');
  const through=`${s.ends_on}T23:59:59+03:00`;
@@ -52,7 +53,7 @@ async function previewSchedule(tx:any,s:any,cid:string){
  const grouped=new Map<string,any>();for(const row of occurrences){const item=grouped.get(row.template_key)||{template_key:row.template_key,task_name:row.task_name,total:0,due_now:0,upcoming:0};item.total++;if(row.due_now)item.due_now++;else item.upcoming++;grouped.set(row.template_key,item);}
  const breakdown=[...grouped.values()];
  const total=breakdown.reduce((sum:number,row:any)=>sum+Number(row.total),0),due_now=breakdown.reduce((sum:number,row:any)=>sum+Number(row.due_now),0);
- return {enabled:true,total,due_now,upcoming:total-due_now,breakdown,financial_year_end:{month:client.year_end_month,day:client.year_end_day},periods:occurrences.slice(0,3).map((x:any)=>({start:x.period_start,end:x.period_end}))};
+ return {enabled:true,total,due_now,upcoming:total-due_now,breakdown,catchup_task,financial_year_end:{month:client.year_end_month,day:client.year_end_day},periods:occurrences.slice(0,3).map((x:any)=>({start:x.period_start,end:x.period_end}))};
 }
 export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='sector_save'){
@@ -111,19 +112,25 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   await assign(tx,pid,firm,a.staff_id);await assign(tx,pid,firm,s.assigned_to);const reviewer=await assign(tx,pid,firm,s.reviewer_id);
   if(!projectEditor(reviewer))fail(400,'Choose a Partner, Manager or Supervisor as reviewer.');
   const prior=(await tx`select * from erp_private.project_schedules where project_id=${pid} for update`)[0];
+  if(prior){
+   const [catchupTask]=await tx`select task_id from erp_private.tasks where project_id=${pid} and recurring_key='catchup-upload' and deleted_at is null limit 1`;
+   if(catchupTask&&(String(prior.catchup_starts_on||'')!==String(s.catchup_starts_on||'')||String(prior.catchup_ends_on||'')!==String(s.catchup_ends_on||'')))
+    fail(400,'The one-time catch-up task has already been released. Keep its approved period range unchanged; create a separately reviewed follow-up task for any additional months.');
+  }
   const newlyScheduled=s.obligations.filter((code:string)=>!prior?.obligations?.includes(code)&&code!=='Payroll');
   if(newlyScheduled.length){
    const profiles=await tx`select obligations from erp_private.client_tax_profiles where client_id=${cid} and status='Verified' and deleted_at is null and effective_from<=${s.starts_on} and effective_to>=${s.starts_on} order by effective_from desc limit 1`;
    if(!profiles.length){const needsProfile=newlyScheduled.filter((code:string)=>!['VAT','PAYE','TOT'].includes(code));if(needsProfile.length)fail(400,'Verify the client tax profile for the schedule start date before adding these recurring services.');}
    else {const confirmed=new Set<string>(profiles[0].obligations||[]);for(const code of newlyScheduled){const required=profileForScheduledWork[code]||[];if(!required.length||!required.some(item=>confirmed.has(item)))fail(400,`${code} is not confirmed in the verified client tax profile for ${s.starts_on}. Update the profile before scheduling this work.`);}}
   }
-  const changed=!prior||['frequency','pack','starts_on','ends_on','enabled','assigned_to','reviewer_id'].some(k=>String(prior[k]).slice(0,k.endsWith('_on')?10:999)!==String((s as any)[k]))||JSON.stringify(prior.obligations.slice().sort())!==JSON.stringify(s.obligations.slice().sort());
+  const changed=!prior||['frequency','pack','starts_on','ends_on','enabled','assigned_to','reviewer_id','catchup_starts_on','catchup_ends_on'].some(k=>String(prior[k]).slice(0,k.endsWith('_on')?10:999)!==String((s as any)[k]))||JSON.stringify(prior.obligations.slice().sort())!==JSON.stringify(s.obligations.slice().sort());
   if(changed){
    const effective=prior?new Date(Date.parse(nairobiDate()+'T00:00:00Z')+86400000).toISOString().slice(0,10):s.starts_on;
-   await tx`insert into erp_private.project_schedules(project_id,frequency,pack,starts_on,ends_on,effective_from,enabled,obligations,assigned_to,reviewer_id)
-    values(${pid},${s.frequency},${s.pack},${s.starts_on},${s.ends_on},${effective},${s.enabled},${tx.array(s.obligations)},${s.assigned_to},${s.reviewer_id})
+   await tx`insert into erp_private.project_schedules(project_id,frequency,pack,starts_on,ends_on,effective_from,enabled,obligations,assigned_to,reviewer_id,catchup_starts_on,catchup_ends_on)
+    values(${pid},${s.frequency},${s.pack},${s.starts_on},${s.ends_on},${effective},${s.enabled},${tx.array(s.obligations)},${s.assigned_to},${s.reviewer_id},${s.catchup_starts_on},${s.catchup_ends_on})
     on conflict(project_id) do update set frequency=excluded.frequency,pack=excluded.pack,starts_on=excluded.starts_on,ends_on=excluded.ends_on,effective_from=excluded.effective_from,
-    enabled=excluded.enabled,obligations=excluded.obligations,assigned_to=excluded.assigned_to,reviewer_id=excluded.reviewer_id,version=project_schedules.version+1,updated_at=now()`;
+    enabled=excluded.enabled,obligations=excluded.obligations,assigned_to=excluded.assigned_to,reviewer_id=excluded.reviewer_id,
+    catchup_starts_on=excluded.catchup_starts_on,catchup_ends_on=excluded.catchup_ends_on,version=project_schedules.version+1,updated_at=now()`;
   }
   const projectStatus=old?.status||'Draft',gate=projectStatus==='Active'?await projectTaskGate(tx,pid,cid,s.starts_on):{ready:false,reason:'Project is Draft. Its schedule is saved, but no tasks or reports are activated yet.'};
   const [r]=gate.ready&&projectStatus==='Active'?await tx`select erp_private.generate_project_tasks(${pid}::uuid) generated`:[{generated:0}];
@@ -133,7 +140,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='schedule_preview'){
   const s=one(await tx`select * from erp_private.project_schedules where project_id=${uuid(p.project_id)}`);
   const client=one(await tx`select c.year_end_month,c.year_end_day from erp_private.projects p join erp_private.clients c using(client_id) where p.project_id=${s.project_id}`);
-  return {financial_year_end:{month:client.year_end_month,day:client.year_end_day},occurrences:await tx`select distinct on(o.release_at,o.template_key,o.period_start) o.* from (select * from erp_private.project_schedule_history where project_id=${s.project_id} and enabled union all select * from erp_private.project_schedules where project_id=${s.project_id} and enabled) v cross join lateral erp_private.schedule_occurrences(v.frequency,v.pack,v.starts_on,v.ends_on,v.effective_from,v.obligations,now()+interval '40 days',${client.year_end_month},${client.year_end_day}) o where o.release_at>now() order by o.release_at,o.template_key,o.period_start,v.version limit 100`};
+  return {financial_year_end:{month:client.year_end_month,day:client.year_end_day},catchup_task:s.enabled&&s.catchup_starts_on?{starts_on:s.catchup_starts_on,ends_on:s.catchup_ends_on}:null,occurrences:await tx`select distinct on(o.release_at,o.template_key,o.period_start) o.* from (select * from erp_private.project_schedule_history where project_id=${s.project_id} and enabled union all select * from erp_private.project_schedules where project_id=${s.project_id} and enabled) v cross join lateral erp_private.schedule_occurrences(v.frequency,v.pack,v.starts_on,v.ends_on,v.effective_from,v.obligations,now()+interval '40 days',${client.year_end_month},${client.year_end_day}) o where o.release_at>now() order by o.release_at,o.template_key,o.period_start,v.version limit 100`};
  }
  if(p.action==='task_create'){
   editor(a);const pid=uuid(p.project_id),sid=uuid(p.assigned_to),due=date(p.due_date);

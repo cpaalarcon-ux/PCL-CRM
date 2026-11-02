@@ -8,7 +8,7 @@ import {renderDashboard} from './staff-dashboard.mjs?v=20261028-pms-uat-align';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261026-v4';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261031-setup-guide-api-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261102-catchup-upload-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261031-tax-readiness-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261027-fulluat';
