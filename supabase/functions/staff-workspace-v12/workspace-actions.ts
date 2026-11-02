@@ -82,7 +82,13 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='schedule_config_preview'){
   editor(a);const s=scheduleInput({...p,pack:p.pack||'Tax Compilation'});
   let cid=p.client_id?uuid(p.client_id):null;if(!cid&&p.project_id)cid=one(await tx`select client_id from erp_private.projects where project_id=${uuid(p.project_id)} and deleted_at is null`).client_id;
-  if(!cid)fail(400,'Choose the client before previewing its reporting schedule.');return await previewSchedule(tx,s,cid);
+  if(!cid)fail(400,'Choose the client before previewing its reporting schedule.');
+  const firm=p.firm_id?uuid(p.firm_id):null;if(!firm)fail(400,'Choose the handling firm before previewing the reporting schedule.');
+  await requireProjectSetup(tx,cid,firm,s.starts_on);
+  one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
+  let existingSchedule=null;if(p.project_id){const project=one(await tx`select client_id,handling_firm_id from erp_private.projects where project_id=${uuid(p.project_id)} and deleted_at is null`);if(project.client_id!==cid||project.handling_firm_id!==firm)fail(400,'Choose the client and handling firm assigned to this project.');existingSchedule=(await tx`select project_id from erp_private.project_schedules where project_id=${uuid(p.project_id)} and deleted_at is null limit 1`)[0]||null;}
+  if(!existingSchedule&&s.pack==='Tax Compilation'&&s.frequency!=='Once-off'&&s.starts_on.slice(8,10)!=='01')fail(400,'Set recurring work to the first day of the client’s current reporting month. Earlier missing months can be added as one catch-up task.');
+  return await previewSchedule(tx,s,cid);
  }
  if(p.action==='project_save'){
   editor(a);const pid=p.project_id?uuid(p.project_id):crypto.randomUUID(),cid=uuid(p.client_id),firm=uuid(p.firm_id),service=text(p.service_code,40);
@@ -93,6 +99,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   const c=one(await tx`select company_name,legal_entity_type,entity_evidence,year_end_month,year_end_day,opening_balance_status from erp_private.clients where client_id=${cid} and deleted_at is null`);
   const svc=one(await tx`select service_name from erp_private.services where service_code=${service} and is_active`);
   const s=scheduleInput(service==='TAX-COMP'?{...p,pack:'Tax Compilation'}:p),name=text(p.project_name||defaultProjectName(c.company_name,svc.service_name,s.starts_on),200);
+  if(!old&&s.pack==='Tax Compilation'&&s.frequency!=='Once-off'&&s.starts_on.slice(8,10)!=='01')fail(400,'Set recurring work to the first day of the client’s current reporting month. Earlier missing months can be added as one catch-up task.');
   if(service!=='TAX-COMP'&&s.obligations.length)fail(400,'Recurring tax work must use the KRA Tax Compilation service.');
   if(p.require_schedule_preview===true){
    if(p.schedule_previewed!==true)fail(400,'Preview the task schedule before saving.');
@@ -123,7 +130,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    if(!profiles.length){const needsProfile=newlyScheduled.filter((code:string)=>!['VAT','PAYE','TOT'].includes(code));if(needsProfile.length)fail(400,'Verify the client tax profile for the schedule start date before adding these recurring services.');}
    else {const confirmed=new Set<string>(profiles[0].obligations||[]);for(const code of newlyScheduled){const required=profileForScheduledWork[code]||[];if(!required.length||!required.some(item=>confirmed.has(item)))fail(400,`${code} is not confirmed in the verified client tax profile for ${s.starts_on}. Update the profile before scheduling this work.`);}}
   }
-  const changed=!prior||['frequency','pack','starts_on','ends_on','enabled','assigned_to','reviewer_id','catchup_starts_on','catchup_ends_on'].some(k=>String(prior[k]).slice(0,k.endsWith('_on')?10:999)!==String((s as any)[k]))||JSON.stringify(prior.obligations.slice().sort())!==JSON.stringify(s.obligations.slice().sort());
+  const changed=!prior||['frequency','pack','starts_on','ends_on','enabled','assigned_to','reviewer_id','catchup_starts_on','catchup_ends_on'].some(k=>String(prior[k]||'').slice(0,k.endsWith('_on')?10:999)!==String((s as any)[k]||''))||JSON.stringify(prior.obligations.slice().sort())!==JSON.stringify(s.obligations.slice().sort());
   if(changed){
    const effective=prior?new Date(Date.parse(nairobiDate()+'T00:00:00Z')+86400000).toISOString().slice(0,10):s.starts_on;
    await tx`insert into erp_private.project_schedules(project_id,frequency,pack,starts_on,ends_on,effective_from,enabled,obligations,assigned_to,reviewer_id,catchup_starts_on,catchup_ends_on)
@@ -221,3 +228,4 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  }
  return undefined;
 }
+

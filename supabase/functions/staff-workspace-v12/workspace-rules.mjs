@@ -14,13 +14,13 @@ export function scheduleInput(p){
  const catchupStarts=catchupEnabled?date(p.catchup_starts_on):null,catchupEnds=catchupEnabled?date(p.catchup_ends_on):null;
  if(catchupEnabled&&(!catchupStarts||!catchupEnds))fail(400,'Choose the first and last missing months for the one-time catch-up upload.');
  if(catchupEnabled){
+  if(starts.slice(8,10)!=='01')fail(400,'Set recurring work to start on the first day of a reporting month. Earlier missing months go in the one-time catch-up task.');
   const monthStart=value=>`${value.slice(0,7)}-01`;
   const monthEnd=value=>{const [y,m]=value.slice(0,10).split('-').map(Number);return new Date(Date.UTC(y,m,0)).toISOString().slice(0,10);};
-  if(starts!==monthStart(starts))fail(400,'Recurring work must start on the first day of the current reporting month when earlier months are bundled.');
   if(catchupStarts!==monthStart(catchupStarts)||catchupEnds!==monthEnd(catchupEnds)||catchupEnds<catchupStarts)
    fail(400,'Choose a complete month range for the catch-up upload.');
   const priorMonthEnd=new Date(Date.parse(monthStart(starts)+'T00:00:00Z')-86400000).toISOString().slice(0,10);
-  if(catchupEnds!==priorMonthEnd)fail(400,'Catch-up must end in the month immediately before recurring work starts. Set recurring work to the client’s current reporting period.');
+  if(catchupEnds!==priorMonthEnd)fail(400,'Catch-up must end in the month immediately before recurring work starts. Set the recurring start to the client’s current reporting period.');
  }
  const selected=Array.isArray(p.obligations)?[...new Set(p.obligations.map(x=>choice(x,obligations)))]:[];
  return {frequency:choice(p.frequency,frequencies),pack:choice(p.pack,['General','Tax Compilation']),starts_on:starts,ends_on:ends,
@@ -101,3 +101,4 @@ export function checkWorkbookZip(bytes){
  }
  return total;
 }
+
