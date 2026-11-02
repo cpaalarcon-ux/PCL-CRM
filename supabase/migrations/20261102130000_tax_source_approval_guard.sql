@@ -11,6 +11,22 @@ AS $$
 DECLARE
  v_host text;
 BEGIN
+ IF NEW.status='Testing' AND OLD.status<>'Testing' THEN
+  IF NOT erp_private.is_leader() THEN
+   RAISE EXCEPTION 'A Manager or Partner must authorize staging tax tests' USING ERRCODE='42501';
+  END IF;
+  IF NEW.testing_authorized_at IS NULL OR length(btrim(coalesce(NEW.testing_authorization_note,'')))<20 THEN
+   RAISE EXCEPTION 'Staging tax tests require an authorization date and test note' USING ERRCODE='23514';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.rate_key,0));
+  IF EXISTS(
+   SELECT 1 FROM erp_private.tax_rates r
+   WHERE r.rate_key=NEW.rate_key AND r.rate_id<>NEW.rate_id AND r.status='Testing'
+    AND r.deleted_at IS NULL AND r.effective_from<=NEW.effective_to AND r.effective_to>=NEW.effective_from
+  ) THEN
+   RAISE EXCEPTION 'Staging tax test periods overlap' USING ERRCODE='23514';
+  END IF;
+ END IF;
  IF NEW.status='Approved' AND OLD.status<>'Approved' THEN
   IF NEW.is_test OR NEW.rate_key ~* '^QA' OR NEW.label ~* '(FICTIONAL|SYNTHETIC TEST)' THEN
    RAISE EXCEPTION 'Test-only rates cannot be approved' USING ERRCODE='23514';
