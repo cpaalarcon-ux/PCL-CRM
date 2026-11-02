@@ -23,6 +23,7 @@ test('Assistants can see the client directory, while client details require allo
   const assistant = staff('assistant-1', 'ASSISTANT');
   assert.equal(access.can(assistant, 'clients', 'V', { firmId: 'F1', scope: 'directory' }).ok, true);
   assert.equal(access.can(assistant, 'projects', 'V', project({ scope: 'summary' })).ok, true);
+  assert.equal(access.can(assistant, 'clients', 'V', project({ scope: 'directory' })).ok, false);
   assert.equal(access.can(assistant, 'clients', 'V', project()).ok, false);
   assert.equal(access.can(assistant, 'clients', 'V', project({ taskAssigneeIds: ['assistant-1'] })).ok, true);
   assert.equal(access.can(assistant, 'ledger', 'V', project({ projectStaffIds: ['assistant-1'] })).ok, true);
