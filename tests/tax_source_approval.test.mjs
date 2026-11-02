@@ -14,6 +14,7 @@ test('secondary, malformed and lookalike sources cannot support formal approval'
  assert.match(taxSourceIssue('https://pwc.com/ke/en/publications/tax','Finance Act 2023 section 5'),/official/);
  assert.match(taxSourceIssue('https://kra.go.ke.example.com/tax','VAT Act section 5'),/official/);
  assert.match(taxSourceIssue('http://www.kra.go.ke/tax','VAT Act section 5'),/official/);
+ assert.match(taxSourceIssue('https://www.kra.go.ke:8443/tax','VAT Act section 5'),/official/);
  assert.match(taxSourceIssue('https://www.kra.go.ke/tax','Rate is 16 percent'),/Act, section, Legal Notice/);
 });
 
