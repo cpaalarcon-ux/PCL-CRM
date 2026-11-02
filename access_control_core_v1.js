@@ -153,6 +153,7 @@ function can(staff, area, action, record) {
     // their authorised firm. This read access does not grant editing authority.
     if (staff.role === "INTERN" && ["clients", "projects"].includes(area) && !taskAccess)
       return deny("Interns can open client and project details only from an assigned task.");
+    if (assistantClientDirectory || assistantProjectDirectory) return { ok: true };
     if (record.projectId && !allocated && !taskAccess && !broadProjectRead)
       return deny("Record belongs to a project that is not allocated to you or assigned to your task.");
     if (record.projectId && action !== "V" && !allocated && !taskAccess)
@@ -161,7 +162,6 @@ function can(staff, area, action, record) {
       return deny("Client details and working data open when the work is allocated or a task is sent to you.");
     if (record.scope === "detail" && staff.role === "INTERN" && !taskAccess)
       return deny("Client details are available only through your assigned task.");
-    if (assistantClientDirectory || assistantProjectDirectory) return { ok: true };
     if (action === "A" || action === "P") {
       if (!HARD.approveRoles.includes(staff.role) && !(area === "vat_recon" || area === "payroll" || area === "bank_analysis"))
         return deny("Only a Manager or Partner can approve this work.");
