@@ -177,6 +177,26 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
   await tx`update erp_private.client_account_mappings set effective_to=${to} where mapping_id=${row.mapping_id}`;
   return {ok:true};
  }
+ if(p.action==='v3_client_account_mapping_end_batch'){
+  leader(a);const cid=uuid(p.client_id),items=Array.isArray(p.items)?p.items:[],to=date(p.effective_to);
+  if(!to)fail(400,'Enter a shared end date.');
+  if(!items.length||items.length>2000)fail(400,'Select between 1 and 2,000 active account mappings.');
+  const expected=new Map(items.map((x:any)=>[uuid(x.mapping_id),revision(x.revision)]));
+  if(expected.size!==items.length)fail(400,'A mapping was selected more than once. Refresh and try again.');
+  await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':client-accounts'},0))`;
+  const rows=await tx`select * from erp_private.client_account_mappings where client_id=${cid} and mapping_id=any(${tx.array([...expected.keys()])}::uuid[]) order by mapping_id for update`;
+  if(rows.length!==expected.size)fail(409,'One or more selected mappings are no longer available for this client. Refresh the list.');
+  for(const row of rows){
+   fresh(row,{revision:expected.get(row.mapping_id)});
+   if(row.status!=='Active'||row.effective_to)fail(409,`${row.source_account_name} is no longer an active ongoing mapping. Refresh the list.`);
+   if(row.created_by===a.staff_id)fail(403,'A different Manager or Partner must end-date every selected mapping.');
+   if(to<asDay(row.effective_from))fail(400,`The shared end date is before ${row.source_account_name} starts.`);
+  }
+  const ids=rows.map((row:any)=>row.mapping_id);
+  const updated=await tx`update erp_private.client_account_mappings set effective_to=${to} where client_id=${cid} and mapping_id=any(${tx.array(ids)}::uuid[]) returning mapping_id`;
+  if(updated.length!==rows.length)fail(409,'The selected mappings changed during the update. Refresh and try again.');
+  return {ok:true,updated_count:updated.length,effective_to:to};
+ }
  if(p.action==='v3_identity_save'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);const v=entityInput(p);
   const predecessor=p.predecessor_client_id?uuid(p.predecessor_client_id):null;if(predecessor){if(predecessor===c.client_id)fail(400,'Choose a different predecessor client.');one(await tx`select client_id from erp_private.clients where client_id=${predecessor} and deleted_at is null`);
