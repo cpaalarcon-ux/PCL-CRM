@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {stagingRates,preferredRates,taxTestingEnabled,TAX_TESTING_PROJECT_URL} from '../supabase/functions/staff-workspace-v12/testing-rates.mjs';
+import {stagingRates,preferredRates,taxTestingEnabled,testingAuthorizationIssue,TAX_TESTING_PROJECT_URL} from '../supabase/functions/staff-workspace-v12/testing-rates.mjs';
 
 const formal={rate_id:'formal',rate_key:'KE_CIT_RES',status:'Approved',effective_from:'2021-01-01',effective_to:'9999-12-31',parameters:{rate:30}};
 const testing={rate_id:'testing',rate_key:'KE_CIT_RES',status:'Testing',effective_from:'2021-01-01',effective_to:'9999-12-31',parameters:{rate:25}};
@@ -21,4 +21,17 @@ test('an authorized staged test rule is used for UAT and excluded from productio
  assert.equal(preferredRates(stage,'KE_CIT_RES','2026-01-01','2026-12-31')[0].rate_id,'testing');
  const production=stagingRates([formal,testing],'https://production.example.supabase.co');
  assert.equal(preferredRates(production,'KE_CIT_RES','2026-01-01','2026-12-31')[0].rate_id,'formal');
+});
+
+test('test-only rules never enter calculations, even if a legacy row says Approved',()=>{
+ const fixture={rate_id:'qa-fixture',rate_key:'QA123',status:'Approved',effective_from:'2021-01-01',effective_to:'9999-12-31',parameters:{rate:99}};
+ assert.deepEqual(stagingRates([formal,testing,fixture],TAX_TESTING_PROJECT_URL).map(r=>r.rate_id),['formal','testing']);
+ assert.deepEqual(stagingRates([formal,testing,fixture],'https://production.example.supabase.co').map(r=>r.rate_id),['formal']);
+});
+
+test('staging authorization requires a test purpose and confirmation, not source evidence',()=>{
+ const note='Test the 2026 payroll rules for the assigned staging period.';
+ assert.equal(testingAuthorizationIssue(true,note),null);
+ assert.match(testingAuthorizationIssue(false,note),/Confirm/);
+ assert.match(testingAuthorizationIssue(true,'short'),/test purpose/);
 });
