@@ -61,6 +61,13 @@ test('Only the designated independent reviewer can approve submitted work', () =
   assert.equal(access.can(reviewer, 'opening_tb', 'A', { ...record, preparedBy: 'manager-2' }).ok, false);
 });
 
+test('Approval and posting are separate actions', () => {
+  const reviewer = staff('manager-2', 'MANAGER');
+  const submitted = project({ taskReviewerIds: ['manager-2'], preparedBy: 'assistant-1', status: 'SUBMITTED' });
+  assert.equal(access.can(reviewer, 'opening_tb', 'P', submitted).ok, false);
+  assert.equal(access.can(reviewer, 'opening_tb', 'P', { ...submitted, status: 'APPROVED' }).ok, true);
+});
+
 test('Allocation requests require a reason, valid firm access, an active non-intern requester and a valid date', () => {
   const projectRecord = { id: 'P1', firmId: 'F1' };
   assert.equal(access.createAllocationRequest({ requester: staff('intern-1', 'INTERN'), project: projectRecord, reason: 'Cover', requestedStartDate: '2026-11-03' }).ok, false);
