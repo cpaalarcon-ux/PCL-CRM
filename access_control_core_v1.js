@@ -146,7 +146,7 @@ function can(staff, area, action, record) {
     const taskAccess = hasTaskAccess(staff, record);
     const allocated = hasProjectAllocation(staff, record);
     const broadProjectRead = action === "V" && RANK[staff.role] >= RANK.SUPERVISOR;
-    const assistantClientDirectory = staff.role === "ASSISTANT" && action === "V" && area === "clients" && ["directory", "summary"].includes(record.scope);
+    const assistantClientDirectory = staff.role === "ASSISTANT" && action === "V" && area === "clients" && !record.projectId && ["directory", "summary"].includes(record.scope);
     const assistantProjectDirectory = staff.role === "ASSISTANT" && action === "V" && area === "projects" && record.scope === "summary";
 
     // Partner, Manager and Supervisor roles can find every company and project in
