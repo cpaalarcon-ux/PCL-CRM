@@ -6,6 +6,9 @@ export function stagingRates(rows,projectUrl){
  return rows.filter(r=>r.status==='Approved'||staging&&r.status==='Testing').map(r=>r.status==='Testing'?{...r,status:'Approved',source_status:'Testing',approval_scope:'Testing'}:{...r,approval_scope:'Reviewed'});
 }
 export function preferredRates(rows,key,start,end){
- const formal=rows.filter(r=>r.rate_key===key&&r.approval_scope!=='Testing'&&dateString(r.effective_from)<=start&&dateString(r.effective_to)>=end);
+ const matching=rows.filter(r=>r.rate_key===key&&dateString(r.effective_from)<=start&&dateString(r.effective_to)>=end);
+ const testing=matching.filter(r=>r.approval_scope==='Testing');
+ if(testing.length)return testing;
+ const formal=matching.filter(r=>r.approval_scope!=='Testing');
  return formal.length?formal:rows.filter(r=>r.rate_key===key);
 }
