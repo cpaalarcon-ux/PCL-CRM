@@ -4,11 +4,11 @@ import {stockMethodChoices,stockCountChoices} from './staff-stock-policy.mjs?v=2
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261026-v4';
 import {createPresenceUI} from './staff-presence.mjs?v=20261026-v4';
-import {renderDashboard} from './staff-dashboard.mjs?v=20261028-pms-uat-align';
+import {renderDashboard} from './staff-dashboard.mjs?v=20261102-home-resources-v1';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261026-v4';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261102-reporting-month-catchup-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261102-client-project-access-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261031-tax-readiness-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261027-fulluat';
@@ -61,6 +61,7 @@ async function load(requestOptions={}){data=await request({action:'workspace'},r
  $('.firm-picker').hidden=data.me.category_code==='INTERN';applyWorkspaceRoute(false);render();await openCommunicationHash();void presence.refresh();}
 function filtered(){const projects=data.projects.filter(p=>!firm||p.handling_firm_id===firm),ids=new Set(projects.map(x=>x.project_id));return {projects,tasks:data.tasks.filter(t=>!firm||ids.has(t.project_id)),clients:data.clients.filter(c=>!firm||data.client_firms?.some(l=>l.client_id===c.client_id&&l.firm_id===firm)),documents:data.documents.filter(d=>!firm||d.handling_firm_id===firm)};}
 const clientMissing=c=>[...(c.missing_fields||[]),...(!c.legal_entity_type?['Legal Entity Type']:[]),...(String(c.entity_evidence||'').trim().length<10?['Legal entity evidence']:[]),...(!c.year_end_month||!c.year_end_day?['Financial year-end']:[])];
+function viewClientFile(clientId){const c=data.clients.find(x=>x.client_id===clientId&&x.details_visible);if(!c){notice('Client details are available after the project or task is allocated to you.',true);return;}const fields=[['KRA PIN',c.kra_pin],['Sector',c.primary_sector],['Branch',c.branch_location],['Client category',c.client_category],['Legal entity type',c.legal_entity_type],['Financial year-end',c.year_end_month&&c.year_end_day?`${String(c.year_end_day).padStart(2,'0')}/${String(c.year_end_month).padStart(2,'0')}`:'' ],['Incorporation date',c.incorporation_date],['Entity evidence',c.entity_evidence]],projects=data.projects.filter(p=>p.client_id===clientId);modal('Client file · '+c.company_name,`<p class="muted">Read-only client details for work assigned to you.</p><div class="scroll"><table><tbody>${fields.map(([label,value])=>`<tr><th>${esc(label)}</th><td>${esc(value||'Not recorded')}</td></tr>`).join('')}</tbody></table></div><h3>Assigned project work</h3>${projects.length?`<div class="actions">${projects.map(p=>`<button type="button" data-open-project="${p.project_id}">${esc(p.project_name)}</button>`).join('')}</div>`:'<p class="muted">No project is currently linked to this client.</p>'}`);}
 const clientName=id=>data.clients.find(x=>x.client_id===id)?.company_name||'Assigned record';
 const projectName=id=>data.projects.find(x=>x.project_id===id)?.project_name||'Assigned task';
 const staffName=id=>data.staff.find(x=>x.staff_id===id)?.full_name||data.candidates?.find(x=>x.staff_id===id)?.full_name||'Assigned staff';
@@ -88,13 +89,15 @@ function clients(){
  const setupHeading=isLeader()?'<th>Purchase mapping setup</th>':'';
  const openingHeading=isLeader()?'<th>Opening balances · before projects</th>':'';
  const body=rows.map(c=>{
-  const name=isLeader()?`<button class="link" data-client="${c.client_id}">${esc(c.company_name)}</button> ${suite.button('compliance','KYC / contacts',c.client_id)+suite.button('tax-profile','Tax profile',c.client_id)} <button data-v3="client" data-id="${c.client_id}">Entity / activities</button>`:esc(c.company_name);
+  const name=isLeader()?`<button class="link" data-client="${c.client_id}">${esc(c.company_name)}</button> ${suite.button('compliance','KYC / contacts',c.client_id)+suite.button('tax-profile','Tax profile',c.client_id)} <button data-v3="client" data-id="${c.client_id}">Entity / activities</button>`:c.details_visible?`<button class="link" data-client-view="${c.client_id}">${esc(c.company_name)}</button>`:esc(c.company_name);
   const savedSetup=clientMappingReadiness?.get(c.client_id),[setupStyle,setupLabel]=clientMappingLabel(savedSetup);
   const mappingStatus=isLeader()?`<td><span data-client-mapping-status="${c.client_id}">${savedSetup?`<span class="badge ${setupStyle}">${esc(setupLabel)}</span>`:'<span class="muted">Checking…</span>'}</span><small><button class="link" data-client-setup="${c.client_id}">Open client setup</button> · <button class="link" data-client-accounts="${c.client_id}">Client accounts</button></small></td>`:'';
   const stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at),openingResolved=!!c.has_opening_balance||c.opening_balance_status==='No opening balances',openingReady=openingResolved||stagedTB,identityReady=!!c.legal_entity_type&&String(c.entity_evidence||'').trim().length>=10&&!!c.year_end_month&&!!c.year_end_day;
   const openingStatus=isLeader()?`<td><span class="badge ${openingResolved?'good':'warn'}">${c.has_opening_balance?'Opening journal posted for current client year':stagedTB?'Opening TB staged · import, balance and independent posting still required':c.opening_balance_status==='No opening balances'?'No opening balances confirmed':identityReady?'Opening TB setup required':'Complete legal identity and financial year-end first'}</span><small>${c.opening_balance_status==='No opening balances'?`<button class="link" data-opening-state="${c.client_id}" data-opening-status="Pending">Change confirmation</button>`:stagedTB?`<button class="link" data-client-accounts="${c.client_id}">Review client account mappings</button>`:!openingResolved&&identityReady?`<button class="link" data-opening-upload="${c.client_id}">Stage opening TB</button> <button class="link" data-opening-state="${c.client_id}" data-opening-status="No opening balances">Confirm none applies</button>`:!identityReady?`<button class="link" data-v3="client" data-id="${c.client_id}">Complete entity &amp; year-end</button>`:''}</small></td>`:'';
-  const missing=clientMissing(c).length?clientMissing(c).map(x=>`<span class="missing">Missing: ${esc(x)}</span>`).join(' '):badge('Profile fields complete');
-  return `<tr data-search="${esc((c.company_name+' '+(c.kra_pin||'')).toLowerCase())}"><td>${name}<small>${esc(c.kra_pin||'KRA PIN missing')}</small><small><button class="link" data-setup-guide="${c.client_id}">Complete setup &amp; reporting guide</button></small></td><td>${esc(c.primary_sector||'Missing sector')}<small>${esc(c.branch_location||'Missing branch')}</small></td><td>${missing}</td>${mappingStatus}${openingStatus}</tr>`;
+  const missing=c.details_visible?(clientMissing(c).length?clientMissing(c).map(x=>`<span class="missing">Missing: ${esc(x)}</span>`).join(' '):badge('Profile fields complete')):'<span class="muted">Client file details are shown after allocation or task assignment.</span>';
+  const identity=c.details_visible?`<small>${esc(c.kra_pin||'KRA PIN missing')}</small><small><button class="link" data-setup-guide="${c.client_id}">Complete setup &amp; reporting guide</button></small>`:'<small class="muted">Assigned work needed to open client file</small>';
+  const sector=c.details_visible?`${esc(c.primary_sector||'Missing sector')}<small>${esc(c.branch_location||'Missing branch')}</small>`:'<span class="muted">Details available on assigned work</span>';
+  return `<tr data-search="${esc((c.company_name+' '+(c.details_visible?c.kra_pin||'':'')).toLowerCase())}"><td>${name}${identity}</td><td>${sector}</td><td>${missing}</td>${mappingStatus}${openingStatus}</tr>`;
  }).join('');
  return `<div class="card"><div class="section-head"><h2>Clients</h2>${actions}</div><p class="muted">Use the setup guide to move each test client through profile and financial year, approved accounts, opening TB, source posting, tax checks and project release. Complete the Wholesale test first, then repeat for Construction. The guide reads current records and does not approve or post data.</p>${isLeader()?'<p class="muted">Complete identity and year-end, stage the opening TB or record that none applies, and approve its account mappings. A staged file is not posted; project tasks stay locked until the opening balances are independently posted and the engagement is activated.</p><div class="actions"><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a></div>':''}<input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients"><div class="scroll"><table><thead><tr><th>Client</th><th>Sector / branch</th><th>File updates needed</th>${setupHeading}${openingHeading}</tr></thead><tbody>${body}</tbody></table></div>${!rows.length?empty('No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}</div>`;
 }
@@ -262,9 +265,10 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  try{
  if(await audit.handle(b))return;
  if(b.dataset.openTask)navigateWorkspace('task',b.dataset.openTask);
- if(b.dataset.openProject){navigateWorkspace('projects',b.dataset.openProject);if(b.dataset.workPeriod){v6.selectPeriod(b.dataset.workPeriod);render();}}
+ if(b.dataset.openProject){if($('#editor').open)$('#editor').close();navigateWorkspace('projects',b.dataset.openProject);if(b.dataset.workPeriod){v6.selectPeriod(b.dataset.workPeriod);render();}}
  if(b.dataset.workspaceView)navigateWorkspace(b.dataset.workspaceView);
  if(b.dataset.dashboard==='read-alert'){await request({action:'notification_read',notification_id:b.dataset.id});await load();}
+ if(b.dataset.dashboard==='account-catalog')await v6.openCatalog();
  if(b.dataset.searchProject)navigateWorkspace('projects',b.dataset.searchProject);
  if(b.closest('#workspaceSearchResults'))$('#workspaceSearchResults').hidden=true;
  if(b.dataset.view)navigateWorkspace(b.dataset.view);
@@ -272,6 +276,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.clientSetup)editClient(data.clients.find(x=>x.client_id===b.dataset.clientSetup),true);
  if(b.dataset.setupGuide)await setupGuide.open(b.dataset.setupGuide);
  if(b.dataset.client)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
+ if(b.dataset.clientView)viewClientFile(b.dataset.clientView);
  if(b.dataset.clientAccounts){clientAccountReturn=null;await clientAccountSetup(b.dataset.clientAccounts);}
  if(b.dataset.clientMapApprove){await request({action:'v3_client_account_mapping_approve',mapping_id:b.dataset.clientMapApprove,revision:b.dataset.revision});await load();await clientAccountSetup(b.dataset.clientId);}
  if(b.dataset.clientMapPropose)await clientAccountSuggestStart(b.dataset.clientMapPropose);

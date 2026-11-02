@@ -24,7 +24,7 @@ import {masterImport} from './master-import.ts';
 import { createClient } from 'supabase';
 import postgres from 'postgres';
 import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
-import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,staffAreaCanUse} from './staff-access-control.mjs';
+import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,scopeWorkspaceRecords,staffAreaCanUse} from './staff-access-control.mjs';
 
 const url=Deno.env.get('SUPABASE_URL')!;
 const secret=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')||'{}').default;
@@ -290,7 +290,7 @@ async function action(id:any,p:any){
     w.staff=visibleStaff.map((s:any)=>({...s,restricted_areas:byStaff.get(s.staff_id)||[]}));
    }
    w.suite=await suiteRead(tx);
-   return {...filterWorkspaceAccess(w,areas),release:'v12-uat-individual-area-access-v1'};
+   return {...scopeWorkspaceRecords(filterWorkspaceAccess(w,areas),a.category_code,a.staff_id),release:'v12-uat-individual-area-access-v2'};
   }
   const requestArea=areaForStaffAction(String(p.action||''));if(requestArea)await requireStaffArea(tx,a,requestArea);
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
