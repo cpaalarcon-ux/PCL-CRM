@@ -107,7 +107,7 @@ export function createSetupGuideUI(ctx){
  document.addEventListener('click',async e=>{const b=e.target.closest('[data-setup-guide-action],[data-setup-guide-retry]');if(!b)return;const a=b.dataset.setupGuideAction,id=b.dataset.id||b.dataset.setupGuideRetry;
   try{
    if(b.dataset.setupGuideRetry){await open(id);return;}
-   if(['profile','accounts','stage-opening','ledger','purchases','period-imports','tax-periods','project'].includes(a))ctx.onOpenSubtopic?.(openClientId);
+   if(['profile','accounts','stage-opening','ledger','purchases','period-imports','tax-periods','project','projects'].includes(a))ctx.onOpenSubtopic?.(openClientId);
    $('#editor').close();
    if(a==='profile')await ctx.openClientSettings(id);
    if(a==='accounts')await ctx.openClientAccounts(id);
