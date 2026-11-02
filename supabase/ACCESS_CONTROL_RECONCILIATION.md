@@ -7,7 +7,7 @@
 
 The attached `accessControl.js` is not used as a second authorization engine. The ERP already checks the active staff session, role, firm access, client/project/task scope, workflow status and reviewer independence in the edge function and PostgreSQL row-level security policies.
 
-The attached proposal includes per-person permission overrides, but the ERP has no secured override table or audited override workflow. It also applies one general approval rule that conflicts with workflow-specific reviewer roles. Adding the file as-is could either deny valid existing Supervisor reviews or grant rights the backend does not permit. The staging interface therefore uses a plain-language role guide; backend handlers and database policies remain authoritative.
+The attached proposal includes per-person permission overrides and one general approval rule. The approval rule conflicts with workflow-specific reviewer roles, so it is not used. The staff workspace now supports audited per-person **area restrictions**: a Partner or a Manager managing a direct report can remove areas included in the staff member's role. These settings cannot add role authority or change firm/project scope. Backend handlers and database policies remain authoritative for every action.
 
 ## Reconciled role guide
 
@@ -42,4 +42,11 @@ Do not replace these workflow checks with a shared `approveRoles` list. In parti
 - Audit framework and final-file approval: `audit-actions.ts`.
 - The Home and Staff & Access role guide is rendered by `staff-access-guide.mjs` and checked against these handler boundaries in `tests/access_guide.test.mjs`.
 
-Per-person access exceptions are intentionally not enabled in this staging release. Supporting them would require an audited database model, restrictive RLS, server-side evaluation on every relevant action, and tests for grants, revocations, scope, self-change and reviewer independence before any override can be used.
+## Individual area restrictions and role assignment
+
+- **Role assignment:** each staff member has one existing ERP category. Any number of staff can share that role. Managers can assign team roles to their managed direct reports; Partner/Manager promotion remains Partner-controlled under the existing staff policies.
+- **Per-person adjustment:** from Staff & Access → **Edit access**, a Manager or Partner can switch off areas present in a person's role defaults, record a reason, and restore those areas later. Areas outside the role remain unavailable and cannot be switched on here.
+- **Server enforcement:** every mapped action checks the staff member's effective area access. The workspace response also omits restricted data, and file uploads/downloads and import actions are checked separately.
+- **Scope and approvals:** area settings do not alter firm, client, project, or task scope. They do not override role-specific approval rules, maker-checker separation, or Partner-only decisions.
+- **Audit:** each change records the target staff member, role, restricted/restored areas, actor, and reason in the immutable audit log. Staff cannot change their own access; Managers cannot change Partner or Manager accounts.
+- **Reassignment behavior:** a restriction remains on record if the staff member changes to a role that does not include that area. Changing the role can therefore reveal that an area is still restricted; a Partner or authorized Manager can review and restore it explicitly.

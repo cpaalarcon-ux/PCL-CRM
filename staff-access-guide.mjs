@@ -24,6 +24,6 @@ export function renderAccessGuide(currentRole,esc){
    ${current?`<section class="access-current"><h3>Your access · ${esc(current.label)}</h3><p><b>Scope:</b> ${esc(current.scope)}</p><p><b>Can do:</b> ${esc(current.work)}</p><p><b>Cannot do:</b> ${esc(current.limit)}</p></section>`:''}
    <h3>Role guide</h3><div class="scroll"><table><thead><tr><th>Role</th><th>Work scope</th><th>Typical work</th><th>Important limit</th></tr></thead><tbody>${ACCESS_ROLES.map(r=>`<tr><th scope="row">${esc(r.label)}</th><td>${esc(r.scope)}</td><td>${esc(r.work)}</td><td>${esc(r.limit)}</td></tr>`).join('')}</tbody></table></div>
    <h3>Who can review or approve?</h3><div class="scroll"><table><thead><tr><th>Work item</th><th>Authorised reviewer</th><th>Control</th></tr></thead><tbody>${APPROVAL_RULES.map(r=>`<tr><th scope="row">${esc(r[0])}</th><td>${esc(r[1])}</td><td>${esc(r[2])}</td></tr>`).join('')}</tbody></table></div>
-   <p class="muted">This staging version uses role-based permissions; individual permission overrides are not enabled. Ask an Engagement Partner to review role or access changes.</p>
+   <p class="muted">A Partner, or a Manager for staff they directly manage, can restrict ERP areas for an individual from Staff &amp; access. This cannot grant more than the person’s role, change firm/project scope, or override review and approval rules. Any number of staff can share the same role.</p>
   </div></details>`;
 }
