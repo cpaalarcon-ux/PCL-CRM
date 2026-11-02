@@ -14,7 +14,7 @@ export function taxSourceIssue(sourceUrl,sourceNote){
  const host=url.hostname.toLowerCase();
  if(url.protocol!=='https:'||url.username||url.password||!officialTaxSourceRoots.some(root=>host===root||host.endsWith('.'+root)))
   return 'Rate approval requires an HTTPS source hosted by Kenya Law, KRA, the Gazette or a competent regulator; secondary research links can support testing only.';
- if(!/\\b(?:act|section|s\\.|legal notice|ln\\b|regulation|schedule|gazette|court order|judgment)\\b/i.test(String(sourceNote||'')))
+ if(!/\b(?:act|section|s\.|legal notice|ln\b|regulation|schedule|gazette|court order|judgment)\b/i.test(String(sourceNote||'')))
   return 'Add the applicable Act, section, Legal Notice, regulation, Schedule or Gazette citation to the source note.';
  return null;
 }
