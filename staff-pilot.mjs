@@ -136,7 +136,7 @@ function clientAccountProposalReview(clientId,result){
 function clientAccountEndSelected(clientId){
  const items=[...document.querySelectorAll('[data-client-map-end-select]:checked')].map(x=>({mapping_id:x.dataset.clientMapEndSelect,revision:x.dataset.revision}));
  if(!items.length){notice('Select at least one active account mapping to end-date.',true);return;}
- const names=items.map(x=>{const cb=[...document.querySelectorAll('[data-client-map-end-select]')].find(node=>node.dataset.clientMapEndSelect===x.mapping_id),row=cb?.closest('tr');return row?.children[1]?.textContent.replace(/\\s+/g,' ').trim()||'Client account mapping';});
+ const names=items.map(x=>{const cb=[...document.querySelectorAll('[data-client-map-end-select]')].find(node=>node.dataset.clientMapEndSelect===x.mapping_id),row=cb?.closest('tr');return row?.children[1]?.textContent.replace(/\s+/g,' ').trim()||'Client account mapping';});
  modal(`Set one end date for ${items.length} account mapping${items.length===1?'':'s'}`,form(field('effective_to','Last date these mappings apply *',today(),'date','required')+`<p class="info full">Choose one shared date on or after the start date of every selected mapping. The selected mappings will be updated together for this client period.</p><div class="scroll full"><ul>${names.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`,'Set shared end date'),f=>request({action:'v3_client_account_mapping_end_batch',client_id:clientId,effective_to:f.get('effective_to'),items}),async result=>{await load();notice(`${result.updated_count} account mapping${result.updated_count===1?'':'s'} end-dated together.`);await clientAccountSetup(clientId);},{refreshWorkspace:false});
 }
 function clientAccountApproveSelected(clientId){
