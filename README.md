@@ -4,7 +4,7 @@ This repository contains a connected ERP staging candidate as well as older brow
 
 - The connected staging URL is `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. The sign-in page was reachable; this does not prove a successful role-based UAT run.
 - The connected Supabase project `pcl-erp-staging` is active. `staff-workspace-v12` version **43** is active and the server-side 30-minute idle migration is applied. The hosted page is still build `2026-11-03.2`; branch source is `2026-11-03.4`. Hosted login remains untested.
-- Staging commits `08e76ef`, `2f7b334`, `2ad6b95` and `a9c50fb` align session policy, server timeout and the active v12 TOT/VAT rule. Run [#44](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41685064617) passed **251/251** checks and Chromium flow on `a9c50fb`; the browser test uses a local test server and mocked backend. Hosted login and role-based UAT are still untested.
+- Runtime commits `08e76ef`, `2f7b334`, `2ad6b95` and `a9c50fb` align session policy, server timeout and the active v12 TOT/VAT rule. Run [#44](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41685064617) passed **251/251** checks and Chromium flow on `a9c50fb`; follow-up commit `f6f6a82` passed [run #46](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41686880098) with 251 checks and Chromium. These runs use a local test server and mocked backend. Hosted login and role-based UAT are still untested.
 - Production remains held. Do not deploy or change production data, settings, users, DNS or credentials without written Partner approval.
 
 > **Import and ledger testing release:** See [Sales totals, payroll imports and purchase ledgers](supabase/IMPORT_LEDGER_V12.md).

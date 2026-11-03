@@ -39,6 +39,8 @@ This is the decision and evidence map for reconciling the preceding workflow not
 
 Use one staging candidate branch and one immutable release commit. Do not rewrite the shared branch history to make old commits look aligned. Instead, add a reconciliation commit at the branch head, run the full suite on that head, and reject or selectively port any side branch that reintroduces retired approval or tax logic.
 
+The runtime candidate `a9c50fb` passed run #44. Documentation/coverage follow-up `f6f6a82` passed run #46 after the earlier reconciliation run surfaced stale test wording. Both runs include 251 automated checks and mocked Chromium; neither is hosted staff-role acceptance.
+
 For each candidate, record this chain in `RELEASE0_STATUS_2026-11-03.md`:
 
 1. Git commit SHA and pull request diff.
