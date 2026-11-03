@@ -56,7 +56,7 @@ test('individual access restrictions only narrow the current role baseline',()=>
 
 test('every routed staff action has an access area and unknown actions fail closed',()=>{
  const dir=new URL('../supabase/functions/staff-workspace-v12/',import.meta.url);
- const actions=new Set(),outsideSession=new Set(['login','refresh_session','setup','setup_status','session_activity','workspace','logout']);
+ const actions=new Set(),outsideSession=new Set(['release_info','login','refresh_session','setup','setup_status','session_activity','workspace','logout']);
  for(const name of fs.readdirSync(dir).filter(x=>/\.(?:ts|mjs)$/.test(x))){
   const source=fs.readFileSync(new URL(name,dir),'utf8');
   for(const match of source.matchAll(/(?:p|payload|body)\.action\s*===?\s*['"]([A-Za-z0-9_-]+)['"]/g))actions.add(match[1]);

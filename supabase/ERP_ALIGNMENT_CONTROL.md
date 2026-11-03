@@ -51,6 +51,8 @@ For each candidate, record this chain in `RELEASE0_STATUS_2026-11-03.md`:
 5. Hosted browser/API evidence with separate fictional preparer, reviewer and approver accounts.
 6. Named rule-owner decisions and UAT sign-off; unresolved controls remain **Not tested**.
 
+**Release identity check.** The page (`data-build` and labels in `staff-pilot.html`) and the server (`supabase/functions/staff-workspace-v12/release.json`, returned by the public `release_info` action with the deployed commit) carry one build label. CI fails if they differ in the repository. The sign-in page warns staff, without blocking sign-in, when the live server build differs from the page. The **Staging hosted check** workflow runs after every push to the staging branch: it waits for Pages, then fails if the live page or live server build differs from the commit, checks sign-in in Chromium and, when the fictional UAT secrets (`UAT_ASSISTANT/MANAGER/PARTNER_LOGIN`, `_PASSWORD`) and variables (`UAT_CLIENT_ID`, `UAT_PROJECT_ID`, `UAT_PERIOD_ID`) are set, runs the role and Gate B workflow checks on the fictional client. Bump the build label in both files for every release.
+
 A green unit suite or a loaded sign-in page is not evidence of successful hosted login, role authorization, a posted accounting period or a completed audit pack.
 
 ## Current alignment snapshot

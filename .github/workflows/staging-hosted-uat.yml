@@ -1,0 +1,43 @@
+name: Staging hosted check
+
+# Runs against the live staging site and server after every push to the staging branch, and on demand
+# by pushing any commit to uat/hosted. It waits for the Cloudflare Pages build, then checks that the
+# page, the server and this commit share one build label, and runs the role and workflow checks when
+# the fictional UAT accounts and client are configured. Fictional data only.
+on:
+  push:
+    branches:
+      - backend/staging-foundation
+      - uat/hosted
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-hosted-check
+  cancel-in-progress: true
+
+jobs:
+  hosted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Hosted staging check
+        env:
+          UAT_ASSISTANT_LOGIN: ${{ secrets.UAT_ASSISTANT_LOGIN }}
+          UAT_ASSISTANT_PASSWORD: ${{ secrets.UAT_ASSISTANT_PASSWORD }}
+          UAT_MANAGER_LOGIN: ${{ secrets.UAT_MANAGER_LOGIN }}
+          UAT_MANAGER_PASSWORD: ${{ secrets.UAT_MANAGER_PASSWORD }}
+          UAT_PARTNER_LOGIN: ${{ secrets.UAT_PARTNER_LOGIN }}
+          UAT_PARTNER_PASSWORD: ${{ secrets.UAT_PARTNER_PASSWORD }}
+          UAT_CLIENT_ID: ${{ vars.UAT_CLIENT_ID }}
+          UAT_PROJECT_ID: ${{ vars.UAT_PROJECT_ID }}
+          UAT_PERIOD_ID: ${{ vars.UAT_PERIOD_ID }}
+        run: node scripts/hosted-uat.mjs

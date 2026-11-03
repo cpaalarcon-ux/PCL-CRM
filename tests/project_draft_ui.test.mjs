@@ -13,9 +13,9 @@ test('draft project explains that retained UAT tasks do not mean the project is 
  assert.match(projectUi,/financial outputs are not ready/);
 });
 
-test('staging build cache key changes with the idle-session policy',()=>{
- assert.match(appHtml,/2026-11-03\.4/);
- assert.match(appHtml,/20261103-idle-timeout-v1/);
+test('staging build cache key changes with the release-identity check',()=>{
+ assert.match(appHtml,/2026-11-03\.5/);
+ assert.match(appHtml,/20261103-release-check-v1/);
 });
 
 test('new recurring tax work uses a client reporting-month boundary and one separate catch-up upload',()=>{
