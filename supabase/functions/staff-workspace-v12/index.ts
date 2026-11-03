@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import release from './release.json' with {type:'json'};
 import {periodImportAction} from './period-import-actions.ts';
 import {referenceAction} from './reference-actions.ts';
 import {discussionAction} from './discussion-actions.ts';
@@ -437,7 +438,10 @@ Deno.serve(async(req:Request)=>{
   const body=await req.text();if(body.length>30000)fail(413,'The request is too large.');
   let p;try{p=JSON.parse(body);}catch{fail(400,'Invalid request.');}if(!p||typeof p!=='object')fail(400,'Invalid request.');
   let result;
-  if(p.action==='login')result=await signIn(p);
+  // Public release identity: lets the website and checks confirm the server matches the page build.
+  // When deployed from a pinned GitHub commit, the module URL carries that commit.
+  if(p.action==='release_info')result={function:'staff-workspace-v12',build:release.build,commit:(import.meta.url.match(/\/([0-9a-f]{40})\//)||[])[1]||null};
+  else if(p.action==='login')result=await signIn(p);
   else if(p.action==='setup')result=await setup(p);
   else if(p.action==='setup_status')result=await setupStatus(p);
   else if(p.action==='refresh_session')result=await refreshSession(req,p);

@@ -242,9 +242,26 @@
   if (hasSession) notice('Opening your secure workspace…');
   else if (!hasSetup) notice('');
 
+  // Release identity: warn (without blocking sign-in) when the page and the ERP server builds differ.
+  async function checkRelease() {
+    try {
+      const result = await send({ action: 'release_info' }, { timeoutMs: 10000 });
+      const pageBuild = document.documentElement.dataset.build || '';
+      document.documentElement.dataset.serverBuild = result?.build || '';
+      if (result?.build && pageBuild && result.build !== pageBuild) {
+        const element = $('#releaseCheck');
+        if (element) {
+          element.textContent = `This page is build ${pageBuild} but the ERP server is build ${result.build}. Refresh the page (Ctrl+Shift+R). If this message stays, tell your ERP Manager before entering any work.`;
+          element.hidden = false;
+        }
+      }
+    } catch { /* The release check never blocks sign-in. */ }
+  }
+
   window.addEventListener('hashchange', captureSetupLink);
   document.documentElement.dataset.staffPilotReady = 'true';
   document.documentElement.dataset.staffPilotAuthBoot = 'true';
   document.dispatchEvent(new Event('pcl-staff-pilot-ready'));
   if (hasSession) void openWorkspace();
+  void checkRelease();
 })();

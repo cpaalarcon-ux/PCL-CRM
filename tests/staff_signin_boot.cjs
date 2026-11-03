@@ -28,7 +28,7 @@ const server = http.createServer((req, res) => {
   try {
     const page = await browser.newPage();
     const errors = [];
-    let mainRequested = false;
+    let mainRequested = false, releaseChecks = 0, serverBuild = '';
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/staff-pilot.mjs*', route => {
       mainRequested = true;
@@ -36,6 +36,11 @@ const server = http.createServer((req, res) => {
     });
     await page.route('https://yfjiculexbzpkvtapudk.supabase.co/**', async route => {
       const payload = route.request().postDataJSON() || {};
+      if (payload.action === 'release_info') {
+        releaseChecks += 1;
+        await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' }, body: JSON.stringify({ function: 'staff-workspace-v12', build: serverBuild, commit: null }) });
+        return;
+      }
       assert.equal(payload.action, 'login');
       assert.equal(payload.login_id, 'fictional-test-user');
       assert.equal(payload.password, 'fictional-test-password');
@@ -52,7 +57,16 @@ const server = http.createServer((req, res) => {
       });
     });
 
+    serverBuild = '2000-01-01.1';
     await page.goto(`http://127.0.0.1:${server.address().port}/staff-pilot`);
+    await page.locator('#releaseCheck').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#releaseCheck').textContent(), /ERP server is build 2000-01-01\.1/);
+    assert.equal(await page.locator('#loginForm button[type="submit"]').isDisabled(), false, 'a release mismatch warns but never blocks sign-in');
+    serverBuild = await page.evaluate(() => document.documentElement.dataset.build);
+    await page.goto(`http://127.0.0.1:${server.address().port}/staff-pilot`);
+    await page.waitForFunction(() => document.documentElement.dataset.serverBuild);
+    assert.equal(await page.locator('#releaseCheck').isVisible(), false, 'matching builds show no warning');
+    assert.ok(releaseChecks >= 2);
     const signIn = page.locator('#loginForm button[type="submit"]');
     await signIn.waitFor({ state: 'visible' });
     await page.waitForFunction(() => !document.querySelector('#loginForm button[type="submit"]').disabled);
