@@ -1,30 +1,104 @@
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
 import {number,day} from './suite-rules.mjs';
 import {one,leader,today} from './suite-actions.ts';
+
+// KYC evidence records (client_kyc_evidence) replace the five legacy document-link columns.
+// One evidence record can cover several requirements. Upload, physical and online forms are supported.
+// Before verification, edits are free. After verification, only a real change reopens review: it is
+// written as a dated change version naming the changed items, and a different Manager or Partner
+// verifies again (Gate A).
+const KYC_FIELDS=['entity_type','risk_rating','is_pep','sanctions_date','sanctions_result','conflict_checked','review_due','notes'];
+const LEGACY_DOCS:[string,string][]=[['incorporation_document','REGISTRATION_IDENTITY'],['pin_document','KRA_PIN'],['directors_document','DIRECTORS_CR12'],['members_document','REGISTER_MEMBERS'],['bo_document','BENEFICIAL_OWNERSHIP']];
+const isoDay=(v:any)=>v?String(v instanceof Date?v.toISOString():v).slice(0,10):null;
+async function kycRules(tx:any){return await tx`select rule_code,label,accepted_forms,renewal_days,required_for_entities from erp_private.kyc_evidence_rules where rule_status<>'Retired' order by rule_code`;}
+async function kycSnapshot(tx:any,cid:string){
+ const compliance=(await tx`select entity_type,risk_rating,is_pep,sanctions_date,sanctions_result,conflict_checked,review_due,notes from erp_private.client_compliance where client_id=${cid}`)[0]||null;
+ const evidence=await tx`select evidence_id,document_type,evidence_form,covered_items,document_id,document_reference,evidence_date,expires_on from erp_private.client_kyc_evidence where client_id=${cid} and deleted_at is null order by evidence_id`;
+ const owners=await tx`select owner_id,full_name,ownership_percentage,control_basis from erp_private.beneficial_owners where client_id=${cid} and deleted_at is null order by owner_id`;
+ return {compliance,evidence,owners};
+}
+async function kycChanged(tx:any,a:any,cid:string,before:any,changed:string[],reason:string){
+ if(!changed.length)return null;
+ await tx`update erp_private.client_compliance set last_edited_by=${a.staff_id} where client_id=${cid}`;
+ const c=(await tx`select verified_by from erp_private.client_compliance where client_id=${cid} for update`)[0];
+ if(!c?.verified_by)return null;
+ await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':kyc-version'},0))`;
+ const n=Number((await tx`select coalesce(max(version_number),0)::int as n from erp_private.client_kyc_change_versions where client_id=${cid}`)[0].n)+1;
+ const after=await kycSnapshot(tx,cid);
+ await tx`insert into erp_private.client_kyc_change_versions(client_id,version_number,before_snapshot,proposed_snapshot,changed_items,change_reason,recorded_by) values(${cid},${n},${tx.json(before)},${tx.json(after)},${tx.array(changed)},${reason.length>=3?reason:'KYC details updated'},${a.staff_id})`;
+ await tx`update erp_private.client_compliance set verified_by=null,verified_at=null,edd_approved_by=null,edd_approved_at=null where client_id=${cid}`;
+ return n;
+}
+function kycCurrent(e:any,rule:any,on:string){
+ if(!rule.accepted_forms.includes(e.evidence_form))return false;
+ if(e.expires_on&&isoDay(e.expires_on)!<on)return false;
+ if(rule.renewal_days&&new Date(new Date(isoDay(e.evidence_date)+'T00:00:00Z').getTime()+rule.renewal_days*864e5).toISOString().slice(0,10)<on)return false;
+ return true;
+}
+export function kycGaps(entityType:string,rules:any[],evidence:any[],on:string){
+ return rules.filter((r:any)=>r.required_for_entities.includes(entityType||'Company')).filter((r:any)=>!evidence.some((e:any)=>(e.covered_items||[]).includes(r.rule_code)&&kycCurrent(e,r,on))).map((r:any)=>r.label);
+}
+async function addEvidence(tx:any,a:any,cid:string,p:any,rules:any[]){
+ const type=choice(p.document_type,rules.map((r:any)=>r.rule_code)),rule=rules.find((r:any)=>r.rule_code===type),form=choice(p.evidence_form,['upload','physical','online']);
+ if(!rule.accepted_forms.includes(form))fail(400,`${rule.label} cannot be evidenced by a ${form} record under the current KYC rule.`);
+ const covered=[...new Set([type,...(Array.isArray(p.covered_items)?p.covered_items:[]).map((x:any)=>String(x))])];
+ for(const x of covered)if(!rules.some((r:any)=>r.rule_code===x))fail(400,'Choose covered requirements from the KYC evidence list.');
+ const evidenceDate=date(p.evidence_date),expires=date(p.expires_on);if(!evidenceDate||evidenceDate>today())fail(400,'Enter the evidence date (not in the future).');if(expires&&expires<evidenceDate)fail(400,'The expiry date cannot be before the evidence date.');
+ let doc=null,ref=text(p.document_reference||'',200,false)||null,location=null,copy=null,onlineSource=null,onlineRef=null;
+ if(form==='upload'){doc=uuid(p.document_id);one(await tx`select document_id from erp_private.documents where document_id=${doc} and client_id=${cid} and category='Permanent File' and is_locked`);}
+ if(form==='physical'){ref=text(p.document_reference,200);location=text(p.physical_location,200);copy=choice(p.copy_type,['Original','Certified copy']);}
+ if(form==='online'){onlineSource=text(p.online_source,200);onlineRef=text(p.online_reference,200);}
+ return one(await tx`insert into erp_private.client_kyc_evidence(client_id,document_type,evidence_form,covered_items,document_id,document_reference,evidence_date,expires_on,physical_location,copy_type,sighted_by,sighted_at,online_source,online_reference,checked_by,checked_at,recorded_by)
+  values(${cid},${type},${form},${tx.array(covered)},${doc},${ref},${evidenceDate},${expires},${location},${copy},${form==='physical'?a.staff_id:null},${form==='physical'?evidenceDate:null},${onlineSource},${onlineRef},${form==='online'?a.staff_id:null},${form==='online'?evidenceDate:null},${a.staff_id}) returning evidence_id,covered_items`);
+}
 export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
- if(!['compliance_save','compliance_verify','edd_approve','owner_add','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
+ if(!['compliance_save','compliance_evidence_save','compliance_evidence_remove','compliance_verify','edd_approve','owner_add','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
  leader(a);
  if(p.action==='owner_add'){
-  const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);
+  const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);const before=await kycSnapshot(tx,cid);
   await tx`insert into erp_private.beneficial_owners(client_id,full_name,identity_reference,kra_pin,ownership_percentage,control_basis) values(${cid},${text(p.full_name,160)},${text(p.identity_reference,100)},${text(p.kra_pin||'',11,false)||null},${number(p.ownership_percentage,0,100)},${text(p.control_basis,1000)})`;
-  await tx`update erp_private.client_compliance set verified_by=null,verified_at=null,edd_approved_by=null,edd_approved_at=null where client_id=${cid}`;return {ok:true};
+  await kycChanged(tx,a,cid,before,['BENEFICIAL_OWNERSHIP'],text(p.change_reason||'',2000,false)||'Owner or controller added');return {ok:true};
+ }
+ if(p.action==='compliance_evidence_save'||p.action==='compliance_evidence_remove'){
+  const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);
+  if(!(await tx`select client_id from erp_private.client_compliance where client_id=${cid}`).length)fail(400,'Save the client KYC profile first, then record its evidence.');
+  const before=await kycSnapshot(tx,cid),rules=await kycRules(tx),reason=text(p.change_reason||'',2000,false);
+  if(p.action==='compliance_evidence_save'){const row=await addEvidence(tx,a,cid,p,rules);await kycChanged(tx,a,cid,before,row.covered_items,reason||'Evidence added');return {ok:true,evidence_id:row.evidence_id};}
+  const row=one(await tx`select * from erp_private.client_kyc_evidence where evidence_id=${uuid(p.evidence_id)} and client_id=${cid} and deleted_at is null for update`);
+  if(String(row.revision)!==revision(p.revision))fail(409,'This evidence record changed. Refresh first.');
+  await tx`update erp_private.client_kyc_evidence set deleted_at=now() where evidence_id=${row.evidence_id}`;
+  await kycChanged(tx,a,cid,before,row.covered_items,reason||'Evidence removed');return {ok:true};
  }
  if(p.action==='compliance_save'){
   const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);const old=(await tx`select * from erp_private.client_compliance where client_id=${cid} for update`)[0];if(old&&String(old.revision)!==revision(p.revision))fail(409,'The compliance file changed. Refresh first.');
-  const docs:any={};for(const k of ['incorporation_document','pin_document','directors_document','members_document','bo_document']){docs[k]=p[k]?uuid(p[k]):null;if(docs[k])one(await tx`select document_id from erp_private.documents where document_id=${docs[k]} and client_id=${cid} and category='Permanent File' and is_locked`);}
-  const inc=date(p.incorporation_date);if(inc&&inc>today())fail(400,'Incorporation date cannot be in the future.');
+  const before=await kycSnapshot(tx,cid),inc=date(p.incorporation_date);if(inc&&inc>today())fail(400,'Incorporation date cannot be in the future.');
+  const next:any={entity_type:choice(p.entity_type,['Company','Partnership','Sole proprietor','Other']),risk_rating:choice(p.risk_rating,['Low','Medium','High']),is_pep:p.is_pep===true,sanctions_date:date(p.sanctions_date),sanctions_result:text(p.sanctions_result||'',2000,false),conflict_checked:p.conflict_checked===true,review_due:date(p.review_due),notes:text(p.notes||'',4000,false)};
+  const client=one(await tx`select incorporation_date,is_pie,sme_audit_exempt,audit_requested from erp_private.clients where client_id=${cid}`);
+  const changed=KYC_FIELDS.filter(k=>{const was=old?.[k],now=next[k];return ['sanctions_date','review_due'].includes(k)?isoDay(was)!==now:String(was??'')!==String(now??'');});
+  if(isoDay(client.incorporation_date)!==inc||client.is_pie!==(p.is_pie===true)||client.sme_audit_exempt!==(p.sme_audit_exempt===true)||client.audit_requested!==(p.audit_requested===true))changed.push('client_profile');
   await tx`update erp_private.clients set incorporation_date=${inc},is_pie=${p.is_pie===true},sme_audit_exempt=${p.sme_audit_exempt===true},audit_requested=${p.audit_requested===true} where client_id=${cid}`;
-  await tx`insert into erp_private.client_compliance(client_id,entity_type,risk_rating,is_pep,sanctions_date,sanctions_result,conflict_checked,incorporation_document,pin_document,directors_document,members_document,bo_document,review_due,notes)
-   values(${cid},${choice(p.entity_type,['Company','Partnership','Sole proprietor','Other'])},${choice(p.risk_rating,['Low','Medium','High'])},${p.is_pep===true},${date(p.sanctions_date)},${text(p.sanctions_result||'',2000,false)},${p.conflict_checked===true},${docs.incorporation_document},${docs.pin_document},${docs.directors_document},${docs.members_document},${docs.bo_document},${date(p.review_due)},${text(p.notes||'',4000,false)})
-   on conflict(client_id) do update set entity_type=excluded.entity_type,risk_rating=excluded.risk_rating,is_pep=excluded.is_pep,sanctions_date=excluded.sanctions_date,sanctions_result=excluded.sanctions_result,conflict_checked=excluded.conflict_checked,incorporation_document=excluded.incorporation_document,pin_document=excluded.pin_document,directors_document=excluded.directors_document,members_document=excluded.members_document,bo_document=excluded.bo_document,review_due=excluded.review_due,notes=excluded.notes,verified_by=null,verified_at=null,edd_approved_by=null,edd_approved_at=null`;
-  return {ok:true};
+  await tx`insert into erp_private.client_compliance(client_id,entity_type,risk_rating,is_pep,sanctions_date,sanctions_result,conflict_checked,review_due,notes,last_edited_by)
+   values(${cid},${next.entity_type},${next.risk_rating},${next.is_pep},${next.sanctions_date},${next.sanctions_result},${next.conflict_checked},${next.review_due},${next.notes},${a.staff_id})
+   on conflict(client_id) do update set entity_type=excluded.entity_type,risk_rating=excluded.risk_rating,is_pep=excluded.is_pep,sanctions_date=excluded.sanctions_date,sanctions_result=excluded.sanctions_result,conflict_checked=excluded.conflict_checked,review_due=excluded.review_due,notes=excluded.notes`;
+  // Legacy callers may still send document links; they become upload-form evidence records.
+  const rules=await kycRules(tx);
+  for(const [key,rule] of LEGACY_DOCS)if(p[key]){const doc=uuid(p[key]);if(!(await tx`select evidence_id from erp_private.client_kyc_evidence where client_id=${cid} and document_type=${rule} and document_id=${doc} and deleted_at is null`).length){const d=one(await tx`select uploaded_at from erp_private.documents where document_id=${doc} and client_id=${cid} and category='Permanent File' and is_locked`);await addEvidence(tx,a,cid,{document_type:rule,evidence_form:'upload',document_id:doc,evidence_date:isoDay(d.uploaded_at)},rules);changed.push(rule);}}
+  if(!old)return {ok:true};
+  const version=await kycChanged(tx,a,cid,before,changed,text(p.change_reason||'',2000,false)||('Updated: '+changed.join(', ')));
+  return {ok:true,changed_items:changed,change_version:version};
  }
  if(p.action==='compliance_verify'||p.action==='edd_approve'){
   const c=one(await tx`select x.*,c.missing_fields from erp_private.client_compliance x join erp_private.clients c using(client_id) where client_id=${uuid(p.client_id)} for update of x`);
   if(String(c.revision)!==revision(p.revision))fail(409,'Compliance details changed. Refresh first.');
   if(p.action==='edd_approve'){if(a.category_code!=='PARTNER')fail(403,'Only the Engagement Partner may approve enhanced due diligence.');if(!c.verified_by)fail(400,'Verify the KYC file first.');await tx`update erp_private.client_compliance set edd_approved_by=${a.staff_id},edd_approved_at=now(),notes=notes||E'\nEDD: '||${text(p.reason,2000)} where client_id=${c.client_id}`;return {ok:true};}
-  if(c.missing_fields.length||!c.incorporation_document||!c.pin_document||!c.conflict_checked||!c.sanctions_date||!c.sanctions_result||!c.review_due)fail(400,'Complete client fields, identity/PIN evidence, conflict review, screening and next review date.');
-  if(c.entity_type==='Company'&&(!c.directors_document||!c.members_document||!c.bo_document||!(await tx`select owner_id from erp_private.beneficial_owners where client_id=${c.client_id} and deleted_at is null`).length))fail(400,'Company KYC requires directors, members, beneficial-ownership evidence and at least one owner/controller record.');
+  if(c.last_edited_by===a.staff_id)fail(403,'You made the latest KYC change. A different Manager or Partner must verify this file.');
+  const pending=await tx`select version_id,recorded_by from erp_private.client_kyc_change_versions where client_id=${c.client_id} and status='Pending review' for update`;
+  if(pending.some((v:any)=>v.recorded_by===a.staff_id))fail(403,'You recorded a pending KYC change. A different Manager or Partner must verify this file.');
+  if(c.missing_fields.length||!c.conflict_checked||!c.sanctions_date||!c.sanctions_result||!c.review_due)fail(400,'Complete client fields, conflict review, screening and next review date.');
+  const evidence=await tx`select * from erp_private.client_kyc_evidence where client_id=${c.client_id} and deleted_at is null`,gaps=kycGaps(c.entity_type,await kycRules(tx),evidence,today());
+  if(gaps.length)fail(400,'Current KYC evidence is missing or expired for: '+gaps.join(', ')+'.');
+  if(c.entity_type==='Company'&&!(await tx`select owner_id from erp_private.beneficial_owners where client_id=${c.client_id} and deleted_at is null`).length)fail(400,'Company KYC requires at least one beneficial owner or controller record.');
+  await tx`update erp_private.client_kyc_change_versions set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${text(p.review_note||'',2000,false)||'Verified with the KYC file'} where client_id=${c.client_id} and status='Pending review'`;
   await tx`update erp_private.client_compliance set verified_by=${a.staff_id},verified_at=now() where client_id=${c.client_id}`;return {ok:true};
  }
  const project=one(await tx`select p.*,c.is_pie,c.primary_sector,c.sme_audit_exempt,c.audit_requested from erp_private.projects p join erp_private.clients c using(client_id) where project_id=${uuid(p.project_id)} for update of p`);

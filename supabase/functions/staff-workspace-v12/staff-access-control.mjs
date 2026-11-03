@@ -73,7 +73,7 @@ export function filterWorkspaceAccess(workspace,areas){
   }
   const s={...(w.suite||{})};
   if(!allowed.has('leads'))s.leads=[];
-  if(!allowed.has('clients'))for(const key of ['tax_profiles','contacts','compliance','owners','engagements'])s[key]=[];
+  if(!allowed.has('clients'))for(const key of ['tax_profiles','contacts','compliance','owners','kyc_evidence','kyc_changes','engagements'])s[key]=[];
   if(!allowed.has('billing_wip'))for(const key of ['rates','staff_rates','budgets','recurring_fees','invoices','payments'])s[key]=[];
   if(!allowed.has('settings'))s.rates=[];
   if(!allowed.has('projects'))s.tax_cases=[];
