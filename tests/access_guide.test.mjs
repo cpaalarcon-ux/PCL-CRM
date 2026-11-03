@@ -18,6 +18,7 @@ test('home and staff access pages show the reconciled, role-based guide',()=>{
  assert.match(renderAccessGuide('ASSISTANT',x=>x),/Your access · Audit Assistant/);
  assert.match(renderAccessGuide('INTERN',x=>x),/Assigned task-level support work only/);
  assert.match(renderAccessGuide('MANAGER',x=>x),/can restrict ERP areas for an individual from Staff &amp; access/);
+ assert.match(ui,/Restrictions stay active until an authorised Manager or Partner restores access/);
 });
 
 test('approval guide distinguishes different server approval boundaries',()=>{
@@ -55,17 +56,17 @@ test('individual access restrictions only narrow the current role baseline',()=>
 test('every routed staff action has an access area and unknown actions fail closed',()=>{
  const dir=new URL('../supabase/functions/staff-workspace-v12/',import.meta.url);
  const actions=new Set(),outsideSession=new Set(['login','refresh_session','setup','setup_status','session_activity','workspace','logout']);
- for(const name of fs.readdirSync(dir).filter(x=>/\\.(?:ts|mjs)$/.test(x))){
+ for(const name of fs.readdirSync(dir).filter(x=>/\.(?:ts|mjs)$/.test(x))){
   const source=fs.readFileSync(new URL(name,dir),'utf8');
-  for(const match of source.matchAll(/(?:p|payload|body)\\.action\\s*===?\\s*['\"]([A-Za-z0-9_-]+)['\"]/g))actions.add(match[1]);
-  for(const match of source.matchAll(/\\[\\s*((?:['\"][A-Za-z0-9_-]+['\"]\\s*,?\\s*)+)\\]\\.includes\\((?:p|payload|body)\\.action\\)/g))
-   for(const item of match[1].matchAll(/['\"]([A-Za-z0-9_-]+)['\"]/g))actions.add(item[1]);
+  for(const match of source.matchAll(/(?:p|payload|body)\.action\s*===?\s*['"]([A-Za-z0-9_-]+)['"]/g))actions.add(match[1]);
+  for(const match of source.matchAll(/\[\s*((?:['"][A-Za-z0-9_-]+['"]\s*,?\s*)+)\]\.includes\((?:p|payload|body)\.action\)/g))
+   for(const item of match[1].matchAll(/['"]([A-Za-z0-9_-]+)['"]/g))actions.add(item[1]);
  }
  const unmapped=[...actions].filter(action=>!outsideSession.has(action)&&!areaForStaffAction(action));
  assert.deepEqual(unmapped,[],'every server route action must be classified before it is callable');
  assert.equal(areaForStaffAction('future_unregistered_action'),null);
- assert.match(api,/const requestArea=areaForStaffAction\\(String\\(p\\.action\\|\\|''\\)\\);if\\(!requestArea\\)deny\\(\\);await requireStaffArea\\(tx,a,requestArea\\)/);
- assert.match(api,/if\\(target\\.staff_id===a\\.staff_id\\)/);
+ assert.match(api,/const requestArea=areaForStaffAction\(String\(p\.action\|\|''\)\);if\(!requestArea\)deny\(\);await requireStaffArea\(tx,a,requestArea\)/);
+ assert.match(api,/if\(target\.staff_id===a\.staff_id\)/);
  assert.match(api,/STAFF_AREA_ACCESS_CHANGED/);
 });
 
@@ -86,7 +87,6 @@ test('workspace filtering limits client and tax detail to the permitted area and
  assert.deepEqual(noClientAccess.suite.tax_profiles,[]);
  assert.deepEqual(noClientAccess.suite.compliance,[]);
 });
-
 
 test('supervisors see assigned and routed review work, not firm-wide client details',()=>{
  const workspace={me:{staff_id:'s1'},clients:[
