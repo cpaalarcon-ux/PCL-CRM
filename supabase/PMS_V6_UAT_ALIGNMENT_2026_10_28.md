@@ -3,6 +3,8 @@
 **Date:** 28 October 2026
 **Purpose:** Track how the attached PCL PMS v6.0 Testing Firm, Multi-Tenant, Subscription and UAT Plan aligns with the current staging source and what still needs hosted evidence. This document does not approve production.
 
+> **Historical checkpoint — 28 October 2026.** This register predates the current staging candidate. Its branch, run, frontend and function-version references are historical; use [ERP alignment control](ERP_ALIGNMENT_CONTROL.md), [Release 0 status](RELEASE0_STATUS_2026-11-03.md) and [Full ERP staff UAT](FULL_ERP_STAFF_UAT.md) for current build evidence and workflow rules. Current branch candidate `a9c50fb` passed run #44 (251 checks plus mocked Chromium UAT); hosted role-based UAT remains open. This file remains useful for PMS-specific tenant and subscription gaps, which are not claimed as implemented.
+
 ## Release position
 
 The current product is a **single PCL ERP workspace with access scoped by handling firm, client, project and staff assignment**. The current database and access rules use firm-level identifiers such as `firm_id` and `handling_firm_id`. That is useful firm access control, but it is **not a separate subscribing-practice tenant boundary**.

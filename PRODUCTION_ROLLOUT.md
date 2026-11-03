@@ -1,12 +1,12 @@
 # PCL ERP phased production rollout
 
-Status reviewed: 3 November 2026 (Africa/Nairobi). This file records the current staging evidence and the gates that remain before production. It does not approve a production release.
+Status reviewed: 3 November 2026 (Africa/Nairobi). This file records staging evidence and gates before production; it does not approve a production release. For the authoritative current snapshot, use [ERP alignment control](supabase/ERP_ALIGNMENT_CONTROL.md) and [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md). Older rows below are planning/history when they differ from those records.
 
 ## Current observed position
 
-The connected staging workspace is available at `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. Its sign-in page is reachable. Supabase project `pcl-erp-staging` is active in `ap-south-1`; `staff-workspace-v12` version **42** is active and contains the access guard from commit `d43b6ca`. The schema contains the dated activity/obligation, TOT/VAT and KYC evidence migrations listed in [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md).
+The connected staging workspace is available at `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. The sign-in page renders and Sign in is enabled, but no credentials were used. Supabase project `pcl-erp-staging` is active in `ap-south-1`; `staff-workspace-v12` version **43** is active with a 30-minute session response, and the server-side idle migration is applied. The hosted page still reports build `2026-11-03.2`; branch source is build `2026-11-03.4`.
 
-The observed branch head is `fb6de5fa8215af6131df0f4e346b238d81f8048d`. GitHub Actions run [#40](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41661816234) passed 249 automated checks and its Chromium flow, which uses a local test server and mocked backend. A local build `2026-11-03.4` candidate is not yet published; the last observed page served build `2026-11-03.2`. Supabase `staff-workspace-v12` version 42 is deployed but still reports manual-only session metadata. No hosted staff login or role-based API test has been recorded. Use [ERP alignment control](supabase/ERP_ALIGNMENT_CONTROL.md) and [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md) for the canonical staging state.
+Staging commits `08e76ef`, `2f7b334`, `2ad6b95` and `a9c50fb` carry the session policy, server guard and v12 tax regression. GitHub Actions run [#44](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41685064617) passed 251 checks and Chromium flow on `a9c50fb`; the browser test uses a local server and mocked backend. The hosted page remains build `2026-11-03.2`, so real staff login and role-based API tests have not been recorded. See [ERP alignment control](supabase/ERP_ALIGNMENT_CONTROL.md) and [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md) for the canonical state.
 
 Production remains held. The connected Supabase account exposed only the staging project during this status check, so a separate production database, keys, storage and deployment boundary have not been verified. Staging was not confirmed to contain only fictional records; it must be treated as sensitive and protected to production standard until the data inventory and deletion date are recorded.
 
@@ -16,8 +16,8 @@ See the [Release 0 status table](supabase/RELEASE0_STATUS_2026-11-03.md) for evi
 
 | Component | Observed state | Required before production |
 |---|---|---|
-| Source and release history | Branch head `fb6de5fa8215af6131df0f4e346b238d81f8048d` has run #40 passed; the local timeout candidate is not yet published. | Keep updates on the authorized staging branch and bind the final commit to passing CI, page build, function source and test evidence. |
-| Staging interface and backend | Last observed page build `2026-11-03.2`; v12 version 42 is active but manual-only. Local candidate is build `2026-11-03.4`. | Publish the candidate to staging, verify idle boundary and hosted sign-in with fictional accounts, then run role-based UI/API denial tests. |
+| Source and release history | Commits `08e76ef`, `2f7b334`, `2ad6b95` and `a9c50fb` are on `backend/staging-foundation`; run #44 passed on `a9c50fb` with 251 checks and mocked Chromium UAT. | Keep changes on the authorized staging branch and bind source, CI, Pages build, function source and hosted evidence before calling it aligned. |
+| Staging interface and backend | v12 v43 and server-side idle migration are active; Pages is still build `2026-11-03.2` while branch source is 03.4. | Deploy the current Pages build; verify hosted sign-in, 30-minute boundary and role-based UI/API denials with fictional accounts. |
 | Production interface and backend | No production deployment or separate project was verified in this check. | Establish and independently verify production hosting, project, secrets, storage and access boundaries. Keep production untouched until written Partner approval. |
 | Evidence vault | A private `staff-pilot-private` bucket exists. The functions use server-side storage calls. | Test per-client and per-role authorization, downloads and access logging; complete a separate file backup and restore drill. |
 | Staging data | Fictional-only status was not established. | Inventory and classify staging records; use fictional copies or document production-standard safeguards and a deletion date. |
@@ -96,7 +96,7 @@ The original rollout plan below has been reconciled to the connected staging can
 
 Each change should follow: development branch, automated tests, staging deployment, Manager acceptance, tagged production release and post-deployment smoke check. Use compatible database migrations and enable new modules only after their services are ready. Retain a prior application release for rollback; do not roll a live database backwards in a way that discards newly entered records.
 
-Current test command: `npm test`. GitHub Actions run [#38](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41655214804) passed 249/249 automated checks and a Chromium flow against a local test server with a mocked backend. This does not replace hosted role-based UAT or prove the five end-to-end workflows against the staging database. The deployed `staff-workspace-v12` function is version 42 from access-guard commit `d43b6ca`; the branch and connected page both show build `2026-11-03.2`.
+Current test command: `npm test`. GitHub Actions run [#44](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41685064617) passed 251 checks and Chromium flow against a local test server with mocked backend. This does not replace hosted role-based UAT or prove the five end-to-end workflows against staging. The deployed `staff-workspace-v12` function is v43 with server idle enforcement; the hosted Pages build is still `2026-11-03.2`.
 
 ## Remaining external setup before production
 
