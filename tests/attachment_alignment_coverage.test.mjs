@@ -21,7 +21,7 @@ test('attached access and catch-up checks are individually tracked as Not checke
 test('UAT register states current automated coverage limits explicitly',()=>{
  assert.match(uat,/role-based area restrictions and one catch-up upload for a range of months/);
  assert.match(uat,/does not yet demonstrate the attached per-item\/per-action access matrix or one package per financial year/);
- assert.match(uat,/Those tests do not establish hosted role authorization, the per-item permission matrix, annual imports or year-wide Gate B behavior/);
+ assert.match(uat,/These tests do not establish hosted role authorization, the per-item permission matrix, annual imports or year-wide Gate B behavior/);
  assert.match(uat,/U64 \| Full client-to-audit-staging journey/);
- assert.match(uat,/run #40: \*\*249\/249\*\* automated checks/);
+ assert.match(uat,/GitHub Actions run \[\#44\].*passed 251 checks/);
 });

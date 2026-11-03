@@ -5,6 +5,7 @@
 - The authorized branch `backend/staging-foundation` contains the reconciled session policy, server-side idle guard, migration-history identifier and active v12 TOT/VAT regression commits: `08e76ef`, `2f7b334`, `2ad6b95`, `a9c50fb`.
 - Supabase `staff-workspace-v12` is active at version 43; migration `20261103172501_enforce_idle_timeout_server_side` is applied. GitHub Actions [run #44](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41685064617) passed 251 checks and a Chromium flow against a local test server with a mocked backend.
 - The hosted Pages screen was last observed at build `2026-11-03.2`; source is `2026-11-03.4`. No staff credentials were entered and hosted login/role UAT is not verified.
+- The first documentation reconciliation run (#45) failed because a coverage test still asserted the prior UAT wording and run #40 count. The assertion was updated to check the current UAT wording and run #44/251 evidence; #45 failed before Chromium and does not establish hosted or runtime acceptance.
 - KYC screen integration, general mapping-approval reconciliation, downstream dependency-generated tasks, template parity, complete hosted client-to-audit-pack UAT and rule-owner sign-off remain open. Production is held.
 - Earlier same-day entries below are historical snapshots; use [ERP alignment control](supabase/ERP_ALIGNMENT_CONTROL.md) and [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md) for current disposition.
 
