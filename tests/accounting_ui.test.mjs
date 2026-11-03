@@ -32,16 +32,13 @@ test('valid uploaded routing and TB codes group rows without client-account setu
  const saved=calls.findLast(x=>x.action==='workbook_map_bulk');assert.equal(saved.selection_id,'selection-1');assert.equal(saved.account_code,'61010');assert.equal(saved.category,'EXP01');assert.equal(saved.confirm_uploaded_mapping,true);
 });
 
-test('mapping setup offers controlled activity choices and saves the selected activity for reuse',async()=>{
+test('mapping setup sends missing activity setup to the dated multi-activity client flow',async()=>{
  state.me.category_code='MANAGER';state.projects=[{project_id:pid,client_id:'client-1'}];
  rows=[{row_id:'00000000-0000-4000-8000-000000000003',dataset:'Purchases',revision:1,source_row:9,sheet_name:'B02A',normalized:{date:'2026-09-01',invoice:'INV-ACTIVITY',party:'Example supplier',amount:1000,vat:160},raw_values:{Invoice:'INV-ACTIVITY'},warnings:[]}];
  await ui.imported(pid);$('#purchaseAll').checked=true;$('#purchaseAll').dispatchEvent(new dom.window.Event('change'));await click('[data-accounting=bulk-1]');
  assert.ok($('#configureClientActivity'));await click('#configureClientActivity');
- const f=$('#editForm'),activity=f.elements.activity_name,other=f.elements.activity_other,pack=f.elements.pack_code;
- assert.ok([...activity.options].length>=16);assert.equal(activity.required,true);assert.equal($('#activityOther').hidden,true);
- set(activity,'other');assert.equal($('#activityOther').hidden,false);assert.equal(other.required,true);assert.equal(pack.value,'Other');
- set(activity,'construction');assert.equal($('#activityOther').hidden,true);assert.equal(other.required,false);assert.equal(pack.value,'Construction');
- set(f.elements.effective_from,'2026-09-01');f.elements.evidence.value='Approved client activity evidence';f.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
- const saved=calls.findLast(x=>x.action==='v3_activity_add');assert.equal(saved.activity_name,'Construction and building works');assert.equal(saved.pack_code,'Construction');
- assert.match($('#editorBody').textContent,/Construction and building works/);dom.window.close();
+ assert.match($('#editorNotice').textContent,/multiple dated activities/i);
+ assert.equal($('#editForm [name=activity_name]'),null);
+ assert.equal(calls.some(x=>x.action==='v3_activity_add'),false);
+ dom.window.close();
 });

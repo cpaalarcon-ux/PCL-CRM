@@ -9,8 +9,8 @@ const clientUi=fs.readFileSync(new URL('../staff-pilot.mjs',import.meta.url),'ut
 
 test('client list opens an ordered, read-only setup and reporting guide',()=>{
  assert.match(clientUi,/data-setup-guide=/);
- for(const label of ['Client profile & financial year','Client account mappings','Opening trial balance','Purchases, sales, payroll & assets','VAT, Income Tax & Source and Application','Project release & handover'])assert.ok(guideSource.includes(label),`missing guide step: ${label}`);
- assert.match(guideSource,/Staged','Imported','Balanced','Awaiting review','Posted/);
+ for(const label of ['Client profile & financial year','General account mappings','Opening trial balance','Purchases, sales, payroll & assets','VAT, Income Tax & Source and Application','Project release & handover'])assert.ok(guideSource.includes(label),`missing guide step: ${label}`);
+ assert.match(guideSource,/Staged','Mapped & imported','Balanced','Submitted','Reviewed & posted/);
  assert.match(guideSource,/Read-only checklist/);
  assert.doesNotMatch(guideSource,/action:'(?:ledger_journal_save|ledger_journal_review|ledger_journal_submit|tax_create|project_activate)'/);
 });
@@ -36,7 +36,7 @@ test('opening TB guide never marks missing details or unbalanced entries as bala
 
 test('opening TB guide makes review and posted states explicit',()=>{
  const submitted=openingProgress({openingStatus:'Pending',journal:{status:'Submitted'},lines:balancedLines,detailsAvailable:true});
- assert.equal(submitted.label,'Awaiting review');
+ assert.equal(submitted.label,'In review');
  assert.match(submitted.blocker,/different Manager or Partner/);
  const posted=openingProgress({openingStatus:'Pending',journal:{status:'Posted'},lines:balancedLines,detailsAvailable:true});
  assert.equal(posted.label,'Posted');

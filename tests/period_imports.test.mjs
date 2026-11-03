@@ -82,7 +82,7 @@ test('Period imports: summary-only storage, overlap replacement, independent rev
   const bad=await doc('Purchase-standard-invalid.csv',body.replace('PUR-STD-CN-1','PUR-STD-CN-2').replace('51670.552800000005','60000'));const before=(await tx`select count(*)::int n from erp_private.workbook_rows`)[0].n;const partial=await run({action:'workbook_commit',document_id:bad});assert.equal(partial.new_count,1);assert.equal(partial.rejected_count,1);assert.equal(partial.rejections[0].row,2);assert.match(partial.rejections[0].reason,/Column J/);assert.equal((await tx`select count(*)::int n from erp_private.workbook_rows`)[0].n,before+1);
  });
  await t.test('stock categories are manager-configured, scoped, reusable and validated during mapping',async()=>{
-  const activity=id();await tx`insert into erp_private.client_activities(activity_id,client_id,pack_code,activity_name,income_stream,effective_from,evidence,created_by) values(${activity},${C},'Wholesale','Fictional retail','Business','2026-01-01','Fictional verified activity',${actors.MANAGER.staff_id})`;
+  const activity=id();await tx`insert into erp_private.client_activities(activity_id,client_id,activity_code,is_primary,pack_code,activity_name,income_stream,effective_from,evidence,created_by) values(${activity},${C},'retail',true,'Wholesale','Fictional retail','Business','2026-01-01','Fictional verified activity',${actors.MANAGER.staff_id})`;
   const run=(role,p)=>as(role,a=>accountingAction(tx,a,{project_id:P,...p}));
   const input={action:'accounting_stock_category_add',activity_id:activity,inventory_use:'Goods for resale',stock_class:'Groceries'};
   await assert.rejects(()=>run('ASSISTANT',input),/Partner or Manager/);await assert.rejects(()=>run('MANAGER',{...input,project_id:P2}),/unavailable/);

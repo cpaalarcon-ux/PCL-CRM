@@ -56,6 +56,7 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   return {ok:true};
  }
  if(p.action==='engagement_activate'){
+  if((await tx`select change_id from erp_private.client_setup_change_sets where client_id=${project.client_id} and status='Pending review' limit 1`).length)fail(400,'A client activity / dependency-map change is waiting for independent review. Complete that client setup review before activating the engagement.');
   const k=(await tx`select * from erp_private.client_compliance where client_id=${project.client_id}`)[0];
   const iso=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
   const [opening]=await tx`select c.opening_balance_status,s.starts_on from erp_private.clients c left join erp_private.project_schedules s on s.project_id=${project.project_id} and s.deleted_at is null where c.client_id=${project.client_id}`;

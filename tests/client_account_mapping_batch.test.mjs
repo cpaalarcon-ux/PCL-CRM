@@ -15,7 +15,7 @@ const storage={download:async key=>key===`qa/${DOC}`?{data:new Blob([workbookByt
 let workbookBytes;
 const call=(role,p)=>as(role,a=>improvementAction(tx,a,p,storage));
 
-test('TB mappings are previewed, checked, drafted together and independently approved as a batch',async t=>{
+test('opening TB mapping approval is retired while the general account dictionary keeps its batch control',async t=>{
  t.after(()=>db.close());
  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create table auth.sessions(id uuid primary key,user_id uuid references auth.users);create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb) $$;create function auth.uid() returns uuid language sql stable as $$ select (auth.jwt()->>'sub')::uuid $$;`);
  for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.readFileSync(root+'/supabase/migrations/'+f,'utf8').replace('CREATE EXTENSION IF NOT EXISTS pg_cron;','').replace(/SELECT cron.schedule[^\n]+/g,'');await db.exec(q);}
@@ -31,20 +31,17 @@ test('TB mappings are previewed, checked, drafted together and independently app
  workbookBytes=new Uint8Array(await book.xlsx.writeBuffer());
  await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,category,import_purpose,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${DOC},${C},${F},'Import Sources','Opening TB','Fictional_Opening_TB.xlsx',${'qa/'+DOC},${workbookBytes.length},${'a'.repeat(64)},'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',${actors.ASSISTANT.staff_id})`;
 
- const preview=await call('MANAGER',{action:'v3_client_account_mapping_tb_preview',client_id:C,document_id:DOC,effective_from:'2026-01-01'});
- assert.equal(preview.ready_count,1);assert.equal(preview.exception_count,2);assert.equal(preview.proposals.find(x=>x.source_account_code==='BAD-ROUTE').state,'Exception');assert.equal(preview.proposals.find(x=>x.source_account_code==='BAD-CODE').state,'Exception');
- await assert.rejects(()=>call('MANAGER',{action:'v3_client_account_mapping_tb_save',client_id:C,document_id:DOC,effective_from:'2026-01-01',source_rows:['3'],preview_fingerprint:preview.preview_fingerprint}),/Only valid, unmapped TB rows/);
- const saved=await call('MANAGER',{action:'v3_client_account_mapping_tb_save',client_id:C,document_id:DOC,effective_from:'2026-01-01',source_rows:['2'],preview_fingerprint:preview.preview_fingerprint});assert.equal(saved.draft_count,1);
- await assert.rejects(()=>call('MANAGER',{action:'v3_client_account_mapping_tb_save',client_id:C,document_id:DOC,effective_from:'2026-01-01',source_rows:['2'],preview_fingerprint:preview.preview_fingerprint}),/changed after preview/);
+ await assert.rejects(()=>call('MANAGER',{action:'v3_client_account_mapping_tb_preview',client_id:C,document_id:DOC,effective_from:'2026-01-01'}),/Opening TB mappings are now resolved during ledger import/);
+ await assert.rejects(()=>call('MANAGER',{action:'v3_client_account_mapping_tb_save',client_id:C,document_id:DOC,effective_from:'2026-01-01',source_rows:['2']}),/no longer saved for separate approval/);
  await call('MANAGER',{action:'v3_client_account_mapping_add',client_id:C,source_account_code:'BANK-2',source_account_name:'Second bank account',erp_account_code:account.code,effective_from:'2026-01-01'});
  await call('PARTNER',{action:'v3_client_account_mapping_add',client_id:C,source_account_code:'PARTNER-DRAFT',source_account_name:'Partner-created draft',erp_account_code:account.code,effective_from:'2026-01-01'});
  const drafts=await tx`select mapping_id,revision,created_by,status from erp_private.client_account_mappings where client_id=${C} order by source_account_code`;
- assert.equal(drafts.length,3);assert.ok(drafts.every(x=>x.status==='Draft'));
+ assert.equal(drafts.length,2);assert.ok(drafts.every(x=>x.status==='Draft'));
  const batch=drafts.map(x=>({mapping_id:x.mapping_id,revision:x.revision}));
  await assert.rejects(()=>call('MANAGER',{action:'v3_client_account_mapping_approve_batch',client_id:C,items:batch}),/different Manager or Partner/);
  assert.equal((await tx`select count(*)::int as n from erp_private.client_account_mappings where client_id=${C} and status='Active'`)[0].n,0,'failed batch approval must be atomic');
  const managerDrafts=drafts.filter(x=>x.created_by===actors.MANAGER.staff_id).map(x=>({mapping_id:x.mapping_id,revision:x.revision}));
- const approved=await call('PARTNER',{action:'v3_client_account_mapping_approve_batch',client_id:C,items:managerDrafts});assert.equal(approved.approved_count,2);
- assert.equal((await tx`select count(*)::int as n from erp_private.client_account_mappings where client_id=${C} and status='Active'`)[0].n,2);
- assert.equal(Number((await tx`select count(*)::int as n from erp_private.audit_events where table_name='client_account_mappings'`)[0].n),5,'draft creation and both approvals should remain in the audit trail');
+ const approved=await call('PARTNER',{action:'v3_client_account_mapping_approve_batch',client_id:C,items:managerDrafts});assert.equal(approved.approved_count,1);
+ assert.equal((await tx`select count(*)::int as n from erp_private.client_account_mappings where client_id=${C} and status='Active'`)[0].n,1);
+ assert.equal(Number((await tx`select count(*)::int as n from erp_private.audit_events where table_name='client_account_mappings'`)[0].n),3,'draft creation and approval should remain in the audit trail');
 });

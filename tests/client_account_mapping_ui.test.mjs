@@ -33,7 +33,7 @@ globalThis.fetch=async(_url,options)=>{const p=JSON.parse(options.body);calls.pu
 const pause=()=>new Promise(r=>setTimeout(r,60)),click=async selector=>{const b=document.querySelector(selector);assert.ok(b,'Missing control '+selector);b.click();await pause();};
 await import('../staff-pilot.mjs');
 
-test('client account setup supports one-click independent batch review and TB draft suggestions',async t=>{
+test('client account setup reviews existing general mappings and routes opening TB to the single import flow',async t=>{
  t.after(()=>dom.window.close());
  document.querySelector('#loginForm [name=login_id]').value=me.login_id;document.querySelector('#loginForm [name=password]').value='TestPassword12345';document.querySelector('#loginForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
  await click('[data-view="clients"]');await click(`[data-client-accounts="${clientId}"]`);
@@ -41,10 +41,9 @@ test('client account setup supports one-click independent batch review and TB dr
  await click(`[data-client-map-approve-selected="${clientId}"]`);assert.match(document.querySelector('#editorTitle').textContent,/Confirm approval of 2 account mappings/);assert.match(document.querySelector('#editorBody').textContent,/does not post a journal/i);
  document.querySelector('#editForm [name=confirm_approval]').checked=true;document.querySelector('#editForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
  const batch=calls.find(x=>x.action==='v3_client_account_mapping_approve_batch');assert.equal(batch.items.length,2);assert.ok(batch.items.every(x=>x.revision==='1'));assert.match(document.querySelector('#notice').textContent,/2 account mappings approved together/);
- await click(`[data-client-map-propose="${clientId}"]`);const choose=document.querySelector('#editForm');choose.elements.document_id.value=docId;choose.elements.effective_from.value='2026-01-01';choose.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
- assert.match(document.querySelector('#editorTitle').textContent,/Review opening TB account suggestions/);assert.equal(document.querySelectorAll('#editForm [name=selected_source_rows]').length,1);assert.equal(document.querySelectorAll('#editForm [name=selected_source_rows]:checked').length,1);assert.ok(document.querySelector('#tbMappingSelectAll'));assert.match(document.querySelector('#editorBody').textContent,/1 ready/);assert.match(document.querySelector('#editorBody').textContent,/Invalid routing and account code/);
- document.querySelector('#tbMappingSelectAll').checked=false;document.querySelector('#tbMappingSelectAll').dispatchEvent(new dom.window.Event('change',{bubbles:true}));assert.equal(document.querySelector('#editForm [name=selected_source_rows]').checked,false);document.querySelector('#tbMappingSelectAll').checked=true;document.querySelector('#tbMappingSelectAll').dispatchEvent(new dom.window.Event('change',{bubbles:true}));assert.equal(document.querySelector('#editForm [name=selected_source_rows]').checked,true);
- document.querySelector('#editForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
- assert.ok(calls.some(x=>x.action==='v3_client_account_mapping_tb_save'));assert.match(document.querySelector('#notice').textContent,/1 account mapping saved as drafts/);assert.match(document.querySelector('#editorBody').textContent,/Awaiting a different reviewer/);
+ assert.equal(document.querySelector(`[data-client-map-propose="${clientId}"]`),null,'opening TB no longer has a separate mapping proposal screen');
+ assert.match(document.querySelector('#editorBody').textContent,/opening TB mappings are resolved on the import screen/i);
+ assert.match(document.querySelector('#editorBody').textContent,/Continue opening TB setup/);
+ assert.ok(!calls.some(x=>x.action==='v3_client_account_mapping_tb_preview'||x.action==='v3_client_account_mapping_tb_save'));
  dom.window.close();
 });

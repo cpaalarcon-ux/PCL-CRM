@@ -1,15 +1,21 @@
 import {fail,text,uuid,date,revision,choice} from './validation.mjs';
 import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate} from './workspace-rules.mjs';
-const profileForScheduledWork:Record<string,string[]>={
- VAT:['VAT'],PAYE:['PAYE'],TOT:['TOT'],MRI:['MRI'],
- 'Housing levy':['Housing levy'],SHIF:['SHIF'],NSSF:['NSSF'],NITA:['NITA'],
- 'Fringe benefit':['Fringe benefit'],'Deemed interest':['Deemed interest']
-};
+import {obligationWorkIssue} from './tax-registry.mjs';
 const one=(r:any[])=>{if(!r.length)fail(403,'This record is not available to your account.');return r[0];};
 const editor=(a:any)=>{if(!projectEditor(a))fail(403,'A Partner, Manager or Supervisor must manage this project.');};
 async function requireProjectSetup(tx:any,cid:string){
  const c=one(await tx`select legal_entity_type,entity_evidence,year_end_month,year_end_day from erp_private.clients where client_id=${cid} and deleted_at is null`);
  if(!c.legal_entity_type||String(c.entity_evidence||'').trim().length<10||!c.year_end_month||!c.year_end_day)fail(400,'Complete Clients → Entity / activities: confirm legal entity, supporting source and financial year-end before creating project work.');
+}
+async function requireScheduleObligations(tx:any,s:any,cid:string){
+ const requested=(s.obligations||[]).filter((code:string)=>code!=='Payroll');if(!requested.length)return;
+ const profiles=await tx`select * from erp_private.client_tax_profiles where client_id=${cid} and status='Verified' and deleted_at is null and effective_from<=${s.starts_on} and effective_to>=${s.ends_on} order by effective_from desc limit 2`;
+ if(profiles.length!==1)fail(400,'A single verified tax profile must cover the full project schedule before tax filing services can be assigned.');
+ const profile=profiles[0];for(const code of requested){
+  const taxCode=code==='Income Tax'?({Company:'Company',Partnership:'Partnership',Individual:'Individual'} as any)[profile.entity_type]:code;
+  if(!taxCode)fail(400,`The ${code} work position needs a dated Tax Lead-reviewed profile before scheduling.`);
+  const issue=obligationWorkIssue(profile,taxCode);if(issue)fail(400,issue);
+ }
 }
 async function projectTaskGate(tx:any,pid:string,cid:string,effectiveOn:string){
  const project=one(await tx`select status from erp_private.projects where project_id=${pid} and deleted_at is null`);
@@ -60,6 +66,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   if(operation==='Pause'&&!s.enabled)return {ok:true,enabled:false};if(operation==='Resume'&&s.enabled)return {ok:true,enabled:true};
   const today=nairobiDate(),effective=operation==='Pause'?today:new Date(Date.parse(today+'T00:00:00Z')+86400000).toISOString().slice(0,10);
   if(operation==='Resume'&&s.ends_on<today)fail(400,'This schedule has ended. Extend the dates or create a new project from the client setup.');
+  if(operation==='Resume'){const client=one(await tx`select client_id from erp_private.projects where project_id=${pid}`);await requireScheduleObligations(tx,{...s,starts_on:effective},client.client_id);}
   await tx`update erp_private.project_schedules set enabled=${operation==='Resume'},effective_from=${effective},version=version+1,updated_at=now() where project_id=${pid}`;
   return {ok:true,enabled:operation==='Resume',effective_from:effective};
  }
@@ -117,12 +124,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    if(catchupTask&&(String(prior.catchup_starts_on||'')!==String(s.catchup_starts_on||'')||String(prior.catchup_ends_on||'')!==String(s.catchup_ends_on||'')))
     fail(400,'The one-time catch-up task has already been released. Keep its approved period range unchanged; create a separately reviewed follow-up task for any additional months.');
   }
-  const newlyScheduled=s.obligations.filter((code:string)=>!prior?.obligations?.includes(code)&&code!=='Payroll');
-  if(newlyScheduled.length){
-   const profiles=await tx`select obligations from erp_private.client_tax_profiles where client_id=${cid} and status='Verified' and deleted_at is null and effective_from<=${s.starts_on} and effective_to>=${s.starts_on} order by effective_from desc limit 1`;
-   if(!profiles.length){const needsProfile=newlyScheduled.filter((code:string)=>!['VAT','PAYE','TOT'].includes(code));if(needsProfile.length)fail(400,'Verify the client tax profile for the schedule start date before adding these recurring services.');}
-   else {const confirmed=new Set<string>(profiles[0].obligations||[]);for(const code of newlyScheduled){const required=profileForScheduledWork[code]||[];if(!required.length||!required.some(item=>confirmed.has(item)))fail(400,`${code} is not confirmed in the verified client tax profile for ${s.starts_on}. Update the profile before scheduling this work.`);}}
-  }
+  await requireScheduleObligations(tx,s,cid);
   const changed=!prior||['frequency','pack','starts_on','ends_on','enabled','assigned_to','reviewer_id','catchup_starts_on','catchup_ends_on'].some(k=>String(prior[k]||'').slice(0,k.endsWith('_on')?10:999)!==String((s as any)[k]||''))||JSON.stringify(prior.obligations.slice().sort())!==JSON.stringify(s.obligations.slice().sort());
   if(changed){
    const effective=prior?new Date(Date.parse(nairobiDate()+'T00:00:00Z')+86400000).toISOString().slice(0,10):s.starts_on;

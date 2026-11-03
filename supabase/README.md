@@ -1,10 +1,10 @@
-> **Current connected testing release:** See [Consolidated testing suite](CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. Historical descriptions below refer to earlier releases or browser-local previews. Login persists until manual sign-out; activity affects presence only.
+> **Current connected testing release:** See [Consolidated testing suite](CONNECTED_TESTING_SUITE.md) and [Release 0 status](RELEASE0_STATUS_2026-11-03.md). The connected staging session persists until manual sign-out; an inactivity timeout is not implemented.
 
 # PCL ERP staging database foundation
 
-**Current work:** see [Connected staff pilot](STAFF_PILOT.md) for the authenticated workspace and follow-up migrations. The Release 0 description below records the initial restricted foundation.
+**Current work:** see [Connected staff pilot](STAFF_PILOT.md) for the authenticated workspace and follow-up migrations. The next section is a historical record of the initial restricted foundation from 22 October 2026, not a description of the current deployed schema or application.
 
-Release 0 was applied to the dedicated `pcl-erp-staging` Supabase project on 22 October 2026. This is a restricted database foundation, **not a staff-ready or production release**. The existing Cloudflare interface still uses the preview's browser-local data and is not connected to this database.
+Release 0 was applied to the dedicated `pcl-erp-staging` Supabase project on 22 October 2026. At that date it was a restricted database foundation, **not a staff-ready or production release**. Subsequent connected staff-workspace releases and migrations are documented in the current status links above.
 
 ## Applied migration
 
@@ -34,7 +34,7 @@ The Supabase security advisor reported sixteen informational **RLS Enabled No Po
 
 Project activation is intentionally blocked until KYC, verified engagement letters and authenticated approval services exist. The guard must later be replaced through a reviewed migration with the actual transactional activation checks. It must not be bypassed by directly setting a status from the browser.
 
-No storage bucket or upload/download endpoint exists yet. Metadata locks do not lock a storage object on their own. The private Storage bucket, storage RLS, upload validation, object version rules, short-lived downloads and access logs must be implemented together before accepting files.
+At the 22 October 2026 foundation snapshot, no storage bucket or upload/download endpoint existed. A private `staff-pilot-private` bucket and server-side upload/download paths were added in later releases. Their client/role authorization, complete access logging, object lifecycle and restore behavior still require staging evidence; see [Release 0 status](RELEASE0_STATUS_2026-11-03.md).
 
 ## Validation performed
 
@@ -51,7 +51,9 @@ A separate post-test query confirmed 16/16 tables have enabled and forced RLS, 5
 
 These checks do **not** establish staff-category authorization, frontend login, role revocation, private file access, load capacity, backups, tax calculations or a complete onboarding workflow. They cover only this foundation.
 
-## Next release: authenticated staff pilot
+## Original next-release plan (historical)
+
+The following six steps recorded the plan before the authenticated staff pilot was connected. Use the current release status and UAT records above for implementation state.
 
 1. Implement staff-ID login through a server-side authentication boundary; do not expose an unrestricted directory or allow a browser role selector to set permissions. Honor the no-email requirement with copyable, expiring, single-use setup/reset links, hashed token storage, first-use password setup and immediate session revocation on disable/reset. Store privileged credentials only in server secrets.
 2. Add audited server-side permissions and database policies for staff category, firm scope, project membership and active employment. Managers/Partners can import and edit staff/client details, but staff administration must not let Managers grant themselves Partner, system-administrator or additional firm privileges. Protect all direct API routes, not just visible navigation.

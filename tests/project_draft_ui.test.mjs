@@ -14,8 +14,8 @@ test('draft project explains that retained UAT tasks do not mean the project is 
 });
 
 test('staging build cache key changes with the access guide',()=>{
- assert.match(appHtml,/2026-11-02\.2/);
- assert.match(appHtml,/20261102-access-guide-v1/);
+ assert.match(appHtml,/2026-11-03\.1/);
+ assert.match(appHtml,/20261103-dependency-map-v1/);
 });
 
 test('new recurring tax work uses a client reporting-month boundary and one separate catch-up upload',()=>{
@@ -25,13 +25,15 @@ test('new recurring tax work uses a client reporting-month boundary and one sepa
  assert.match(projectUi,/Preview ready — not saved/);
  assert.match(projectUi,/project_id:id,client_id:el\('client_id'\)\.value,firm_id:el\('firm_id'\)\.value/);
  assert.match(projectUi,/projectClientSetupHint/);
- assert.match(projectUi,/Open Clients → Client accounts/);
+ assert.match(projectUi,/Opening mappings are reviewed with the journal at posting/);
 });
 
 test('schedule preview checks client setup before it returns a plan',()=>{
  const actions=fs.readFileSync(new URL('../supabase/functions/staff-workspace-v12/workspace-actions.ts',import.meta.url),'utf8');
  const preview=actions.slice(actions.indexOf("if(p.action==='schedule_config_preview')"),actions.indexOf("if(p.action==='project_save')"));
- assert.match(preview,/await requireProjectSetup\(tx,cid,firm,s\.starts_on\)/);
+ assert.match(preview,/await requireProjectSetup\(tx,cid\)/);
  assert.match(preview,/client_firm_links/);
+ assert.match(preview,/project\.client_id!==cid\|\|project\.handling_firm_id!==firm/);
+ assert.match(preview,/starts_on\.slice\(8,10\)!=='01'/);
 });
 

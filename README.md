@@ -1,16 +1,25 @@
+# Current repository and staging status — 3 November 2026
+
+This repository contains a connected ERP staging candidate as well as older browser-local prototype material. Do not treat the older prototype inventory below as a description of the current staging build. The current release status and evidence are in [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md) and [Full ERP staff UAT](supabase/FULL_ERP_STAFF_UAT.md).
+
+- The connected staging URL is `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. The sign-in page was reachable; this does not prove a successful role-based UAT run.
+- The connected Supabase project `pcl-erp-staging` is active. The latest deployed `staff-workspace-v12` Edge Function is version 40. The current local candidate has not been published, and the served frontend commit has not been matched to the local working tree.
+- The latest local regression run passed **247/247** tests. This is local automated evidence, not proof that the required five end-to-end workflows have passed on hosted staging.
+- Production remains held. Do not deploy or change production data, settings, users, DNS or credentials without written Partner approval.
+
 > **Import and ledger testing release:** See [Sales totals, payroll imports and purchase ledgers](supabase/IMPORT_LEDGER_V12.md).
 
 > **Entity/activity and mapping testing release:** See [V3 testing procedures and boundaries](supabase/ENTITY_ACTIVITY_V3.md) for legal entity setup, dated activities, cross-page mapping, stock-value controls, independent bank deferral and return-export readiness. Use the connected staff workspace, not the historical browser-local preview.
 
 > **Latest connected task procedure:** Task titles open dedicated workspaces with linked Excel upload, mapping, comments and handover. Filing now requires written approval and acknowledgment evidence through the task procedure. Catalogue rates enabled provisionally for UAT are labelled **Approved for testing**, with outputs **TESTING — NOT FOR FILING**. See the connected guide below; older root-page descriptions are historical.
 
-> **Current connected testing release:** See [Consolidated testing suite](supabase/CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. Historical descriptions below refer to earlier releases or browser-local previews. Login persists until manual sign-out; activity affects presence only.
+> **Current connected testing release:** See [Consolidated testing suite](supabase/CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. The current staging session persists until manual sign-out; do not treat that as an inactivity timeout or production-ready session policy.
 
 > **Full staff UAT:** Use [Full ERP staff acceptance test plan](supabase/FULL_ERP_STAFF_UAT.md) to test every connected area, record Pass/Fail/Blocked/Not tested, and apply the evidence-based readiness gates. The activity dropdown is part of the client setup-to-mapping acceptance flow.
 
-# PCL CRM — Client, Service and Engagement Lifecycle Foundation
+# Archived browser-local prototype design
 
-This build provides a browser-local, editable CRM intake module for a consulting and audit practice. Open `index.html` in a current browser.
+The following inventory describes an earlier browser-local prototype. It is retained as design history and is not an implementation or release-status claim for the connected staging ERP.
 
 ## Included
 
@@ -82,9 +91,9 @@ Run IMAP retrieval in a server worker every two to five minutes (or use IMAP IDL
 The home dashboard now combines the selected firm view with a personal work area. It contains today's assigned or overdue work, work that is waiting for a client or reviewer, the user's next seven days, an aggregated firm deadline radar, personal pending uploads, quick actions and a recent activity feed. The **View** selector filters all cards to one handling firm or all firms the signed-in user may access. Firm selection is a view preference only: it never changes the immutable firm on a lead, engagement, tax project, invoice or communication.
 
 In the browser preview, the **My Workspace position** selector is a role-preview control. In production, remove that selector for ordinary users and obtain the position from the authenticated session. The API should source the cards from `v_my_workspace_tasks`, `v_workspace_firm_deadline_radar` and `v_workspace_tax_filing_progress`, with PostgreSQL row-level security enforced before any response is returned. The tax-project dashboard bridge carries task and progress summaries only; it never exposes workbook rows, KRA PINs, payment references, evidence files or QR-reference secrets.
-### Unified ERP workspace preview
+### Historical unified ERP workspace preview design
 
-The current published page is a browser-local ERP preview. Its navigation is organised into **Home**, **Clients**, **Projects & Tasks**, **Finance**, **Time & HR**, **Communications**, and **Settings**. Projects & Tasks opens with the shared workboard, and Finance provides a combined invoice register while retaining the issuer firm on every invoice and payment. It is not connected to a live backend.
+This describes the earlier browser-local preview, not the connected staging workspace. See the current staging status at the beginning of this README and in [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md).
 
 The staff hierarchy is **Engagement Partner, Manager, Audit Supervisor, Audit Assistant, and Intern**. Finance, HR and System Administration are additional permissions rather than staff categories. The preview may hide modules by category, but all real permissions, firm scope, approvals, audit trails and financial posting must be enforced on a backend. See [backend_handoff.md](backend_handoff.md).
 

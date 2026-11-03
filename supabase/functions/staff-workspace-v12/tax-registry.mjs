@@ -1,4 +1,4 @@
-import {fail,text,choice} from './validation.mjs';
+import {fail,text,choice,date,uuid} from './validation.mjs';
 import {number,amount,round,graduatedTax} from './suite-rules.mjs';
 
 export const taxKinds=['VAT','PAYE','Company','Partnership','Individual','TOT','MRI','WHT','CGT','Housing levy','SHIF','NSSF','NITA','Fringe benefit','Deemed interest'];
@@ -8,6 +8,32 @@ export const taxKinds=['VAT','PAYE','Company','Partnership','Individual','TOT','
 export const profileKinds=[...taxKinds,'Withholding VAT agent','Withholding VAT credits received','Withholding income tax credits received','Excise duty','Instalment tax','Advance tax'];
 export const taxTypes=['VAT','PAYE','Corporation tax','Individual income tax','Withholding tax','Levy','Turnover tax','Rental income tax','Capital gains tax','NSSF','Relief / deduction','Interest benchmark'];
 export const testRate=r=>r.is_test===true||/^QA/i.test(r.rate_key)||/FICTIONAL|SYNTHETIC TEST/i.test(r.label||'');
+export const obligationStatusOptions={registered:['YES','NO','UNKNOWN'],applicable:['YES','NO','TO_CONFIRM'],client_status:['ACTIVE','DORMANT','NIL_FILER','DEREGISTERED','NOT_REGISTERED','UNKNOWN']};
+const finalIncomeRegimes=['TOT','MRI'];
+const ordinaryIncomePositions=['Company','Partnership','Individual','Instalment tax','Advance tax'];
+export function normalizeObligationStatuses(obligations,raw,profileFrom,profileTo){
+ if(raw!=null&&(typeof raw!=='object'||Array.isArray(raw)))fail(400,'Obligation status details must be an object keyed by the selected tax position.');
+ const source=raw||{},selected=new Set(obligations),extra=Object.keys(source).filter(k=>!selected.has(k));
+ if(extra.length)fail(400,`Remove status details for unselected positions: ${extra.join(', ')}.`);
+ return Object.fromEntries(obligations.map(code=>{const x=source[code]||{},effective_from=date(x.effective_from||profileFrom),effective_to=date(x.effective_to||profileTo),handling_firm_ids=[...new Set((Array.isArray(x.handling_firm_ids)?x.handling_firm_ids:[]).map(v=>uuid(v)))];if(!effective_from||!effective_to||effective_to<effective_from||profileFrom&&effective_from<date(profileFrom)||profileTo&&effective_to>date(profileTo))fail(400,`${code}: choose valid obligation dates within the client tax-profile period.`);if(handling_firm_ids.length>50)fail(400,`${code}: select no more than 50 handling firms.`);return [code,{registered:choice(x.registered||'UNKNOWN',obligationStatusOptions.registered),applicable:choice(x.applicable||'TO_CONFIRM',obligationStatusOptions.applicable),client_status:choice(x.client_status||x.clientStatus||'UNKNOWN',obligationStatusOptions.client_status),evidence_reference:text(x.evidence_reference||x.evidence||'',300,false),effective_from,effective_to,handling_firm_ids}];}));
+}
+export function obligationWorkIssue(profile,code){
+ if(!profile||profile.status!=='Verified')return 'Verify a dated client tax profile before scheduling tax work.';
+ if(!(profile.obligations||[]).includes(code))return `${code} is not recorded on the client tax profile.`;
+ if(!profile.obligations_reviewed_at)return 'Registration and applicability details have not been independently reviewed.';
+ const s=profile.obligation_statuses?.[code];if(!s)return `${code}: registration, applicability and client status are not recorded.`;
+ if(s.registered!=='YES')return `${code}: iTax registration is ${s.registered||'unknown'}; no filing task may be generated.`;
+ if(s.applicable!=='YES')return `${code}: legal applicability is ${s.applicable||'not confirmed'}; no filing task may be generated.`;
+ if(!s.evidence_reference)return `${code}: link iTax or other registration evidence before scheduling.`;
+ if(['DEREGISTERED','NOT_REGISTERED','UNKNOWN'].includes(s.client_status))return `${code}: client status ${s.client_status} is not eligible for a filing task.`;
+ if(code==='TOT'){
+  if(profile.regime!=='TOT')return 'The client tax profile is not under the TOT income regime.';
+  if(profile.vat_taxable_supplies_status!=='CONFIRMED'||profile.vat_taxable_supplies_12m==null||!profile.vat_threshold_checked_on||!profile.vat_threshold_evidence_reference)return 'Check, date and link evidence for the rolling 12-month vatable-supplies figure before scheduling TOT.';
+  if(Number(profile.vat_taxable_supplies_12m)>=5000000){const vat=profile.obligation_statuses?.VAT;if(!(profile.obligations||[]).includes('VAT')||vat?.registered!=='YES'||vat?.applicable!=='YES'||!vat?.evidence_reference)return 'KRA threshold check: a TOT taxpayer with taxable supplies of KES 5 million or more needs VAT registration evidence before filing work is generated.';}
+ }
+ if(code==='VAT'&&profile.regime==='TOT'&&(profile.vat_taxable_supplies_status!=='CONFIRMED'||profile.vat_taxable_supplies_12m==null||!profile.vat_threshold_checked_on||!profile.vat_threshold_evidence_reference))return 'Check, date and support the rolling 12-month taxable-supplies figure; VAT and TOT may coexist.';
+ return null;
+}
 const officialTaxSourceRoots=['kenyalaw.org','kra.go.ke','nssf.or.ke','nita.or.ke','nita.go.ke','epra.go.ke','parliament.go.ke','treasury.go.ke','sha.go.ke'];
 export function taxSourceIssue(sourceUrl,sourceNote){
  let url;try{url=new URL(String(sourceUrl||''));}catch{return 'Link an official Kenya Law, KRA, Gazette or competent regulator source before approval.';}
@@ -35,15 +61,34 @@ export function validateProfile(p){
  if(obligations.includes('Company')&&entity_type!=='Company'||obligations.includes('Individual')&&entity_type!=='Individual'||obligations.includes('Partnership')&&entity_type!=='Partnership')fail(400,'The income-tax obligation does not match the entity type.');
  if(regime==='TOT'&&(!obligations.includes('TOT')||residency!=='Resident'))fail(400,'The TOT profile requires a resident taxpayer and the TOT obligation.');
  if(regime==='MRI'&&(!obligations.includes('MRI')||residency!=='Resident'))fail(400,'The MRI profile requires a resident taxpayer and the MRI obligation.');
+ if(obligations.includes('TOT')&&regime!=='TOT')fail(400,'Select the TOT income regime for a TOT position.');
+ if(obligations.includes('MRI')&&regime!=='MRI')fail(400,'Select the MRI income regime for an MRI position.');
  const annual_turnover=p.annual_turnover===''||p.annual_turnover==null?null:amount(p.annual_turnover);
  if(regime==='TOT'&&(annual_turnover===null||annual_turnover<=1000000||annual_turnover>25000000))fail(400,'TOT requires reviewed annual turnover above KES 1 million and at most KES 25 million.');
  if(regime==='MRI'&&(annual_turnover===null||annual_turnover<288000||annual_turnover>15000000))fail(400,'MRI requires reviewed qualifying annual residential rent from KES 288,000 to KES 15 million.');
- if(regime==='TOT'&&['Company','Individual','Partnership'].some(x=>obligations.includes(x)))fail(400,'Mixed TOT and ordinary income needs a separately reviewed income-source profile; do not tax the same income twice.');
- return {entity_type,residency,regime,obligations,annual_turnover,notes:text(p.notes,4000)};
+ if(finalIncomeRegimes.includes(regime)&&ordinaryIncomePositions.some(x=>obligations.includes(x)))fail(400,`${regime} is final on the covered income. Remove ordinary income tax, instalment tax or advance tax from this profile; refer any income outside the regime to the Tax Lead because it needs a separately reviewed treatment.`);
+ const obligation_statuses=normalizeObligationStatuses(obligations,p.obligation_statuses,p.effective_from,p.effective_to);
+ const vat_taxable_supplies_status=choice(p.vat_taxable_supplies_status||'UNKNOWN',['CONFIRMED','UNKNOWN']);
+ const vat_taxable_supplies_12m=p.vat_taxable_supplies_12m===''||p.vat_taxable_supplies_12m==null?null:amount(p.vat_taxable_supplies_12m);
+ const vat_threshold_checked_on=date(p.vat_threshold_checked_on);
+ const vat_threshold_evidence_reference=text(p.vat_threshold_evidence_reference||'',300,false);
+ if(vat_taxable_supplies_status==='CONFIRMED'&&(vat_taxable_supplies_12m===null||!vat_threshold_checked_on||!vat_threshold_evidence_reference))fail(400,'Enter the rolling 12-month taxable-supplies amount, check date and evidence reference.');
+ if(vat_taxable_supplies_status==='UNKNOWN'&&(vat_taxable_supplies_12m!==null||vat_threshold_checked_on||vat_threshold_evidence_reference))fail(400,'Clear the amount, check date and evidence reference or mark the rolling 12-month taxable-supplies figure Confirmed.');
+ return {entity_type,residency,regime,obligations,obligation_statuses,annual_turnover,vat_taxable_supplies_status,vat_taxable_supplies_12m,vat_threshold_checked_on,vat_threshold_evidence_reference,notes:text(p.notes,4000)};
 }
 export function profileIssues(profile,c){
  const issues=[];if(!profile||profile.status!=='Verified')return ['A Manager or Partner must verify a client tax profile covering this period.'];
  if(!profile.obligations.includes(c.kind))issues.push(`${c.kind} is not confirmed in the client tax profile.`);
+ const position=profile.obligation_statuses?.[c.kind];
+ if(!profile.obligations_reviewed_at)issues.push('Separate registration and applicability checks have not been reviewed.');
+ if(!position)issues.push(`${c.kind}: registration, legal applicability and client status are missing.`);
+ else {if(position.registered!=='YES')issues.push(`${c.kind}: iTax registration is ${position.registered||'unknown'}; confirm registration before calculation.`);if(position.applicable!=='YES')issues.push(`${c.kind}: legal applicability is ${position.applicable||'not confirmed'}; resolve it before calculation.`);if(position.client_status==='UNKNOWN')issues.push(`${c.kind}: confirm the client status.`);if(position.registered==='YES'&&!position.evidence_reference)issues.push(`${c.kind}: link evidence for the registration status.`);if(['DEREGISTERED','NOT_REGISTERED'].includes(position.client_status))issues.push(`${c.kind}: the client status is ${position.client_status}; resolve the filing position before calculation.`);}
+ if(c.kind==='TOT'){
+  if(profile.regime!=='TOT')issues.push('Use the verified TOT income regime for a TOT return.');
+  if(profile.vat_taxable_supplies_status!=='CONFIRMED'||profile.vat_taxable_supplies_12m==null||!profile.vat_threshold_checked_on||!profile.vat_threshold_evidence_reference)issues.push('The rolling 12-month VAT threshold has not been checked, dated and supported with evidence.');
+  else if(Number(profile.vat_taxable_supplies_12m)>=5000000){const vat=profile.obligation_statuses?.VAT;if(!(profile.obligations||[]).includes('VAT')||vat?.registered!=='YES'||vat?.applicable!=='YES'||!vat?.evidence_reference)issues.push('KRA threshold check: taxable supplies of KES 5 million or more require a separate VAT registration position and evidence; VAT and TOT can coexist.');}
+ }
+ if(c.kind==='VAT'&&profile.regime==='TOT'&&(profile.vat_taxable_supplies_status!=='CONFIRMED'||profile.vat_taxable_supplies_12m==null||!profile.vat_threshold_checked_on||!profile.vat_threshold_evidence_reference))issues.push('Check, date and support the rolling 12-month taxable-supplies figure; VAT and TOT may coexist.');
  if(profile.regime==='Special')issues.push('Special-regime computation requires a specialist schedule; standard rates cannot be applied automatically.');
  if(['Company','Individual','TOT','MRI'].includes(c.kind)&&profile.residency!=='Resident')issues.push('This computation supports the resident standard regime. Obtain a reviewed non-resident schedule.');
  if(c.kind==='PAYE'||['Housing levy','SHIF','NSSF','NITA','Fringe benefit','Deemed interest','TOT','MRI'].includes(c.kind)){
@@ -87,7 +132,7 @@ export function payrollFromRules(inputs,rules){
 }
 export function simpleTax(kind,p,rules){
  const v=k=>amount(p[k]||0),rate=k=>number(rules[k].parameters.rate,0,100);let result={};
- if(kind==='TOT'||kind==='MRI'){const base=v('gross_receipts'),r=rate(kind==='TOT'?'KE_TOT':'KE_MRI');result={gross_receipts:base,rate:r,gross_tax:round(base*r/100)};}
+ if(kind==='TOT'||kind==='MRI'){const base=v('gross_receipts'),r=rate(kind==='TOT'?'KE_TOT':'KE_MRI');result={gross_receipts:base,rate:r,gross_tax:round(base*r/100),final_tax:true,expense_deductions_allowed:false,tax_base_note:kind==='TOT'?'Final tax on covered gross sales; keep excluded income separate and do not deduct expenses.':'Final tax on qualifying residential rental income.'};}
  else if(kind==='CGT'){const gain=round(v('proceeds')-v('acquisition_cost')-v('improvement_cost')-v('transfer_cost'));result={proceeds:v('proceeds'),adjusted_cost:round(v('acquisition_cost')+v('improvement_cost')+v('transfer_cost')),gain,rate:rate('KE_CGT'),gross_tax:round(Math.max(0,gain)*rate('KE_CGT')/100)};}
  else if(kind==='WHT'){const r=rules[p.payment_code];if(!r||r.tax_type!=='Withholding tax')fail(400,'Select a reviewed WHT payment category.');if(p.eligibility_confirmed!==true||!p.evidence_reference)fail(400,'Confirm payee residence, threshold, exemption/treaty review and evidence.');result={taxable_payment:v('taxable_payment'),rate:r.parameters.rate,gross_tax:round(v('taxable_payment')*r.parameters.rate/100)};}
  else if(['Fringe benefit','Deemed interest'].includes(kind)){if(kind==='Deemed interest'&&Number(p.actual_interest_rate||0)!==0)fail(400,'This deemed-interest schedule supports qualifying interest-free loans only.');const key=kind==='Fringe benefit'?'KE_FBT_BENCHMARK':'KE_DEEMED_BENCHMARK',benchmark=rate(key),actual=number(p.actual_interest_rate||0,0,100),benefit=round(v('loan_balance')*Math.max(0,benchmark-actual)/100/12),r=rate(kind==='Fringe benefit'?'KE_CIT_RES':'KE_WHT_DEEMED');result={loan_balance:v('loan_balance'),benchmark_interest:benchmark,actual_interest:actual,monthly_taxable_interest:benefit,rate:r,gross_tax:round(benefit*r/100)};if(!p.evidence_reference)fail(400,'Link the loan balance and interest calculation evidence.');}

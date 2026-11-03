@@ -29,6 +29,24 @@ export async function taxSummary(tx:any,c:any){
  for(const s of summaryImports)batches.push({batch_id:s.import_id,dataset:'Sales',period_start:s.starts_on,period_end:s.ends_on,source_count:4,new_count:4,rejected_count:0});
  if(rows.length>10000)fail(400,'Split the tax review into smaller periods (maximum 10,000 rows per case).');
  const issues:string[]=profileIssues(profile,{...c,starts_on:dateText(c.starts_on),ends_on:dateText(c.ends_on)});if(batches.some((b:any)=>dateText(b.period_start)<dateText(c.starts_on)||dateText(b.period_end)>dateText(c.ends_on)))issues.push('An imported batch crosses this case period. Use matching period boundaries.');
+ if(c.kind==='TOT'){
+  const dailySales=rows.filter((r:any)=>r.dataset==='Sales'&&!r.is_period_summary),dailyPurchases=rows.filter((r:any)=>['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset)&&!r.is_period_summary);
+  if(c.inputs.gross_receipts==null||c.inputs.gross_receipts==='')issues.push('Enter the covered gross-sales base from the daily sales register; a missing amount is not zero.');
+  if(!c.inputs.eligibility_confirmed)issues.push('Confirm that the client, covered income and period meet the reviewed TOT conditions.');
+  if(!c.inputs.evidence_reference)issues.push('Link the dated TOT eligibility and gross-sales basis review.');
+  if(!c.inputs.daily_sales_register_document_id)issues.push('Link the daily gross-sales register for this period.');
+  if(!c.inputs.daily_purchases_register_document_id)issues.push('Link the daily purchases register for this period.');
+  // KRA's simplified TOT record-keeping is daily sales and purchase records.
+  // A small trader may keep daily totals rather than transaction-level books;
+  // the attached registers are the evidence, while eTIMS invoicing remains a
+  // separate obligation and is not duplicated as a second TOT bookkeeping step.
+  for(const r of [...dailySales,...dailyPurchases]){
+   const d=dateText(r.normalized?.date||'');
+   if(!d||d<c.starts_on||d>c.ends_on)issues.push(`TOT daily-register row ${r.source_row}: enter a transaction date within the return period.`);
+  }
+  if(c.inputs.no_sales_for_period&&Number(c.inputs.gross_receipts||0)!==0)issues.push('A period marked no sales must have a zero covered gross-sales base.');
+  for(const key of ['daily_sales_register_document_id','daily_purchases_register_document_id'])if(c.inputs[key]){const linked=await tx`select document_id from erp_private.documents where document_id=${uuid(c.inputs[key])} and project_id=${c.project_id} and archived_at is null and deleted_at is null`;if(!linked.length)issues.push('A selected daily register document is unavailable or belongs to another project.');}
+ }
  const pending_information=await pendingPurchases(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on));
  const pendingHistory=Number((await tx`select count(*)::int n from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${c.project_id} and b.archived_at is null and b.period_start<=${c.ends_on} and b.period_end>=${c.starts_on} and r.raw_values ? '_pending_purchase'`)[0].n);
  const rejected=batches.reduce((s:number,b:any)=>s+b.rejected_count,0)-pendingHistory;
@@ -152,10 +170,11 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   if(!['Draft','Returned'].includes(c.status))fail(400,'Only a draft or returned case can be changed.');if(c.prepared_by!==a.staff_id)fail(403,'The assigned preparer must update the computation.');
   let inputs=p.inputs;if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||JSON.stringify(inputs).length>20000)fail(400,'Invalid computation inputs.');
   // Strip arbitrary metadata; computed results and approvals never come from browser input.
-  const allowed=c.kind==='VAT'?['opening_credit','opening_credit_basis','withholding_credit','reverse_charge','adjustments','adjustment_basis','bank_reconciliation','rejection_resolution','return_tied']:c.kind==='PAYE'?['employees','return_tied','period_import_id']:['addbacks','deductions','losses','partners','other_reliefs','credits','tax_adjustment_basis','return_tied','gross_receipts','proceeds','acquisition_cost','improvement_cost','transfer_cost','payment_code','taxable_payment','eligibility_confirmed','evidence_reference','loan_balance','actual_interest_rate','gross_pay','headcount','employees','annual_bank_review_document_id','loan_statements_document_id','loan_statements_not_applicable_confirmed','other_expenses_document_id','other_expenses_not_applicable_confirmed','stock_movement_document_id','stock_movement_not_applicable_confirmed'];
+  const allowed=c.kind==='VAT'?['opening_credit','opening_credit_basis','withholding_credit','reverse_charge','adjustments','adjustment_basis','bank_reconciliation','rejection_resolution','return_tied']:c.kind==='PAYE'?['employees','return_tied','period_import_id']:['addbacks','deductions','losses','partners','other_reliefs','credits','tax_adjustment_basis','return_tied','gross_receipts','proceeds','acquisition_cost','improvement_cost','transfer_cost','payment_code','taxable_payment','eligibility_confirmed','evidence_reference','loan_balance','actual_interest_rate','gross_pay','headcount','employees','annual_bank_review_document_id','loan_statements_document_id','loan_statements_not_applicable_confirmed','other_expenses_document_id','other_expenses_not_applicable_confirmed','stock_movement_document_id','stock_movement_not_applicable_confirmed','daily_sales_register_document_id','daily_purchases_register_document_id','no_sales_for_period','no_purchases_for_period'];
   inputs=Object.fromEntries(Object.entries(inputs).filter(([k])=>allowed.includes(k)));inputs.return_tied=inputs.return_tied===true;inputs.eligibility_confirmed=inputs.eligibility_confirmed===true;
   for(const key of ['loan_statements_not_applicable_confirmed','other_expenses_not_applicable_confirmed','stock_movement_not_applicable_confirmed'])inputs[key]=inputs[key]===true;
-  for(const key of ['annual_bank_review_document_id','loan_statements_document_id','other_expenses_document_id','stock_movement_document_id'])inputs[key]=inputs[key]?uuid(inputs[key]):null;
+  for(const key of ['no_sales_for_period','no_purchases_for_period'])inputs[key]=inputs[key]===true;
+  for(const key of ['annual_bank_review_document_id','loan_statements_document_id','other_expenses_document_id','stock_movement_document_id','daily_sales_register_document_id','daily_purchases_register_document_id']){inputs[key]=inputs[key]?uuid(inputs[key]):null;if(inputs[key])one(await tx`select document_id from erp_private.documents where document_id=${inputs[key]} and project_id=${c.project_id} and archived_at is null and deleted_at is null`);}
   if(Object.hasOwn(inputs,'tax_adjustment_basis'))inputs.tax_adjustment_basis=text(inputs.tax_adjustment_basis||'',4000,false);
   const source=p.source_document_id?uuid(p.source_document_id):null;if(source)one(await tx`select document_id from erp_private.documents where document_id=${source} and project_id=${c.project_id} and archived_at is null and deleted_at is null`);
   const rid=null; // Applicable versions are resolved on the server from client, tax and period.

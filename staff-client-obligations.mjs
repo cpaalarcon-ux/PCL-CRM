@@ -1,7 +1,7 @@
 // One source of truth for client tax positions and the recurring PCL work
 // that may be scheduled from a verified, dated tax profile.
 export const clientObligationGroups=[
- {title:'Income tax and tax regimes',help:'Choose the income tax type and any special regime that applies to the client. The taxpayer type above must match the supporting records.',items:[
+ {title:'Income tax and tax regimes',help:'Choose only the income-tax position that applies to the covered income. TOT and MRI are final for income within their regimes; do not add ordinary, instalment or advance income tax to the same regime. Refer income outside the regime to the Tax Lead before scheduling; the ERP must not assume it is covered.',items:[
   ['Company','Company income tax'],['Partnership','Partnership income tax'],['Individual','Individual income tax'],['TOT','Turnover Tax (TOT)'],['MRI','Residential rental income tax (MRI)']
  ]},
  {title:'VAT and withholding positions',help:'Record VAT registration, appointment as a withholding agent, and withholding tax credits received as separate positions.',items:[
@@ -39,6 +39,18 @@ export const profileOnlyPositions=[
 ];
 export const legacyScheduleObligations=['VAT','PAYE','TOT','Payroll'];
 
+export function obligationReadyForWork(profile,code){
+ if(!profile||profile.status!=='Verified'||!profile.obligations_reviewed_at||!(profile.obligations||[]).includes(code))return false;
+ const s=profile.obligation_statuses?.[code];
+ if(s?.registered!=='YES'||s?.applicable!=='YES'||!s?.evidence_reference||['DEREGISTERED','NOT_REGISTERED','UNKNOWN'].includes(s?.client_status))return false;
+ if(code==='TOT'){
+  if(profile.regime!=='TOT'||profile.vat_taxable_supplies_status!=='CONFIRMED'||profile.vat_taxable_supplies_12m==null||!profile.vat_threshold_checked_on)return false;
+  if(Number(profile.vat_taxable_supplies_12m)>=5000000){const vat=profile.obligation_statuses?.VAT;if(!(profile.obligations||[]).includes('VAT')||vat?.registered!=='YES'||vat?.applicable!=='YES'||!vat?.evidence_reference)return false;}
+ }
+ if(code==='VAT'&&profile.regime==='TOT'&&profile.vat_taxable_supplies_status!=='CONFIRMED')return false;
+ return true;
+}
+
 export function verifiedClientTaxProfile(workspace,clientId,onDate){
  if(!clientId||!onDate)return null;
  return (workspace?.suite?.tax_profiles||[])
@@ -48,23 +60,22 @@ export function verifiedClientTaxProfile(workspace,clientId,onDate){
 
 export function eligibleScheduleDefaults(profile){
  if(!profile||profile.status!=='Verified')return [];
- const confirmed=new Set(profile.obligations||[]);
- return recurringServiceGroups.flatMap(group=>group.items).filter(item=>!item.profile.length||item.profile.some(code=>confirmed.has(code))).map(item=>item.value);
+ return recurringServiceGroups.flatMap(group=>group.items).filter(item=>item.value==='Payroll'||item.profile.some(code=>obligationReadyForWork(profile,code))).map(item=>item.value);
 }
 
 export function scheduleChecks(name,selected=[],profile=null,esc=value=>String(value??'')){
- const selectedSet=new Set(selected),profileSet=new Set(profile?.obligations||[]);
- const eligible=item=>item.value==='Payroll'||(!profile&&legacyScheduleObligations.includes(item.value))||item.profile.some(code=>profileSet.has(code));
+ const selectedSet=new Set(selected);
+ const eligible=item=>item.value==='Payroll'||item.profile.some(code=>obligationReadyForWork(profile,code));
  const groups=recurringServiceGroups.map((group,index)=>{
   const available=group.items.filter(item=>eligible(item)||selectedSet.has(item.value));
   if(!available.length)return '';
   return `<details class="full" ${index===0?'open':''}><summary>${esc(group.title)}</summary>${available.map(item=>`<label class="obligation-choice"><input name="${esc(name)}" type="checkbox" value="${esc(item.value)}" ${selectedSet.has(item.value)?'checked':''}><span>${esc(item.label)}</span></label>`).join('')}</details>`;
  }).filter(Boolean).join('');
- const profileMessage=profile?`<p class="muted full">Available services match the verified client tax profile for ${esc(String(profile.effective_from).slice(0,10))}–${esc(String(profile.effective_to).slice(0,10))}. This list sets PCL work; it does not itself confirm a filing or approve a tax claim.</p>`:`<p class="info full">A Manager or Partner must verify the client tax profile before adding services beyond VAT, PAYE, TOT and payroll. Open the client’s Tax profile to record registrations and tax positions.</p>`;
- return `${profileMessage}${groups||'<p class="muted full">No recurring PCL services match the verified profile yet.</p>'}<p class="muted full">Annual schedules create general annual compilation, review and reporting tasks. Confirm the client year-end before assigning a separate income-tax return task.</p><p class="muted full">Withholding VAT, withholding income tax, credits received, CGT, excise, advance tax and instalment tax remain on the client profile. Add a one-off task when the transaction or client filing calendar calls for it; these choices do not create guessed recurring deadlines.</p><p class="muted full">Dates generated by this schedule are internal work targets. Check the client reporting period and current statutory due date separately.</p>`;
+ const profileMessage=profile?`<p class="muted full">Tax filing tasks are offered only when iTax registration, legal applicability, client status and evidence are confirmed for ${esc(String(profile.effective_from).slice(0,10))}–${esc(String(profile.effective_to).slice(0,10))}. Selected services here record what this engagement handles.</p>`:`<p class="info full">Verify the client tax profile and record registration, legal applicability, client status and evidence before scheduling tax filing work. Payroll preparation can be selected separately.</p>`;
+ return `${profileMessage}${groups||'<p class="muted full">No recurring PCL services match the verified profile yet.</p>'}<p class="muted full">Annual schedules create general annual compilation, review and reporting tasks. The client income-tax return and instalment work are separate positions; TOT/MRI-covered income is not duplicated into ordinary income tax.</p><p class="muted full">Withholding VAT, withholding income tax, credits received, CGT, excise, advance tax and instalment tax remain on the client profile. Add a one-off task when the transaction or client filing calendar calls for it; these choices do not create guessed recurring deadlines.</p><p class="muted full">Dates generated by this schedule are internal work targets. Check the client reporting period and dated tax-rule deadline separately.</p>`;
 }
 
 export function profileObligationChecks(selected=[],esc=value=>String(value??'')){
  const checked=new Set(selected);
- return clientObligationGroups.map((group,index)=>`<details class="full" ${index===0?'open':''}><summary>${esc(group.title)}</summary><p class="muted">${esc(group.help)}</p>${group.items.map(([value,label])=>`<label class="obligation-choice"><input type="checkbox" name="obligations" value="${esc(value)}" ${checked.has(value)?'checked':''}><span>${esc(label)}</span></label>`).join('')}</details>`).join('');
+ return `<p class="info full">TOT and VAT are separate positions and may both be active. KRA says a TOT taxpayer with taxable supplies of KES 5 million or more must also register for VAT. eTIMS invoicing remains separate from the daily sales and purchase records for TOT.</p>`+clientObligationGroups.map((group,index)=>`<details class="full" ${index===0?'open':''}><summary>${esc(group.title)}</summary><p class="muted">${esc(group.help)}</p>${group.items.map(([value,label])=>`<label class="obligation-choice"><input type="checkbox" name="obligations" value="${esc(value)}" ${checked.has(value)?'checked':''}><span>${esc(label)}</span></label>`).join('')}</details>`).join('');
 }

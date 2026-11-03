@@ -9,7 +9,7 @@ const {workbookAction:workbookActionV12}=await import('../supabase/functions/sta
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),F2=id(),C=id(),P=id(),P2=id(),D=id(),B=id(),T=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
 async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}
-const call=(role,p)=>as(role,a=>improvementAction(tx,a,p)),map=(role,p)=>as(role,a=>accountingAction(tx,a,p));
+const call=(role,p)=>as(role,a=>improvementAction(tx,a,p)),callV12=(role,p)=>as(role,a=>improvementActionV12(tx,a,p)),map=(role,p)=>as(role,a=>accountingAction(tx,a,p));
 test('V3 migrations, scoped commands, multi-page selection, stock review and canonical returns',async(t)=>{
  t.after(()=>db.close());
  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create table auth.sessions(id uuid primary key,user_id uuid references auth.users);create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb) $$;create function auth.uid() returns uuid language sql stable as $$ select (auth.jwt()->>'sub')::uuid $$;`);
@@ -28,7 +28,23 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  const c=(await call('MANAGER',{action:'v3_client_read',client_id:C})).client;
  await assert.rejects(()=>call('ASSISTANT',{action:'v3_identity_save',client_id:C,revision:c.revision}),/Partner or Manager/);
  await call('MANAGER',{action:'v3_identity_save',client_id:C,revision:c.revision,legal_entity_type:'Limited company',entity_evidence:'Fictional incorporation evidence',year_end_month:'6',year_end_day:'30'});
- const activity=await call('MANAGER',{action:'v3_activity_add',client_id:C,pack_code:'Wholesale',activity_name:'Fictional wholesale activity',income_stream:'Business',effective_from:'2026-01-01',evidence:'Fictional client activity evidence'});
+ const activityChange=await callV12('MANAGER',{action:'v3_activities_preview',client_id:C,activities:[
+  {activity_code:'wholesale',pack_code:'Wholesale',income_stream:'Business',effective_from:'2026-01-01',is_primary:true,evidence:'Fictional wholesale evidence'},
+  {activity_code:'retail',pack_code:'Wholesale',income_stream:'Business',effective_from:'2026-01-01',is_primary:false,evidence:'Fictional retail evidence'},
+  {activity_code:'construction',pack_code:'Construction',income_stream:'Business',effective_from:'2026-01-01',is_primary:false,evidence:'Fictional construction evidence'}
+ ]});
+ assert.equal(activityChange.preview.activities_to_add.length,3);
+ assert.equal(activityChange.preview.dependencies_to_add.filter(x=>x.dependency_code==='STOCK_METHOD').length,1,'shared stock dependency appears once');
+ assert.ok(activityChange.preview.dependencies_to_add.some(x=>x.dependency_code==='Z_ETR_CASH_SALES'));
+ assert.ok(activityChange.preview.dependencies_to_add.some(x=>x.dependency_code==='CONTRACT_REGISTER'));
+ await callV12('MANAGER',{action:'v3_activities_submit',client_id:C,change_id:activityChange.change_id,revision:activityChange.revision,confirm_preview:true});
+ const pendingActivity=(await tx`select revision from erp_private.client_setup_change_sets where change_id=${activityChange.change_id}`)[0];
+ await callV12('PARTNER',{action:'v3_activities_review',client_id:C,change_id:activityChange.change_id,revision:pendingActivity.revision,status:'Approved',review_note:'Fictional independent activity and dependency review.',confirm_apply:true});
+ const savedActivities=(await callV12('MANAGER',{action:'v3_client_read',client_id:C})).activities;
+ const activity=savedActivities.find(x=>x.activity_code==='wholesale');assert.ok(activity?.activity_id);
+ assert.equal(savedActivities.length,3);
+ const enabledDeps=(await callV12('MANAGER',{action:'v3_client_read',client_id:C})).dependencies.map(x=>x.dependency_code);
+ assert.ok(enabledDeps.includes('STOCK_METHOD'));assert.ok(enabledDeps.includes('CONTRACT_REGISTER'));
  const policyInput={action:'v3_stock_policy_add',client_id:C,activity_id:activity.activity_id,inventory_method:'Periodic',effective_from:'2026-01-01',count_frequency:'Monthly'};
  await assert.rejects(()=>call('MANAGER',{...policyInput,evidence_type:'Unknown evidence type'}),/Choose a valid option/);
  const policy=await call('MANAGER',policyInput),savedPolicy=(await tx`select valuation_basis,evidence from erp_private.stock_policy_versions where policy_id=${policy.policy_id}`)[0];
@@ -81,10 +97,11 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  const hintedRow=(await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B2},${P},${C},'Purchases',2,'V12-HINT','{}',${tx.json({date:'2026-10-10',invoice:'V12-HINT-1',party:'Fictional supplier',party_pin:'P000000001A',description:'Fictional utilities',amount:100,vat:16,gross:116,mapping_suggestion:{route:hinted.route,category_code:hinted.category_code,account_code:hinted.code}})}) returning row_id,revision`)[0];
  const v12Select=await as('ASSISTANT',a=>improvementActionV12(tx,a,{action:'v3_mapping_select',project_id:P,mapping:'Unmapped',dataset:'Costs',mapping_hint:{route:hinted.route,category_code:hinted.category_code,account_code:hinted.code}}));
  assert.equal(v12Select.count,1);assert.equal(v12Select.net,100);
- const v12Mapped=await as('ASSISTANT',a=>accountingActionV12(tx,a,{action:'workbook_map',project_id:P,selection_id:v12Select.selection_id,selection_hash:v12Select.selection_hash,route:hinted.route,account_code:hinted.code,confirm_uploaded_mapping:true,narration:'Fictional utilities'}));
+ const v12Mapped=await as('ASSISTANT',a=>accountingActionV12(tx,a,{action:'workbook_map',project_id:P,selection_id:v12Select.selection_id,selection_hash:v12Select.selection_hash,route:hinted.route,account_code:hinted.code,activity_id:activity.activity_id,confirm_uploaded_mapping:true,narration:'Fictional utilities'}));
  assert.equal(v12Mapped.count,1);assert.equal(v12Mapped.confirmed_uploaded_hint_count,1);
  const confirmed=(await tx`select route,category_code,account_code,review_details from erp_private.workbook_rows where row_id=${hintedRow.row_id}`)[0];
  assert.equal(confirmed.route,hinted.route);assert.equal(confirmed.category_code,hinted.category_code);assert.equal(confirmed.account_code,hinted.code);assert.equal(confirmed.review_details.mapping_confirmation.tb_item_code,hinted.code);
+ assert.equal(confirmed.review_details.activity_id,activity.activity_id,'multiple client activities require a line-level activity allocation');
  const v12Preview=await as('ASSISTANT',a=>accountingActionV12(tx,a,{action:'accounting_preview',project_id:P}));assert.ok(v12Preview.lines.some(x=>x.reference==='V12-HINT-1'&&x.account_code===hinted.code),'the confirmed uploaded pair is carried into the accounting preview');
  const annualCase=(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values(${P},'Company','2026-01-01','2026-12-31',${actors.ASSISTANT.staff_id}) returning case_id,revision`)[0];
  globalThis.Deno={env:{get:()=>''}};
