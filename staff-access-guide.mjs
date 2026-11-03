@@ -10,7 +10,7 @@ export const ACCESS_ROLES=[
 ];
 
 export const APPROVAL_RULES=[
- ['Client account mappings','Manager or Partner','A different Manager or Partner must approve; valid draft mappings can be approved as a batch.'],
+ ['Client account mappings','Manager or Partner','No separate approval. A new mapping is reviewed once, when a different Manager or Partner approves and posts the journal that uses it; the person who set it up cannot post that journal.'],
  ['Chart account activation','Partner','Custom chart accounts remain inactive until Partner approval.'],
  ['Opening TB and client-ledger journals','Manager or Partner','A different reviewer must review the submitted journal before it can be posted.'],
  ['Designated period imports and reconciliations','Supervisor, Manager or Partner','The reviewer must be different from the preparer. The workflow decides which review action applies.'],

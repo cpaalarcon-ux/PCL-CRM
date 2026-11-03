@@ -15,7 +15,7 @@ const storage={download:async key=>key===`qa/${DOC}`?{data:new Blob([workbookByt
 let workbookBytes;
 const call=(role,p)=>as(role,a=>improvementAction(tx,a,p,storage));
 
-test('opening TB mapping approval is retired while the general account dictionary keeps its batch control',async t=>{
+test('client account mappings have no separate approval route; drafts stay pending for Gate B',async t=>{
  t.after(()=>db.close());
  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create table auth.sessions(id uuid primary key,user_id uuid references auth.users);create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb) $$;create function auth.uid() returns uuid language sql stable as $$ select (auth.jwt()->>'sub')::uuid $$;`);
  for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.readFileSync(root+'/supabase/migrations/'+f,'utf8').replace('CREATE EXTENSION IF NOT EXISTS pg_cron;','').replace(/SELECT cron.schedule[^\n]+/g,'');await db.exec(q);}
@@ -38,10 +38,8 @@ test('opening TB mapping approval is retired while the general account dictionar
  const drafts=await tx`select mapping_id,revision,created_by,status from erp_private.client_account_mappings where client_id=${C} order by source_account_code`;
  assert.equal(drafts.length,2);assert.ok(drafts.every(x=>x.status==='Draft'));
  const batch=drafts.map(x=>({mapping_id:x.mapping_id,revision:x.revision}));
- await assert.rejects(()=>call('MANAGER',{action:'v3_client_account_mapping_approve_batch',client_id:C,items:batch}),/different Manager or Partner/);
- assert.equal((await tx`select count(*)::int as n from erp_private.client_account_mappings where client_id=${C} and status='Active'`)[0].n,0,'failed batch approval must be atomic');
- const managerDrafts=drafts.filter(x=>x.created_by===actors.MANAGER.staff_id).map(x=>({mapping_id:x.mapping_id,revision:x.revision}));
- const approved=await call('PARTNER',{action:'v3_client_account_mapping_approve_batch',client_id:C,items:managerDrafts});assert.equal(approved.approved_count,1);
- assert.equal((await tx`select count(*)::int as n from erp_private.client_account_mappings where client_id=${C} and status='Active'`)[0].n,1);
- assert.equal(Number((await tx`select count(*)::int as n from erp_private.audit_events where table_name='client_account_mappings'`)[0].n),3,'draft creation and approval should remain in the audit trail');
+ await assert.rejects(()=>call('PARTNER',{action:'v3_client_account_mapping_approve_batch',client_id:C,items:batch}),/no longer have a separate approval/);
+ await assert.rejects(()=>call('PARTNER',{action:'v3_client_account_mapping_approve',mapping_id:drafts[0].mapping_id,revision:drafts[0].revision}),/no longer have a separate approval/);
+ assert.equal((await tx`select count(*)::int as n from erp_private.client_account_mappings where client_id=${C} and status='Active'`)[0].n,0,'a mapping only becomes active through the Gate B posting review');
+ assert.equal(Number((await tx`select count(*)::int as n from erp_private.audit_events where table_name='client_account_mappings'`)[0].n),2,'draft creation remains in the audit trail');
 });

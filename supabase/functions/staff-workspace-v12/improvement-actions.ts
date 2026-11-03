@@ -126,28 +126,8 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
   if((await tx`select mapping_id from erp_private.client_account_mappings where client_id=${cid} and coalesce(source_account_code,'')=coalesce(${sourceCode},'') and status in ('Draft','Active') and effective_from<=coalesce(${to},'infinity'::date) and coalesce(effective_to,'infinity'::date)>=${from} limit 1`).length)fail(409,'A saved account setup already covers this source code and date. Choose a non-overlapping range or review the existing setup.');
   return one(await tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to,status,created_by) values(${cid},${sourceCode},${sourceName},${account.code},${from},${to},'Draft',${a.staff_id}) returning mapping_id`);
  }
- if(p.action==='v3_client_account_mapping_approve'){
-  leader(a);const row=one(await tx`select * from erp_private.client_account_mappings where mapping_id=${uuid(p.mapping_id)} for update`);fresh(row,p);
-  if(row.status!=='Draft')fail(409,'Only a pending client account setup can be approved.');
-  if(row.created_by===a.staff_id)fail(403,'A different Manager or Partner must approve this setup.');
-  await tx`update erp_private.client_account_mappings set status='Active',approved_by=${a.staff_id},approved_at=now() where mapping_id=${row.mapping_id}`;
-  return {ok:true};
- }
- if(p.action==='v3_client_account_mapping_approve_batch'){
-  leader(a);const cid=uuid(p.client_id),items=Array.isArray(p.items)?p.items:[];
-  if(!items.length||items.length>2000)fail(400,'Select between 1 and 2,000 pending mappings to approve.');
-  const expected=new Map(items.map((x:any)=>[uuid(x.mapping_id),revision(x.revision)]));
-  if(expected.size!==items.length)fail(400,'A mapping was selected more than once. Refresh and try again.');
-  await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':client-accounts'},0))`;
-  const rows=await tx`select * from erp_private.client_account_mappings where client_id=${cid} and mapping_id=any(${tx.array([...expected.keys()])}::uuid[]) order by mapping_id for update`;
-  if(rows.length!==expected.size)fail(409,'One or more selected mappings are no longer available. Refresh the list.');
-  for(const row of rows){
-   fresh(row,{revision:expected.get(row.mapping_id)});
-   if(row.status!=='Draft')fail(409,`${row.source_account_name} is no longer a pending mapping. Refresh the list.`);
-   if(row.created_by===a.staff_id)fail(403,'A different Manager or Partner must approve every selected mapping. Remove your own drafts and try again.');
-  }
-  for(const row of rows)await tx`update erp_private.client_account_mappings set status='Active',approved_by=${a.staff_id},approved_at=now() where mapping_id=${row.mapping_id}`;
-  return {ok:true,approved_count:rows.length};
+ if(p.action==='v3_client_account_mapping_approve'||p.action==='v3_client_account_mapping_approve_batch'){
+  leader(a);fail(409,'Client account mappings no longer have a separate approval. A new mapping can be used straight away as Pending review; it becomes active when a different Manager or Partner approves and posts the journal that uses it.');
  }
  if(p.action==='v3_client_account_mapping_end'){
   leader(a);const row=one(await tx`select * from erp_private.client_account_mappings where mapping_id=${uuid(p.mapping_id)} for update`);fresh(row,p);
