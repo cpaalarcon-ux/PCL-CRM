@@ -30,7 +30,8 @@ test('approval guide distinguishes different server approval boundaries',()=>{
 });
 
 test('described approval boundaries remain present in server handlers',()=>{
- assert.match(mapping,/if\(p\.action==='v3_client_account_mapping_approve_batch'\)\{\s*leader\(a\)/);
+ assert.match(mapping,/p\.action==='v3_client_account_mapping_approve_batch'\)\{\s*leader\(a\);fail\(409,'Client account mappings no longer have a separate approval/);
+ assert.match(ledger,/activated=await activateJournalMappings\(tx,a,project\.client_id,j,l,/);
  assert.match(accounting,/if\(p\.action==='accounting_account_approve'\)\{if\(a\.category_code!=='PARTNER'\)/);
  assert.match(ledger,/else\{leader\(a\);if\(j\.status!=='Submitted'\|\|\[j\.prepared_by,j\.last_prepared_by\]\.includes\(a\.staff_id\)\)/);
  assert.match(periods,/const reviewer=\(a:any\)=>\['PARTNER','MANAGER','SUPERVISOR'\]/);

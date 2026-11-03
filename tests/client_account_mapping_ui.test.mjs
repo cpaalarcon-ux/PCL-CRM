@@ -33,14 +33,16 @@ globalThis.fetch=async(_url,options)=>{const p=JSON.parse(options.body);calls.pu
 const pause=()=>new Promise(r=>setTimeout(r,60)),click=async selector=>{const b=document.querySelector(selector);assert.ok(b,'Missing control '+selector);b.click();await pause();};
 await import('../staff-pilot.mjs');
 
-test('client account setup reviews existing general mappings and routes opening TB to the single import flow',async t=>{
+test('client account setup has no separate mapping approval and routes opening TB to the single import flow',async t=>{
  t.after(()=>dom.window.close());
  document.querySelector('#loginForm [name=login_id]').value=me.login_id;document.querySelector('#loginForm [name=password]').value='TestPassword12345';document.querySelector('#loginForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
  await click('[data-view="clients"]');await click(`[data-client-accounts="${clientId}"]`);
- assert.equal(document.querySelectorAll('[data-client-map-select]').length,2);document.querySelector('#clientMapSelectAll').checked=true;document.querySelector('#clientMapSelectAll').dispatchEvent(new dom.window.Event('change',{bubbles:true}));assert.equal(document.querySelectorAll('[data-client-map-select]:checked').length,2);
- await click(`[data-client-map-approve-selected="${clientId}"]`);assert.match(document.querySelector('#editorTitle').textContent,/Confirm approval of 2 account mappings/);assert.match(document.querySelector('#editorBody').textContent,/does not post a journal/i);
- document.querySelector('#editForm [name=confirm_approval]').checked=true;document.querySelector('#editForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
- const batch=calls.find(x=>x.action==='v3_client_account_mapping_approve_batch');assert.equal(batch.items.length,2);assert.ok(batch.items.every(x=>x.revision==='1'));assert.match(document.querySelector('#notice').textContent,/2 account mappings approved together/);
+ assert.equal(document.querySelectorAll('[data-client-map-select]').length,0,'no mapping selection for approval');
+ assert.equal(document.querySelector('[data-client-map-approve],[data-client-map-approve-selected]'),null,'no separate mapping approval control');
+ assert.match(document.querySelector('#editorBody').textContent,/Pending review/);
+ assert.match(document.querySelector('#editorBody').textContent,/reviewed when a different Manager or Partner approves and posts the journal that uses it/);
+ assert.match(document.querySelector('#editorBody').textContent,/There is no separate mapping approval/);
+ assert.ok(!calls.some(x=>x.action==='v3_client_account_mapping_approve'||x.action==='v3_client_account_mapping_approve_batch'));
  assert.equal(document.querySelector(`[data-client-map-propose="${clientId}"]`),null,'opening TB no longer has a separate mapping proposal screen');
  assert.match(document.querySelector('#editorBody').textContent,/opening TB mappings are resolved on the import screen/i);
  assert.match(document.querySelector('#editorBody').textContent,/Continue opening TB setup/);
