@@ -6,7 +6,7 @@ Status reviewed: 3 November 2026 (Africa/Nairobi). This file records the current
 
 The connected staging workspace is available at `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. Its sign-in page is reachable. Supabase project `pcl-erp-staging` is active in `ap-south-1`; `staff-workspace-v12` version **42** is active and contains the access guard from commit `d43b6ca`. The schema contains the dated activity/obligation, TOT/VAT and KYC evidence migrations listed in [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md).
 
-The staging code snapshot is `1305f59` on branch `backend/staging-foundation`. GitHub Actions run [#38](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41655214804) passed 249 automated checks and its Chromium flow. That flow uses a local test server and a mocked backend. The connected page now serves frontend build `2026-11-03.2`; the sign-in page was checked while signed out. No real staff login or role-based API test has been recorded.
+The observed branch head is `fb6de5fa8215af6131df0f4e346b238d81f8048d`. GitHub Actions run [#40](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41661816234) passed 249 automated checks and its Chromium flow, which uses a local test server and mocked backend. A local build `2026-11-03.4` candidate is not yet published; the last observed page served build `2026-11-03.2`. Supabase `staff-workspace-v12` version 42 is deployed but still reports manual-only session metadata. No hosted staff login or role-based API test has been recorded. Use [ERP alignment control](supabase/ERP_ALIGNMENT_CONTROL.md) and [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md) for the canonical staging state.
 
 Production remains held. The connected Supabase account exposed only the staging project during this status check, so a separate production database, keys, storage and deployment boundary have not been verified. Staging was not confirmed to contain only fictional records; it must be treated as sensitive and protected to production standard until the data inventory and deletion date are recorded.
 
@@ -16,8 +16,8 @@ See the [Release 0 status table](supabase/RELEASE0_STATUS_2026-11-03.md) for evi
 
 | Component | Observed state | Required before production |
 |---|---|---|
-| Source and release history | Staging code snapshot `1305f59` is published on `backend/staging-foundation`. | Keep further updates on the authorized staging branch and retain the reviewed commit and test evidence. |
-| Staging interface and backend | Page reachable and now serves frontend build `2026-11-03.2`; `staff-workspace-v12` version 42 is active. | Run role-based UI/API checks with a fictional account and verify each restriction on the server. |
+| Source and release history | Branch head `fb6de5fa8215af6131df0f4e346b238d81f8048d` has run #40 passed; the local timeout candidate is not yet published. | Keep updates on the authorized staging branch and bind the final commit to passing CI, page build, function source and test evidence. |
+| Staging interface and backend | Last observed page build `2026-11-03.2`; v12 version 42 is active but manual-only. Local candidate is build `2026-11-03.4`. | Publish the candidate to staging, verify idle boundary and hosted sign-in with fictional accounts, then run role-based UI/API denial tests. |
 | Production interface and backend | No production deployment or separate project was verified in this check. | Establish and independently verify production hosting, project, secrets, storage and access boundaries. Keep production untouched until written Partner approval. |
 | Evidence vault | A private `staff-pilot-private` bucket exists. The functions use server-side storage calls. | Test per-client and per-role authorization, downloads and access logging; complete a separate file backup and restore drill. |
 | Staging data | Fictional-only status was not established. | Inventory and classify staging records; use fictional copies or document production-standard safeguards and a deletion date. |
@@ -45,7 +45,7 @@ The original rollout plan below has been reconciled to the connected staging can
 
 ### 1. Authentication, permissions and audit
 
-- Staff-ID sign-in, session validation/refresh, single-use account setup links and server-side request limits exist in the current function source. The link expiry is 24 hours, not the 15 minutes in this historical plan. The current session ends on manual sign-out; inactivity expiry has not been implemented.
+- Staff-ID sign-in, session validation/refresh, single-use account setup links and server-side request limits exist in the current function source. The link expiry is 24 hours, not the 15 minutes in this historical plan. The aligned session policy is 30 minutes of inactivity or manual sign-out; test the browser, server and exact idle boundary together on staging.
 - MFA is not present in the inspected source. Add and verify MFA for Partner, Manager and administrator roles before accepting Release 0.
 - The code enforces staff-area limits, role/scope checks in handlers and default-denies route actions that have no area mapping. The five staff roles are Partner, Manager, Supervisor, Assistant and Intern. It does not yet provide the complete approved per-item permission matrix or live role-based API evidence.
 - The private `staff-pilot-private` bucket and server-side file operations exist. Test client, firm and role isolation through the deployed API, and verify that all required accesses and denials are logged.

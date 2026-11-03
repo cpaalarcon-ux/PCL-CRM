@@ -50,7 +50,7 @@ function activityAge(req:Request){
  const raw=req.headers.get('x-erp-activity-age-ms');if(raw===null)return null;
  const n=Number(raw);if(!/^\d+$/.test(raw)||!Number.isSafeInteger(n)||n<0)fail(400,'Invalid activity timestamp.');return Math.min(n,2147483647);
 }
-function sessionReply(session:any){const claims=decode(session.access_token);return {access_token:session.access_token,refresh_token:session.refresh_token,expires_at:claims.exp,session_id:claims.session_id,idle_timeout_seconds:null,logout_policy:'manual'};}
+function sessionReply(session:any){const claims=decode(session.access_token);return {access_token:session.access_token,refresh_token:session.refresh_token,expires_at:claims.exp,session_id:claims.session_id,idle_timeout_seconds:1800,logout_policy:'30-minute inactivity or manual sign-out'};}
 async function refreshSession(req:Request,p:any){
  const age=activityAge(req),refresh=text(p.refresh_token,2048);await limit('refresh:'+await sha(refresh),12);
  const auth=createClient(url,publicKey,{auth:{persistSession:false,autoRefreshToken:false}});
@@ -242,7 +242,7 @@ async function download(id:any,p:any){
  });
 }
 async function action(id:any,p:any){
- if(p.action==='session_activity')return {ok:true,idle_timeout_seconds:null,logout_policy:'manual'};
+ if(p.action==='session_activity')return {ok:true,idle_timeout_seconds:1800,logout_policy:'30-minute inactivity or manual sign-out'};
  if(p.action==='document_archive')return scoped(id,async(tx,a)=>{
   await requireStaffArea(tx,a,'documents');
   const documentId=uuid(p.document_id),reason=text(p.reason,1000);

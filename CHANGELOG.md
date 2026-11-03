@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-03 — Alignment reconciliation candidate
+
+- Reconciled current staging documentation around one source of truth for onboarding, KYC, dated activity/obligation dependencies, import controls, TOT/VAT/MRI treatment, Gates A–C and audit staging evidence. Older V6/V7 deployment and session descriptions are marked historical.
+- Aligned the local staff session implementation and UI to a 30-minute inactivity timeout plus manual sign-out, including server metadata, browser cache keys, regression coverage and the current UAT case.
+- Added one end-to-end UAT case from PIN-based onboarding through a Gate C audit staging pack. It remains **Not checked** until run with separate fictional staging roles.
+- Local verification: `npm test` passes 249/249; `git diff --check`, JavaScript syntax checks and Python compile pass. Staging publication/deployment and hosted staff login are still pending for this candidate.
+- The active KYC UI still uses the legacy evidence-link path, general account mappings still have a separate approval action, and PR #11 remains excluded pending selective reconciliation. Production remains held.
+
 ## 2026-11-03 — Staging foundation status
 
 - Reconciled the root README and rollout plan with the connected staging environment and marked the browser-local prototype descriptions as historical.

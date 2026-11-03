@@ -1,6 +1,6 @@
 # Entity, activity and usability testing release
 
-This release extends the connected staff workspace (`staff-pilot`) on the review branch. The browser-local legacy root is unchanged. The connected API is `staff-workspace-v8`; v7 is retained as a rollback reference. Login still ends through manual sign-out, not an inactivity timer.
+This is a historical release record for the connected staff workspace (`staff-pilot`). The browser-local legacy root is unchanged. The connected API was `staff-workspace-v8`; v7 was retained as a rollback reference. Its manual-only login note is superseded on 3 November 2026 by the current 30-minute inactivity timeout plus manual sign-out.
 
 ## Where staff test
 

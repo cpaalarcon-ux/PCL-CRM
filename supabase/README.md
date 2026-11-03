@@ -1,4 +1,4 @@
-> **Current connected testing release:** See [Consolidated testing suite](CONNECTED_TESTING_SUITE.md) and [Release 0 status](RELEASE0_STATUS_2026-11-03.md). The connected staging session persists until manual sign-out; an inactivity timeout is not implemented.
+> **Current connected testing release:** See [Consolidated testing suite](CONNECTED_TESTING_SUITE.md) and [Release 0 status](RELEASE0_STATUS_2026-11-03.md). The aligned session policy is sign-out after 30 minutes of inactivity or manual sign-out. Hosted role-based acceptance remains required.
 
 # PCL ERP staging database foundation
 

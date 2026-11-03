@@ -2,10 +2,10 @@ let documentKind='Evidence';
 import {createImprovementUI} from './staff-improvements.mjs?v=20261103-activity-dependency-map-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261026-v4';
-import {createPresenceUI} from './staff-presence.mjs?v=20261026-v4';
+import {createPresenceUI} from './staff-presence.mjs?v=20261103-idle-timeout-v1';
 import {renderDashboard} from './staff-dashboard.mjs?v=20261102-home-resources-v1';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
-import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261026-v4';
+import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
 import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261103-dependency-map-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261103-dependency-map-v1';
@@ -23,7 +23,7 @@ const roles={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Audit Su
 const sectors=['Agribusiness','Financial Services','Energy','Healthcare','NGO','Public Sector','SME/Startup','Legal','Education'];
 const branches=['Nairobi','Bungoma','Kisii','Other'],states=['Pending','In Progress','In Review','Blocked','Completed','Cancelled'];
 let data=null,view='home',firm='',setupToken=null,presence=null,procedures=null,selectedTask='',missingProject=false,clientMappingReadiness=null,clientMappingReadinessRequest=null,clientAccountReturn=null;
-// Keep the renewable session across reloads and browser restarts until sign-out.
+// Preserve a renewable session across reloads; the server ends it after 30 minutes idle.
 if(!localStorage.getItem('pcl-staff-session-v2')&&sessionStorage.getItem('pcl-staff-session-v2'))localStorage.setItem('pcl-staff-session-v2',sessionStorage.getItem('pcl-staff-session-v2'));
 sessionStorage.removeItem('pcl-staff-session-v2');
 const session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut});

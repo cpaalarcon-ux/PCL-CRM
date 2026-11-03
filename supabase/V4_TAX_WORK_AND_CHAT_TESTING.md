@@ -1,4 +1,6 @@
-# KRA tax work and internal discussions — testing release
+# KRA tax work and internal discussions — historical testing release
+
+**Session policy note (3 November 2026):** the manual-only session text below belongs to the earlier v10 baseline and is superseded. Current staging policy is a 30-minute inactivity timeout plus manual sign-out.
 
 26 October 2026. Connected staff API: `staff-workspace-v10`. This extends the existing testing ERP; it does not merge production main or change DNS.
 
@@ -29,7 +31,7 @@ Completed tasks leave daily lists; the archive worker checks every five minutes.
 
 ## Security and delivery
 
-The existing renewable login persists until manual sign-out or authorised revocation. Presence does not expire login. Attendance and task time are independent.
+The earlier v10 test login persisted until manual sign-out or authorised revocation. This is historical behavior and is superseded by the current v12 30-minute inactivity timeout. Presence, attendance and task time remain separate.
 
 Private Supabase Realtime broadcasts carry only a sequence-change signal. Every message, document and history fetch checks the active session and current source scope. A cached realtime subscription cannot fetch confidential content after access is removed. Authenticated refresh recovers missed signals. Sends are idempotent by author/request ID, with immutable originals and monotonic read cursors.
 

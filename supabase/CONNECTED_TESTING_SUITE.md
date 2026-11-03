@@ -1,4 +1,6 @@
-# Consolidated connected testing release — 24 October 2026
+# Historical connected testing release — 24 October 2026
+
+> **Superseded for current staging work.** This is a dated baseline for the 24 October connected release. Use [Full ERP staff UAT](FULL_ERP_STAFF_UAT.md), [Release 0 status](RELEASE0_STATUS_2026-11-03.md) and [ERP alignment control](ERP_ALIGNMENT_CONTROL.md) for the current branch, session policy, tax decisions and release blockers. Do not use the historical v7 deployment instructions below for a new deployment.
 
 Testing URL: https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot
 
@@ -27,7 +29,7 @@ Use a fictional client and separate preparer/reviewer accounts. Test both an Eng
 | --- | --- | --- |
 | Staff and clients | Staff & access / Clients → Import from Excel | Select worksheet and map columns; count nonblank data rows; skip duplicates; retain missing-client-field warnings; no profile overwrites. Import does not issue login credentials automatically. |
 | Credentials | Staff & access → Generate login link / Reset password | Copyable single-use link valid 24 hours. Reset invalidates previous unused links and sessions. No email delivery. |
-| Session | Any connected screen | Remain signed in after inactivity and after clock-out. Reload restores the session. Manual sign-out clears credentials and revokes access; password reset and account disabling remain effective. |
+| Session | Any connected screen | The intended current candidate ends sessions after 30 minutes of inactivity or on manual sign-out. Clock-out is separate. Verify browser and server enforcement on the exact deployed build; this dated baseline is not evidence of that verification. |
 | Recurrence | Projects & tasks → New project / Edit project & schedule | Once-off, weekly, monthly, weekly + monthly, weekly + monthly + annually, quarterly or annual. Weekly/Monthly/Annual task filters and Upcoming schedule explain what exists and what will be generated. |
 | Handover | Task → Forward / Escalate | Required message, permitted recipient, ownership change, retained history and in-app alert. |
 | Working papers | Documents → Review Excel; project → Imported rows & mapping | Original workbook columns, sheet/period selection, duplicate/rejected counts; resale, expenditure and PPE classification; non-eTIMS exception review. |
@@ -92,13 +94,13 @@ The dedicated letter workflow is covered by DOM regression checks: client/firm/p
 3. Open **Imported rows & mapping**. Search one supplier, select visible rows and map Inventory, Expenditure or PPE. The drawer filters detailed accounts. For mixed invoices use **Split**; allocated net and VAT must exactly equal the original. Confirm that raw source values are unchanged and the original does not count twice.
 4. Open **Sales & VAT reconciliation**. Create a weekly month-to-date or full-month review. Use Sales/POS/Bank imports, explain POS applicability/differences and support every bank bridge adjustment with project evidence. The gross comparison never creates an automatic sales entry or VAT claim. Submit with no unresolved controls; another authorised reviewer returns or locks it. A locked monthly review is required for VAT submission.
 5. Home shows next contextual tax targets, pending independent reviews, required uploads and unread notes. Try global search using a client/project/task reference. Confirm a staff account cannot discover another team's private records.
-6. Log in without clocking in. Wait idle or use the session regression: login stays active. Clock in separately, start an assigned-task timer, take a break and resume. Stop the timer and confirm the **Draft** entry in My Time. Only approved timesheets feed WIP cost.
+6. Log in without clocking in. Confirm the 30-minute inactivity warning and automatic sign-out at the idle boundary; do not treat attendance, breaks or task timers as login activity. Clock in separately, start an assigned-task timer, take a break and resume. Stop the timer and confirm the **Draft** entry in My Time. Only approved timesheets feed WIP cost.
 7. A Manager opens **Team presence** and **Attendance vs time**. ERP activity is approximate; manual meeting status is not a synced calendar event. Missed-punch estimates require explicit Manager correction/approval. Activity and clock-out never sign anyone out.
-8. Sign out manually. If attendance is open, choose whether to clock out too. Confirm the signed-out screen cannot reopen a private document using the old token. A browser restart retains a valid login until manual sign-out or account/session revocation.
+8. Sign out manually. If attendance is open, choose whether to clock out too. Confirm the signed-out screen cannot reopen a private document using the old token. A browser restart may retain a session only while it remains within the 30-minute inactivity window; after that, sign-in is required.
 
 Migrations added in this release: `20261024122422_purchase_accounting_reconciliation.sql`, `20261024122800_accounting_review_guards.sql`, `20261024131627_actionable_dashboard_alerts.sql`, `20261024133148_attendance_timer_day_guard.sql`. Migration 20261024122800 was applied as the same checked SQL transaction through the staging SQL runner after migration-service request errors, then registered in migration history. Production migrations remain a separate deployment decision.
 
-The 24 October final-test update passed 83 automated Node checks, Deno type checking and rollback-only database checks for session revocation, mapping/source locks, split conservation and attendance/timer boundaries. A connected fictional-account check verified access and token renewal after a day-old activity timestamp, followed by manual logout rejecting both access and refresh. These checks support staging acceptance testing and do not certify production readiness.
+The 24 October final-test update passed 83 automated Node checks, Deno type checking and rollback-only database checks for session revocation, mapping/source locks, split conservation and attendance/timer boundaries. Its day-old session-renewal check reflected the earlier manual-only policy and is superseded. The current candidate must verify rejection at the 30-minute idle boundary and manual logout rejecting both access and refresh. These checks support staging acceptance testing and do not certify production readiness.
 
 ## Clickable workspaces and procedural work — 24 October 2026
 

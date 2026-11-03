@@ -1,10 +1,10 @@
 # Current repository and staging status — 3 November 2026
 
-This repository contains a connected ERP staging candidate as well as older browser-local prototype material. Do not treat the older prototype inventory below as a description of the current staging build. The current release status and evidence are in [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md) and [Full ERP staff UAT](supabase/FULL_ERP_STAFF_UAT.md).
+This repository contains a connected ERP staging candidate as well as older browser-local prototype material. Do not treat the older prototype inventory below as a description of the current staging build. The current release status, evidence and cross-module rules are in [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md), [ERP alignment control](supabase/ERP_ALIGNMENT_CONTROL.md) and [Full ERP staff UAT](supabase/FULL_ERP_STAFF_UAT.md).
 
 - The connected staging URL is `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. The sign-in page was reachable; this does not prove a successful role-based UAT run.
-- The connected Supabase project `pcl-erp-staging` is active. `staff-workspace-v12` version **42** is deployed with the staging access guard from commit `d43b6ca`. Staging code snapshot `1305f59` labels the frontend build `2026-11-03.2`, now served by the staging page.
-- GitHub Actions run [#38](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41655214804) passed **249/249** automated checks and its Chromium flow. The browser test uses a local test server and mocked backend; it does not prove live staff login or database/API authorization. The live sign-in page is reachable, but no role-based hosted UAT has been recorded.
+- The connected Supabase project `pcl-erp-staging` is active. `staff-workspace-v12` version **42** remains deployed and reports manual-only session metadata; it does not yet match the local candidate's 30-minute inactivity timeout. The last observed hosted page was build `2026-11-03.2`; current local candidate source is `2026-11-03.4` and is awaiting publication and hosted verification.
+- Branch head `fb6de5fa8215af6131df0f4e346b238d81f8048d` passed GitHub Actions run [#40](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41661816234): **249/249** automated checks and its Chromium flow. The browser test uses a local test server and mocked backend; it does not prove hosted staff login or database/API authorization. No role-based hosted UAT has been recorded.
 - Production remains held. Do not deploy or change production data, settings, users, DNS or credentials without written Partner approval.
 
 > **Import and ledger testing release:** See [Sales totals, payroll imports and purchase ledgers](supabase/IMPORT_LEDGER_V12.md).
@@ -13,7 +13,7 @@ This repository contains a connected ERP staging candidate as well as older brow
 
 > **Latest connected task procedure:** Task titles open dedicated workspaces with linked Excel upload, mapping, comments and handover. Filing now requires written approval and acknowledgment evidence through the task procedure. Catalogue rates enabled provisionally for UAT are labelled **Approved for testing**, with outputs **TESTING — NOT FOR FILING**. See the connected guide below; older root-page descriptions are historical.
 
-> **Current connected testing release:** See [Consolidated testing suite](supabase/CONNECTED_TESTING_SUITE.md) for Draft → Active projects, tax reviews, rates, finance, HR and the acceptance-test steps. The current staging session persists until manual sign-out; do not treat that as an inactivity timeout or production-ready session policy.
+> **Current connected testing release:** See [Full ERP staff UAT](supabase/FULL_ERP_STAFF_UAT.md) for the current test path and [ERP alignment control](supabase/ERP_ALIGNMENT_CONTROL.md) for the canonical rules. [Consolidated testing suite](supabase/CONNECTED_TESTING_SUITE.md) is a historical 24 October snapshot.
 
 > **Full staff UAT:** Use [Full ERP staff acceptance test plan](supabase/FULL_ERP_STAFF_UAT.md) to test every connected area, record Pass/Fail/Blocked/Not tested, and apply the evidence-based readiness gates. The activity dropdown is part of the client setup-to-mapping acceptance flow.
 
