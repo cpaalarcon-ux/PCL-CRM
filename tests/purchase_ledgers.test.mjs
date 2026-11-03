@@ -1,9 +1,9 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
-const {purchaseLedgerAction}=await import('../supabase/functions/staff-workspace-v6/purchase-ledger-actions.ts');
-const {accountingAction}=await import('../supabase/functions/staff-workspace-v6/accounting-actions.ts');
-const {workbookAction}=await import('../supabase/functions/staff-workspace-v6/workbook-actions.ts');
-const {inventoryDetails}=await import('../supabase/functions/staff-workspace-v6/accounting-rules.mjs');
+const {purchaseLedgerAction}=await import('../supabase/functions/staff-workspace-v12/purchase-ledger-actions.ts');
+const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
+const {workbookAction}=await import('../supabase/functions/staff-workspace-v12/workbook-actions.ts');
+const {inventoryDetails}=await import('../supabase/functions/staff-workspace-v12/accounting-rules.mjs');
 const root=path.resolve(import.meta.dirname,'..');
 test('construction inventory mapping conserves purpose and requires job, material and correct account',()=>{
  const row={review_details:{evidence:'Retained receipt'}};

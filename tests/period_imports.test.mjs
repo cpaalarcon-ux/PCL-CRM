@@ -1,15 +1,15 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
-const {purchaseLedgerAction}=await import('../supabase/functions/staff-workspace-v6/purchase-ledger-actions.ts');
-const {accountingAction}=await import('../supabase/functions/staff-workspace-v6/accounting-actions.ts');
-const {taxSummary}=await import('../supabase/functions/staff-workspace-v6/tax-review-actions.ts');
-const {workbookAction}=await import('../supabase/functions/staff-workspace-v6/workbook-actions.ts');
-const {periodImportAction,summarySalesRows}=await import('../supabase/functions/staff-workspace-v6/period-import-actions.ts');
+const {purchaseLedgerAction}=await import('../supabase/functions/staff-workspace-v12/purchase-ledger-actions.ts');
+const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
+const {taxSummary}=await import('../supabase/functions/staff-workspace-v12/tax-review-actions.ts');
+const {workbookAction}=await import('../supabase/functions/staff-workspace-v12/workbook-actions.ts');
+const {periodImportAction,summarySalesRows}=await import('../supabase/functions/staff-workspace-v12/period-import-actions.ts');
 const {workspaceAction}=await import('../supabase/functions/staff-workspace-v12/workspace-actions.ts');
-const {ledgerAction}=await import('../supabase/functions/staff-workspace-v6/ledger-actions.ts');
-const {reconSource}=await import('../supabase/functions/staff-workspace-v6/accounting-actions.ts');
-const {inventoryDetails}=await import('../supabase/functions/staff-workspace-v6/accounting-rules.mjs');
-const {purchaseUploadHeaders}=await import('../supabase/functions/staff-workspace-v6/purchase-upload.mjs');
+const {ledgerAction}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
+const {reconSource}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
+const {inventoryDetails}=await import('../supabase/functions/staff-workspace-v12/accounting-rules.mjs');
+const {purchaseUploadHeaders}=await import('../supabase/functions/staff-workspace-v12/purchase-upload.mjs');
 const root=path.resolve(import.meta.dirname,'..');
 test('Period imports: summary-only storage, overlap replacement, independent review, ledger posting, payroll and scope',async t=>{
  const db=new PGlite();t.after(()=>db.close());const id=()=>crypto.randomUUID(),F=id(),F2=id(),C=id(),P=id(),P2=id(),D=id(),B=id(),T=id(),actors={};

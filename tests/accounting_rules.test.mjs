@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';
-import {mapValue,splitValues,reconciliation} from '../supabase/functions/staff-workspace-v6/accounting-rules.mjs';
+import {mapValue,splitValues,reconciliation} from '../supabase/functions/staff-workspace-v12/accounting-rules.mjs';
 const catalog=JSON.parse(await readFile(new URL('../supabase/functions/staff-workspace-v6/account-catalog.json',import.meta.url))),accounts=catalog.accounts.map(a=>({...a,status:'Active',catalog_version:catalog.version}));
 const row={dataset:'Purchases',normalized:{amount:1000,vat:160,invoice:'TEST-1',party:'Fictional supplier'}};
 test('attached account catalog has unique codes and exact control mappings',()=>{assert.equal(accounts.length,273);assert.equal(new Set(accounts.map(a=>a.code)).size,273);assert.equal(accounts.find(a=>a.code==='61000').name,'Rent - business premises');assert.equal(accounts.find(a=>a.code==='62500').category_code,'EXP08');assert.equal(accounts.find(a=>a.code==='21600').name,'PAYE payable');assert.equal(accounts.find(a=>a.code==='15008').category_code,'PPE25S');});

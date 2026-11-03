@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {money} from '../supabase/functions/staff-workspace-v6/workspace-rules.mjs';
-import {purchaseDisplayValues,purchaseUploadHeaders,purchaseUploadLegacyHeaders,purchaseUploadMap,purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from '../supabase/functions/staff-workspace-v6/purchase-upload.mjs';
+import {money} from '../supabase/functions/staff-workspace-v12/workspace-rules.mjs';
+import {purchaseDisplayValues,purchaseUploadHeaders,purchaseUploadLegacyHeaders,purchaseUploadMap,purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from '../supabase/functions/staff-workspace-v12/purchase-upload.mjs';
 const sheet=rows=>({name:'Purchase Upload',rowCount:rows.length,columnCount:Math.max(...rows.map(r=>r.length)),getRow:i=>({getCell:c=>({value:rows[i-1]?.[c-1]??null})})});
 const row=()=>['Local','P000000001A','Example supplier','2026-10-03','0000123','Supplies','',100,16,116,'','','',''];
 test('fixed template validates header order but imports only row two onwards, skipping blanks',()=>{

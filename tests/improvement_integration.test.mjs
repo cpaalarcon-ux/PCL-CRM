@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
-const {improvementAction}=await import('../supabase/functions/staff-workspace-v6/improvement-actions.ts');
-const {accountingAction}=await import('../supabase/functions/staff-workspace-v6/accounting-actions.ts');
+const {improvementAction}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
+const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
 const {improvementAction:improvementActionV12}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
 const {accountingAction:accountingActionV12}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
 const {taxAction:taxActionV12}=await import('../supabase/functions/staff-workspace-v12/tax-review-actions.ts');

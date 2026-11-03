@@ -1,9 +1,9 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
-const {ledgerAction}=await import('../supabase/functions/staff-workspace-v6/ledger-actions.ts');
+const {ledgerAction}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
 const {annualTaxLedgerControl}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
-const {improvementAction}=await import('../supabase/functions/staff-workspace-v6/improvement-actions.ts');
-const {accountingAction}=await import('../supabase/functions/staff-workspace-v6/accounting-actions.ts');
+const {improvementAction}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
+const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),F2=id(),C=id(),P=id(),P2=id(),D=id(),B=id(),T=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
 async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}

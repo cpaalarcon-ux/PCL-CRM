@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
-import {normaliseLines,journalIssues,costJournal,profitReport,trialBalance,assetCalculation,periodAssetCharge,sharedRateSeeds,payrollJournal,assetClassAllowed} from '../supabase/functions/staff-workspace-v6/ledger-rules.mjs';
+import {normaliseLines,journalIssues,costJournal,profitReport,trialBalance,assetCalculation,periodAssetCharge,sharedRateSeeds,payrollJournal,assetClassAllowed} from '../supabase/functions/staff-workspace-v12/ledger-rules.mjs';
 const accounts=JSON.parse(fs.readFileSync(new URL('../supabase/functions/staff-workspace-v6/account-catalog.json',import.meta.url))).accounts.map(a=>({...a,status:'Active'}));
 test('gross profit excludes specific operating expenses, payroll, finance and depreciation for every legal entity',()=>{
  const entries=[['40000',0,1000000],['50000',500000,0],['61180',10000,0],['60000',100000,0],['60050',6000,0],['62000',5000,0],['67050',25000,0],['40080',0,1000]].map(([account_code,debit,credit])=>({account_code,debit,credit}));

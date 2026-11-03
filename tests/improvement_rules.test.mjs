@@ -1,9 +1,9 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {entityInput,partnerRatios,stockValues,suggestionFor,exportReadiness} from '../supabase/functions/staff-workspace-v6/improvement-rules.mjs';
-import {reconciliation} from '../supabase/functions/staff-workspace-v6/accounting-rules.mjs';
+import {entityInput,partnerRatios,stockValues,suggestionFor,exportReadiness} from '../supabase/functions/staff-workspace-v12/improvement-rules.mjs';
+import {reconciliation} from '../supabase/functions/staff-workspace-v12/accounting-rules.mjs';
 import ExcelJS from '../supabase/functions/staff-workspace-v6/node_modules/exceljs/excel.js';
-import {readWorkbookSheet} from '../supabase/functions/staff-workspace-v6/workbook-reader.mjs';
-import {normalizeImport} from '../supabase/functions/staff-workspace-v6/workspace-rules.mjs';
+import {readWorkbookSheet} from '../supabase/functions/staff-workspace-v12/workbook-reader.mjs';
+import {normalizeImport} from '../supabase/functions/staff-workspace-v12/workspace-rules.mjs';
 test('legal identity accepts missing legacy fields and validates real year-end dates',()=>{assert.equal(entityInput({}).legal_entity_type,null);assert.throws(()=>entityInput({year_end_month:'4',year_end_day:'31'}),/valid financial/);assert.equal(entityInput({legal_entity_type:'Partnership',year_end_month:'6',year_end_day:'30'}).year_end_day,30);});
 test('partner ratios conserve 100% and preserve company recipients',()=>{const p=[{partner_name:'Example A',partner_pin:'A000000001A',recipient_type:'Individual',profit_percentage:40},{partner_name:'Example B',partner_pin:'P000000002A',recipient_type:'Company',profit_percentage:60}];assert.equal(partnerRatios(p)[1].recipient_type,'Company');assert.throws(()=>partnerRatios([p[0],{...p[1],profit_percentage:59}]),/100%/);assert.throws(()=>partnerRatios([p[0],{...p[1],partner_pin:p[0].partner_pin}]),/repeated/);});
 test('stock bridge is value-based, excludes no opening silently, and keeps estimates provisional',()=>{const p={variance_threshold:100},inputs={opening_value:19008366,resale_purchases:23179676.71,cost_basis:'Provisional margin estimate',net_sales:20914441.89,margin_percentage:8,evidence_reference:'Example count and source evidence',reconciliation_note:'Provisional estimate only'};const v=stockValues(inputs,p);assert.equal(v.closing_value,22946756.17);assert.equal(v.provisional,true);const m=stockValues({...inputs,opening_value:''},p);assert.equal(m.closing_value,null);assert.ok(m.issues.some(s=>s.includes('Opening not split')));assert.equal(stockValues({...inputs,count_value:22946857.17},p).count_variance,101);assert.throws(()=>stockValues({...inputs,opening_value:-1},p),/negative/);});

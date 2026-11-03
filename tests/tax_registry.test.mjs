@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
-import {pickRate,validateProfile,profileIssues,payrollFromRules,simpleTax,vatRuleCheck,testRate} from '../supabase/functions/staff-workspace-v6/tax-registry.mjs';
+import {pickRate,validateProfile,profileIssues,payrollFromRules,simpleTax,vatRuleCheck,testRate} from '../supabase/functions/staff-workspace-v12/tax-registry.mjs';
 import {validateProfile as validateProfileV12,profileIssues as profileIssuesV12} from '../supabase/functions/staff-workspace-v12/tax-registry.mjs';
-import {graduatedTax} from '../supabase/functions/staff-workspace-v6/suite-rules.mjs';
+import {graduatedTax} from '../supabase/functions/staff-workspace-v12/suite-rules.mjs';
 const catalog=JSON.parse(fs.readFileSync(new URL('../supabase/functions/staff-workspace-v6/kenya-tax-catalog.json',import.meta.url),'utf8'));
 const approved=catalog.map((r,i)=>({...r,status:'Approved',rate_id:'local-only-'+i}));
 const rules=Object.fromEntries([...new Set(catalog.map(r=>r.rate_key))].flatMap(k=>{try{return [[k,pickRate(approved,k,'2026-10-01','2026-10-31')]];}catch{return [];}}));
