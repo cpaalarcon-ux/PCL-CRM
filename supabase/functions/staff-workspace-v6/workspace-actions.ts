@@ -16,14 +16,15 @@ async function requireOpeningBalanceSetup(tx:any,cid:string,firm?:string){
   where lp.client_id=${cid} and j.kind='Opening' and j.status='Posted' limit 1`;
  if(!openingBalanceReady({status:c.opening_balance_status,hasSource:!!source,hasPostedOpening:!!posted}))fail(400,'Before creating a project or generating tasks, stage the approved prior-year opening TB in Documents → Import sources, or record why the client has no opening balances.');
 }
-async function assign(tx:any,pid:string,firm:string,sid:string){
- const s=one(await tx`select * from erp_private.assignment_candidates() where staff_id=${sid} and firm_id=${firm}`);
+async function assign(tx:any,pid:string,firm:string,sid:string,asReviewer=false){
+ const s=one(await tx`select c.*,m.login_id from erp_private.assignment_candidates() c join erp_private.staff_members m using(staff_id) where c.staff_id=${sid} and c.firm_id=${firm}`);
+ if(asReviewer&&['EP012','EP013'].includes(String(s.login_id||'').toUpperCase()))fail(400,'UAT test accounts EP012 and EP013 cannot be assigned as independent reviewers. Choose a real Manager or Partner.');
  await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${pid},${sid},${firm},${s.category_code}) on conflict(project_id,staff_id) do update set deleted_at=null`;
  return s;
 }
 export async function workspaceExtra(tx:any){
  return {sectors:await tx`select sector_id,name,parent_id from erp_private.sectors where deleted_at is null order by name`,
- candidates:await tx`select * from erp_private.assignment_candidates()`,
+ candidates:await tx`select c.staff_id,c.full_name,c.category_code,c.firm_id,upper(m.login_id) not in ('EP012','EP013') as review_eligible from erp_private.assignment_candidates() c join erp_private.staff_members m using(staff_id)`,
  schedules:await tx`select * from erp_private.project_schedules where deleted_at is null`,
  timesheets:await tx`select * from erp_private.timesheets where deleted_at is null order by work_date desc,created_at desc limit 1000`,
  notifications:await tx`select * from erp_private.notifications order by created_at desc limit 50`,
@@ -90,7 +91,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    if(s.assigned_to===s.reviewer_id)fail(400,'Choose a different Supervisor, Manager or Partner for independent review.');
    await tx`update erp_private.projects set tax_master=true where project_id=${pid}`;
   }
-  await assign(tx,pid,firm,a.staff_id);await assign(tx,pid,firm,s.assigned_to);const reviewer=await assign(tx,pid,firm,s.reviewer_id);
+  await assign(tx,pid,firm,a.staff_id);await assign(tx,pid,firm,s.assigned_to);const reviewer=await assign(tx,pid,firm,s.reviewer_id,true);
   if(!projectEditor(reviewer))fail(400,'Choose a Partner, Manager or Supervisor as reviewer.');
   const prior=(await tx`select * from erp_private.project_schedules where project_id=${pid} for update`)[0];
   const newlyScheduled=s.obligations.filter((code:string)=>!prior?.obligations?.includes(code)&&code!=='Payroll');

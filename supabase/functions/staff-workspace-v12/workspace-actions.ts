@@ -1,5 +1,5 @@
 import {fail,text,uuid,date,revision,choice} from './validation.mjs';
-import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate,openingBalanceReady,openingBalanceSetupReady} from './workspace-rules.mjs';
+import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate} from './workspace-rules.mjs';
 const profileForScheduledWork:Record<string,string[]>={
  VAT:['VAT'],PAYE:['PAYE'],TOT:['TOT'],MRI:['MRI'],
  'Housing levy':['Housing levy'],SHIF:['SHIF'],NSSF:['NSSF'],NITA:['NITA'],
@@ -7,16 +7,9 @@ const profileForScheduledWork:Record<string,string[]>={
 };
 const one=(r:any[])=>{if(!r.length)fail(403,'This record is not available to your account.');return r[0];};
 const editor=(a:any)=>{if(!projectEditor(a))fail(403,'A Partner, Manager or Supervisor must manage this project.');};
-async function requireProjectSetup(tx:any,cid:string,firm?:string,effectiveOn?:string){
- const c=one(await tx`select legal_entity_type,entity_evidence,year_end_month,year_end_day,opening_balance_status from erp_private.clients where client_id=${cid} and deleted_at is null`);
+async function requireProjectSetup(tx:any,cid:string){
+ const c=one(await tx`select legal_entity_type,entity_evidence,year_end_month,year_end_day from erp_private.clients where client_id=${cid} and deleted_at is null`);
  if(!c.legal_entity_type||String(c.entity_evidence||'').trim().length<10||!c.year_end_month||!c.year_end_day)fail(400,'Complete Clients → Entity / activities: confirm legal entity, supporting source and financial year-end before creating project work.');
- const accountDate=effectiveOn||nairobiDate(),[account]=await tx`select mapping_id from erp_private.client_account_mappings where client_id=${cid} and status='Active' and effective_from<=${accountDate} and (effective_to is null or effective_to>=${accountDate}) limit 1`;
- if(!account)fail(400,`Before creating project work, open Clients → Client accounts and approve at least one ERP account that covers ${accountDate}. Purchase and opening TB rows will still be checked against their own dates.`);
- const [source]=await tx`select document_id from erp_private.documents where client_id=${cid} and (${firm||null}::uuid is null or handling_firm_id=${firm||null}::uuid)
-  and project_id is null and category='Import Sources' and import_purpose='Opening TB' and archived_at is null and deleted_at is null limit 1`;
- const [posted]=await tx`select j.journal_id from erp_private.ledger_journals j join erp_private.ledger_periods lp using(period_id)
-  where lp.client_id=${cid} and lp.starts_on<=${accountDate} and lp.ends_on>=${accountDate} and j.kind='Opening' and j.status='Posted' limit 1`;
- if(!openingBalanceSetupReady({status:c.opening_balance_status,hasSource:!!source,hasPostedOpening:!!posted}))fail(400,'Before creating the draft project, stage the opening TB under the handling firm or record “No opening balances apply”. Then approve the client account mappings. Staging is not posting; tasks remain locked until an opening journal is independently posted.');
 }
 async function projectTaskGate(tx:any,pid:string,cid:string,effectiveOn:string){
  const project=one(await tx`select status from erp_private.projects where project_id=${pid} and deleted_at is null`);
@@ -84,7 +77,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   let cid=p.client_id?uuid(p.client_id):null;if(!cid&&p.project_id)cid=one(await tx`select client_id from erp_private.projects where project_id=${uuid(p.project_id)} and deleted_at is null`).client_id;
   if(!cid)fail(400,'Choose the client before previewing its reporting schedule.');
   const firm=p.firm_id?uuid(p.firm_id):null;if(!firm)fail(400,'Choose the handling firm before previewing the reporting schedule.');
-  await requireProjectSetup(tx,cid,firm,s.starts_on);
+  await requireProjectSetup(tx,cid);
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
   let existingSchedule=null;if(p.project_id){const project=one(await tx`select client_id,handling_firm_id from erp_private.projects where project_id=${uuid(p.project_id)} and deleted_at is null`);if(project.client_id!==cid||project.handling_firm_id!==firm)fail(400,'Choose the client and handling firm assigned to this project.');existingSchedule=(await tx`select project_id from erp_private.project_schedules where project_id=${uuid(p.project_id)} and deleted_at is null limit 1`)[0]||null;}
   if(!existingSchedule&&s.pack==='Tax Compilation'&&s.frequency!=='Once-off'&&s.starts_on.slice(8,10)!=='01')fail(400,'Set recurring work to the first day of the client’s current reporting month. Earlier missing months can be added as one catch-up task.');
@@ -106,7 +99,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    const preview=await previewSchedule(tx,s,cid);
    if(preview.due_now>12&&p.confirm_task_backlog!==true)fail(400,`The schedule would create ${preview.due_now} tasks now. Review the catch-up count and confirm, or change the start date.`);
   }
-  if(!old||s.enabled&&s.obligations.length)await requireProjectSetup(tx,cid,firm,s.starts_on);
+  if(!old||s.enabled&&s.obligations.length)await requireProjectSetup(tx,cid);
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
   // Partners can explicitly select any registered firm; other categories require existing firm access.
   if(a.category_code==='PARTNER')await tx`insert into erp_private.staff_firm_access(staff_id,firm_id) values(${a.staff_id},${firm}) on conflict(staff_id,firm_id) do update set deleted_at=null`;

@@ -22,6 +22,50 @@ export function normaliseLines(input,accounts,{allowUnmapped=false,opening=false
   return {line_no:i+1,account_code:code||null,legacy_code:String(r.legacy_code||'').slice(0,80),source_name:String(r.source_name||account?.name||'').slice(0,200),description:String(r.description||'').slice(0,1000),debit:debit/100,credit:credit/100,source_status:r.source_status==='Confirmed'?'Confirmed':'Unverified',source_reference:String(r.source_reference||'').slice(0,1000)};
  });
 }
+const openingAmbiguousSourceCodes=new Set(['15900','15990','34100','34200','62000','63000','64000','63002','63003','64001']);
+const accountFamily=label=>{
+ const n=String(label||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+ if(/accumulated depreciation|accum dep|accumulated depr/.test(n))return 'accumulated-depreciation';
+ if(/capital reserve/.test(n))return 'capital-reserve';
+ if(/general reserve/.test(n))return 'general-reserve';
+ if(/fees charged by financial institutions|bank charges?|bank fees?/.test(n))return 'bank-charges';
+ if(/commitment fees?/.test(n))return 'commitment-fees';
+ if(/professional services?/.test(n))return 'professional-services';
+ if(/payroll|employment costs|wages|salaries/.test(n))return 'payroll';
+ if(/book depreciation|depreciation expense|depreciation charge/.test(n))return 'book-depreciation';
+ if(/current income tax expense|income tax expense/.test(n))return 'income-tax-expense';
+ if(/other operating expenses|other expenses/.test(n))return 'other-expenses';
+ if(/buildings?|premises/.test(n))return 'buildings';
+ return '';
+};
+const assetSubClass=label=>{
+ const n=String(label||'').toLowerCase();
+ if(/\b(buildings?|premises)\b/.test(n))return 'buildings';
+ if(/\b(computers?|information technology)\b/.test(n))return 'computers';
+ if(/\b(motor|vehicles?)\b/.test(n))return 'vehicles';
+ if(/\b(furniture|fittings)\b/.test(n))return 'furniture';
+ if(/\b(machinery|plant|equipment)\b/.test(n))return 'plant-equipment';
+ if(/\bland\b/.test(n))return 'land';
+ return '';
+};
+export function openingAccountMappingIssue(sourceCode,sourceName,targetCode,targetName){
+ const code=String(sourceCode||'').trim(),source=String(sourceName||'').trim(),target=String(targetName||'').trim(),targetId=String(targetCode||'').trim();
+ if(/^(total|subtotal|grand total|net total|summary|balance check)\b/i.test(source))return 'This is a summary/control row. Remove it and map the detailed account rows.';
+ if(!source)return 'Enter the source account name so the ERP can check the account meaning.';
+ if(!targetId||!target)return 'Choose an active ERP account using the source account name, not its code alone.';
+ const sf=accountFamily(source),tf=accountFamily(target);
+ if(sf&&tf&&sf!==tf)return 'Source account “'+source+'” does not match ERP account “'+target+'”. Match the descriptions and account type.';
+ if(sf==='accumulated-depreciation'){
+  const sourceClass=assetSubClass(source),targetClass=assetSubClass(target);
+  if(sourceClass!==targetClass&&(sourceClass||targetClass))return sourceClass?'The source accumulated-depreciation class does not match the selected ERP account.':'The source only identifies accumulated depreciation generally; map it to unallocated accumulated depreciation (15990) unless asset-class detail supports a specific contra account.';
+  if(!targetClass&&!/unallocated|unclassified/.test(target))return 'Select an ERP accumulated-depreciation account whose scope matches the source.';
+ }
+ const words=value=>new Set(String(value||'').toLowerCase().replace(/\b\d+\b/g,' ').replace(/[^a-z]+/g,' ').split(/\s+/).filter(x=>x&&!['a','an','and','at','by','for','in','of','the','to','erp','source','account','accounts','kes'].includes(x)));
+ const sw=words(source),tw=words(target),overlap=[...sw].filter(x=>tw.has(x)).length,denominator=Math.max(sw.size,tw.size),similarity=denominator?overlap/denominator:0,sameFamily=!!(sf&&tf&&sf===tf);
+ if(openingAmbiguousSourceCodes.has(code)&&code===targetId&&!sameFamily&&similarity<0.67)return 'Source code '+code+' has different meanings across the supplied workbooks. Confirm the account by description before mapping it.';
+ if(!sameFamily&&similarity<0.5)return 'Source account “'+source+'” does not match ERP account “'+target+'”. Select the account by description; source code '+(code||'(not supplied)')+' is retained for reference only.';
+ return '';
+}
 export function journalIssues(lines,accounts,{kind='Adjustment',entityType='',sourceSnapshot={}}={}){
  const issues=[],sum=lines.reduce((x,r)=>x+cashAmount(r.debit)-cashAmount(r.credit),0);
  if(!lines.length||!lines.some(l=>Number(l.debit)||Number(l.credit)))issues.push('Enter journal amounts.');
@@ -29,7 +73,14 @@ export function journalIssues(lines,accounts,{kind='Adjustment',entityType='',so
  if(kind==='Opening')for(const control of sourceSnapshot?.source_controls||[]){
   if(control.type==='difference_in_books'&&Math.abs(Number(control.difference_kes||0))>0.01)issues.push(`The source trial balance reports a non-zero “Difference in Books” of KES ${Number(control.difference_kes).toFixed(2)}. Reconcile the prior-year closing balance before submitting this opening entry.`);
  }
+ if(kind==='Opening'&&sourceSnapshot?.kind==='Excel')for(const source of sourceSnapshot.source_rows||[]){
+  const matching=lines.filter(line=>String(line.legacy_code||'').trim().toLowerCase()===String(source.legacy_code||'').trim().toLowerCase()&&String(line.source_name||'').trim().toLowerCase()===String(source.source_name||'').trim().toLowerCase());
+  if(matching.length!==1){issues.push(`Source row ${source.source_row}: opening journal line is missing or duplicated.`);continue;}
+  const lineNet=cashAmount(matching[0].debit)-cashAmount(matching[0].credit),sourceNet=cashAmount(source.original_debit)-cashAmount(source.original_credit);
+  if(lineNet!==sourceNet)issues.push(`Source row ${source.source_row}: journal amount differs from the approved opening TB. Correct the source and reimport.`);
+ }
  for(const r of lines){if(!Number(r.debit)&&!Number(r.credit))continue;const c=accounts.find(a=>a.code===r.account_code);
+  if(kind==='Opening'){const sourceRow=Number(String(r.description||'').match(/Excel row (\d+)/)?.[1]||0),sourceIssue=(sourceSnapshot?.source_rows||[]).find(x=>Number(x.source_row)===sourceRow)?.mapping_issue||'',mappingIssue=r.account_code?openingAccountMappingIssue(r.legacy_code,r.source_name,r.account_code,c?.name):sourceIssue||openingAccountMappingIssue(r.legacy_code,r.source_name,r.account_code,c?.name);if(mappingIssue)issues.push('Line '+r.line_no+': '+mappingIssue);}
   if(!c||c.status!=='Active'||c.is_legacy)issues.push(`Line ${r.line_no}: map to an active detailed account.`);
   const n=Number(r.account_code);
   if(n===37000&&(Number(r.debit)||Number(r.credit)))issues.push('Resolve suspense before approval.');
