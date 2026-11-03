@@ -73,6 +73,12 @@ export function journalIssues(lines,accounts,{kind='Adjustment',entityType='',so
  if(kind==='Opening')for(const control of sourceSnapshot?.source_controls||[]){
   if(control.type==='difference_in_books'&&Math.abs(Number(control.difference_kes||0))>0.01)issues.push(`The source trial balance reports a non-zero “Difference in Books” of KES ${Number(control.difference_kes).toFixed(2)}. Reconcile the prior-year closing balance before submitting this opening entry.`);
  }
+ if(kind==='Opening'&&sourceSnapshot?.kind==='Excel')for(const source of sourceSnapshot.source_rows||[]){
+  const matching=lines.filter(line=>String(line.legacy_code||'').trim().toLowerCase()===String(source.legacy_code||'').trim().toLowerCase()&&String(line.source_name||'').trim().toLowerCase()===String(source.source_name||'').trim().toLowerCase());
+  if(matching.length!==1){issues.push(`Source row ${source.source_row}: opening journal line is missing or duplicated.`);continue;}
+  const lineNet=cashAmount(matching[0].debit)-cashAmount(matching[0].credit),sourceNet=cashAmount(source.original_debit)-cashAmount(source.original_credit);
+  if(lineNet!==sourceNet)issues.push(`Source row ${source.source_row}: journal amount differs from the approved opening TB. Correct the source and reimport.`);
+ }
  for(const r of lines){if(!Number(r.debit)&&!Number(r.credit))continue;const c=accounts.find(a=>a.code===r.account_code);
   if(kind==='Opening'){const sourceRow=Number(String(r.description||'').match(/Excel row (\d+)/)?.[1]||0),sourceIssue=(sourceSnapshot?.source_rows||[]).find(x=>Number(x.source_row)===sourceRow)?.mapping_issue||'',mappingIssue=r.account_code?openingAccountMappingIssue(r.legacy_code,r.source_name,r.account_code,c?.name):sourceIssue||openingAccountMappingIssue(r.legacy_code,r.source_name,r.account_code,c?.name);if(mappingIssue)issues.push('Line '+r.line_no+': '+mappingIssue);}
   if(!c||c.status!=='Active'||c.is_legacy)issues.push(`Line ${r.line_no}: map to an active detailed account.`);
