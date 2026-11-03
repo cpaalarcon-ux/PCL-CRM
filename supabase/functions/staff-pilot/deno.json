@@ -1,1 +1,0 @@
-{"imports":{"supabase":"npm:@supabase/supabase-js@2.118.0","postgres":"npm:postgres@3.4.9"},"compilerOptions":{"strict":true}}
