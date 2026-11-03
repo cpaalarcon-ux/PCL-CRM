@@ -12,7 +12,7 @@ test('updated template accepts the legacy 12-column upload but uses M and N for 
  const legacy=sheet([purchaseUploadLegacyHeaders,row().slice(0,12)]);assert.equal(purchaseUploadProfile(legacy).version,1);
  const v=row();v[12]='EXP02';v[13]='61000';const accounts=[{code:'61000',name:'Office expense',route:2,category_code:'EXP02',status:'Active',is_legacy:false}];
  const n=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.deepEqual(n.issues,[]);assert.deepEqual(n.row.mapping_suggestion,{route:2,category_code:'EXP02',account_code:'61000',confirmed:false});
- v[12]='PPE10B';const mismatch=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.equal(mismatch.row.mapping_suggestion,undefined);assert.match(mismatch.row.mapping_suggestion_issue,/do not match/);assert.deepEqual(mismatch.issues,[]);
+ v[12]='PPE10B';const mismatch=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.equal(mismatch.row.mapping_suggestion,undefined);assert.match(mismatch.row.mapping_suggestion_issue,/does not match/);assert.deepEqual(mismatch.issues,[]);
  v[12]='';assert.match(normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts).row.mapping_suggestion_issue,/both ERP routing code/);
 });
 test('decimal money rounds half away from zero without rejecting Excel floating tails',()=>{
