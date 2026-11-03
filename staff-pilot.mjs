@@ -37,7 +37,7 @@ const badge=v=>`<span class="badge ${['Completed','Active','Closed'].includes(v)
 const options=(items,value,blank='Choose…')=>`<option value="">${esc(blank)}</option>`+items.map(x=>{let [v,l]=Array.isArray(x)?x:[x,x];return `<option value="${esc(v)}"${String(v)===String(value)?' selected':''}>${esc(l)}</option>`;}).join('');
 function notice(message,error=false){$('#notice').textContent=message;$('#notice').className=error?'error':'';}
 function signedOut(message=''){session.end(message);}
-function showSignedOut(message=''){data=null;presence?.clear();if(typeof suite!=='undefined')suite.chat?.clear();$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);}
+function showSignedOut(message=''){data=null;presence?.clear();if(typeof suite!=='undefined')suite.chat?.clear();$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));}
 async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},timeoutMs=0}={}){
  const headers={apikey:KEY,...extra};if(uploadKind)headers['x-erp-upload-kind']=uploadKind;if(!file)headers['Content-Type']='application/json';
  const controller=timeoutMs?new AbortController():null;let timer,res;
@@ -273,22 +273,6 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.disable){const id=b.dataset.disable;modal('Disable staff access',`<p>Disable ${esc(staffName(id))}? Historical work will remain, and the next request from this account will be blocked.</p><button id="confirmDisable" class="primary">Confirm disable</button>`);$('#confirmDisable').onclick=async()=>{try{await request({action:'staff_disable',staff_id:id});$('#editor').close();await load();notice('Staff access disabled.');}catch(err){$('#editorNotice').textContent=err.message;}};}
  if(b.dataset.download){b.disabled=true;try{const d=data.documents.find(x=>x.document_id===b.dataset.download),blob=await request({action:'download',document_id:d.document_id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=d.file_name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}finally{b.disabled=false;}}
  }catch(err){notice(err.message,true);}});
-$('#loginForm').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');let signedIn=false;b.disabled=true;b.textContent='Signing in…';b.setAttribute('aria-busy','true');notice('Checking your staff login…');try{const p=Object.fromEntries(new FormData(e.target)),r=await request({...p,action:'login'},{auth:false,timeoutMs:20000});session.start(r);signedIn=true;e.target.reset();await load({timeoutMs:20000});notice('Signed in to the shared staff workspace.');}catch(err){notice(signedIn?'Your sign-in succeeded, but the workspace did not load. Refresh the page to continue.':err.message,true);}finally{b.disabled=false;b.textContent='Sign in';b.removeAttribute('aria-busy');}};
-async function checkSetupLink(){
- const current=setupToken,b=$('#setupForm button[type=submit]');b.disabled=true;
- if(!current){$('#setupState').textContent='Open the complete setup link copied by your Manager.';return;}
- $('#setupState').textContent='Checking this setup link…';
- try{const r=await request({action:'setup_status',token:current},{auth:false});if(current!==setupToken)return;
-  $('#setupState').textContent=r.state==='ready'?'Valid until '+setupExpiryText(r.expires_at)+'. Opening this page does not use the link.':r.message;
-  b.disabled=r.state!=='ready';if(r.state!=='ready')notice(r.message,true);else notice('');
- }catch(err){if(current===setupToken){$('#setupState').textContent='Could not check the link. Click Check link again.';notice(err.message,true);}}
-}
-function openSetup(value){
- setupToken=value;signedOut();$('#loginForm').hidden=true;$('#setupForm').hidden=false;$('#setupForm').reset();notice('');void checkSetupLink();
-}
-$('#checkSetup').onclick=()=>void checkSetupLink();
-$('#backToSignIn').onclick=()=>{setupToken=null;$('#setupForm').reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Sign in using your staff login ID and the password you saved.');};
-$('#setupForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return notice('Passwords do not match.',true);const b=e.target.querySelector('button[type=submit]'),current=setupToken;b.disabled=true;try{await request({action:'setup',token:current,password:f.get('password')},{auth:false});if(current!==setupToken)return;setupToken=null;e.target.reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Password saved. Sign in using the login ID provided with your link.');}catch(err){if(current===setupToken){notice(err.message,true);b.disabled=false;}}};
 watchStaffActivity(session);
 for(const button of document.querySelectorAll('[data-continue-session]'))button.onclick=()=>{if(session.activity())void session.pulse();};
 const improvements=createImprovementUI({$,esc,field,select,form,modal,request,notice,shortDate,today,projectName,data:()=>data});
@@ -299,7 +283,27 @@ const setupGuide=createSetupGuideUI({$,esc,modal,request,notice,shortDate,data:(
 const audit=createAuditUI({esc,field,select,form,modal,request,notice,shortDate,empty,render,data:()=>data,openClients:()=>navigateWorkspace('clients'),openProjects:()=>navigateWorkspace('projects'),createAuditProject:()=>{navigateWorkspace('projects');v6.editProject(null,{service_code:'AUD-STAT'});}});
 presence=createPresenceUI({$,esc,modal,form,field,select,request,load,notice,logout:()=>signedOut('Signed out.'),logTime:id=>v6.editTime(id),data:()=>data});
 procedures=createProcedureUI({$,esc,field,select,form,modal,request,notice,today,data:()=>data});
-const setupWatcher=watchSetupLinks(openSetup);
+const bootedByLightweightAuth=document.documentElement.dataset.staffPilotAuthBoot==='true';
+let setupWatcher={hasSetup:false};
+if(!bootedByLightweightAuth){
+ $('#loginForm').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');let signedIn=false;b.disabled=true;b.textContent='Signing in…';b.setAttribute('aria-busy','true');notice('Checking your staff login…');try{const p=Object.fromEntries(new FormData(e.target)),r=await request({...p,action:'login'},{auth:false,timeoutMs:20000});session.start(r);signedIn=true;e.target.reset();await load({timeoutMs:20000});notice('Signed in to the shared staff workspace.');}catch(err){notice(signedIn?'Your sign-in succeeded, but the workspace did not load. Refresh the page to continue.':err.message,true);}finally{b.disabled=false;b.textContent='Sign in';b.removeAttribute('aria-busy');}};
+ async function checkSetupLink(){
+  const current=setupToken,b=$('#setupForm button[type=submit]');b.disabled=true;
+  if(!current){$('#setupState').textContent='Open the complete setup link copied by your Manager.';return;}
+  $('#setupState').textContent='Checking this setup link…';
+  try{const r=await request({action:'setup_status',token:current},{auth:false});if(current!==setupToken)return;
+   $('#setupState').textContent=r.state==='ready'?'Valid until '+setupExpiryText(r.expires_at)+'. Opening this page does not use the link.':r.message;
+   b.disabled=r.state!=='ready';if(r.state!=='ready')notice(r.message,true);else notice('');
+  }catch(err){if(current===setupToken){$('#setupState').textContent='Could not check the link. Click Check link again.';notice(err.message,true);}}
+ }
+ function openSetup(value){
+  setupToken=value;signedOut();$('#loginForm').hidden=true;$('#setupForm').hidden=false;$('#setupForm').reset();notice('');void checkSetupLink();
+ }
+ $('#checkSetup').onclick=()=>void checkSetupLink();
+ $('#backToSignIn').onclick=()=>{setupToken=null;$('#setupForm').reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Sign in using your staff login ID and the password you saved.');};
+ $('#setupForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return notice('Passwords do not match.',true);const b=e.target.querySelector('button[type=submit]'),current=setupToken;b.disabled=true;try{await request({action:'setup',token:current,password:f.get('password')},{auth:false});if(current!==setupToken)return;setupToken=null;e.target.reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Password saved. Sign in using the login ID provided with your link.');}catch(err){if(current===setupToken){notice(err.message,true);b.disabled=false;}}};
+ setupWatcher=watchSetupLinks(openSetup);
+}
 if(!setupWatcher.hasSetup&&session.active)load().catch(e=>signedOut(e.message));
 
 async function openCommunicationHash(){const ref=new URLSearchParams(location.hash.slice(1)).get('communication');if(!ref||!data)return;history.replaceState(null,'',location.pathname+location.search);try{await suite.openReference(ref);}catch(err){notice('This communication is unavailable or your account does not have permission to view it.',true);}}

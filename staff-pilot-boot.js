@@ -1,9 +1,7 @@
-// Keep sign-in unavailable until the application module has registered its handlers.
+// The lightweight sign-in bootstrap signals readiness independently of the ERP screen modules.
 (() => {
   const signInReady = () => {
     document.documentElement.dataset.staffPilotReady = 'true';
-    const button = document.querySelector('#loginForm button[type="submit"]');
-    if (button) button.disabled = false;
     const notice = document.querySelector('#notice');
     if (notice?.textContent.startsWith('Loading secure sign-in')) {
       notice.textContent = '';
@@ -16,8 +14,8 @@
     if (document.documentElement.dataset.staffPilotReady === 'true') return;
     const notice = document.querySelector('#notice');
     if (notice) {
-      notice.textContent = 'The sign-in screen did not finish loading. Refresh the page. If it still does not respond, contact your ERP Manager.';
+      notice.textContent = 'The sign-in controls did not finish loading. Refresh the page once. If the problem continues, contact your ERP Manager.';
       notice.className = 'error';
     }
-  }, 8000);
+  }, 15000);
 })();

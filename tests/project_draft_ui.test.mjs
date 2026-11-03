@@ -14,8 +14,8 @@ test('draft project explains that retained UAT tasks do not mean the project is 
 });
 
 test('staging build cache key changes with the access guide',()=>{
- assert.match(appHtml,/2026-11-03\.2/);
- assert.match(appHtml,/20261103-dependency-map-v1/);
+ assert.match(appHtml,/2026-11-03\.3/);
+ assert.match(appHtml,/20261103-sign-in-bootstrap-v1/);
 });
 
 test('new recurring tax work uses a client reporting-month boundary and one separate catch-up upload',()=>{
