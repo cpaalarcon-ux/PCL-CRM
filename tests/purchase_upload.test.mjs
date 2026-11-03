@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {money} from '../supabase/functions/staff-workspace-v6/workspace-rules.mjs';
-import {purchaseDisplayValues,purchaseUploadHeaders,purchaseUploadLegacyHeaders,purchaseUploadMap,purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from '../supabase/functions/staff-workspace-v6/purchase-upload.mjs';
+import {money} from '../supabase/functions/staff-workspace-v12/workspace-rules.mjs';
+import {purchaseDisplayValues,purchaseUploadHeaders,purchaseUploadLegacyHeaders,purchaseUploadMap,purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from '../supabase/functions/staff-workspace-v12/purchase-upload.mjs';
 const sheet=rows=>({name:'Purchase Upload',rowCount:rows.length,columnCount:Math.max(...rows.map(r=>r.length)),getRow:i=>({getCell:c=>({value:rows[i-1]?.[c-1]??null})})});
 const row=()=>['Local','P000000001A','Example supplier','2026-10-03','0000123','Supplies','',100,16,116,'','','',''];
 test('fixed template validates header order but imports only row two onwards, skipping blanks',()=>{
@@ -12,7 +12,7 @@ test('updated template accepts the legacy 12-column upload but uses M and N for 
  const legacy=sheet([purchaseUploadLegacyHeaders,row().slice(0,12)]);assert.equal(purchaseUploadProfile(legacy).version,1);
  const v=row();v[12]='EXP02';v[13]='61000';const accounts=[{code:'61000',name:'Office expense',route:2,category_code:'EXP02',status:'Active',is_legacy:false}];
  const n=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.deepEqual(n.issues,[]);assert.deepEqual(n.row.mapping_suggestion,{route:2,category_code:'EXP02',account_code:'61000',confirmed:false});
- v[12]='PPE10B';const mismatch=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.equal(mismatch.row.mapping_suggestion,undefined);assert.match(mismatch.row.mapping_suggestion_issue,/do not match/);assert.deepEqual(mismatch.issues,[]);
+ v[12]='PPE10B';const mismatch=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.equal(mismatch.row.mapping_suggestion,undefined);assert.match(mismatch.row.mapping_suggestion_issue,/does not match/);assert.deepEqual(mismatch.issues,[]);
  v[12]='';assert.match(normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts).row.mapping_suggestion_issue,/both ERP routing code/);
 });
 test('decimal money rounds half away from zero without rejecting Excel floating tails',()=>{

@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),JSZip=require('../supabase/functions/staff-workspace-v6/node_modules/jszip'),ExcelJS=require('../supabase/functions/staff-workspace-v6/node_modules/exceljs');
-const {parseCSV,sourceEntries,readSourceSheet}=await import('../supabase/functions/staff-workspace-v6/source-reader.mjs');
-const {fileType}=await import('../supabase/functions/staff-workspace-v6/validation.mjs');
+const {parseCSV,sourceEntries,readSourceSheet}=await import('../supabase/functions/staff-workspace-v12/source-reader.mjs');
+const {fileType}=await import('../supabase/functions/staff-workspace-v12/validation.mjs');
 const bytes=s=>new TextEncoder().encode(s);
 test('CSV preserves quoted newlines, UTF8 BOM, identifiers, first row and literal formula text',()=>{
  const rows=parseCSV(bytes('\uFEFFPIN,Reference,Narration\r\n P123456789A,|00001234567890,"Line one\nLine two, quoted ""text"""\r\nP123456789A,0002,=2+2\r\n'));

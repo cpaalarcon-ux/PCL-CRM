@@ -1,7 +1,8 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
+import {mapAllAccounts} from './helpers/client-mappings.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
-const {improvementAction}=await import('../supabase/functions/staff-workspace-v6/improvement-actions.ts');
-const {accountingAction}=await import('../supabase/functions/staff-workspace-v6/accounting-actions.ts');
+const {improvementAction}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
+const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
 const {improvementAction:improvementActionV12}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
 const {accountingAction:accountingActionV12}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
 const {taxAction:taxActionV12}=await import('../supabase/functions/staff-workspace-v12/tax-review-actions.ts');
@@ -19,6 +20,7 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id) values(${C},'Fictional V3 client',${actors.ASSISTANT.staff_id})`;await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C},${F}),(${C},${F2})`;
  await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${P},${C},${F},'Fictional V3 project','TAX-COMP',${actors.MANAGER.staff_id}),(${P2},${C},${F2},'Fictional hidden project','TAX-COMP',null)`;
  for(const role of Object.keys(actors)){await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors[role].staff_id},${F},${role})`;}
+ await mapAllAccounts(tx,as,C);
  await tx`insert into erp_private.tasks(task_id,project_id,assigned_to,task_name) values(${T},${P},${actors.ASSISTANT.staff_id},'Fictional document task')`;
  await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${D},${C},${F},${P},${T},'Working Papers','Fictional.xlsx',${'qa/'+D},100,${'a'.repeat(64)},'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',${actors.ASSISTANT.staff_id})`;
  await tx`insert into erp_private.accounting_policies(client_id,inventory_method,notes,configured_by) values(${C},'Periodic','Fictional periodic policy',${actors.MANAGER.staff_id})`;
@@ -57,9 +59,9 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  const applied=await map('ASSISTANT',payload);assert.equal(applied.count,205);assert.equal((await map('ASSISTANT',payload)).count,205);
  await assert.rejects(()=>map('ASSISTANT',{...payload,account_code:'61010',route:2}),/already been applied/);
  const stale=await call('ASSISTANT',{action:'v3_mapping_select',project_id:P,dataset:'Costs',mapping:'Inventory'}),row=(await tx`select row_id,revision from erp_private.workbook_rows where project_id=${P} limit 1`)[0];
- await map('ASSISTANT',{action:'workbook_map',project_id:P,row_id:row.row_id,revision:row.revision,route:1,account_code:'50000'});
+ await map('ASSISTANT',{action:'workbook_map',project_id:P,row_id:row.row_id,revision:row.revision,route:1,account_code:'50000',activity_id:activity.activity_id,stock_class:'Merchandise'});
  await assert.rejects(()=>map('ASSISTANT',{...payload,selection_id:stale.selection_id,selection_hash:stale.selection_hash}),/changed/);
- let undoRow=(await tx`select row_id,revision,normalized from erp_private.workbook_rows where row_id=${row.row_id}`)[0];await map('ASSISTANT',{action:'workbook_map',project_id:P,row_id:undoRow.row_id,revision:undoRow.revision,route:2,account_code:'61010'});undoRow=(await tx`select * from erp_private.workbook_rows where row_id=${row.row_id}`)[0];await map('ASSISTANT',{action:'workbook_mapping_undo',project_id:P,row_id:undoRow.row_id,revision:undoRow.revision});undoRow=(await tx`select * from erp_private.workbook_rows where row_id=${row.row_id}`)[0];assert.equal(undoRow.account_code,'50000');assert.equal(undoRow.normalized.amount,100);
+ let undoRow=(await tx`select row_id,revision,normalized from erp_private.workbook_rows where row_id=${row.row_id}`)[0];await map('ASSISTANT',{action:'workbook_map',project_id:P,row_id:undoRow.row_id,revision:undoRow.revision,route:2,account_code:'61010',activity_id:activity.activity_id});undoRow=(await tx`select * from erp_private.workbook_rows where row_id=${row.row_id}`)[0];await map('ASSISTANT',{action:'workbook_mapping_undo',project_id:P,row_id:undoRow.row_id,revision:undoRow.revision});undoRow=(await tx`select * from erp_private.workbook_rows where row_id=${row.row_id}`)[0];assert.equal(undoRow.account_code,'50000');assert.equal(undoRow.normalized.amount,100);
  const request=await call('ASSISTANT',{action:'v3_category_request',project_id:P,row_id:row.row_id,proposed_name:'New category',reason:'Fictional category request',evidence:'Fictional source evidence'});
  const pending=(await call('MANAGER',{action:'v3_project_read',project_id:P})).requests[0];await call('MANAGER',{action:'v3_category_decide',project_id:P,request_id:request.request_id,revision:pending.revision,status:'Approved',account_code:'61010',decision_note:'Use existing electricity account.'});
  await tx`insert into erp_private.tax_row_reviews(row_id,project_id,source_revision,decision,deductible_percentage,reason,reviewed_by) select row_id,project_id,revision,'Eligible',100,'Fictional independent source review',${actors.SUPERVISOR.staff_id} from erp_private.workbook_rows where project_id=${P}`;

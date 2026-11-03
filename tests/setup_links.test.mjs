@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {setupLinkState} from '../supabase/functions/staff-workspace-v6/setup-link-rules.mjs';
+import {setupLinkState} from '../supabase/functions/staff-workspace-v12/setup-link-rules.mjs';
 import {watchSetupLinks,setupExpiryText} from '../staff-setup-links.mjs';
 const ready={access_status:'Pending setup',contract_current:true,expired:false};
 test('unused links remain valid independently of staff login state',()=>{

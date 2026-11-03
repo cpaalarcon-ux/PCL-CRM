@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {detectImportProfile,profilePurchase,salesTotals,payrollRows} from '../supabase/functions/staff-workspace-v6/import-profiles.mjs';
+import {detectImportProfile,profilePurchase,salesTotals,payrollRows} from '../supabase/functions/staff-workspace-v12/import-profiles.mjs';
 const sheet=(name,rows)=>({name,rowCount:rows.length,columnCount:Math.max(...rows.map(r=>r.length)),getRow:i=>({getCell:c=>({value:rows[i-1]?.[c-1]??null})})});
 test('KRA profiles retain first row, invoice rather than CU serial, signed credits and tax category',()=>{
  const s=sheet('SEC_F_WITH_VAT_PIN1.CSV',[['Local','A000000000A','Supplier','02/10/2026','INV-001','Goods','',1000,'','',''],['Local','A000000000A','Supplier','03/10/2026','CN-001','Credit','',-100,'','INV-001','02/10/2026']]);

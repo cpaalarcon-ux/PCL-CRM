@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import ExcelJS from '../supabase/functions/staff-workspace-v6/node_modules/exceljs/excel.js';
-import {detectTemplate,templateRow,normalizeTemplate,rowWarnings} from '../supabase/functions/staff-workspace-v6/workbook-templates.mjs';
+import {detectTemplate,templateRow,normalizeTemplate,rowWarnings} from '../supabase/functions/staff-workspace-v12/workbook-templates.mjs';
 export const purchaseHeaders=['TYPE OF PURCHASES','PIN OF SUPPLIER','NAME OF SUPPLIER','INVOICE DATE','INVOICE NO.','DESCRIPTION','CUSTOMS ENTRY NO.','TAXABLE VALUE','VAT AMOUNT','Gross','Routing code','Return code','TB code','P&L group','Review status','Class / category code'];
 export const expenseHeaders=['Return month','Invoice / UID','Supplier','Invoice date','Source','Return code','Routing code','P&L group','Net cost','VAT treatment','TB code','Evidence','Reviewer','Filing treatment','Status'];
 export const nonEtimsHeaders=['Month incurred','Payee / supplier','PIN / country','Date','Document reference','Description','Legal non-eTIMS category','Gross amount','Input VAT claim','Legal basis / evidence','Return code','TB code','Tax treatment','Reviewer','Evidence file / reference','Review status'];
@@ -28,9 +28,9 @@ test('amount edits cannot silently become a new identity and repeat import keys 
 test('missing source headers fail closed; imports cannot fall back to generic mapping',()=>{const s=purchase();s.getCell('H6').value='Unexpected amount';assert.throws(()=>detectTemplate(s),/expected workbook headers/);});
 test('invalid reference, date and amount are held as rejected source rows',()=>{const s=purchase();s.getRow(7).values=sample();s.getCell('E7').value='';s.getCell('D7').value='2026-02-31';s.getCell('H7').value='bad';assert.equal(parse(s,7).issues.length,3);});
 
-import {readWorkbookSheet} from '../supabase/functions/staff-workspace-v6/workbook-reader.mjs';
+import {readWorkbookSheet} from '../supabase/functions/staff-workspace-v12/workbook-reader.mjs';
 import JSZip from '../supabase/functions/staff-workspace-v6/node_modules/jszip/lib/index.js';
-import {purchaseUploadHeaders} from '../supabase/functions/staff-workspace-v6/purchase-upload.mjs';
+import {purchaseUploadHeaders} from '../supabase/functions/staff-workspace-v12/purchase-upload.mjs';
 test('selective XLSX reader preserves shared strings, formulas, dates and template columns',async()=>{
  const w=book(),s=w.addWorksheet('B02A Purchases 16%');s.getRow(5).values=['VAT CLAIM MONTH 10',new Date('2026-10-01Z')];s.getRow(6).values=purchaseHeaders;s.getRow(7).values=sample();s.getCell('C7').value='Fictional & Co';s.getCell('D7').value=new Date('2026-10-03Z');
  const {sheet}=await readWorkbookSheet(await w.xlsx.writeBuffer(),null);assert.equal(sheet.getRow(7).getCell(3).value,'Fictional & Co');assert.ok(sheet.getRow(7).getCell(10).value.formula);assert.equal(parse(sheet,7).row.date,'2026-10-03');assert.deepEqual(parse(sheet,7).issues,[]);

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import ExcelJS from '../supabase/functions/staff-workspace-v6/node_modules/exceljs/excel.js';
-import {readWorkbookSheet} from '../supabase/functions/staff-workspace-v6/workbook-reader.mjs';
+import {readWorkbookSheet} from '../supabase/functions/staff-workspace-v12/workbook-reader.mjs';
 
 test('opening TB template uses six ERP-readable columns and one upload-level evidence step',async()=>{
  const bytes=new Uint8Array(await fs.readFile(new URL('../Opening_TB_Upload_Template.xlsx',import.meta.url)));
