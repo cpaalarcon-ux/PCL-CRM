@@ -292,7 +292,7 @@ async function action(id:any,p:any){
    w.suite=await suiteRead(tx);
    return {...scopeWorkspaceRecords(filterWorkspaceAccess(w,areas),a.category_code,a.staff_id),release:'v12-uat-individual-area-access-v2'};
   }
-  const requestArea=areaForStaffAction(String(p.action||''));if(requestArea)await requireStaffArea(tx,a,requestArea);
+  const requestArea=areaForStaffAction(String(p.action||''));if(!requestArea)deny();await requireStaffArea(tx,a,requestArea);
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
   const discussion=await discussionAction(tx,a,p);if(discussion!==undefined)return discussion;
   const periods=await taxPeriodAction(tx,a,p);if(periods!==undefined)return periods;
