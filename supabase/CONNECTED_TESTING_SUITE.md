@@ -1,3 +1,5 @@
+> **Retired 3 November 2026:** the hosted scripts this guide refers to targeted the retired v6–v8 and staff-pilot endpoints and were removed. Use `scripts/hosted-uat.mjs` (Staging hosted check workflow) against `staff-workspace-v12`.
+
 # Historical connected testing release — 24 October 2026
 
 > **Superseded for current staging work.** This is a dated baseline for the 24 October connected release. Use [Full ERP staff UAT](FULL_ERP_STAFF_UAT.md), [Release 0 status](RELEASE0_STATUS_2026-11-03.md) and [ERP alignment control](ERP_ALIGNMENT_CONTROL.md) for the current branch, session policy, tax decisions and release blockers. Do not use the historical v7 deployment instructions below for a new deployment.

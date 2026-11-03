@@ -1,3 +1,5 @@
+> **Retired 3 November 2026:** the hosted scripts this guide refers to targeted the retired v6–v8 and staff-pilot endpoints and were removed. Use `scripts/hosted-uat.mjs` (Staging hosted check workflow) against `staff-workspace-v12`.
+
 > **Current release pointer:** Use [Full ERP staff UAT](FULL_ERP_STAFF_UAT.md), [Release 0 status](RELEASE0_STATUS_2026-11-03.md) and [ERP alignment control](ERP_ALIGNMENT_CONTROL.md). This V6 feature guide is a historical snapshot; its deployment instructions and function name are not current. Current candidate policy is 30 minutes of inactivity or manual sign-out; attendance remains separate.
 
 # Historical connected staff testing release V6
