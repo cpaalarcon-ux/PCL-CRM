@@ -31,7 +31,7 @@ This is a staging/UAT release only. The banner must say **“STAGING ONLY — DO
 | Tenant isolation | No separate `tenant_id` boundary is evidenced across database records, object paths, search, exports, caches and jobs. | **Release blocker for multi-tenant Testing Firm or SaaS claims.** |
 | Subscription lifecycle | No server-enforced trial, active, grace, suspended, cancellation, export or retention entitlement lifecycle is evidenced. | **Separate build required.** A practice-client invoice is not SaaS subscription billing. |
 
-The opening-balance and dashboard changes are in the staging branch source. GitHub Actions run #36 passed 249 checks and a mocked Chromium flow. The connected frontend still serves build `2026-11-03.1`, while branch source is `2026-11-03.2`; staff browser/API UAT remains pending.
+The opening-balance and dashboard changes are in the staging branch source. GitHub Actions run #38 passed 249 checks and a mocked Chromium flow. The connected frontend now serves build `2026-11-03.2`; staff browser/API UAT remains pending.
 
 ## PMS v6.0 acceptance register
 
@@ -40,8 +40,8 @@ Run these additions alongside [the full ERP staff acceptance plan](FULL_ERP_STAF
 | Test ID | Requirement and acceptance evidence | Current assessment |
 |---|---|---|
 | PMS-UAT-01 | **My Work:** load 1,500 assigned tasks; Home loads at most five priority items; My Work uses 25-row cursor pagination, indexed search and tenant scope. Verify stable next/previous navigation and correct totals. | Not ready: true server-side cursor pagination and tenant scope are not evidenced. |
-| PMS-UAT-02 | **Review count:** compare the dashboard count to its underlying queues. The current label must disclose that it covers task, tax and sales reviews, excluding journal and asset reviews. | Source is in the staging branch; automated component coverage passed. Live UAT is pending because the connected page still serves build `2026-11-03.1`. |
-| PMS-UAT-03 | **Reconciliation alerts:** confirm every listed alert comes from a sales/bank reconciliation and that the panel heading describes those sources. | Source is in the staging branch; automated component coverage passed. Live UAT is pending because the connected page still serves build `2026-11-03.1`. |
+| PMS-UAT-02 | **Review count:** compare the dashboard count to its underlying queues. The current label must disclose that it covers task, tax and sales reviews, excluding journal and asset reviews. | Source is in the staging branch and build `2026-11-03.2` is served; automated component coverage passed. Live dashboard UAT remains pending. |
+| PMS-UAT-03 | **Reconciliation alerts:** confirm every listed alert comes from a sales/bank reconciliation and that the panel heading describes those sources. | Source is in the staging branch and build `2026-11-03.2` is served; automated component coverage passed. Live dashboard UAT remains pending. |
 | PMS-UAT-04 | **Review lock:** submit a task for review, verify the preparer cannot change locked content, return it with an in-app notice, and confirm the correction creates a traceable new revision. | Procedure-stage and role-rule tests passed locally; the full notice/revision workflow remains untested in the deployed workspace. |
 | PMS-UAT-05 | **Uploads:** try malformed, duplicate and corrected purchase files. Confirm exact row-level errors, duplicate no-repost behavior, archive history and source references. | Local upload/integration checks passed for row errors, duplicates, corrected credits, rounding and pending information. Confirmed archive/delete history was not exercised; live UAT not run. |
 | PMS-UAT-06 | **Dated activity:** test multiple activities/effective dates, an invalid row, a date crossing the reporting period and purchase mapping against the policy effective on the invoice date. | Local activity, invoice-date policy and VAT-period checks passed; full client-to-project-to-mapping workflow was not exercised live. |
@@ -66,7 +66,7 @@ For each case record: **Test ID, module, requirement, steps, expected result, im
 | Tax, accounting, mapping, activity, import-profile, schedule, and task-workspace component checks | **43 passed, 0 failed.** |
 | `git diff --check` | Passed. |
 
-**Live staging outcome:** the staging URL opened signed out and displayed build `2026-11-03.1`; the staging branch source carries `2026-11-03.2`. No real staff login or hosted role-based API acceptance was performed. Those checks remain **Not tested**. No live records were created or changed during the check.
+**Live staging outcome:** the initial read-only page check displayed build `2026-11-03.1`. After publishing the restored staging tree, a reload showed build `2026-11-03.2` on the signed-out sign-in page. No real staff login or hosted role-based API acceptance was performed. Those checks remain **Not tested**. No live records were created or changed during the check.
 
 **Browser smoke test:** blocked because this workspace has no installed local Chromium executable. The test did not launch. The current user browser session is signed out, so it could not substitute for that test.
 
@@ -83,7 +83,7 @@ The first automated run exposed outdated test expectations: one test assumed a m
 ## Sequence before UAT and production
 
 1. The staging source has been published to the authorized repository branch `backend/staging-foundation`; verify each new branch commit and CI result.
-2. Publish the branch frontend to the staging Pages deployment and verify that the served build label matches the source before staff begin testing.
+2. The connected page now serves build `2026-11-03.2`; perform hosted role-based UI/API checks with approved synthetic users and data before staff acceptance.
 3. Execute the UAT cases with the approved test data, correct roles and evidence register. Resolve all Critical/High defects; do not call a blocked case a pass.
 4. Build and independently test tenant isolation and the subscription lifecycle before presenting a separate Testing Firm as a tenant or describing the ERP as multi-tenant SaaS.
 5. Before any production decision, add restore/rollback evidence, security review, agreed load/performance results, operational monitoring, exact release approvals and data migration reconciliation. Production remains unauthorized until the accountable approvers sign off.
@@ -100,4 +100,4 @@ The staging schema now supports multi-select dated activities, activity codes, o
 
 ## Staging candidate disposition — 3 November 2026
 
-The staging branch head is `ebe08c381a56c275ccc33786195628f7a48f8fb2`. GitHub Actions run #36 passed 249 automated checks and a Chromium flow that uses a local test server and mocked backend. The deployed `staff-workspace-v12` function is version 42 from `d43b6ca`; the connected frontend still serves build `2026-11-03.1` while source is `2026-11-03.2`. This candidate is for staging UAT only. KYC screen integration, broad account-mapping approval consolidation, dependency-map task generation, release-check sign-off and hosted role-based UAT remain open. Do not treat automated checks or the existing staging schema as evidence that these requirements have passed. Keep production deployment and live filing held until the exact candidate has passed UAT and the accountable reviewers have recorded approval.
+The staging code snapshot is `1305f59e044b9caf80d3f6bbcd69ec71a7e732b9`. GitHub Actions run #38 passed 249 automated checks and a Chromium flow that uses a local test server and mocked backend. The deployed `staff-workspace-v12` function is version 42 from `d43b6ca`; the connected frontend now serves build `2026-11-03.2`. This candidate is for staging UAT only. KYC screen integration, broad account-mapping approval consolidation, dependency-map task generation, release-check sign-off and hosted role-based UAT remain open. Do not treat automated checks or the existing staging schema as evidence that these requirements have passed. Keep production deployment and live filing held until the exact candidate has passed UAT and the accountable reviewers have recorded approval.

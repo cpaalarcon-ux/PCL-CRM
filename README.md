@@ -3,8 +3,8 @@
 This repository contains a connected ERP staging candidate as well as older browser-local prototype material. Do not treat the older prototype inventory below as a description of the current staging build. The current release status and evidence are in [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md) and [Full ERP staff UAT](supabase/FULL_ERP_STAFF_UAT.md).
 
 - The connected staging URL is `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. The sign-in page was reachable; this does not prove a successful role-based UAT run.
-- The connected Supabase project `pcl-erp-staging` is active. `staff-workspace-v12` version **42** is deployed with the staging access guard from commit `d43b6ca`. The GitHub branch is `backend/staging-foundation`; its current source labels the frontend build `2026-11-03.2`.
-- GitHub Actions run [#36](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41652253695) passed **249/249** automated checks and its Chromium flow. The browser test uses a local test server and mocked backend; it does not prove live staff login or database/API authorization. The connected page still serves build `2026-11-03.1`, so the frontend update is not yet verified as deployed.
+- The connected Supabase project `pcl-erp-staging` is active. `staff-workspace-v12` version **42** is deployed with the staging access guard from commit `d43b6ca`. Staging code snapshot `1305f59` labels the frontend build `2026-11-03.2`, now served by the staging page.
+- GitHub Actions run [#38](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/41655214804) passed **249/249** automated checks and its Chromium flow. The browser test uses a local test server and mocked backend; it does not prove live staff login or database/API authorization. The live sign-in page is reachable, but no role-based hosted UAT has been recorded.
 - Production remains held. Do not deploy or change production data, settings, users, DNS or credentials without written Partner approval.
 
 > **Import and ledger testing release:** See [Sales totals, payroll imports and purchase ledgers](supabase/IMPORT_LEDGER_V12.md).
