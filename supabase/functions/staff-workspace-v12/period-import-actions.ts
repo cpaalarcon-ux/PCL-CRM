@@ -8,8 +8,12 @@ const one=(r:any[])=>{if(!r.length)fail(403,'This import is unavailable to your 
 const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
 const round=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
 const reviewer=(a:any)=>['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code);
-export async function summarySalesRows(tx:any,pid:string,start:string,end:string){
- const imports=await tx`select * from erp_private.period_imports where project_id=${pid} and kind='Sales' and status='Confirmed' and starts_on>=${start} and ends_on<=${end} order by starts_on,import_id`;
+// Option A: a tax case may use a submitted sales/payroll summary; approving the case confirms it.
+// A submitted replacement hides the confirmed import it replaces so nothing is counted twice.
+export function effectiveImports(rows:any[]){const replaced=new Set(rows.filter((r:any)=>r.status==='Submitted').flatMap((r:any)=>r.replaces_ids||[]));return rows.filter((r:any)=>!replaced.has(r.import_id));}
+export async function summarySalesRows(tx:any,pid:string,start:string,end:string,{includeSubmitted=false}:{includeSubmitted?:boolean}={}){
+ const statuses=includeSubmitted?['Confirmed','Submitted']:['Confirmed'];
+ const imports=effectiveImports(await tx`select * from erp_private.period_imports where project_id=${pid} and kind='Sales' and status=any(${tx.array(statuses)}::text[]) and starts_on>=${start} and ends_on<=${end} order by starts_on,import_id`);
  return imports.flatMap((s:any)=>s.payload.groups.map((g:any,i:number)=>({row_id:s.import_id+':'+g.vat_category,import_id:s.import_id,revision:s.revision,source_revision:s.revision,dataset:'Sales',source_row:i+1,normalized:{date:day(s.ends_on),invoice:'Sales summary '+day(s.starts_on)+' '+g.vat_category,amount:g.net,vat:g.vat,vat_category:g.vat_category},decision:'Confirmed',vat_rate_key:(rateKeys as any)[g.vat_category],reviewed_by:s.reviewed_by,uploaded_by:s.prepared_by,period_start:day(s.starts_on),period_end:day(s.ends_on),is_period_summary:true})));
 }
 async function coverage(tx:any,cid:string,kind:string,start:string,end:string){
@@ -78,12 +82,15 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
 function cleanNote(v:any){return String(v||'').trim();}
 // Confirms a submitted period import. Used by the stand-alone review (tax-only use) and by
 // Gate B: posting the journal built from a submitted import confirms that import in the same action.
-export async function confirmPeriodImport(tx:any,a:any,project:any,r:any,note:any){
+export async function confirmPeriodImport(tx:any,a:any,project:any,r:any,note:any,{exceptCaseId=null}:{exceptCaseId?:string|null}={}){
  const pid=project.project_id;
  if(r.status!=='Submitted')fail(409,'Only a submitted import can be confirmed.');
  if(r.prepared_by===a.staff_id||!reviewer(a))fail(403,'A different Supervisor, Manager or Partner must review the source summary.');
  await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
- if(!(await tx`select erp_private.tax_period_open(${pid}::uuid,${r.starts_on}::date,${r.ends_on}::date) open`)[0].open)fail(409,'The tax period is submitted or locked.');
+ const open=exceptCaseId
+  ?!(await tx`select 1 from erp_private.tax_cases c where c.project_id=${pid} and c.case_id<>${exceptCaseId} and c.status in ('Submitted','Locked','Filed') and c.starts_on<=${r.ends_on} and c.ends_on>=${r.starts_on} union all select 1 from erp_private.sales_reconciliations x where x.project_id=${pid} and x.review_type='Monthly' and x.status in ('Submitted','Locked') and x.starts_on<=${r.ends_on} and x.ends_on>=${r.starts_on} limit 1`).length
+  :(await tx`select erp_private.tax_period_open(${pid}::uuid,${r.starts_on}::date,${r.ends_on}::date) open`)[0].open;
+ if(!open)fail(409,'The tax period is submitted or locked.');
  const overlaps=(await coverage(tx,project.client_id,r.kind,day(r.starts_on),day(r.ends_on))).filter((o:any)=>o.import_id!==r.import_id);
  if(overlaps.length!==r.replaces_ids.length||overlaps.some((o:any)=>!r.replaces_ids.includes(o.import_id)))fail(409,'Period coverage changed. Create a fresh replacement.');
  await replacementSafe(tx,r.replaces_ids);
@@ -128,10 +135,11 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   if(!reviewer(a)||r.prepared_by===a.staff_id||r.status!=='Submitted')fail(403,'A different Supervisor, Manager or Partner must review.');
   const status=choice(p.status,['Confirmed','Returned']);
   if(status==='Confirmed'){await confirmPeriodImport(tx,a,project,r,p.review_note);return {ok:true};}
+  if(!(await tx`select erp_private.tax_period_open(${pid}::uuid,${r.starts_on}::date,${r.ends_on}::date) open`)[0].open)fail(409,'This summary is in submitted or locked tax work. Return the tax case first.');
   await tx`update erp_private.period_imports set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,4000)} where import_id=${r.import_id}`;return {ok:true};
  }
  if(p.action==='period_import_payroll_tax'){
-  if(r.kind!=='Payroll'||r.status!=='Confirmed')fail(400,'Choose an independently confirmed payroll.');
+  if(r.kind!=='Payroll'||!['Submitted','Confirmed'].includes(r.status))fail(400,'Submit the payroll summary first. It is confirmed when the PAYE computation is approved.');
   await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
   const cases=await tx`select * from erp_private.tax_cases where project_id=${pid} and kind='PAYE' and starts_on<=${r.ends_on} and ends_on>=${r.starts_on}`;
   let c=cases[0];if(c&&(day(c.starts_on)!==day(r.starts_on)||day(c.ends_on)!==day(r.ends_on)||!['Draft','Returned'].includes(c.status)||c.prepared_by!==a.staff_id))fail(409,'Use the assigned preparer and matching open PAYE period.');
