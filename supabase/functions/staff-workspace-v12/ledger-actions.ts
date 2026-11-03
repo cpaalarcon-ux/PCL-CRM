@@ -6,6 +6,7 @@ import {checkWorkbookZip} from './workspace-rules.mjs';
 import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal} from './ledger-rules.mjs';
 import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
+import {confirmPeriodImport} from './period-import-actions.ts';
 
 const one=(r:any[])=>{if(!r.length)fail(403,'This working paper is not available to your account.');return r[0];};
 const leader=(a:any)=>{if(!staffReviewer(a))fail(403,'A Manager or Partner must approve client accounting.');};
@@ -32,6 +33,25 @@ async function activateJournalMappings(tx:any,a:any,clientId:string,j:any,l:any,
  for(const m of pending)await tx`update erp_private.client_account_mappings set status='Active',approved_by=${a.staff_id},approved_at=now() where mapping_id=${m.mapping_id}`;
  return pending.map((m:any)=>m.mapping_id);
 }
+// Gate B: one reviewer action approves and posts the journal and, in the same transaction, confirms the
+// submitted source it was built from (a sales/payroll period import, or a fixed asset's classification and
+// class rate for a depreciation journal). No separate review is needed for items posted through a journal.
+async function confirmJournalSources(tx:any,a:any,project:any,j:any,l:any,note:any){
+ if(j.source_snapshot?.kind==='Period import'){
+  const source=one(await tx`select * from erp_private.period_imports where import_id=${j.source_snapshot.import_id} and project_id=${j.project_id} for update`);
+  if(source.status==='Submitted'){if(source.prepared_by===a.staff_id)fail(403,'You prepared the source summary for this journal. A different Manager or Partner must approve and post it.');await confirmPeriodImport(tx,a,project,source,note);}
+ }
+ if(j.kind==='Depreciation'){
+  if((await tx`select x.asset_id from erp_private.ledger_assets x join erp_private.ledger_asset_charges c using(asset_id) where c.journal_id=${j.journal_id} and x.status not in ('Submitted','Approved')`).length)fail(409,'The asset for this depreciation was returned or reopened. Return this journal and recreate it after the asset is resubmitted.');
+  const assets=await tx`select x.* from erp_private.ledger_assets x join erp_private.ledger_asset_charges c using(asset_id) where c.journal_id=${j.journal_id} and x.status='Submitted' for update of x`;
+  for(const asset of assets){
+   if([asset.prepared_by,asset.last_prepared_by].includes(a.staff_id))fail(403,'You prepared the asset classification for this depreciation. A different Manager or Partner must approve and post it.');
+   const result=assetCalculation(asset,asset.rate_snapshot,l.starts_on,l.ends_on);if(result.issues.length)fail(400,result.issues.join(' '));
+   if(String(note||'').trim().length<10)fail(400,'Record a review note of at least 10 characters covering the asset classification and class rate.');
+   await tx`update erp_private.ledger_assets set status='Approved',reviewed_by=${a.staff_id},review_note=${text(note,5000)} where asset_id=${asset.asset_id}`;
+  }
+ }
+}
 async function period(tx:any,id:string,pid:string){return one(await tx`select * from erp_private.ledger_periods where period_id=${id} and project_id=${pid} for update`);}
 async function lines(tx:any,id:string){return await tx`select * from erp_private.ledger_lines where journal_id=${id} order by line_no`;}
 async function writeLines(tx:any,j:any,items:any[]){
@@ -57,7 +77,7 @@ async function reviewedRows(tx:any,pid:string,ids:string[]){
  if(r.length!==parsed.length)fail(403,'All source rows must belong to this authorised project.');return r;
 }
 async function sourceCheck(tx:any,j:any){
- if(j.source_snapshot?.kind==='Period import'){const source=one(await tx`select * from erp_private.period_imports where import_id=${j.source_snapshot.import_id} and project_id=${j.project_id}`);if(source.status!=='Confirmed'||source.source_hash!==j.source_snapshot.source_hash)fail(409,'The source summary changed or was superseded.');return;}
+ if(j.source_snapshot?.kind==='Period import'){const source=one(await tx`select * from erp_private.period_imports where import_id=${j.source_snapshot.import_id} and project_id=${j.project_id}`);if(!['Submitted','Confirmed'].includes(source.status)||source.source_hash!==j.source_snapshot.source_hash)fail(409,'The source summary changed or was superseded.');return;}
  if(j.source_snapshot?.kind==='Excel'&&j.kind==='Opening'){
   const source=await tx`select document_id from erp_private.documents where document_id=${uuid(j.source_snapshot.document_id)} and deleted_at is null and archived_at is null`;
   if(!source.length)fail(409,'The opening TB source was archived. Re-upload the approved source and prepare a new draft.');return;
@@ -175,7 +195,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(p.action==='ledger_period_import_create'){
   await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':period-import'},0))`;
   const source=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid}`);
-  if(source.status!=='Confirmed'||day(source.starts_on)<day(l.starts_on)||day(source.ends_on)>day(l.ends_on))fail(400,'Choose an independently confirmed import within this financial year.');
+  if(!['Submitted','Confirmed'].includes(source.status)||day(source.starts_on)<day(l.starts_on)||day(source.ends_on)>day(l.ends_on))fail(400,'Choose a submitted or confirmed import within this financial year. The import is reviewed when its journal is approved and posted.');
   const used=(await tx`select journal_id from erp_private.ledger_sources where source_kind='Period import' and source_key=${source.import_id}`)[0];if(used)return {...used,reused:true};
   let items:any[]=[];
   if(source.kind==='Sales'){
@@ -206,7 +226,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(['ledger_journal_submit','ledger_journal_review'].includes(p.action)){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);
   if(p.action==='ledger_journal_submit'){edit(j,a);const currentLines=await lines(tx,j.journal_id),issues=journalIssues(currentLines,await catalogue(tx),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(j.kind==='Opening')for(const line of currentLines.filter((x:any)=>x.account_code))if(!await clientAccountAllowed(tx,project.client_id,line.account_code,day(l.starts_on)))issues.push(`Line ${line.line_no}: ERP account ${line.account_code} is not approved for this client’s opening balance date.`);if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id} where journal_id=${j.journal_id}`;}
-  else{leader(a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);let activated:string[]=[];if(status==='Posted'){await sourceCheck(tx,j);activated=await activateJournalMappings(tx,a,project.client_id,j,l,await lines(tx,j.journal_id));}await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;return {ok:true,journal_id:j.journal_id,activated_mapping_count:activated.length};}
+  else{leader(a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);let activated:string[]=[];if(status==='Posted'){await sourceCheck(tx,j);await confirmJournalSources(tx,a,project,j,l,p.review_note);activated=await activateJournalMappings(tx,a,project.client_id,j,l,await lines(tx,j.journal_id));}await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;return {ok:true,journal_id:j.journal_id,activated_mapping_count:activated.length};}
   return {ok:true,journal_id:j.journal_id};
  }
  if(p.action==='ledger_reverse'){
@@ -232,7 +252,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   return {ok:true};
  }
  if(p.action==='ledger_depreciation_create'){
-  const asset=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id}`);if(asset.status!=='Approved')fail(400,'Obtain independent asset and class-rate approval first.');const start=date(p.starts_on),end=date(p.ends_on);if(start<day(l.starts_on)||end>day(l.ends_on)||end<start)fail(400,'Choose charge dates within the financial year.');
+  const asset=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id}`);if(!['Submitted','Approved'].includes(asset.status))fail(400,'Submit the asset classification and class rate first. They are reviewed when the depreciation journal is approved and posted.');const start=date(p.starts_on),end=date(p.ends_on);if(start<day(l.starts_on)||end>day(l.ends_on)||end<start)fail(400,'Choose charge dates within the financial year.');
   const result=periodAssetCharge(assetCalculation(asset,asset.rate_snapshot,l.starts_on,l.ends_on),asset,l.starts_on,l.ends_on,start,end);if(result.issues.length||result.book_period==null||result.tax_period_projection==null)fail(400,result.issues.join(' ')||'Complete the asset calculation.');
   if(!result.book_period)fail(400,'No book depreciation arises for these dates.');
   const posted=await tx`select c.*,j.status from erp_private.ledger_asset_charges c join erp_private.ledger_journals j using(journal_id) where c.asset_id=${asset.asset_id} order by c.starts_on`;

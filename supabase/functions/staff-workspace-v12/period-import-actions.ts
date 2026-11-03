@@ -76,6 +76,21 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
  return {kind,starts_on:start,ends_on:end,document_id:doc.document_id,payload,source_hash:hash,source_members:members,available,overlaps:await coverage(tx,project.client_id,kind,start,end)};
 }
 function cleanNote(v:any){return String(v||'').trim();}
+// Confirms a submitted period import. Used by the stand-alone review (tax-only use) and by
+// Gate B: posting the journal built from a submitted import confirms that import in the same action.
+export async function confirmPeriodImport(tx:any,a:any,project:any,r:any,note:any){
+ const pid=project.project_id;
+ if(r.status!=='Submitted')fail(409,'Only a submitted import can be confirmed.');
+ if(r.prepared_by===a.staff_id||!reviewer(a))fail(403,'A different Supervisor, Manager or Partner must review the source summary.');
+ await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
+ if(!(await tx`select erp_private.tax_period_open(${pid}::uuid,${r.starts_on}::date,${r.ends_on}::date) open`)[0].open)fail(409,'The tax period is submitted or locked.');
+ const overlaps=(await coverage(tx,project.client_id,r.kind,day(r.starts_on),day(r.ends_on))).filter((o:any)=>o.import_id!==r.import_id);
+ if(overlaps.length!==r.replaces_ids.length||overlaps.some((o:any)=>!r.replaces_ids.includes(o.import_id)))fail(409,'Period coverage changed. Create a fresh replacement.');
+ await replacementSafe(tx,r.replaces_ids);
+ await tx`select set_config('erp.period_import_replacement','confirmed',true)`;
+ if(r.replaces_ids.length)await tx`update erp_private.period_imports set status='Superseded' where import_id=any(${tx.array(r.replaces_ids)}::uuid[])`;
+ await tx`update erp_private.period_imports set status='Confirmed',reviewed_by=${a.staff_id},review_note=${text(note,4000)} where import_id=${r.import_id}`;
+}
 export async function periodImportAction(tx:any,a:any,p:any,storage:any){
  if(!String(p.action).startsWith('period_import_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Assigned accounting staff are required.');
@@ -112,15 +127,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
  if(p.action==='period_import_review'){
   if(!reviewer(a)||r.prepared_by===a.staff_id||r.status!=='Submitted')fail(403,'A different Supervisor, Manager or Partner must review.');
   const status=choice(p.status,['Confirmed','Returned']);
-  if(status==='Confirmed'){
-   await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
-   if(!(await tx`select erp_private.tax_period_open(${pid}::uuid,${r.starts_on}::date,${r.ends_on}::date) open`)[0].open)fail(409,'The tax period is submitted or locked.');
-   const overlaps=(await coverage(tx,project.client_id,r.kind,day(r.starts_on),day(r.ends_on))).filter((o:any)=>o.import_id!==r.import_id);
-   if(overlaps.length!==r.replaces_ids.length||overlaps.some((o:any)=>!r.replaces_ids.includes(o.import_id)))fail(409,'Period coverage changed. Create a fresh replacement.');
-   await replacementSafe(tx,r.replaces_ids);
-   await tx`select set_config('erp.period_import_replacement','confirmed',true)`;
-   if(r.replaces_ids.length)await tx`update erp_private.period_imports set status='Superseded' where import_id=any(${tx.array(r.replaces_ids)}::uuid[])`;
-  }
+  if(status==='Confirmed'){await confirmPeriodImport(tx,a,project,r,p.review_note);return {ok:true};}
   await tx`update erp_private.period_imports set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,4000)} where import_id=${r.import_id}`;return {ok:true};
  }
  if(p.action==='period_import_payroll_tax'){
