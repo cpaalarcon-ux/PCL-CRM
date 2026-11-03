@@ -14,7 +14,7 @@ test('draft project explains that retained UAT tasks do not mean the project is 
 });
 
 test('staging build cache key changes with the access guide',()=>{
- assert.match(appHtml,/2026-11-03\.1/);
+ assert.match(appHtml,/2026-11-03\.2/);
  assert.match(appHtml,/20261103-dependency-map-v1/);
 });
 
