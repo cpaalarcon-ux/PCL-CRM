@@ -1,0 +1,17 @@
+{
+  "name": "pcl-crm-staging-workbook",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs tests/*.test.cjs",
+    "test:browser": "node tests/improvement_browser.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.2",
+    "exceljs": "4.4.0",
+    "jsdom": "26.1.0",
+    "playwright": "1.62.1"
+  }
+}

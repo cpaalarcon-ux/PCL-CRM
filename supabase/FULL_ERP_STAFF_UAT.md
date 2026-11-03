@@ -1,0 +1,164 @@
+# Full ERP staff acceptance test plan
+
+**Target:** connected staff testing workspace only  
+**Use with:** [Consolidated connected testing release](CONNECTED_TESTING_SUITE.md), [Entity/activity and mapping release](ENTITY_ACTIVITY_V3.md), and [Import and ledger release](IMPORT_LEDGER_V12.md)
+
+Use the [PMS v6.0 alignment and additional acceptance gates](PMS_V6_UAT_ALIGNMENT_2026_10_28.md) for the Testing Firm, multi-tenant, subscription and detailed opening-balance status. These additions do not imply that those tests have passed.
+
+## Purpose and scope
+
+Use this plan to test the features that are connected in the staff workspace from client intake through project work, accounting review, billing, HR and communications. It is an acceptance checklist, not evidence that every listed test has passed. Record the actual build, tester, role, result and issue reference for each case.
+
+Open the shared staging workspace at `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. Confirm the visible banner says **STAGING ONLY — DO NOT FILE OR SEND** before entering data. Use the assigned staff login and approved fictional records. Do not use production client records, live filing credentials, or send an actual return, payment or client communication during UAT.
+
+Use these outcomes:
+
+- **Pass:** the observed result matches the expected result and evidence is retained.
+- **Fail:** the feature behaves differently from the expected result. Record the exact steps and error.
+- **Blocked:** the required test account, setup, evidence or permission is missing. Name the owner and dependency.
+- **Not tested:** the assigned tester did not perform the case. Add a reason and owner.
+
+## Role coverage
+
+| Role | Required checks |
+| --- | --- |
+| Engagement Partner | Approval gates, firm access, rates, project activation, finance authority and independent review boundaries |
+| Manager | Client setup, KYC checks, activity and stock setup, schedules, project activation and team controls |
+| Supervisor / independent reviewer | Independent review, return/lock, handover, evidence and source revision controls |
+| Preparer / Assistant | Assigned work, uploads, calculations, mapping, comments and submission for review |
+| Intern | Restricted navigation, assigned-work limits, document access and prohibited approval or client configuration |
+
+Run access cases with separate accounts. A role selector in a preview is not proof of server-enforced access.
+
+## Acceptance test matrix
+
+| ID | Feature and path | Expected result |
+| --- | --- | --- |
+| U01 | Sign in, refresh, remain idle, then sign out | The assigned user remains signed in under the configured session rules. Manual sign-out revokes the session; an old token cannot reopen protected records. |
+| U02 | Test each role and authorised handling firm | Navigation and API responses respect the user’s role and firm scope. A user cannot find or open another team’s private client, project, document or finance record. |
+| U03 | Staff & access: create staff, issue setup/reset link, disable a user | The link follows the stated expiry and single-use rules. Reset/disable takes effect, prior sessions are revoked as designed and no credentials are sent automatically. |
+| U04 | Leads: create, qualify, record next action, move to proposal and prepare client | Required lead details and follow-up are validated. The client profile carries the selected handling firm and does not activate a project by itself. |
+| U05 | Clients: complete identity, KYC/contact, authorised firms and review | Missing data remains visible. Verification requires the authorised reviewer and linked evidence. Client, legal entity, tax profile, industry and KYC values remain separate. Confirm legal entity, supporting source and financial year-end before opening-balance setup. |
+| U06 | Clients: set business activity and purchase mapping defaults | Choose from the pre-populated activity list. **Other — specify** requires a description. The suggested industry pack follows the activity, remains confirmable, and evidence and effective dates are retained. |
+| U07 | Client setup → project → purchase mapping | Saved activity and dated stock settings are available in later projects and mapping without re-entering client defaults. Multiple activities retain their effective dates; no stock setup is forced on a non-inventory expense. |
+| U08 | Client tax profile and service schedule | Taxpayer type, obligations, handler, preparer, independent reviewer and reporting dates persist. Defaults are reused by the project schedule. Missing statutory dates are not guessed. |
+| U09 | Client/staff Excel import | Worksheet and columns are mapped; counts reflect populated rows; duplicate records are skipped; incomplete profiles are flagged; existing client/staff values are not silently overwritten. |
+| U10 | Create or open project and activate it | A new project, direct task or task generation is blocked until client identity/year-end is complete and an opening TB source is staged, an opening journal is posted, or an authorised reasoned “No opening balances” confirmation is recorded. Existing open master project is reused where required. Activation checks signed engagement, KYC/conflict status and required approvals. |
+| U11 | Project periods and recurrence | Test each enabled frequency and a schedule crossing the year-end. Tasks release on their scheduled dates, carry the saved client defaults and do not duplicate on retry. |
+| U12 | Pause, resume, end and archive recurring work | Pause stops future releases; resume continues from the next scheduled date; end/cancel stops future work; archival retains completed period history and the next year can start without repeating setup. |
+| U13 | Upload evidence, signed letters and task documents | The file is linked to the correct client, firm, project, task and category. Unsupported types/sizes fail clearly; locked records remain protected; version history is visible. |
+| U14 | Standard purchases upload | The exact 14-column A–N template is recognised, row 1 is ignored as headings, transactions start on row 2, optional cells may remain blank, and source values remain unchanged. M/N are accepted only as a matched active ERP routing category and TB item account; valid codes preselect an unconfirmed suggestion, while invalid pairs fall back to manual dropdown mapping. Legacy 12-column files remain supported. |
+| U15 | Upload validation, totals and volume limits | Worksheet/period, imported/rejected/duplicate counts, two-decimal rounding and net/VAT/gross totals reconcile to the source. The 10,000-row limit is explained without silently dropping transactions. |
+| U16 | Credit note with and without original invoice references | Complete credits retain negative amounts and original invoice number/date. An incomplete credit is pending, excluded from final totals and mapping, and becomes importable after the corrected source is re-uploaded. |
+| U17 | Import repeat, changed source and row history | Exact repeats are idempotent and counted as duplicates. Changed values against an accepted identity are blocked with a clear reason. Source row, revision, file and reviewer history remain traceable. |
+| U18 | Map resale inventory, construction materials, expense and PPE | Each route shows compatible categories/accounts for the selected activity, inventory use and dated method. Construction captures the job/site reference. PPE captures asset/use and first-use status. |
+| U19 | Bulk mapping and selection | The selected count and net/VAT/gross are server-confirmed. Mixed classifications are not forced into one account. A stale, expired, altered or locked selection fails atomically and can be retried safely. |
+| U20 | Split mixed invoice and undo mapping | Allocation net and VAT conserve the original amounts exactly. Parent source remains a control; allocations do not double count. Undo follows the documented row/user/revision/period restrictions. |
+| U21 | Accounting preview, stock control and category request | Preview uses mapped, independently reviewed source rows and displays blockers. Stock controls use dated policy/evidence snapshots. Requests go to an authorised reviewer; they do not activate new accounts automatically. |
+| U22 | VAT reporting month and independent tax review | Client VAT month is visible and separate from the invoice date. Mapping does not approve a VAT claim or post a journal. An independent reviewer records the tax decision and evidence. |
+| U23 | Sales & VAT reconciliation and bank evidence | Sales/POS/bank source totals and explanations are traceable. Missing statements stay missing, not zero. Deferral and late supplement require independent review; a locked month is not silently rewritten. |
+| U24 | Client opening TB and ledger period review | Before any project/task, complete client identity and year-end, then stage the six-column A–F opening TB or record why no balances apply. It appears as a client-level Import Source, not as evidence. After the client-year project is created, import the staged file; verify the routing category and TB item codes, row references, any “Difference in Books” control row, debits/credits and source differences. Import creates a draft journal only. The preparer submits once; a different Manager or Partner checks the mappings and journal together, then approves and posts in one confirmed action. There is no separate Approved state or second posting approval. Rejected rows remain identifiable and reconciliation clearance is reviewer-attributed. |
+| U25 | Tax rates and client rule selection | Draft, review and Partner approval permissions work. Effective dates and sources are visible; approved versions cannot be overwritten or overlap. Testing-only rates are clearly labelled and excluded from live filing outputs. |
+| U26 | Supported tax computations and period workflow | Run representative enabled VAT, PAYE, TOT, WHT and income-tax cases. Missing rates or evidence create blockers rather than zero values. Another authorised reviewer returns or locks the case; preparers cannot approve themselves. |
+| U27 | Tax exports and KYC package | Downloads contain the expected PDF/XLSX and applicable supporting documents. Drafts are clearly marked **TESTING — NOT FOR FILING**. Export readiness does not claim that a return has been filed with KRA. |
+| U28 | Filing procedure and approval evidence | Preparer submission, independent review, client written approval, verified filing reference/date and payment evidence follow the required stages. The ERP records the external filing; it does not send a return or payment. |
+| U29 | Billing & WIP: create invoice from an activated engagement | Draft and approval controls use the correct client, project and issuing firm. The authoritative invoice number is unique. Recurring fee schedules use the project service description, saved before-VAT amount, VAT rate, dates and Monthly/Quarterly/Annual frequency. Generating due periods creates reviewable invoice drafts only; retries do not duplicate a schedule period. |
+| U30 | Payments, allocations and client statements | Cash, M-Pesa, bank and cheque receipts allocate to the correct invoice. Overpayment is blocked; corrections use reversal. Statements retain issuer firm and immutable dated snapshots. |
+| U31 | Timesheets, rates, approval and WIP | Assigned-task time is separate from attendance. Rates are effective-dated; missing rates remain visible. Only approved, locked time feeds WIP and corrections retain reversal history. |
+| U32 | Time & HR: attendance, leave and capacity | Clock-in/out, break, leave approval and roster capacity follow the role rules. Attendance does not sign the user out, create billable client time or calculate payroll. |
+| U33 | Communications, handover and support | Logs retain author, time, client/project and status. Forward/escalate records recipient and message. Support routing and response deadlines are visible. Logging does not send email or meeting invitations. |
+| U34 | Letters and staff QR | Saved letters retain client/firm scope and produce a client-ready printable letter. A separate staff QR and link appear in the ERP preview only; access requires authorised staff login and record permission. Non-letter communications have no QR action. The staff QR is not an electronic signature, invoice QR or external client portal. |
+| U35 | Home dashboard, global search and alerts | Assigned work, upcoming deadlines, unread notes and pending uploads link to the right record. Review counts disclose their included queues; reconciliation alert labels match their sources. Search obeys the same role and firm restrictions as direct navigation. |
+| U36 | Performance and responsive layout | Record load time, row count, filters, browser/device and viewport. Verify 25-row server pagination, stable page navigation and correct totals with 1,500 tasks; do not mark this passed based on a client-side slice. Test modal scrolling and keyboard/focus behavior at the agreed staff widths. |
+| U37 | Recurring engagement fees | In **Billing & WIP → Recurring fees**, set a project, consistent invoice description, fee before VAT, VAT rate, cadence and dates. Confirm due drafts; pause, resume and cancel future drafts. Existing invoices remain unchanged, cancellations require a reason, permissions are enforced, and each due project period produces at most one draft. This is separate from recurring work/task schedules. |
+| U38 | TOT final-tax treatment, VAT coexistence and simplified records | With a fictional resident trader, verify TOT eligibility and evidence, and record the rolling 12-month taxable-supplies figure. Confirm TOT may coexist with VAT at the KRA threshold, while ordinary income tax/instalment tax is not generated for income covered by TOT. Confirm the TOT computation uses gross sales with no expense deductions. A preparer attaches the daily sales and daily purchase records and enters the supported daily-register total without re-entering each sale as bookkeeping; eTIMS invoice compliance is tracked separately. Missing/unknown eligibility, obligation status, threshold data or evidence blocks scheduling/calculation. Use an independent reviewer and leave the release check Not tested until evidence is recorded. |
+
+For every **Fail** or **Blocked** result, attach a redacted screenshot or source-row reference and record the actual build. Do not retry a failed import or bulk action until its batch result and row status have been checked.
+
+## Explicitly outside this UAT release
+
+Record these as **Not available / separate build**, not as passing integrations: external client portal and external PBC uploads, live KRA access or filing, eTIMS submission, M-Pesa gateway callbacks, automatic invoice posting, live IMAP/SMTP delivery, OAuth-generated meeting links, full SKU/perpetual cost-of-sales engine, the complete historical audit-file programme, payroll payment processing, GPS/site verification, backup restore certification and a 1,000-user load test. The active screens must not imply that these integrations ran.
+
+## Readiness gates for a high score
+
+### Target 9/10 before wider staff testing
+
+- Every critical flow U01–U35 has a recorded outcome and evidence; no unresolved Critical or High defects remain.
+- Client defaults carry from setup to project, recurring tasks and mapping; the activity dropdown and “Other” path work at both setup entry points. Opening TB staging occurs after identity/year-end and before project/task setup; purchase code suggestions require staff confirmation.
+- No cross-client or cross-firm access, source-value changes, duplicated totals, skipped records, duplicate tasks or duplicate invoices are found.
+- Uploads, mapping, independent tax review, billing, session/security and role restrictions pass with separate accounts.
+- All remaining Medium/Low findings have an owner, workaround and target date. U36 has measured results and a supported screen-size review.
+
+### Target 10/10 for a release decision
+
+- All in-scope cases pass in the exact release candidate on supported browsers and screen sizes; no Critical, High or Medium defect remains open.
+- Staff sign-off and Partner/Manager approval are recorded, and the exact build, migrations and rollback point are known.
+- Backup restoration, security review and agreed peak-load/performance targets are evidenced for the deployment environment.
+- Separate integrations or functions listed above are either completed and independently tested or formally excluded from the product claim and rollout scope.
+
+A readiness score is earned from recorded evidence and closed defects. It cannot be guaranteed before staff execute this plan.
+
+## Dated activities, obligations and dependency map — 3 November 2026 staging candidate
+
+These are acceptance cases for the current staging build. They are **not passed** until staff exercise the browser and API with separate accounts and attach evidence.
+
+| ID | Feature and path | Expected result |
+| --- | --- | --- |
+| U39 | Client setup → add multiple dated activities, select one primary, optionally allocate turnover shares, preview, submit, and have a different Manager/Partner review | Each activity is stored with its code, effective dates, primary flag and share. Invalid overlap, a gap with no primary, duplicate activity, or non-100% allocated shares is blocked. The preview is immutable; approval applies one audited batch from its effective date. |
+| U40 | Dependency map → combine Wholesale, Retail and Construction, then end one activity | The preview lists additions, retained dependencies and dependencies that will end. Shared workflows appear once, source attribution is retained, the end date does not erase history, and an ending is blocked if it would leave no primary activity. The UAT map remains `Testing`. |
+| U41 | Client tax profile → select several obligations and enter each obligation’s registration, applicability, client status, evidence, dates and handling firm | Missing or `To confirm` facts never create filing tasks. A task is created only for the verified date range and the firm handling that client. Unknown figures are not treated as zero. |
+| U42 | TOT + VAT threshold and finality | TOT and VAT can coexist. At KES 5m taxable supplies the VAT registration position and evidence are required. TOT-covered income creates no ordinary income-tax, instalment-tax or advance-tax task; daily sales/purchase records and eTIMS invoicing remain separate controls. The dated rule and Tax Lead review are recorded. |
+| U43 | Activity-tagged purchases, split invoices and accounting preview | Every applicable purchase line receives the sole active activity or requires a staff selection when more than one applies. Split rows inherit the activity and retain the source reference. No activity mismatch is posted or hidden. |
+| U44 | KYC evidence model → upload, physical document, online check and beneficial-owner record | One document may cover multiple KYC requirements. Physical/online evidence has its location/source, reference, date and independent sighting/checker; Gate A is confirmed by someone other than the recorder/sighter. Expiry and owner screening are visible. **Current KYC screen integration remains a release gap until exercised.** |
+| U45 | Production release gate | The dependency map, TOT/VAT rule, KYC document rules and beneficial-owner qualification checks remain `Not tested` until independently reviewed. Production deployment and any live filing remain blocked while any required gate is unresolved. |
+| U46 | Attached workflow gate reference → ERP workflow | Use the supplied workflowGates.js for compatible validation principles: missing inputs are Not ready, source date/client/currency and duplicate rows are checked, unmapped rows need resolution, exclusions need reasons, totals must balance, and reports use posted work. The attachment’s separate APPROVED → POSTED transitions and broad period_sources gate are superseded by the approved ERP model: one independent period reviewer action approves and posts, with named close checks and reports blocked while inputs remain incomplete. Verify the API rejects status=Approved, a preparer cannot review/post, an edit/revision mismatch cannot pass review, and unposted work does not enter reports. |
+
+## Access rights and financial-year catch-up — attached review Areas 17 and 18
+
+These checks come from *ERP System Review and Update — Access rights for every ERP item, and catch-up years for previous periods*, v1.0. The current code has role-based area restrictions and one catch-up upload for a range of months. That does not yet demonstrate the attached per-item/per-action access matrix or one package per financial year. Every check below remains **Not checked** until the behavior is present and tested on staging with synthetic records.
+
+| ID | Specification check | Staging acceptance test | Status |
+| --- | --- | --- | --- |
+| U47 | 17.1, 17.2, 17.3 | Confirm the five staff roles (Partner, Manager, Supervisor, Assistant and Intern) have explicit per-item rights for view, create, edit, archive, approve and export. Treat Billing, HR and Settings as permission areas, not additional staff roles. Confirm an unlisted action is denied. | Not checked |
+| U48 | 17.4 | Test Partner firm scope, Manager firm/team scope, Supervisor/Assistant assigned-engagement scope, and own-item scope. Seeing a client must not grant edit, post, file or export rights. | Not checked |
+| U49 | 17.5, 17.9 | Narrow one person's area access and confirm it cannot exceed the role baseline. Test that only an authorised Manager/Partner can change it, a reason is recorded, the change is audited, and it stays in force until explicitly restored. Timed access expiry is not implemented and must not be represented as available. | Not checked |
+| U50 | 17.6 | Archive and restore an eligible draft. Confirm posted entries, approved periods, KYC evidence and audit records cannot be deleted. | Not checked |
+| U51 | 17.7 | Exercise Gates A, B and C with separate preparer, reviewer, rule author and approver accounts. Confirm the server checks independence at each action. | Not checked |
+| U52 | 17.8 | Export a client list, tax report and audit pack. Confirm the audit record captures the actor, item, time and export type. | Not checked |
+| U53 | 17.10 | Open the Partner quarterly access review and reconcile roles, narrowed rights, temporary access and unused rights to the staff register. | Not checked |
+| U54 | 18.1 | Use a November 2026 go-live with FY2024 and FY2025 plus months before go-live in FY2026. Confirm one task exists per prior year and one task covers only the current-year pre-go-live months; monthly tasks begin in November. | Not checked |
+| U55 | 18.2 | Confirm each catch-up task checklist follows that year's activities and obligations, identifies sources and filed/to-file/amend returns, and asks for an opening TB only for the earliest year. | Not checked |
+| U56 | 18.3 | Attempt to submit FY2025 before FY2024 is locked. The system must block it; after FY2024 closes, opening balances must roll forward to FY2025. | Not checked |
+| U57 | 18.4 | Submit a catch-up financial year to Gate B once. Confirm one independent reviewer action posts and locks all months in that catch-up year together, with separate audit events for each posted step. | Not checked |
+| U58 | 18.5 | Upload an annual file containing `financial_year`, `period_month`, `claim_month`, `data_level`, `return_type`, `return_reference` or acknowledgement number, and `filed_date`. Confirm each import recognises the fields without retyping them. | Not checked |
+| U59 | 18.6 | Test transactions outside the selected financial year, a transaction date inconsistent with `period_month`, a valid different purchase `claim_month`, and duplicate lines within one period. Only the valid claim-month exception is accepted. | Not checked |
+| U60 | 18.7 | Compare each catch-up month's totals to its filed return. Differences must appear as possible amendments with a reason and evidence; no unrelated month is reopened. | Not checked |
+| U61 | Summary-to-line replacement | Replace a monthly or annual summary with line detail later. Confirm source controls reconcile and unrelated closed months remain locked. | Not checked |
+| U62 | Combined access/catch-up test | Run the FY2024–FY2026 catch-up using separate preparer and reviewer accounts. Confirm rights, task assignment, annual imports, oldest-first posting, audit trail and export restrictions together. | Not checked |
+| U63 | Screenshot: Staff & access → Edit access for TEST 7 (Audit Assistant) | The screenshot shows the five-role model and the Assistant baseline areas (Clients, Projects & tasks, Time & HR, Documents, Communications, Audit & assurance); Billing & WIP, Leads, Staff & access and Settings are unavailable. On a fictional account, remove Clients and Documents with a reason, then try direct API actions including client update, activity submission, upload and download. Each must be denied without leaking client data; the access-change audit event must exist; restore access and confirm the restriction remains until that restoration. Do not alter the actual TEST 7 account during this case. | Not checked |
+
+Automated unit coverage has been expanded for the access restrictions that exist today and for the current month-range catch-up input rules. GitHub Actions run #36 passed 249 checks and a Chromium flow with a mocked backend; this does not establish the missing per-item permission matrix, annual imports or year-wide Gate B behavior. The U47–U63 staging checks are still required before those requirements can be marked Aligned or Done.
+
+## Staging update record — 3 November 2026
+
+The staging database now contains the dated dependency-map, activity, obligation and KYC evidence schema. The seeded dependency map and the TOT/VAT, KYC-rule and beneficial-owner release checks are explicitly marked **Not tested**. This update is for staff UAT only. It does not approve the rule map, certify KYC alignment, or authorize production use.
+
+## Workflow gate reference reconciliation — 3 November 2026
+
+The attached workflowGates.js is treated as a reference for validation and reporting controls, not as a drop-in replacement for the current workflow. Its two-step APPROVED then POSTED status conflicts with the approved single-review model. The ERP keeps Draft/Returned → Submitted → Posted (or Returned), where the independent Manager/Partner decision writes the review and posting event together. It also keeps the narrower named source, bank, tax, payroll, balance-sheet and trial-balance checks instead of treating “Period sources posted” as a sufficient month-close control. The attached checklist’s client/year identity, source closing date, currency, duplicate rows, mapped/explained rows, balanced totals and posted-only reporting principles are included in UAT.
+
+## Staging candidate update — 3 November 2026
+
+The staging branch head is `ebe08c381a56c275ccc33786195628f7a48f8fb2`; the access-guard code from `d43b6ca58b3a1861fabc941254b14fb02e376a8a` is deployed to staging as `staff-workspace-v12` version 42. GitHub Actions run #36 passed **249/249** automated checks and its Chromium flow, which uses a local test server and mocked backend. `git diff --check` passed for the local candidate. These results do not establish the missing per-item access matrix or financial-year catch-up workflow. The staging database has the dated activity/obligation dependency map, TOT/VAT obligation alignment and KYC evidence schema. Branch source is build `2026-11-03.2`, but the connected frontend still shows `2026-11-03.1`; the frontend update is not verified as deployed. Hosted role UAT remains **Not tested**. This is a staging candidate, not production approval.
+
+The supplied Staff & access screenshot corresponds to the Audit Assistant access editor and displays the expected role areas. No changes were made to TEST 7's individual access. The screenshot alone does not prove that stored restrictions are enforced by the deployed API; U63 remains **Not checked** and must use a fictional account for restriction, denial and audit-log evidence.
+
+Known gaps that remain visible and must be tested or closed before production:
+
+- The client KYC screen still uses the legacy evidence-link workflow and does not yet use the new upload/physical/online evidence rows, complete beneficial-owner fields, or versioned post-activation KYC review flow. U44 remains **Not tested**.
+- General client-account mappings still have a separate approval action. Opening-TB mapping approval is retired, but the broader approval model has not yet been fully reconciled to the single period-review gate.
+- The dependency map is previewed and stored, but automatic creation of every downstream feature and task from its dated selections has not been fully evidenced.
+- The seeded dependency map, TOT/VAT rule, KYC evidence rules and beneficial-owner qualification check remain **Not tested**. Their rule owners must complete review before activation or live use.
+- No staff browser UAT with separate preparer/reviewer accounts has been recorded for this candidate. Testing must use approved synthetic records and must not file or send anything to KRA or clients.
+
+Production remains held until the gaps above are resolved or explicitly scoped out, the named UAT cases pass on the exact candidate, rule owners sign their release checks, and the accountable Partner approves the release.

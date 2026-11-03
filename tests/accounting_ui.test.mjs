@@ -1,0 +1,44 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {createRequire} from 'node:module';import {readFile} from 'node:fs/promises';
+const require=createRequire(import.meta.url),{JSDOM}=require(require.resolve('jsdom',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
+const dom=new JSDOM('<dialog id="editor"><h2 id="title"></h2><p id="editorNotice"></p><div id="editorBody"></div></dialog>',{url:'https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot'});globalThis.document=dom.window.document;globalThis.FormData=dom.window.FormData;dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};dom.window.HTMLDialogElement.prototype.close=function(){this.open=false;};
+const {$}= { $:s=>document.querySelector(s)},esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const field=(n,l,v='',t='text',extra='')=>`<label>${l}<input name="${n}" value="${esc(v)}" type="${t}" ${extra}></label>`,select=(n,l,items,value='')=>`<label>${l}<select name="${n}"><option value="">Choose</option>${items.map(x=>{const [k,v]=Array.isArray(x)?x:[x,x];return `<option value="${k}" ${k===value?'selected':''}>${v}</option>`;}).join('')}</select></label>`,form=(b,l='Save')=>`<form id="editForm">${b}<button type="submit">${l}</button></form>`;
+const accounts=JSON.parse(await readFile(new URL('../supabase/functions/staff-workspace-v6/account-catalog.json',import.meta.url))).accounts.map(x=>({...x,status:'Active'})),calls=[],pid='00000000-0000-4000-8000-000000000001';
+let rows=[1,2].map((n)=>({row_id:'00000000-0000-4000-8000-00000000000'+(n+1),dataset:'Purchases',revision:1,source_row:n+8,sheet_name:'B02A',normalized:{date:'2026-09-01',invoice:'INV-'+n,party:'Example supplier',amount:n===1?1000:4000,vat:n===1?160:640},raw_values:{Invoice:'INV-'+n},warnings:[]}));
+const state={me:{staff_id:'me',category_code:'ASSISTANT'},staff:[],documents:[],projects:[]};let clientMappings=[{erp_account_code:'61010',effective_from:'2026-01-01',effective_to:null},{erp_account_code:'10190',effective_from:'2026-01-01',effective_to:null}];
+const request=async p=>{calls.push(p);if(p.action==='workbook_rows')return {rows,total:rows.length,accounts,client_account_mappings:clientMappings,policy:{inventory_method:'Perpetual'},activities:[],policies:[],stock_categories:[],rejections:[]};if(p.action==='v3_mapping_select')return {selection_id:'selection-1',selection_hash:'hash-1',count:2,net:2000,vat:320,mapping_dates:['2026-09-01'],mapping_periods:[{period:'2026-09-01',count:2,net:2000,vat:320}],mapping_period:'2026-09-01'};if(p.action==='workbook_map_bulk'){for(const x of rows){if(p.rows?.some(i=>i.row_id===x.row_id)){const a=accounts.find(a=>a.code===p.account_code);x.account_code=a.code;x.account_name=a.name;x.route=Number(p.route);x.revision++;}}return {ok:true};}if(p.action==='workbook_split')return {ok:true};if(p.action==='v3_activity_add')return {activity_id:'activity-1'};if(p.action==='v3_project_read')return {activities:[{activity_id:'activity-1',activity_name:'Construction and building works',pack_code:'Construction',effective_from:'2026-09-01'}],policies:[],stock_categories:[]};if(p.action==='accounting_read')return {accounts,policy:{inventory_method:'Perpetual'},reconciliations:[]};if(p.action==='accounting_catalog')return {accounts};return {ok:true};};
+function modal(title,body,save,after){$('#title').textContent=title;$('#editorBody').innerHTML=body;$('#editor').showModal();const f=$('#editForm');if(f)f.onsubmit=async e=>{e.preventDefault();const r=await save(new FormData(f));$('#editor').close();if(after)await after(r);};}
+const {createAccountingUI}=await import('../staff-accounting.mjs');const ui=createAccountingUI({$,esc,field,select,form,modal,request,notice:()=>{},shortDate:v=>v||'',today:()=> '2026-10-24',projectName:()=> 'Example project',data:()=>state});
+const pause=()=>new Promise(r=>setTimeout(r,25));async function click(s){assert.ok($(s),s);$(s).click();await pause();}function set(el,v,type='change'){el.value=v;el.dispatchEvent(new dom.window.Event(type,{bubbles:true}));}
+test('purchase selection, dynamic accounts and balanced invoice splitting are usable',async()=>{
+ await ui.imported(pid);assert.equal(document.querySelectorAll('[data-purchase-row]').length,2);assert.ok($('#purchaseBar').hidden);$('#purchaseAll').checked=true;$('#purchaseAll').dispatchEvent(new dom.window.Event('change'));assert.match($('#purchaseSelection').textContent,/2 rows selected/);assert.match($('#purchaseSelection').textContent,/5,000/);
+ await click('[data-accounting=bulk-2]');assert.ok($('#editor').classList.contains('accounting-drawer'));const f=$('#editForm');set(f.elements.category,'EXP01');assert.ok([...f.elements.account_code.options].some(x=>x.value==='61010'));assert.ok(![...f.elements.account_code.options].some(x=>x.value==='62500'));f.elements.account_code.value='61010';f.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();assert.equal(calls.find(x=>x.action==='workbook_map_bulk').rows.length,2);assert.match($('#editorBody').textContent,/Unreviewed/);
+ await click('[data-accounting=split]');assert.equal($('#editForm button[type=submit]').disabled,true);const parts=[...document.querySelectorAll('[data-allocation-part]')];for(const [i,el] of parts.entries()){set(el.querySelector('[data-part=route]'),i===0?'1':'2');set(el.querySelector('[data-part=account_code]'),i===0?'10190':'61010');set(el.querySelector('[data-part=amount]'),i===0?'600':'400','input');set(el.querySelector('[data-part=vat]'),i===0?'96':'64','input');set(el.querySelector('[data-part=narration]'),'Supported allocation','input');}
+ assert.equal($('#editForm button[type=submit]').disabled,false);$('#editForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();const split=calls.find(x=>x.action==='workbook_split');assert.equal(split.parts.length,2);assert.equal(split.parts[0].account_code,'10190');assert.equal(split.parts[1].amount,'400');
+ await ui.reconciliations(pid);assert.match($('#editorBody').textContent,/Weekly month-to-date/);await ui.catalog();assert.equal(document.querySelector('[data-accounting=account-new]'),null);assert.match($('#editorBody').textContent,/273 accounts/);
+});
+
+test('valid uploaded routing and TB codes group rows without client-account setup and require explicit staff confirmation',async()=>{
+ state.me.category_code='ASSISTANT';
+ clientMappings=[];
+ const hint={route:2,category_code:'EXP01',account_code:'61010',confirmed:false};
+ rows=[1,2].map(n=>({row_id:'00000000-0000-4000-8000-00000000000'+(n+20),dataset:'Purchases',revision:1,source_row:n+20,sheet_name:'Purchase Upload',normalized:{date:'2026-09-01',invoice:'HINT-'+n,party:'Example supplier',amount:1000,vat:160,mapping_suggestion:hint},raw_values:{Invoice:'HINT-'+n},warnings:[]}));
+ await ui.imported(pid);
+ const group=$('[data-map-hint="0"]');assert.ok(group);assert.match(group.textContent,/Review matching code/);group.click();await pause();
+ assert.match($('#title').textContent,/Confirm uploaded account/);assert.equal($('#editForm').elements.account_code.value,'61010');assert.match($('#editorBody').textContent,/routing EXP01 · TB item 61010/);
+ const confirm=$('#editForm [name=confirm_uploaded_mapping]');assert.ok(confirm);confirm.checked=true;
+ $('#editForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
+ const selected=calls.findLast(x=>x.action==='v3_mapping_select');assert.deepEqual(selected.mapping_hint,{route:2,category_code:'EXP01',account_code:'61010'});
+ const saved=calls.findLast(x=>x.action==='workbook_map_bulk');assert.equal(saved.selection_id,'selection-1');assert.equal(saved.account_code,'61010');assert.equal(saved.category,'EXP01');assert.equal(saved.confirm_uploaded_mapping,true);
+});
+
+test('mapping setup sends missing activity setup to the dated multi-activity client flow',async()=>{
+ state.me.category_code='MANAGER';state.projects=[{project_id:pid,client_id:'client-1'}];
+ rows=[{row_id:'00000000-0000-4000-8000-000000000003',dataset:'Purchases',revision:1,source_row:9,sheet_name:'B02A',normalized:{date:'2026-09-01',invoice:'INV-ACTIVITY',party:'Example supplier',amount:1000,vat:160},raw_values:{Invoice:'INV-ACTIVITY'},warnings:[]}];
+ await ui.imported(pid);$('#purchaseAll').checked=true;$('#purchaseAll').dispatchEvent(new dom.window.Event('change'));await click('[data-accounting=bulk-1]');
+ assert.ok($('#configureClientActivity'));await click('#configureClientActivity');
+ assert.match($('#editorNotice').textContent,/multiple dated activities/i);
+ assert.equal($('#editForm [name=activity_name]'),null);
+ assert.equal(calls.some(x=>x.action==='v3_activity_add'),false);
+ dom.window.close();
+});
