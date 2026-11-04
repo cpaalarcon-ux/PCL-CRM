@@ -1,6 +1,7 @@
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {entityInput,partnerRatios,stockValues,suggestionFor,exportReadiness,packs,streams,asDay} from './improvement-rules.mjs';
 import {money} from './accounting-rules.mjs';
+import {dependencyTaskAction,syncClientDependencyTasks} from './dependency-tasks.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'Record unavailable to this account.');return r[0];};
 const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must maintain client configuration.');};
 const reviewer=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'Independent Supervisor, Manager or Partner review required.');};
@@ -41,6 +42,7 @@ async function stockSource(tx:any,c:any){
 export async function improvementAction(tx:any,a:any,p:any,storage?:any){
  if(!String(p.action).startsWith('v3_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Client configuration and working-paper controls are unavailable to Interns.');
+ {const dependencyResult=await dependencyTaskAction(tx,a,p);if(dependencyResult!==undefined)return dependencyResult;}
  if(p.action==='v3_client_mapping_readiness'){
   leader(a);
   return await tx`select c.client_id,
@@ -103,6 +105,7 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
     const rules=await tx`select dependency_code from erp_private.dependency_map_rules where version_id=${change.version_id} and source_type='ACTIVITY' and source_code=${r.activity_code}`;for(const rule of rules)await tx`insert into erp_private.client_dependency_sources(client_id,source_type,source_id,source_code,dependency_code,version_id,effective_from,effective_to,created_by) values(${cid},'ACTIVITY',${inserted.activity_id},${r.activity_code},${rule.dependency_code},${change.version_id},${r.effective_from},${r.effective_to},${a.staff_id}) on conflict(source_type,source_id,dependency_code,version_id) do nothing`;
    }
    if(primarySector)await tx`update erp_private.clients set primary_sector=${primarySector} where client_id=${cid}`;
+   await syncClientDependencyTasks(tx,a,cid);
   }
   await tx`update erp_private.client_setup_change_sets set status=${status},review_note=${note},reviewed_by=${a.staff_id},reviewed_at=now() where change_id=${change.change_id}`;return {ok:true,status};
  }

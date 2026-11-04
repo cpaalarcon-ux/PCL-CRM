@@ -1,4 +1,5 @@
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
+import {syncClientDependencyTasks} from './dependency-tasks.ts';
 import {number,day} from './suite-rules.mjs';
 import {one,leader,today} from './suite-actions.ts';
 
@@ -144,7 +145,7 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   if((k.is_pep||k.risk_rating==='High')&&!k.edd_approved_by)fail(400,'The Engagement Partner must approve enhanced due diligence.');
   if(!e?.signed_letter_id||!e.letter_verified_by||e.letter_expires_on&&iso(e.letter_expires_on)<today())fail(400,'Upload and verify a current signed engagement letter PDF, then save the engagement controls.');
   if(project.sme_audit_exempt&&project.service_code.startsWith('AUD-')&&!project.audit_requested)fail(400,'Confirm that the client has requested an optional audit before activating it.');
-  await tx`update erp_private.projects set status='Active' where project_id=${project.project_id}`;
+  await tx`update erp_private.projects set status='Active' where project_id=${project.project_id}`;await syncClientDependencyTasks(tx,a,project.client_id);
   const [generated]=await tx`select erp_private.generate_project_tasks(${project.project_id}::uuid) generated`;
   return {ok:true,project_status:'Active',generated:generated.generated};
  }
