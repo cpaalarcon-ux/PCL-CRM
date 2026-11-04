@@ -1,6 +1,7 @@
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {clientChartAction,requireChartAccount,chartCatalogue} from './client-chart.ts';
-import {entityInput,partnerRatios,stockValues,suggestionFor,exportReadiness,packs,streams,asDay} from './improvement-rules.mjs';
+import {entityInput,partnerRatios,stockValues,suggestionFor,exportReadiness,packs,streams,asDay,VAT_CATEGORIES,vatCategoriesInput} from './improvement-rules.mjs';
+import {salesNetByCategory} from './stock-vat.ts';
 import {money} from './accounting-rules.mjs';
 import {dependencyTaskAction,syncClientDependencyTasks} from './dependency-tasks.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'Record unavailable to this account.');return r[0];};
@@ -35,10 +36,12 @@ async function evidence(tx:any,id:any,pid:string){return one(await tx`select doc
 async function stockSource(tx:any,c:any){
  const rows=await tx`select r.row_id,r.revision,r.account_code,r.normalized,r.review_details,r.route,v.decision,v.source_revision,v.deductible_percentage from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id) where r.project_id=${c.project_id} and b.archived_at is null and b.period_start>=${asDay(c.starts_on)} and b.period_end<=${asDay(c.ends_on)} and not r.is_split_parent and r.dataset in ('Purchases','Expenditure','Non-eTIMS') order by r.row_id limit 10001`;
  if(rows.length>10000)fail(400,'Use a stock period with at most 10,000 source rows.');
- const selected=rows.filter((r:any)=>r.review_details?.activity_id===c.activity_id&&r.review_details?.stock_class===c.stock_class&&r.route===1);
+ const vat=c.vat_category||null;
+ const selected=vat?rows.filter((r:any)=>r.route===1&&r.review_details?.activity_id===c.activity_id&&r.normalized?.vat_category===vat):rows.filter((r:any)=>r.review_details?.activity_id===c.activity_id&&r.review_details?.stock_class===c.stock_class&&r.route===1);
+ const net_sales=vat?(await salesNetByCategory(tx,c.project_id,c.starts_on,c.ends_on))[vat]??0:null;
  const cost=(r:any)=>money(Number(r.normalized.amount||0)+(r.decision==='Eligible'?Number(r.normalized.vat||0)*(1-Number(r.deductible_percentage||0)/100):r.decision==='Excluded'?Number(r.normalized.vat||0):0));
  const landed=(r:any)=>['50030','50040','50050'].includes(r.account_code);
- return {rows,fingerprint:await digest(rows),selected_count:selected.length,resale_purchases:money(selected.filter((r:any)=>!landed(r)).reduce((s:number,r:any)=>s+cost(r),0)),landed_costs:money(selected.filter(landed).reduce((s:number,r:any)=>s+cost(r),0)),unreviewed:selected.filter((r:any)=>r.source_revision!==r.revision||!['Eligible','Excluded'].includes(r.decision)).length,unallocated:rows.filter((r:any)=>!r.account_code||r.route===1&&(!r.review_details?.activity_id||!r.review_details?.stock_class)).length};
+ return {rows,net_sales,fingerprint:await digest(vat?{rows,net_sales}:rows),selected_count:selected.length,resale_purchases:money(selected.filter((r:any)=>!landed(r)).reduce((s:number,r:any)=>s+cost(r),0)),landed_costs:money(selected.filter(landed).reduce((s:number,r:any)=>s+cost(r),0)),unreviewed:selected.filter((r:any)=>r.source_revision!==r.revision||!['Eligible','Excluded'].includes(r.decision)).length,unallocated:rows.filter((r:any)=>!r.account_code||r.route===1&&(!r.review_details?.activity_id||!r.review_details?.stock_class)).length};
 }
 export async function improvementAction(tx:any,a:any,p:any,storage?:any){
  if(!String(p.action).startsWith('v3_'))return undefined;
@@ -196,8 +199,13 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
   const basis=text(p.valuation_basis||'',2000,false),policyEvidence=stockPolicyEvidence(p);
   return one(await tx`insert into erp_private.stock_policy_versions(client_id,activity_id,inventory_method,valuation_basis,effective_from,count_frequency,variance_threshold,evidence,configured_by) values(${cid},${activity.activity_id},${choice(p.inventory_method,['Periodic','Perpetual'])},${basis},${from},${choice(p.count_frequency,['Weekly','Monthly','Annually'])},${threshold},${policyEvidence},${a.staff_id}) returning policy_id`);
  }
+ if(p.action==='v3_vat_categories_save'){
+  leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);
+  const cats=vatCategoriesInput(p.vat_categories_sold);
+  await tx`update erp_private.clients set vat_categories_sold=${tx.array?tx.array(cats):cats} where client_id=${c.client_id}`;return {ok:true,vat_categories_sold:cats};
+ }
  const pr=await project(tx,p.project_id),pid=pr.project_id;
- if(p.action==='v3_project_read')return {activities:await tx`select * from erp_private.client_activities where client_id=${pr.client_id} order by activity_name`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${pr.client_id} order by effective_from desc`,controls:await tx`select * from erp_private.stock_controls where project_id=${pid} order by ends_on desc`,requests:await tx`select * from erp_private.category_requests where project_id=${pid} order by created_at desc limit 100`};
+ if(p.action==='v3_project_read')return {vat_categories_sold:(await tx`select vat_categories_sold from erp_private.clients where client_id=${pr.client_id}`)[0]?.vat_categories_sold||null,activities:await tx`select * from erp_private.client_activities where client_id=${pr.client_id} order by activity_name`,policies:await tx`select * from erp_private.stock_policy_versions where client_id=${pr.client_id} order by effective_from desc`,controls:await tx`select * from erp_private.stock_controls where project_id=${pid} order by ends_on desc`,requests:await tx`select * from erp_private.category_requests where project_id=${pid} order by created_at desc limit 100`};
  if(p.action==='v3_mapping_select'){
   const search='%'+text(p.search||'',160,false)+'%',mapping=choice(p.mapping||'All',['All','Unmapped','Inventory','Expenditure','PPE']),dataset=choice(p.dataset||'Costs',['Costs','Purchases','Expenditure','Non-eTIMS']),rate=choice(p.vat_category||'All',['All','16%','8%','0%','Exempt','Non-eTIMS','Unconfirmed']);
   let mappingHint:any=null;
@@ -227,7 +235,16 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
  }
  if(p.action==='v3_stock_create'){
   const [s,e]=range(p),activity=one(await tx`select * from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${pr.client_id} and effective_from<=${s} and (effective_to is null or effective_to>=${e})`),policy=one(await tx`select * from erp_private.stock_policy_versions where activity_id=${activity.activity_id} and effective_from<=${s} order by effective_from desc limit 1`);
-  return one(await tx`insert into erp_private.stock_controls(project_id,activity_id,policy_id,stock_class,starts_on,ends_on,prepared_by) values(${pid},${activity.activity_id},${policy.policy_id},${text(p.stock_class,100)},${s},${e},${a.staff_id}) returning control_id`);
+  const vat=p.vat_category?choice(p.vat_category,VAT_CATEGORIES):null,sold=(await tx`select vat_categories_sold from erp_private.clients where client_id=${pr.client_id}`)[0]?.vat_categories_sold;
+  if(vat&&sold&&!sold.includes(vat))fail(400,`Client does not sell ${vat} goods. No ${vat} stock roll is needed; change the client's VAT categories first if this is wrong.`);
+  return one(await tx`insert into erp_private.stock_controls(project_id,activity_id,policy_id,stock_class,starts_on,ends_on,prepared_by,vat_category) values(${pid},${activity.activity_id},${policy.policy_id},${vat?'VAT '+vat:text(p.stock_class,100)},${s},${e},${a.staff_id},${vat}) returning control_id`);
+ }
+ if(p.action==='v3_stock_create_vat'){
+  const [s,e]=range(p),activity=one(await tx`select * from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${pr.client_id} and effective_from<=${s} and (effective_to is null or effective_to>=${e})`),policy=one(await tx`select * from erp_private.stock_policy_versions where activity_id=${activity.activity_id} and effective_from<=${s} order by effective_from desc limit 1`);
+  const sold=(await tx`select vat_categories_sold from erp_private.clients where client_id=${pr.client_id}`)[0]?.vat_categories_sold;
+  if(!sold)fail(400,'Record the VAT categories this client sells first (Client setup → VAT categories sold).');
+  const made=[];for(const vat of VAT_CATEGORIES.filter(x=>sold.includes(x))){const r=await tx`insert into erp_private.stock_controls(project_id,activity_id,policy_id,stock_class,starts_on,ends_on,prepared_by,vat_category) values(${pid},${activity.activity_id},${policy.policy_id},${'VAT '+vat},${s},${e},${a.staff_id},${vat}) on conflict do nothing returning control_id`;if(r.length)made.push(vat);}
+  return {created:made,categories:VAT_CATEGORIES.filter(x=>sold.includes(x))};
  }
  if(['v3_stock_read','v3_stock_save','v3_stock_submit','v3_stock_review'].includes(p.action)){
   await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;const c=one(await tx`select * from erp_private.stock_controls where control_id=${uuid(p.control_id)} and project_id=${pid} for update`),policy=one(await tx`select * from erp_private.stock_policy_versions where policy_id=${c.policy_id}`),src=await stockSource(tx,c);
@@ -242,7 +259,7 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
   }
   if(!['Draft','Returned'].includes(c.status)||c.prepared_by!==a.staff_id)fail(403,'Only the assigned preparer can change unsubmitted stock work.');
   const inputs=p.action==='v3_stock_save'?p.inputs:c.inputs;if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||JSON.stringify(inputs).length>20000)fail(400,'Invalid stock values.');
-  const result=stockValues({...inputs,resale_purchases:src.resale_purchases,landed_costs:src.landed_costs},policy);
+  const result=stockValues({...inputs,...(c.vat_category?{net_sales:src.net_sales}:{}),resale_purchases:src.resale_purchases,landed_costs:src.landed_costs},policy);
   if(p.action==='v3_stock_submit'&&(result.opening_value===null||result.closing_value===null||!String(inputs.evidence_reference||'').trim()||!String(inputs.reconciliation_note||'').trim()||!src.selected_count||src.unreviewed||src.unallocated))fail(400,'Complete supported opening, cost, evidence, source allocation and row review before submission.');
   await tx`update erp_private.stock_controls set inputs=${tx.json(inputs)},result=${tx.json(result)},status=${p.action==='v3_stock_submit'?'Submitted':'Draft'},snapshot=${tx.json({inputs,result,policy,source_fingerprint:src.fingerprint,source_rows:src.rows})} where control_id=${c.control_id}`;return {ok:true};
  }
