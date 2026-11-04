@@ -19,7 +19,9 @@ test('a bank difference is explained only after an independent review of the exa
  const period=await ledger('MANAGER',{action:'ledger_period_create',project_id:P,starts_on:'2026-01-01',ends_on:'2026-12-31'}),base={project_id:P,period_id:period.period_id};
  await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${D},${C},${F},${P},'Import Sources','Fictional_bank.xlsx',${'qa/'+D},100,${'a'.repeat(64)},'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',${actors.ASSISTANT.staff_id})`;
  await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by) values(${B},${P},${D},'Bank',1,'Bank','2026-09-01','2026-09-30','{}',1,1,0,0,${actors.ASSISTANT.staff_id})`;
- await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized,account_code) values(${B},${P},${C},'Bank',2,'BANK-1','{}','{"date":"2026-09-28","reference":"DEP-0928","credit":1000,"debit":0}','40000')`;
+ const acct=(await tx`select route,category_code from erp_private.account_catalog where code='40000'`)[0];
+ const bankRow=(n,ref,day,credit)=>tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized,account_code,route,category_code) values(${B},${P},${C},'Bank',${n},${'BANK-'+n},'{}',${tx.json({date:day,reference:ref,credit,debit:0})},'40000',${acct.route},${acct.category_code})`;
+ await bankRow(2,'DEP-0928','2026-09-28',1000);
  const read=async()=>ledger('ASSISTANT',{...base,action:'ledger_read',as_of:'2026-12-31'});
  let r=await read(),check=r.close_checks.find(c=>c.code==='STATEMENT_TO_LEDGER');
  assert.equal(check.status,'Blocked');assert.equal(check.difference_cents,100000);
@@ -34,6 +36,6 @@ test('a bank difference is explained only after an independent review of the exa
  await ledger('MANAGER',{...base,action:'ledger_close_explanation_review',as_of:'2026-12-31',explanation_id:e.explanation_id,revision:e.revision,status:'Accepted',review_note:'Fictional deposit slip and October statement checked.'});
  r=await read();check=r.close_checks.find(c=>c.code==='STATEMENT_TO_LEDGER');
  assert.equal(check.status,'Explained');assert.ok(!r.issues.some(x=>/Statement movement/.test(x)),'an accepted explanation no longer blocks');
- await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized,account_code) values(${B},${P},${C},'Bank',3,'BANK-2','{}','{"date":"2026-09-29","reference":"DEP-0929","credit":50,"debit":0}','40000')`;
+ await bankRow(3,'DEP-0929','2026-09-29',50);
  r=await read();assert.equal(r.close_checks.find(c=>c.code==='STATEMENT_TO_LEDGER').status,'Blocked','a changed difference blocks again');
 });
