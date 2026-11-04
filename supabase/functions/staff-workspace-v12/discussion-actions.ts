@@ -5,7 +5,7 @@ const visible=async(tx:any,id:string)=>one(await tx`select * from erp_private.di
 export async function discussionAction(tx:any,a:any,p:any){
  if(!String(p.action).startsWith('discussion_'))return undefined;
  if(p.action==='discussion_candidates')return {candidates:await tx`select * from erp_private.discussion_candidates() order by full_name`};
- if(p.action==='discussion_list')return {channels:await tx`select c.*,coalesce(m.sequence,0) last_sequence,m.created_at last_message_at,left(m.body,120) last_body,m.author_id last_author_id,
+ if(p.action==='discussion_list')return {channels:await tx`select c.*,coalesce(m.sequence,0) last_sequence,m.created_at last_message_at,left(m.body,120) last_body,m.author_id last_author_id,(select full_name from erp_private.staff_members where staff_id=m.author_id) last_author_name,
  (select count(*)::int from erp_private.discussion_messages x where x.channel_id=c.channel_id and x.author_id<>${a.staff_id} and x.sequence>coalesce(r.last_sequence,0)) unread,
  case when c.kind='Direct' then (select full_name from erp_private.staff_members where staff_id=case when c.dm_low=${a.staff_id} then c.dm_high else c.dm_low end) else c.title end display_title
  from erp_private.discussion_channels c left join lateral(select sequence,created_at,body,author_id from erp_private.discussion_messages where channel_id=c.channel_id order by sequence desc limit 1)m on true

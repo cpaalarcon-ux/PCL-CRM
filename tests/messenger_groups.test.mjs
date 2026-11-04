@@ -54,6 +54,7 @@ test('System Administrators run logins and chat groups without seeing client wor
  assert.ok(sent.message_id);
  const l2=(await chat('ASSISTANT2',{action:'discussion_list'})).channels[0];
  assert.equal(l2.unread,1);assert.equal(l2.last_body,'Please post the PAYE returns by Friday.');
+ assert.equal(l2.last_author_name,'Fictional ASSISTANT','the list says who wrote the last message');
  assert.equal((await chat('ASSISTANT',{action:'discussion_list'})).channels[0].unread,0,'your own message is not unread');
  await assert.rejects(()=>chat('INTERN',{action:'discussion_send',channel_id:g.channel_id,request_id:id(),body:'I am not a member.'}),/not available/);
  assert.equal((await chat('ASSISTANT2',{action:'discussion_messages',channel_id:g.channel_id})).messages.length,1);
