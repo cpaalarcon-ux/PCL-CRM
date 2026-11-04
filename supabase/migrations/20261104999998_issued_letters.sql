@@ -22,3 +22,13 @@ END;$$;
 REVOKE ALL ON FUNCTION erp_private.issued_letter_guard() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION erp_private.issued_letter_guard() TO erp_api;
 CREATE TRIGGER issued_letter_guard BEFORE UPDATE ON erp_private.communications FOR EACH ROW EXECUTE FUNCTION erp_private.issued_letter_guard();
+
+-- Anyone who may see a letter must be able to print its signatory's name and role, although staff rows are
+-- otherwise limited to oneself and one's reports. Only those two fields, only for the signatory of a visible letter.
+CREATE OR REPLACE FUNCTION erp_private.letter_signatory(p_communication_id uuid) RETURNS TABLE(full_name text,category_code text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO '' AS $$
+ SELECT s.full_name,s.category_code FROM erp_private.communications c JOIN erp_private.staff_members s ON s.staff_id=c.signatory_id
+ WHERE c.communication_id=p_communication_id AND c.deleted_at IS NULL AND erp_private.client_allowed(c.client_id) AND erp_private.firm_allowed(c.firm_id);
+$$;
+REVOKE ALL ON FUNCTION erp_private.letter_signatory(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION erp_private.letter_signatory(uuid) TO erp_api;

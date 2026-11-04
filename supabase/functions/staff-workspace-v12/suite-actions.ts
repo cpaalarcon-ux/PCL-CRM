@@ -8,7 +8,7 @@ const roleLabels:any={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:
 async function issuedLetter(tx:any,c:any){
  const firm=(await tx`select legal_name,physical_address,phone,email,kra_pin from erp_private.firms where firm_id=${c.firm_id}`)[0];
  const client=(await tx`select company_name from erp_private.clients where client_id=${c.client_id}`)[0],contact=c.contact_id?(await tx`select full_name,job_title from erp_private.client_contacts where contact_id=${c.contact_id}`)[0]:null;
- const signer=(await tx`select full_name,category_code from erp_private.staff_members where staff_id=${c.signatory_id}`)[0];
+ const signer=(await tx`select full_name,category_code from erp_private.letter_signatory(${c.communication_id})`)[0];
  if(!firm||!client||!signer)fail(400,'The letter needs its firm, client and signatory records.');
  const letterDate=String(c.communication_date instanceof Date?c.communication_date.toISOString():c.communication_date).slice(0,10),issuedAt=new Date(c.issued_at);
  const attention=contact?[contact.full_name,contact.job_title].filter(Boolean).join(', '):'';
