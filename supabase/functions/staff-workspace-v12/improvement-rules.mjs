@@ -24,12 +24,14 @@ export function stockValues(inputs,policy){
  if([opening,cogs,sales,val('count_value'),returns].some(v=>v!==null&&v<0))fail(400,'Opening, cost of sales, sales, count and additional returns must not be negative.');
  const count=val('count_value'),closing=opening===null||purchases===null||cogs===null?null:money(opening+purchases+landed-returns+adjustments-cogs),variance=count===null||closing===null?null:money(count-closing),issues=[];
  if(opening===null)issues.push('Opening not split / supported: do not substitute zero.');
+ const carried=inputs.carried_opening_value===''||inputs.carried_opening_value==null?null:Number(inputs.carried_opening_value);
+ if(carried!==null&&Number.isFinite(carried)&&opening!==null&&Math.abs(opening-carried)>=0.005&&String(inputs.opening_change_reason||'').trim().length<10)issues.push(`Opening differs from the last approved closing (KES ${carried.toFixed(2)}): record the reason.`);
  if(purchases===null)issues.push('Tie the resale purchases to mapped source rows.');if(cogs===null)issues.push('Support cost of sales or label the margin estimate.');
  if(!String(inputs.evidence_reference||'').trim())issues.push('Record the opening, cost, count and movement evidence references.');
  if(closing!==null&&closing<0)issues.push('Negative actual closing estimate: investigate without inferring miscoding.');
  if(variance!==null&&Math.abs(variance)>Number(policy.variance_threshold))issues.push('Count variance exceeds the policy threshold: document evidence and obtain independent review.');
  if(!String(inputs.reconciliation_note||'').trim())issues.push('Record the source tie-out and any variance resolution.');
- return {opening_value:opening,resale_purchases:purchases,landed_costs:landed,returns_value:returns,adjustments,net_sales:sales,cost_of_sales:cogs,closing_value:closing,count_value:count,count_variance:variance,cost_basis:basis,provisional:basis==='Provisional margin estimate',issues,label:basis==='Provisional margin estimate'?'PROVISIONAL MANAGEMENT ESTIMATE — NOT VERIFIED STOCK':'Draft supported value control — independent review required',full_perpetual_costing:false};
+ return {carried_opening:carried!==null&&Number.isFinite(carried)?carried:null,opening_value:opening,resale_purchases:purchases,landed_costs:landed,returns_value:returns,adjustments,net_sales:sales,cost_of_sales:cogs,closing_value:closing,count_value:count,count_variance:variance,cost_basis:basis,provisional:basis==='Provisional margin estimate',issues,label:basis==='Provisional margin estimate'?'PROVISIONAL MANAGEMENT ESTIMATE — NOT VERIFIED STOCK':'Draft supported value control — independent review required',full_perpetual_costing:false};
 }
 export function suggestionFor(row,history){
  const n=row.normalized||{},description=String(n.description||row.narration||'').trim().toLowerCase();
