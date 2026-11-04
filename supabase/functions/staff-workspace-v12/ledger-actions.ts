@@ -1,10 +1,11 @@
+import ExcelJS from 'exceljs';
 import {pendingPurchases} from './purchase-pending.ts';
 import {chartCatalogue,approvedChart,chartMessage} from './client-chart.ts';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
 import {readWorkbookSheet} from './workbook-reader.mjs';
 import {checkWorkbookZip} from './workspace-rules.mjs';
-import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal} from './ledger-rules.mjs';
+import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal,profitByActivity,isoWeek,DATA_CUTOFF} from './ledger-rules.mjs';
 import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
 import {bankCloseChecks} from './bank-close.mjs';
@@ -56,14 +57,22 @@ async function confirmJournalSources(tx:any,a:any,project:any,j:any,l:any,note:a
 }
 async function period(tx:any,id:string,pid:string){return one(await tx`select * from erp_private.ledger_periods where period_id=${id} and project_id=${pid} for update`);}
 async function lines(tx:any,id:string){return await tx`select * from erp_private.ledger_lines where journal_id=${id} order by line_no`;}
+// Income and expense lines carry the business activity they belong to. When exactly one activity
+// covers the journal date, untagged income and expense lines take it automatically.
+async function activityDefaults(tx:any,j:any,items:any[]){
+ const acts=await tx`select a.activity_id from erp_private.client_activities a join erp_private.ledger_periods l on l.client_id=a.client_id where l.period_id=${j.period_id} and a.effective_from<=${j.journal_date} and (a.effective_to is null or a.effective_to>=${j.journal_date})`;
+ const only=acts.length===1?acts[0].activity_id:null;
+ return items.map((r:any)=>{const pl=r.account_code&&String(r.account_code)>='40000';return {...r,activity_id:pl?(r.activity_id||only||null):null};});
+}
 async function writeLines(tx:any,j:any,items:any[]){
+ items=await activityDefaults(tx,j,items);
  for(let i=0;i<items.length;i+=200){const values=items.slice(i,i+200).map((r:any,k:number)=>({...r,line_no:i+k+1}));
-  await tx`insert into erp_private.ledger_lines(journal_id,project_id,line_no,account_code,legacy_code,source_name,description,debit,credit,source_status,source_reference)
-  select ${j.journal_id}::uuid,${j.project_id}::uuid,x.line_no,x.account_code,coalesce(x.legacy_code,''),coalesce(x.source_name,''),coalesce(x.description,''),x.debit,x.credit,coalesce(x.source_status,'Unverified'),coalesce(x.source_reference,'')
-  from jsonb_to_recordset(${tx.json(values)}::jsonb) x(line_no integer,account_code text,legacy_code text,source_name text,description text,debit numeric,credit numeric,source_status text,source_reference text)
-  on conflict(journal_id,line_no) do update set account_code=excluded.account_code,legacy_code=excluded.legacy_code,source_name=excluded.source_name,description=excluded.description,debit=excluded.debit,credit=excluded.credit,source_status=excluded.source_status,source_reference=excluded.source_reference`;
+  await tx`insert into erp_private.ledger_lines(journal_id,project_id,line_no,account_code,legacy_code,source_name,description,debit,credit,source_status,source_reference,activity_id)
+  select ${j.journal_id}::uuid,${j.project_id}::uuid,x.line_no,x.account_code,coalesce(x.legacy_code,''),coalesce(x.source_name,''),coalesce(x.description,''),x.debit,x.credit,coalesce(x.source_status,'Unverified'),coalesce(x.source_reference,''),x.activity_id
+  from jsonb_to_recordset(${tx.json(values)}::jsonb) x(line_no integer,account_code text,legacy_code text,source_name text,description text,debit numeric,credit numeric,source_status text,source_reference text,activity_id uuid)
+  on conflict(journal_id,line_no) do update set account_code=excluded.account_code,legacy_code=excluded.legacy_code,source_name=excluded.source_name,description=excluded.description,debit=excluded.debit,credit=excluded.credit,source_status=excluded.source_status,source_reference=excluded.source_reference,activity_id=excluded.activity_id`;
  }
- await tx`update erp_private.ledger_lines set debit=0,credit=0,description='Unused draft line retained in audit history' where journal_id=${j.journal_id} and line_no>${items.length}`;
+ await tx`update erp_private.ledger_lines set debit=0,credit=0,activity_id=null,description='Unused draft line retained in audit history' where journal_id=${j.journal_id} and line_no>${items.length}`;
 }
 async function newJournal(tx:any,a:any,l:any,kind:string,p:any,items:any[],snapshot:any={},generated=false){
  const id=crypto.randomUUID(),reference=text(p.reference||('GL-'+id.slice(0,8).toUpperCase()),100),at=date(p.journal_date||l.ends_on);
@@ -101,7 +110,7 @@ function salesLines(r:any){
  const code=({KE_VAT_STANDARD:'40000',KE_VAT_ZERO:'40020',KE_VAT_EXEMPT:'40030',KE_VAT_PETROLEUM_8:'40010'} as any)[r.vat_rate_key];
  if(!code)fail(400,'Confirm the sales category and applicable dated VAT treatment before posting.');
  const net=cashAmount(r.normalized.amount),vat=cashAmount(r.normalized.vat||0),signed=(account_code:string,n:number)=>({account_code,debit:Math.max(n,0)/100,credit:Math.max(-n,0)/100,source_status:'Confirmed',source_reference:r.row_id,description:r.normalized.invoice});
- return [signed('10060',net+vat),signed(code,-net),...(vat?[signed('21020',-vat)]:[])];
+ return [signed('10060',net+vat),{...signed(code,-net),activity_id:r.review_details?.activity_id||null},...(vat?[signed('21020',-vat)]:[])];
 }
 async function checkPurchaseCredits(tx:any,rows:any[]){
  for(const r of rows.filter((x:any)=>x.dataset!=='Sales'&&Number(x.normalized.amount)<0)){
@@ -124,12 +133,67 @@ async function generateSource(tx:any,a:any,l:any,p:any){
  for(const r of rows)await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id,source_revision) values('Workbook row',${r.row_id},${result.journal_id},${l.project_id},${r.revision})`;
  return result;
 }
+// The client's previous financial year in the ERP (the year ending the day before this one starts).
+// Without one, the prior year is represented by the approved opening balances.
+async function priorYear(tx:any,l:any){
+ const prev=(await tx`select * from erp_private.ledger_periods where client_id=${l.client_id} and ends_on=${day(l.starts_on)}::date-1 order by created_at desc limit 1`)[0];
+ if(!prev)return {source:'Opening balances',label:`Approved opening balances at ${day(l.starts_on)}`,period:null,profit:null};
+ const posted=await tx`select x.*,j.kind,j.reversal_of from erp_private.ledger_lines x join erp_private.ledger_journals j using(journal_id) where j.period_id=${prev.period_id} and j.status='Posted'`;
+ const closing=new Set((await tx`select journal_id from erp_private.ledger_journals where period_id=${prev.period_id} and kind='Year close'`).map((r:any)=>r.journal_id));
+ const lines=posted.filter((r:any)=>r.kind!=='Opening'&&r.kind!=='Year close'&&!closing.has(r.reversal_of));
+ return {source:'Prior-year ledger',label:`Financial year ${day(prev.starts_on)} to ${day(prev.ends_on)}`,period:{period_id:prev.period_id,starts_on:day(prev.starts_on),ends_on:day(prev.ends_on)},profit:profitReport(lines)};
+}
+// Report windows inside the financial year: month, quarter (from the year start), year to date, year end.
+function reportWindow(l:any,kind:string,asOf:string){
+ const ys=day(l.starts_on),ye=day(l.ends_on);if(asOf<ys||asOf>ye)fail(400,'Choose an as-of date inside the financial year.');
+ if(kind==='Year end'){if(asOf!==ye)fail(400,'A year-end report is as of the last day of the financial year.');return ys;}
+ if(kind==='Year to date')return ys;
+ const monthStart=asOf.slice(0,8)+'01';
+ if(kind==='Month')return monthStart<ys?ys:monthStart;
+ const months=(Number(asOf.slice(0,4))-Number(ys.slice(0,4)))*12+Number(asOf.slice(5,7))-Number(ys.slice(5,7)),q=Math.floor(months/3)*3;
+ const d=new Date(ys+'T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+q);return d.toISOString().slice(0,10);
+}
+const PNL_LINES:[string,string][]=[['sales','Sales'],['cost_of_sales','Cost of sales'],['gross_profit','Gross profit'],['other_income','Other income'],['payroll','Staff costs'],['operating_expenses','Operating expenses'],['finance','Finance costs'],['depreciation','Depreciation'],['profit_before_tax','Profit before tax'],['income_tax','Income tax'],['profit_after_tax','Profit after tax']];
+async function reportWorkbook({client,l,full,snapshot}:any){
+ const book=new ExcelJS.Workbook(),money='#,##0.00;(#,##0.00);-',week=full.current_week;
+ const head=(sheet:any,title:string,sub:string)=>{sheet.addRow([client.company_name+' · '+title]).font={name:'Arial',size:12,bold:true};sheet.addRow([sub]).font={name:'Arial',size:9,italic:true};sheet.addRow([]);};
+ const style=(sheet:any,from:number)=>{sheet.eachRow((r:any,n:number)=>{if(n<from)return;r.eachCell((c:any)=>{c.font={name:'Arial',size:9,bold:n===from};if(typeof c.value==='number')c.numFmt=money;});});sheet.columns.forEach((c:any,i:number)=>c.width=i===0?34:18);};
+ const cur=book.addWorksheet('Current period');head(cur,`${snapshot.report_kind} ${snapshot.starts_on} to ${snapshot.as_of}`,`Current period: ${week.label} (${week.starts_on} to ${week.ends_on}). Posted entries only. Data cut-off: periods ending ${DATA_CUTOFF} onwards.`);
+ cur.addRow(['Line','This report (KES)','Year to date (KES)']);for(const [k,label] of PNL_LINES)cur.addRow([label,Number(snapshot.profit[k]||0),Number(full.profit[k]||0)]);style(cur,4);
+ const act=book.addWorksheet('Profit by activity');head(act,'Profit and loss by business activity',`${snapshot.starts_on} to ${snapshot.as_of}. Unallocated = income and expense lines without an activity.`);
+ const cols=snapshot.profit_by_activity.activities;act.addRow(['Line',...cols.map((c:any)=>`${c.activity_name} (${c.pack_code})`),'Unallocated','Total']);
+ for(const [k,label] of PNL_LINES)act.addRow([label,...cols.map((c:any)=>Number(c[k]||0)),Number(snapshot.profit_by_activity.unallocated[k]||0),Number(snapshot.profit_by_activity.total[k]||0)]);style(act,4);
+ const tb=book.addWorksheet('Trial balance');head(tb,`Trial balance as at ${snapshot.as_of}`,'Opening balances plus posted movements.');
+ tb.addRow(['Code','Account','Opening','Debits','Credits','Closing debit','Closing credit']);for(const r of full.tb.filter((x:any)=>Number(x.opening)||Number(x.movement_debit)||Number(x.movement_credit)))tb.addRow([r.code,r.name,Number(r.opening),Number(r.movement_debit),Number(r.movement_credit),Number(r.debit),Number(r.credit)]);
+ tb.addRow(['','Total','','','',full.tb.reduce((n:number,x:any)=>n+Number(x.debit||0),0),full.tb.reduce((n:number,x:any)=>n+Number(x.credit||0),0)]);style(tb,4);
+ const prior=book.addWorksheet('Prior year');head(prior,'Prior year',full.prior_year.label);
+ if(full.prior_year.profit){prior.addRow(['Line','Prior year (KES)','Current year to date (KES)']);for(const [k,label] of PNL_LINES)prior.addRow([label,Number(full.prior_year.profit[k]||0),Number(full.profit[k]||0)]);}
+ else{prior.addRow(['Code','Account','Opening balance (KES)']);for(const r of full.tb.filter((x:any)=>Number(x.opening)))prior.addRow([r.code,r.name,Number(r.opening)]);}
+ style(prior,4);
+ const rv=book.addWorksheet('Reviews');head(rv,'Report reviews','Submitted reports with preparer and reviewer notes.');rv.addRow(['Report','From','As of','Status','Preparer note','Reviewed at','Review note']);
+ for(const r of full.report_reviews)rv.addRow([r.report_kind,day(r.starts_on),day(r.as_of),r.status,r.prepared_note,r.reviewed_at?String(r.reviewed_at).slice(0,19):'',r.review_note||'']);style(rv,4);
+ for(const s of book.worksheets)s.pageSetup={paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0};
+ const bytes=new Uint8Array(await book.xlsx.writeBuffer());let str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));
+ const safe=String(client.company_name).replace(/[^A-Za-z0-9]+/g,'_').slice(0,60);
+ return {file_name:`${safe}_${snapshot.report_kind.replace(/ /g,'_')}_${snapshot.as_of}.xlsx`,mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',base64:btoa(str)};
+}
+async function reportSnapshot(tx:any,l:any,kind:string,asOf:string){
+ const starts=reportWindow(l,kind,asOf),full=await report(tx,l,asOf);
+ const inWindow=await tx`select x.account_code,x.debit,x.credit,x.activity_id,j.kind,j.reversal_of from erp_private.ledger_lines x join erp_private.ledger_journals j using(journal_id) where j.period_id=${l.period_id} and j.status='Posted' and j.journal_date>=${starts} and j.journal_date<=${asOf}`;
+ const closing=new Set(full.journals.filter((j:any)=>j.kind==='Year close').map((j:any)=>j.journal_id)),lines=inWindow.filter((r:any)=>r.kind!=='Opening'&&r.kind!=='Year close'&&!closing.has(r.reversal_of));
+ const tbTotals={debit:full.tb.reduce((n:number,a:any)=>n+Number(a.debit||0),0),credit:full.tb.reduce((n:number,a:any)=>n+Number(a.credit||0),0)};
+ return {full,snapshot:{report_kind:kind,starts_on:starts,as_of:asOf,profit:profitReport(lines),profit_by_activity:profitByActivity(lines,full.activities),year_to_date_profit:full.profit,trial_balance_totals:tbTotals,open_issues:full.issues}};
+}
 async function report(tx:any,l:any,to:string){
  if(to<day(l.starts_on)||to>day(l.ends_on))fail(400,'Choose an as-of date inside the financial year.');
  const posted=await tx`select x.*,j.kind,j.journal_date,j.reference,j.reversal_of from erp_private.ledger_lines x join erp_private.ledger_journals j using(journal_id) where j.period_id=${l.period_id} and j.status='Posted' and j.journal_date<=${to} order by j.journal_date,j.reference,x.line_no`;
  const accounts=await catalogue(tx),journals=await tx`select journal_id,kind,reference,journal_date,status,prepared_by,last_prepared_by,reviewed_by,review_note,revision from erp_private.ledger_journals where period_id=${l.period_id} order by created_at desc limit 500`;
  const opening=posted.filter((r:any)=>r.kind==='Opening'),movements=posted.filter((r:any)=>r.kind!=='Opening'),tb=trialBalance(accounts,opening,movements),closingIds=new Set(journals.filter((j:any)=>j.kind==='Year close').map((j:any)=>j.journal_id));
- const profit=profitReport(posted.filter((r:any)=>r.kind!=='Opening'&&r.kind!=='Year close'&&!closingIds.has(r.reversal_of)));
+ const profitLines=posted.filter((r:any)=>r.kind!=='Opening'&&r.kind!=='Year close'&&!closingIds.has(r.reversal_of)),profit=profitReport(profitLines);
+ const activities=await tx`select activity_id,activity_name,pack_code,is_primary,effective_from,effective_to from erp_private.client_activities where client_id=${l.client_id} order by is_primary desc,activity_name`;
+ const profit_by_activity=profitByActivity(profitLines,activities),week=isoWeek(new Date().toISOString().slice(0,10));
+ const current_week={...week,as_of:week.ends_on<day(l.starts_on)?null:week.ends_on>day(l.ends_on)?day(l.ends_on):week.ends_on};
+ const prior_year=await priorYear(tx,l),report_reviews=await tx`select review_id,report_kind,starts_on,as_of,prepared_note,status,prepared_by,reviewed_by,reviewed_at,review_note,created_at,revision from erp_private.ledger_report_reviews where period_id=${l.period_id} order by created_at desc limit 100`;
  const pending=await tx`select r.row_id,r.source_row,r.dataset,r.account_code,r.normalized,r.revision,v.source_revision,v.decision,j.journal_id,j.status as journal_status from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id) left join erp_private.ledger_sources s on s.source_kind='Workbook row' and s.source_key=r.row_id::text left join erp_private.ledger_journals j on j.journal_id=s.journal_id
  where r.project_id=${l.project_id} and b.archived_at is null and not r.is_split_parent and r.dataset in ('Sales','Purchases','Expenditure','Non-eTIMS') and coalesce(nullif(r.normalized->>'date',''),b.period_start::text)>=${day(l.starts_on)} and coalesce(nullif(r.normalized->>'date',''),b.period_end::text)<=${to} and (j.status is distinct from 'Posted') order by r.created_at,r.source_row limit 2001`;
  const assets=await tx`select * from erp_private.ledger_assets where period_id=${l.period_id} order by created_at`,charges=await tx`select c.*,j.status as journal_status from erp_private.ledger_asset_charges c join erp_private.ledger_journals j using(journal_id) where c.project_id=${l.project_id} and c.starts_on>=${day(l.starts_on)} and c.ends_on<=${to}`;
@@ -146,7 +210,7 @@ async function report(tx:any,l:any,to:string){
  if(ppe_sources.length)issues.push(ppe_sources.length+' PPE source(s) still need an asset and shared-rate record.');
  if(!journals.some((j:any)=>j.kind==='Stock'&&j.status==='Posted'))issues.push('Confirm stock / cost-of-sales completeness separately before relying on gross profit.');
  const balance=money(tb.reduce((sum:any,r:any)=>sum+r.net,0));if(balance!==0)issues.push('The trial balance is not balanced.');
- return {period:l,pending_information,as_of:to,accounts,tb,profit,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,close_checks:bankClose.checks,close_explanations:closeExplanations,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
+ return {period:l,pending_information,as_of:to,accounts,tb,profit,profit_by_activity,activities,current_week,prior_year,report_reviews,data_cutoff:DATA_CUTOFF,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,close_checks:bankClose.checks,close_explanations:closeExplanations,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
 }
 
 export async function annualTaxLedgerControl(tx:any,projectId:string,start:string,end:string){
@@ -170,16 +234,35 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  const pid=uuid(p.project_id),project=one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null`);
  const rates=await tx`select * from erp_private.asset_class_rates order by class_code,effective_from desc`;
- if(p.action==='ledger_periods')return {periods:await tx`select * from erp_private.ledger_periods where project_id=${pid} order by starts_on desc`,rates,accounts:await chartCatalogue(tx,await catalogue(tx),project.client_id,new Date().toISOString().slice(0,10)),client:(await tx`select legal_entity_type,year_end_month,year_end_day from erp_private.clients where client_id=${project.client_id}`)[0]};
+ if(p.action==='ledger_periods')return {periods:await tx`select * from erp_private.ledger_periods where project_id=${pid} order by starts_on desc`,rates,accounts:await chartCatalogue(tx,await catalogue(tx),project.client_id,new Date().toISOString().slice(0,10)),activities:await tx`select activity_id,activity_name,pack_code,is_primary,effective_from,effective_to from erp_private.client_activities where client_id=${project.client_id} order by is_primary desc,activity_name`,client:(await tx`select legal_entity_type,year_end_month,year_end_day from erp_private.clients where client_id=${project.client_id}`)[0]};
  await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':client-ledger'},0))`;
  if(p.action==='ledger_period_create'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${project.client_id}`);
   if(!['Limited company','Sole proprietor','Partnership'].includes(c.legal_entity_type)||String(c.entity_evidence||'').trim().length<10||!c.year_end_month||!c.year_end_day)fail(400,'Confirm the client legal entity, supporting evidence and year-end in the profile first.');
-  const start=date(p.starts_on),end=date(p.ends_on);if(!start||!end||end<start||end.slice(5)!==String(c.year_end_month).padStart(2,'0')+'-'+String(c.year_end_day).padStart(2,'0'))fail(400,'Use the verified client year-end.');
+  const start=date(p.starts_on),end=date(p.ends_on);if(end&&end<DATA_CUTOFF)fail(400,'The ERP holds data for periods ending 31 December 2025 onwards. Keep earlier periods in the client\u2019s previous records.');if(!start||!end||end<start||end.slice(5)!==String(c.year_end_month).padStart(2,'0')+'-'+String(c.year_end_day).padStart(2,'0'))fail(400,'Use the verified client year-end.');
   return one(await tx`insert into erp_private.ledger_periods(project_id,client_id,handling_firm_id,starts_on,ends_on,entity_type,entity_evidence,created_by) values(${pid},${project.client_id},${project.handling_firm_id},${start},${end},${c.legal_entity_type},${c.entity_evidence},${a.staff_id}) returning period_id`);
  }
  const l=await period(tx,uuid(p.period_id),pid);
  if(p.action==='ledger_read')return {...await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)),rates};
+ if(p.action==='ledger_report_submit'){
+  if(a.category_code==='INTERN')fail(403,'A staff preparer must submit financial reports.');
+  const kind=choice(p.report_kind,['Month','Quarter','Year to date','Year end']),asOf=date(p.as_of),note=text(p.prepared_note,2000);if(!asOf)fail(400,'Choose the report date.');if(note.length<10)fail(400,'Add a preparer note of at least 10 characters.');
+  const {snapshot}=await reportSnapshot(tx,l,kind,asOf);
+  if((await tx`select 1 from erp_private.ledger_report_reviews where period_id=${l.period_id} and report_kind=${kind} and as_of=${asOf} and status='Submitted'`).length)fail(409,'This report is already waiting for review.');
+  return one(await tx`insert into erp_private.ledger_report_reviews(project_id,period_id,report_kind,starts_on,as_of,snapshot,snapshot_digest,prepared_note,prepared_by) values(${l.project_id},${l.period_id},${kind},${snapshot.starts_on},${asOf},${tx.json(snapshot)},${await digest(snapshot)},${note},${a.staff_id}) returning review_id,status`);
+ }
+ if(p.action==='ledger_report_review'){
+  leader(a);const r=one(await tx`select * from erp_private.ledger_report_reviews where review_id=${uuid(p.review_id)} and period_id=${l.period_id} for update`);rev(r,p);
+  if(r.status!=='Submitted')fail(400,'Only a submitted report can be approved or returned.');if(r.prepared_by===a.staff_id)fail(403,'A different Manager or Partner must review this report.');
+  const status=choice(p.status,['Approved','Returned']),note=text(p.review_note,2000);if(note.length<10)fail(400,'Enter a review note of at least 10 characters.');
+  if(status==='Approved'){const {snapshot}=await reportSnapshot(tx,l,r.report_kind,day(r.as_of));if(await digest(snapshot)!==r.snapshot_digest)fail(409,'The posted figures changed after this report was submitted. Return it so the preparer submits the current figures.');}
+  await tx`update erp_private.ledger_report_reviews set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where review_id=${r.review_id}`;return {ok:true,status};
+ }
+ if(p.action==='ledger_report_export'){
+  const asOf=date(p.as_of)||day(l.ends_on),kind=p.report_kind?choice(p.report_kind,['Month','Quarter','Year to date','Year end']):'Year to date';
+  const {full,snapshot}=await reportSnapshot(tx,l,kind,asOf),client=one(await tx`select company_name,kra_pin,legal_entity_type from erp_private.clients where client_id=${l.client_id}`);
+  return await reportWorkbook({client,l,full,snapshot});
+ }
  if(p.action==='ledger_account_read'){
   const code=text(p.account_code,5),to=p.as_of?date(p.as_of):day(l.ends_on);if(to<day(l.starts_on)||to>day(l.ends_on))fail(400,'Choose an as-of date inside this financial year.');return {lines:await tx`select x.*,j.reference,j.kind,j.journal_date,j.status,j.reviewed_by from erp_private.ledger_lines x join erp_private.ledger_journals j using(journal_id) where j.period_id=${l.period_id} and x.account_code=${code} and j.status='Posted' and j.journal_date<=${to} order by j.journal_date,j.reference,x.line_no limit 2001`};
  }
@@ -227,6 +310,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
    for(const g of source.payload.groups){const net=cashAmount(g.net),vat=cashAmount(g.vat);if(net||vat)items.push(signed('10060',net+vat,'Sales summary '+g.vat_category),signed(codes[g.vat_category],-net,'Net sales '+g.vat_category),...(vat?[signed('21020',-vat,'Output VAT '+g.vat_category)]:[]));}
   }else{const t=source.payload.totals;items=payrollJournal({gross_pay:t.gross,paye:t.paye,shif:t.shif,employee_ahl:t.employee_ahl,employee_nssf:t.employee_nssf,employee_pension:t.employee_pension,other_deductions:t.other_deductions,employer_ahl:t.employer_ahl,employer_nssf:t.employer_nssf,employer_nita:t.nita,evidence:source.import_id});}
   if(!items.length)fail(400,'A zero summary needs no accounting entry.');
+  if(source.activity_id)items=items.map((x:any)=>String(x.account_code||'')>='40000'?{...x,activity_id:source.activity_id}:x);
   const result=await newJournal(tx,a,l,source.kind,{journal_date:day(source.ends_on),reference:source.kind.toUpperCase()+'-'+day(source.starts_on)+'-'+source.import_id.slice(0,8),evidence:'Confirmed import '+source.import_id+'; '+source.review_note,description:'Reviewed '+source.kind.toLowerCase()+' category/control totals'},items,{kind:'Period import',import_id:source.import_id,source_hash:source.source_hash},true);
   await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id,source_revision) values('Period import',${source.import_id},${result.journal_id},${pid},${source.revision})`;return result;
  }

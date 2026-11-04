@@ -1,4 +1,6 @@
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
+import {DATA_CUTOFF} from './ledger-rules.mjs';
+const cutoffMessage='The ERP holds data for periods ending 31 December 2025 onwards. Keep earlier periods in the client\u2019s previous records.';
 import {readSourceSheet} from './source-reader.mjs';
 import {detectImportProfile,salesTotals,payrollRows,rateKeys} from './import-profiles.mjs';
 import {keys,pickRate,payrollFromRules} from './tax-registry.mjs';
@@ -14,7 +16,7 @@ export function effectiveImports(rows:any[]){const replaced=new Set(rows.filter(
 export async function summarySalesRows(tx:any,pid:string,start:string,end:string,{includeSubmitted=false}:{includeSubmitted?:boolean}={}){
  const statuses=includeSubmitted?['Confirmed','Submitted']:['Confirmed'];
  const imports=effectiveImports(await tx`select * from erp_private.period_imports where project_id=${pid} and kind='Sales' and status=any(${tx.array(statuses)}::text[]) and starts_on>=${start} and ends_on<=${end} order by starts_on,import_id`);
- return imports.flatMap((s:any)=>s.payload.groups.map((g:any,i:number)=>({row_id:s.import_id+':'+g.vat_category,import_id:s.import_id,revision:s.revision,source_revision:s.revision,dataset:'Sales',source_row:i+1,normalized:{date:day(s.ends_on),invoice:'Sales summary '+day(s.starts_on)+' '+g.vat_category,amount:g.net,vat:g.vat,vat_category:g.vat_category},decision:'Confirmed',vat_rate_key:(rateKeys as any)[g.vat_category],reviewed_by:s.reviewed_by,uploaded_by:s.prepared_by,period_start:day(s.starts_on),period_end:day(s.ends_on),is_period_summary:true})));
+ return imports.flatMap((s:any)=>s.payload.groups.map((g:any,i:number)=>({row_id:s.import_id+':'+g.vat_category,import_id:s.import_id,revision:s.revision,source_revision:s.revision,dataset:'Sales',source_row:i+1,normalized:{date:day(s.ends_on),invoice:'Sales summary '+day(s.starts_on)+' '+g.vat_category,amount:g.net,vat:g.vat,vat_category:g.vat_category},decision:'Confirmed',review_details:{activity_id:s.activity_id||null},vat_rate_key:(rateKeys as any)[g.vat_category],reviewed_by:s.reviewed_by,uploaded_by:s.prepared_by,period_start:day(s.starts_on),period_end:day(s.ends_on),is_period_summary:true})));
 }
 async function coverage(tx:any,cid:string,kind:string,start:string,end:string){
  return await tx`select import_id,project_id,starts_on,ends_on,status from erp_private.period_imports where client_id=${cid} and kind=${kind} and status<>'Superseded' and starts_on<=${end} and ends_on>=${start} order by starts_on,import_id`;
@@ -24,9 +26,17 @@ async function replacementSafe(tx:any,ids:string[]){
  const linked=await tx`select j.journal_id,j.status from erp_private.ledger_sources s join erp_private.ledger_journals j using(journal_id) where s.source_kind='Period import' and s.source_key=any(${tx.array(ids)}::text[]) and not exists(select 1 from erp_private.ledger_journals v where v.reversal_of=j.journal_id and v.status='Posted')`;
  if(linked.length)fail(409,'A covered summary already has an accounting entry. Complete its reviewed reversal before replacing it; open drafts must be resolved first.');
 }
+// One import belongs to one business activity. When exactly one activity covers the period it is
+// used automatically; with several, the preparer chooses, or leaves it blank (Unallocated).
+async function importActivity(tx:any,clientId:string,start:string,end:string,requested:any){
+ const acts=await tx`select activity_id,activity_name from erp_private.client_activities where client_id=${clientId} and effective_from<=${end} and (effective_to is null or effective_to>=${start})`;
+ if(requested){const id=uuid(requested);if(!acts.some((x:any)=>x.activity_id===id))fail(400,'Choose a business activity of this client that covers the import period.');return id;}
+ return acts.length===1?acts[0].activity_id:null;
+}
 async function prepare(tx:any,a:any,project:any,p:any,storage:any){
  const kind=choice(p.kind,['Sales','Payroll']),start=date(p.starts_on),end=date(p.ends_on);
  if(!start||!end||end<start||Date.parse(end)-Date.parse(start)>366*86400000)fail(400,'Choose the reporting period.');
+ if(end<DATA_CUTOFF)fail(400,cutoffMessage);
  if(kind==='Payroll'&&(start.slice(8)!=='01'||new Date(Date.parse(end)+86400000).toISOString().slice(8,10)!=='01'||start.slice(0,7)!==end.slice(0,7)))fail(400,'Payroll must cover one complete calendar month.');
  const doc=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and project_id=${project.project_id} and deleted_at is null and archived_at is null for share`);
  if(!['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip'].includes(doc.mime_type))fail(400,'Choose CSV, Excel or ZIP import data.');
@@ -102,7 +112,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
  if(!String(p.action).startsWith('period_import_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Assigned accounting staff are required.');
  const pid=uuid(p.project_id),project=one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null`);
- if(p.action==='period_import_list')return {imports:await tx`select import_id,kind,starts_on,ends_on,status,prepared_by,reviewed_by,revision,created_at from erp_private.period_imports where project_id=${pid} order by created_at desc limit 500`,documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and archived_at is null and mime_type in ('text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') order by uploaded_at desc`,periods:await tx`select period_id,starts_on,ends_on from erp_private.ledger_periods where project_id=${pid} and status='Open'`};
+ if(p.action==='period_import_list')return {activities:await tx`select activity_id,activity_name,pack_code,effective_from,effective_to,is_primary from erp_private.client_activities where client_id=${project.client_id} order by is_primary desc,activity_name`,imports:await tx`select i.import_id,i.kind,i.starts_on,i.ends_on,i.status,i.prepared_by,i.reviewed_by,i.revision,i.created_at,i.activity_id,a.activity_name from erp_private.period_imports i left join erp_private.client_activities a using(activity_id) where i.project_id=${pid} order by i.created_at desc limit 500`,documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and archived_at is null and mime_type in ('text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') order by uploaded_at desc`,periods:await tx`select period_id,starts_on,ends_on from erp_private.ledger_periods where project_id=${pid} and status='Open'`};
  if(p.action==='period_import_read')return {record:one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid}`)};
  if(project.status==='Archived')fail(400,'Archived projects retain read-only accounting history.');
  if(p.action==='period_import_preview')return await prepare(tx,a,project,p,storage);
@@ -122,7 +132,8 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   if(x.overlaps.some((o:any)=>o.project_id!==pid||day(o.starts_on)<x.starts_on||day(o.ends_on)>x.ends_on))fail(409,'The new summary must fully cover the periods it replaces in this project. Partial overlaps are not added.');
   if(ids.length!==x.overlaps.length||x.overlaps.some((o:any)=>!ids.includes(o.import_id)))fail(409,'Explicitly confirm replacement of every overlapping summary.');
   await replacementSafe(tx,ids);
-  return one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,kind,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,notes) values(${pid},${project.client_id},${x.document_id},${x.kind},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${text(p.notes||'',4000,false)}) returning import_id`);
+  const activityId=await importActivity(tx,project.client_id,x.starts_on,x.ends_on,p.activity_id);
+  return one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,kind,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,activity_id,notes) values(${pid},${project.client_id},${x.document_id},${x.kind},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${activityId},${text(p.notes||'',4000,false)}) returning import_id`);
  }
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':period-import'},0))`;
  const r=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid} for update`);

@@ -19,7 +19,7 @@ export function normaliseLines(input,accounts,{allowUnmapped=false,opening=false
   if(code&&!account)fail(400,`Line ${i+1}: account is not in the master catalogue.`);
   if(account&&opening&&Number(code)>=40000)fail(400,'Opening year-start balances must use balance-sheet and equity accounts. Close prior-year income and expenses first.');
   if(account&&payroll&&!(Number(code)>=60000&&Number(code)<=60170)&&!['21600','21601','21602','21603','21604','21609','21610','21611','21612','20000','10000','10020'].includes(code))fail(400,'Use payroll expense or the matching settlement/liability account.');
-  return {line_no:i+1,account_code:code||null,legacy_code:String(r.legacy_code||'').slice(0,80),source_name:String(r.source_name||account?.name||'').slice(0,200),description:String(r.description||'').slice(0,1000),debit:debit/100,credit:credit/100,source_status:r.source_status==='Confirmed'?'Confirmed':'Unverified',source_reference:String(r.source_reference||'').slice(0,1000)};
+  return {line_no:i+1,account_code:code||null,legacy_code:String(r.legacy_code||'').slice(0,80),source_name:String(r.source_name||account?.name||'').slice(0,200),description:String(r.description||'').slice(0,1000),debit:debit/100,credit:credit/100,source_status:r.source_status==='Confirmed'?'Confirmed':'Unverified',source_reference:String(r.source_reference||'').slice(0,1000),activity_id:/^[0-9a-f-]{36}$/i.test(String(r.activity_id||''))?String(r.activity_id):null};
  });
 }
 export function journalIssues(lines,accounts,{kind='Adjustment',entityType='',sourceSnapshot={}}={}){
@@ -48,7 +48,7 @@ export function costJournal(row){
  const net=cashAmount(row.normalized.amount),vat=cashAmount(row.normalized.vat),claim=row.decision==='Eligible'?Math.round(vat*Number(row.deductible_percentage)/100):0;
  if(!Number.isFinite(claim)||Math.abs(claim)>Math.abs(vat)||claim&&Math.sign(claim)!==Math.sign(vat))fail(400,'VAT recovery exceeds the source amount.');
  const signed=(code,value)=>({account_code:code,debit:Math.max(value,0)/100,credit:Math.max(-value,0)/100,source_status:'Confirmed',source_reference:row.row_id,description:row.narration||row.normalized.description||''});
- return [signed(row.account_code,net+vat-claim),...(claim?[signed('10160',claim)]:[]),signed('20000',-net-vat)];
+ return [{...signed(row.account_code,net+vat-claim),activity_id:row.review_details?.activity_id||null},...(claim?[signed('10160',claim)]:[]),signed('20000',-net-vat)];
 }
 
 // One balanced payroll control entry: gross pay plus employer costs, never net pay twice.
@@ -75,7 +75,7 @@ export function trialBalance(accounts,opening,postings){
 }
 export function profitReport(lines){
  const total=(lo,hi,sign=1)=>money(lines.filter(l=>Number(l.account_code)>=lo&&Number(l.account_code)<=hi).reduce((n,l)=>n+sign*(Number(l.debit)-Number(l.credit)),0));
- const sales=total(40000,40070,-1)+total(40100,40100,-1),other_income=total(40080,40090,-1)+total(40110,40140,-1),cost_of_sales=total(50000,50150),gross_profit=money(sales-cost_of_sales),payroll=total(60000,60170),finance=total(62000,62090),depreciation=total(67010,67070),all_expenses=total(51000,68000),other_expenses=money(all_expenses-payroll-finance-depreciation),profit_before_tax=money(gross_profit+other_income-all_expenses),income_tax=total(69000,69010);
+ const sales=total(40000,40070,-1)+total(40100,40100,-1)+total(40150,40299,-1),other_income=total(40080,40090,-1)+total(40110,40140,-1),cost_of_sales=total(50000,50999),gross_profit=money(sales-cost_of_sales),payroll=total(60000,60170),finance=total(62000,62090),depreciation=total(67010,67070),all_expenses=total(51000,68000),other_expenses=money(all_expenses-payroll-finance-depreciation),profit_before_tax=money(gross_profit+other_income-all_expenses),income_tax=total(69000,69010);
  return {sales,other_income,cost_of_sales,gross_profit,operating_expenses:other_expenses,payroll,finance,depreciation,total_expenses:all_expenses,profit_before_tax,income_tax,profit_after_tax:money(profit_before_tax-income_tax),statement:'Client accounting profit from posted entries only. Source schedules and tax wear and tear are not deducted a second time.'};
 }
 
@@ -87,9 +87,9 @@ export function sourceApplicationSchedule(tb){
  const rows=[];
  const add=(section,label,list,amountFn)=>{const amount=sum(list,amountFn);if(amount||list.length)rows.push({section,label,amount,accounts:list.map(a=>({code:a.code,name:a.name,opening:money(Number(a.opening||0)),closing:money(Number(a.net||0)),movement_debit:money(Number(a.movement_debit||0)),movement_credit:money(Number(a.movement_credit||0)),amount:money(amountFn(a))})).filter(a=>a.amount||a.opening||a.closing)});};
  const cash=accounts.filter(a=>code(a)>=10000&&code(a)<=10050),assetGroups=[
-  ['Receivables, tax credits and prepayments',a=>code(a)>=10060&&code(a)<=10189],
-  ['Inventory and stock',a=>code(a)>=10190&&code(a)<=10299],
-  ['Other current assets',a=>code(a)>=10300&&code(a)<15000],
+  ['Receivables, tax credits and prepayments',a=>code(a)>=10060&&code(a)<=10189||code(a)>=10260&&code(a)<=10300],
+  ['Inventory and stock',a=>code(a)>=10190&&code(a)<=10250],
+  ['Other current assets',a=>code(a)>10300&&code(a)<15000],
   ['Property and other non-current assets',a=>code(a)>=15000&&code(a)<20000&&a.account_group!=='Contra assets']
  ];
  const nonCashAssets=accounts.filter(a=>code(a)>=10060&&code(a)<20000&&a.account_group!=='Contra assets');
@@ -181,3 +181,20 @@ export const sharedRateSeeds=[
  ['FARMWORK','Qualifying farmworks',50,25,50,'67010','15900',null],
  ['LAND','Land',0,0,100,'67010','15900',null]
 ].map(([class_code,name,first_rate,annual_rate,later_basis_percentage,expense_account,contra_account,tax_cost_cap])=>({class_code,name,first_rate,annual_rate,later_basis_percentage,expense_account,contra_account,tax_cost_cap,method:'Equal instalments',effective_from:'2026-01-01',effective_to:'2026-12-31',source_reference:'Income Tax Act Second Schedule paragraphs 1, 2, 6 and 7; KRA published 2026 consolidation, PDF pages 102-106; https://www.kra.go.ke/images/publications/Income-Tax-Act-2026.pdf',source_checked_on:'2026-10-26',scope:'Reference for testing; confirm qualifying use and evidence on each asset. Special relief and transition cases are not automatic.'}));
+
+// Profit per business activity from posted income and expense lines. Lines without an activity
+// are shown as Unallocated, so the activity columns always add up to the total.
+export function profitByActivity(lines,activities){
+ const pl=lines.filter(l=>Number(l.account_code)>=40000);
+ const columns=activities.map(a=>({activity_id:a.activity_id,activity_name:a.activity_name,pack_code:a.pack_code,is_primary:!!a.is_primary,...profitReport(pl.filter(l=>l.activity_id===a.activity_id))}));
+ const known=new Set(activities.map(a=>a.activity_id)),unallocated=profitReport(pl.filter(l=>!l.activity_id||!known.has(l.activity_id)));
+ return {activities:columns,unallocated,total:profitReport(pl),statement:'Posted income and expense lines by business activity. Unallocated lines have no activity tag.'};
+}
+// ISO-8601 week of a date (weeks start Monday; week 1 contains the first Thursday).
+export function isoWeek(dateText){
+ const d=new Date(String(dateText).slice(0,10)+'T00:00:00Z'),dow=(d.getUTCDay()+6)%7,thu=new Date(d);thu.setUTCDate(d.getUTCDate()-dow+3);
+ const year=thu.getUTCFullYear(),jan4=new Date(Date.UTC(year,0,4)),week=1+Math.round(((thu-jan4)/864e5-3+((jan4.getUTCDay()+6)%7))/7);
+ const start=new Date(d);start.setUTCDate(d.getUTCDate()-dow);const end=new Date(start);end.setUTCDate(start.getUTCDate()+6);
+ return {year,week,starts_on:start.toISOString().slice(0,10),ends_on:end.toISOString().slice(0,10),label:`${year} – Week ${week}`};
+}
+export const DATA_CUTOFF='2025-12-31';

@@ -77,7 +77,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  if(template&&p.dataset&&p.dataset!==dataset)fail(400,'The import type must match the recognised workbook.');
  if(sourceInfo.section&&!profile?.recognised&&!p.section_contract_confirmed)fail(400,'Confirm the selected KRA CSV section column mapping. A section name alone is not a validated filing contract.');
  const start=date(p.period_start),end=date(p.period_end);
- if(!start||!end||end<start)fail(400,'Choose the import period.');const map=block?block.column_map:profile?.recognised?profile.column_map:importMap(p.column_map,dataset),batch=crypto.randomUUID();
+ if(!start||!end||end<start)fail(400,'Choose the import period.');if(end<'2025-12-31')fail(400,'The ERP holds data for periods ending 31 December 2025 onwards. Keep earlier periods in the client\u2019s previous records.');const map=block?block.column_map:profile?.recognised?profile.column_map:importMap(p.column_map,dataset),batch=crypto.randomUUID();
  if(!one(await tx`select erp_private.tax_period_open(${project.project_id}::uuid,${start}::date,${end}::date) as open`).open)fail(400,'Return the submitted tax case before adding source rows. Locked periods cannot receive imports.');
  const first=standard?2:Number(p.first_row||block?.first_row||header+1),last=standard?sheet.rowCount:Number(p.last_row||block?.last_row||sheet.rowCount);
  if(!standard)importRowRange({header,first,last,rowCount:sheet.rowCount,block});
