@@ -27,7 +27,8 @@ test('VAT3 schedules export only from a locked VAT case and tie to its result',a
   draft=(await tx`select case_id from erp_private.tax_cases where status='Draft'`)[0].case_id,
   run=(id,format)=>as('MANAGER',a=>suiteExport(tx,a,{action:'suite_export',kind:'Tax',format,record_id:id},{}));
  await assert.rejects(()=>run(draft,'vat3'),/locked the VAT case/);
- await assert.rejects(()=>run(await caseId('Company'),'vat3'),/only available for a VAT case/);
+ const companyId=await caseId('Company');
+ await assert.rejects(()=>run(companyId,'vat3'),/only available for a VAT case/);
  const out=await run((await tx`select case_id from erp_private.tax_cases where status='Locked' and kind='VAT'`)[0].case_id,'vat3');
  assert.match(out.name,/^VAT3_Schedules_2026-09-01_2026-09-30_/);
  const book=new ExcelJS.Workbook();await book.xlsx.load(Buffer.from(out.base64,'base64'));
