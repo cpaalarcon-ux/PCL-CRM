@@ -50,4 +50,20 @@ test('a preparer can name the reviewer; only that reviewer or a Partner decides;
  assert.equal((await queue('MANAGER3')).items.length,1);await review('MANAGER3',rv,'Returned');
  await submit({as_of:'2026-03-31',report_kind:'Quarter',requested_reviewer_id:actors.MANAGER3.staff_id});
  rv=(await read('MANAGER')).report_reviews.find(x=>x.status==='Submitted');await assert.rejects(()=>review('MANAGER2',rv),/sent to Fictional MANAGER3/);await review('PARTNER',rv);
+ 
+ // Ledger journals are the unit of independent review: a submitted journal is listed for every Manager or Partner except the people who prepared it.
+ const computer=(await ledger('ASSISTANT',{action:'ledger_periods',project_id:P})).rates.find(x=>x.class_code==='COMPUTER');assert.ok(computer);
+ const asset=await ledger('MANAGER',{...base,action:'ledger_asset_save',asset_name:'Fictional queue laptop',asset_account:'15006',rate_id:computer.rate_id,first_use_date:'2026-01-01',cost:100000,business_percentage:100,noncommercial_vehicle:false,evidence:'Fictional invoice, ownership and first-use evidence'});
+ const arev=async()=>(await ledger('MANAGER',{...base,action:'ledger_asset_read',asset_id:asset.asset_id})).asset.revision;
+ await ledger('MANAGER',{...base,action:'ledger_asset_submit',asset_id:asset.asset_id,revision:await arev()});
+ const charge=await ledger('MANAGER',{...base,action:'ledger_depreciation_create',asset_id:asset.asset_id,starts_on:'2026-01-01',ends_on:'2026-12-31',reference:'DEP-Q1',evidence:'Fictional annual class-rate calculation'});
+ const jrev=async()=>(await ledger('MANAGER',{...base,action:'ledger_journal_read',journal_id:charge.journal_id})).journal.revision;
+ assert.deepEqual((await queue('PARTNER')).items.filter(x=>x.kind==='journal'),[],'a draft journal is not yet in the queue');
+ await ledger('MANAGER',{...base,action:'ledger_journal_submit',journal_id:charge.journal_id,revision:await jrev()});
+ const jq=async role=>(await queue(role)).items.filter(x=>x.kind==='journal');
+ assert.deepEqual(await jq('MANAGER'),[],'the preparer never reviews their own journal');
+ assert.deepEqual(await jq('ASSISTANT'),[],'an Assistant does not see the review list');
+ for(const role of ['MANAGER2','MANAGER3','PARTNER']){const it=await jq(role);assert.equal(it.length,1,role+' sees the submitted journal');assert.equal(it[0].id,charge.journal_id);assert.equal(it[0].project_id,P);assert.equal(it[0].period_id,base.period_id);assert.equal(it[0].client_name,'Fictional review client');assert.ok(it[0].submitted_at);}
+ await ledger('MANAGER2',{...base,action:'ledger_journal_review',journal_id:charge.journal_id,revision:await jrev(),status:'Posted',review_note:'Fictional independent review of class, rate and charge.'});
+ assert.deepEqual(await jq('PARTNER'),[],'a posted journal leaves the queue');
 });

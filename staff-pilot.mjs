@@ -7,16 +7,16 @@ import {renderDashboard} from './staff-dashboard.mjs?v=20261104-handover-v1';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261104-advances-v1';
-import {createMessenger} from './staff-messenger.mjs?v=20261104-advances-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261104-advances-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261104-queue-v1';
+import {createMessenger} from './staff-messenger.mjs?v=20261104-queue-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261104-queue-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-dependency-map-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261029-audit-start-flow-v1';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261103-opening-tb-single-review-v3';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
-import {renderAccessGuide} from './staff-access-guide.mjs?v=20261104-advances-v1';
-import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261104-advances-v1';
+import {renderAccessGuide} from './staff-access-guide.mjs?v=20261104-queue-v1';
+import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261104-queue-v1';
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v12';
 const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -131,9 +131,12 @@ function documents(){
 }
 function firms(){return `<div class="card"><div class="section-head"><h2>Handling firms</h2><button class="primary" data-new="firm">+ Add firm</button></div><p class="muted">Add the correct registered names. A client may work with several firms, while each project belongs to one firm.</p>${data.firms.map(f=>`<div class="task"><div><b>${esc(f.legal_name)}</b><small>${esc(f.firm_code)}</small></div></div>`).join('')||empty('No firms registered yet.')}</div>`;}
 async function paintMyReviews(){const box=$('#homeMyReviews');if(!box)return;let items=[];try{items=(await request({action:'v3_review_queue'})).items||[];}catch(e){box.querySelector('.compact-empty').textContent='The review list could not be loaded. Refresh to try again.';return;}
- const head=box.querySelector('.section-head').outerHTML,row=x=>`<div class="home-exception-row"><div><b>${esc(x.client_name)}</b><small>${esc(x.title)} · submitted ${esc(shortDate(x.submitted_at))}${x.sent_to_me?' · <strong>sent to you</strong>':''}</small></div><button data-my-review="${esc(x.kind)}" data-id="${esc(x.id)}" data-client="${esc(x.client_id)}" data-project="${esc(x.project_id||'')}">Open to review</button></div>`;
+ const head=box.querySelector('.section-head').outerHTML,row=x=>`<div class="home-exception-row"><div><b>${esc(x.client_name)}</b><small>${esc(x.title)} · submitted ${esc(shortDate(x.submitted_at))}${x.sent_to_me?' · <strong>sent to you</strong>':''}</small></div><button data-my-review="${esc(x.kind)}" data-id="${esc(x.id)}" data-client="${esc(x.client_id)}" data-project="${esc(x.project_id||'')}" data-period="${esc(x.period_id||'')}">Open to review</button></div>`;
  box.innerHTML=head.replace('</div></div>',`</div><span class="badge ${items.length?'warn':''}">${items.length}</span></div>`)+(items.map(row).join('')||'<p class="muted compact-empty">Nothing is waiting for your review.</p>');}
-function render(){bindWorkspaceSearch();const allowed=['home'];if(canArea('projects'))allowed.push('task','projects');if(canArea('clients'))allowed.push('clients');if(canArea('time_hr'))allowed.push('time');if(canArea('documents'))allowed.push('documents');if(canArea('communications'))allowed.push('communications');for(const [area,target] of [['audit','audit'],['leads','leads'],['billing_wip','finance'],['staff_access','staff'],['settings','firms']])if(canArea(area))allowed.push(target);if(!allowed.includes(view))view='home';nav();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';$('#content').innerHTML=({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>`,audit:audit.render,time:()=>v6.time()+suite.hr(),staff,documents,firms:suite.settings,communications:suite.communications,finance:suite.finance}[view])();v6.bind();presence.paint();if(view==='audit')audit.enter();if(view==='home'&&isLeader())void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();if($('#search'))$('#search').oninput=e=>document.querySelectorAll('[data-search]').forEach(r=>r.hidden=!r.dataset.search.includes(e.target.value.toLowerCase()));}
+const crumbLabels={clients:'Clients',projects:'Projects & tasks',time:'Time & HR',documents:'Documents',communications:'Communications',audit:'Audit & assurance',leads:'Leads',finance:'Billing & WIP',staff:'Staff & access',firms:'Settings'};
+// One breadcrumb for every top-level area. Task workspaces and audit files draw their own deeper trail, so the shared bar stops at the area name for those.
+function paintCrumbs(){const el=$('#crumbs');if(!el)return;if(view==='home'||view==='task'||!crumbLabels[view]){el.hidden=true;el.replaceChildren();return;}el.hidden=false;el.innerHTML=`<a href="#view=home" data-view="home">Home</a><span aria-hidden="true">/</span><span aria-current="page">${esc(crumbLabels[view])}</span>`;}
+function render(){bindWorkspaceSearch();const allowed=['home'];if(canArea('projects'))allowed.push('task','projects');if(canArea('clients'))allowed.push('clients');if(canArea('time_hr'))allowed.push('time');if(canArea('documents'))allowed.push('documents');if(canArea('communications'))allowed.push('communications');for(const [area,target] of [['audit','audit'],['leads','leads'],['billing_wip','finance'],['staff_access','staff'],['settings','firms']])if(canArea(area))allowed.push(target);if(!allowed.includes(view))view='home';nav();paintCrumbs();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';$('#content').innerHTML=({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>`,audit:audit.render,time:()=>v6.time()+suite.hr(),staff,documents,firms:suite.settings,communications:suite.communications,finance:suite.finance}[view])();v6.bind();presence.paint();if(view==='audit')audit.enter();if(view==='home'&&isLeader())void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();if($('#search'))$('#search').oninput=e=>document.querySelectorAll('[data-search]').forEach(r=>r.hidden=!r.dataset.search.includes(e.target.value.toLowerCase()));}
 function field(name,label,value='',type='text',extra=''){return `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;}
 function select(name,label,items,value='',blank='Choose…'){return `<label>${label}<select name="${name}">${options(items,value,blank)}</select></label>`;}
 function firmChecks(selected=[]){return `<fieldset class="full"><legend>Authorised / handling firms *</legend>${data.firms.map(f=>`<label><input type="checkbox" name="firm_ids" value="${f.firm_id}"${selected.includes(f.firm_id)?' checked':''}>${esc(f.firm_code+' · '+f.legal_name)}</label>`).join('')||'<p>Add a firm first.</p>'}</fieldset>`;}
@@ -232,7 +235,7 @@ $('#closeEditor').onclick=()=>{$('#editor').close();$('#editorBody').replaceChil
 // Native close events are queued. A replacement workspace may already be open.
 $('#editor').addEventListener('close',()=>{if(!$('#editor').open)$('#editorBody').replaceChildren();});
 $('#firmFilter').onchange=e=>{firm=e.target.value;render();};
-document.addEventListener('click',async e=>{const b=e.target.closest('button,a[data-open-task],a[data-open-project],a[data-workspace-view]');
+document.addEventListener('click',async e=>{const b=e.target.closest('button,a[data-open-task],a[data-open-project],a[data-workspace-view],a[data-view]');
  if(!b){const row=e.target.closest('[data-task-row]');if(row&&!e.target.closest('a,input,select,textarea,label')&&!window.getSelection()?.toString())navigateWorkspace('task',row.dataset.taskRow);return;}
  if(b.matches('a')){if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();}
  try{
@@ -243,10 +246,11 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.dashboard==='read-alert'){await request({action:'notification_read',notification_id:b.dataset.id});await load();}
  if(b.dataset.dashboard==='account-catalog')await v6.openCatalog();
  if(b.dataset.myReview==='chart')await improvements.chart(b.dataset.client);
+ if(b.dataset.myReview==='journal')await v6.openJournal(b.dataset.project,b.dataset.period,b.dataset.id);
  if(b.dataset.myReview==='report'){notice('Opening the ledger: go to Reports, then choose Review beside the submitted report.');await v6.openLedger(b.dataset.project);}
  if(b.dataset.searchProject)navigateWorkspace('projects',b.dataset.searchProject);
  if(b.closest('#workspaceSearchResults'))$('#workspaceSearchResults').hidden=true;
- if(b.dataset.view)navigateWorkspace(b.dataset.view);
+ if(b.dataset.view){if(b.closest('#editor')&&$('#editor').open)$('#editor').close();navigateWorkspace(b.dataset.view);}
  if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload,firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}
  if(b.dataset.clientSetup)await improvements.client(b.dataset.clientSetup);
  if(b.dataset.setupGuide)await setupGuide.open(b.dataset.setupGuide);
