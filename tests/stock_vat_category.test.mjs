@@ -47,10 +47,10 @@ test('stock rolls by VAT category: sold categories, sources by rate, sales from 
  const mapRow=(r,extra={})=>map('ASSISTANT',{action:'workbook_map',project_id:P,row_id:r.row_id,revision:r.revision,route:1,account_code:'50000',activity_id:W,stock_class:'Merchandise',...extra});
 
  await assert.rejects(()=>call('MANAGER',{action:'v3_stock_create_vat',project_id:P,activity_id:W,starts_on:'2026-09-01',ends_on:'2026-09-30'}),/Record the VAT categories/);
- const c0=(await call('MANAGER',{action:'v3_client_read',client_id:C})).client;
+ const rev=async()=>(await call('MANAGER',{action:'v3_client_read',client_id:C})).client.revision,c0={revision:await rev()};
  await assert.rejects(()=>call('ASSISTANT',{action:'v3_vat_categories_save',client_id:C,revision:c0.revision,vat_categories_sold:['16%']}),/Partner or Manager/);
- await assert.rejects(()=>call('MANAGER',{action:'v3_vat_categories_save',client_id:C,revision:c0.revision,vat_categories_sold:[]}),/at least one/);
- assert.deepEqual((await call('MANAGER',{action:'v3_vat_categories_save',client_id:C,revision:c0.revision,vat_categories_sold:['0%','16%']})).vat_categories_sold,['16%','0%']);
+ await assert.rejects(async()=>call('MANAGER',{action:'v3_vat_categories_save',client_id:C,revision:await rev(),vat_categories_sold:[]}),/at least one/);
+ assert.deepEqual((await call('MANAGER',{action:'v3_vat_categories_save',client_id:C,revision:await rev(),vat_categories_sold:['0%','16%']})).vat_categories_sold,['16%','0%']);
  assert.deepEqual((await call('MANAGER',{action:'v3_project_read',project_id:P})).vat_categories_sold,['16%','0%']);
 
  await assert.rejects(()=>call('ASSISTANT',{action:'v3_stock_create',project_id:P,activity_id:W,vat_category:'8%',starts_on:'2026-09-01',ends_on:'2026-09-30'}),/does not sell 8% goods/);
