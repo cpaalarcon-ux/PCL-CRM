@@ -69,9 +69,12 @@ test('System Administrators run logins and chat groups without seeing client wor
  await chat('ADMIN',{action:'discussion_group_members_set',channel_id:g.channel_id,add:[actors.ASSISTANT2.staff_id],remove:[]});
  assert.equal((await chat('ASSISTANT2',{action:'discussion_messages',channel_id:g.channel_id})).messages.length,2,'a re-added member sees the whole history');
 
+ // Names resolve for every participant, not only for people who can read the staff table.
+ assert.ok((await chat('ASSISTANT2',{action:'discussion_messages',channel_id:g.channel_id})).messages.every(m=>m.author_name&&m.author_name.startsWith('Fictional')),'author names show for an assistant');
  // One-to-one: any active colleague of a shared firm; an intern may reply but not start.
  const dm=await chat('ASSISTANT',{action:'discussion_open',kind:'Direct',staff_id:actors.ASSISTANT2.staff_id});
  assert.equal(dm.channel.kind,'Direct');
+ assert.equal((await chat('ASSISTANT2',{action:'discussion_list'})).channels.find(c=>c.kind==='Direct').display_title,'Fictional ASSISTANT','a one-to-one chat is titled with the other person');
  await assert.rejects(()=>chat('INTERN',{action:'discussion_open',kind:'Direct',staff_id:actors.ASSISTANT.staff_id}),/cannot start/);
  await assert.rejects(()=>chat('ASSISTANT',{action:'discussion_open',kind:'Direct',staff_id:actors.ASSISTANT.staff_id}),/another staff member/);
  // An administrator cannot open client work chats.
