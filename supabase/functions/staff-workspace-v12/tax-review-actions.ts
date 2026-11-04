@@ -6,6 +6,7 @@ import {fail,text,uuid,choice,revision,date} from './validation.mjs';
 import {range,day,number,amount,round,filingKinds,vatCalculation,incomeCalculation,payrollCalculation} from './suite-rules.mjs';
 import {one,leader,today} from './suite-actions.ts';
 import {annualTaxLedgerControl} from './ledger-actions.ts';
+import {stockGateIssues} from './stock-vat.ts';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
 const editor=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner must review this work.');};
 const fresh=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'This record changed. Refresh before saving.');};
@@ -72,6 +73,7 @@ export async function taxSummary(tx:any,c:any){
  if(c.rate_id){const selected=available.find((r:any)=>r.rate_id===c.rate_id);if(!selected||testRate(selected))issues.push('The previously selected rate is unavailable or test-only. Preview and save the current applicable rules.');else if(rate&&selected.rate_id!==rate.rate_id)issues.push('The selected rate does not match the current client/period rules. Preview and save again.');}
  if(c.kind==='VAT'){
   const reconciliation=await tx`select reconciliation_id,reviewed_by,review_note,inputs,result,source_fingerprint from erp_private.sales_reconciliations where project_id=${c.project_id} and review_type='Monthly' and starts_on=${c.starts_on} and ends_on=${c.ends_on} and status='Locked'`;salesReview=reconciliation[0]||null;if(!reconciliation.length)issues.push('Complete independent monthly sales and bank reconciliation before tax submission.');
+  issues.push(...await stockGateIssues(tx,c.project_id,c.starts_on,c.ends_on));
   if(!batches.some((b:any)=>b.dataset==='Sales'))issues.push('Upload the sales source for this period.');
   if(!batches.some((b:any)=>['Purchases','Expenditure','Non-eTIMS'].includes(b.dataset)))issues.push('Upload the purchases/expenditure source for this period.');
   if(!batches.some((b:any)=>b.dataset==='Bank')&&salesReview?.result?.bank_status!=='Bank pending')issues.push('Upload the bank control source for this period.');

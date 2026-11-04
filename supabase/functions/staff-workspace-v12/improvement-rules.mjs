@@ -47,3 +47,32 @@ export function exportReadiness({client,kind,period,stock=[]}){
  if(kind==='P10')issues.push('The complete payroll register and P10 adapter are a separate build.');
  return {ready:false,kind,issues,direct_submission:false,label:'Readiness checklist only — no KRA upload file generated'};
 }
+
+// ---- Stock by VAT category (Phase 5) ----
+export const VAT_CATEGORIES=['16%','8%','0%','Exempt'];
+export function vatCategoriesInput(list){
+ if(!Array.isArray(list)||!list.length)fail(400,'Tick at least one VAT category the client sells.');
+ const chosen=new Set(list.map(x=>choice(x,VAT_CATEGORIES)));return VAT_CATEGORIES.filter(x=>chosen.has(x));
+}
+// The month cannot lock unless every VAT category the client sells has an approved stock roll for it.
+// controls: stock rolls that cover the month; resale: {category: count of resale purchase rows}; sales: {category: net sales}.
+export function vatGateIssues({sold,controls,resale={},sales={}}){
+ if(!Array.isArray(sold)||!sold.length)return [];
+ const issues=[];
+ for(const cat of VAT_CATEGORIES){
+  const rolls=controls.filter(c=>c.vat_category===cat);
+  if(sold.includes(cat)){
+   if(!rolls.length)issues.push(`No ${cat} stock roll for this month. Create it and split the opening stock by VAT category.`);
+   else{
+    for(const c of rolls){
+     if(c.status!=='Approved')issues.push(`The ${cat} stock roll is ${c.status}; it must be approved before the month locks.`);
+     else if(Number(c.result?.closing_value)<0)issues.push(`The ${cat} stock roll has a negative closing balance.`);
+    }
+   }
+  }else{
+   if(Number(sales[cat]||0)!==0)issues.push(`Sales are recorded in ${cat} but the client is set not to sell ${cat} goods. Correct the sales or the client's VAT categories.`);
+   if(Number(resale[cat]||0)>0)issues.push(`${resale[cat]} purchase line(s) in ${cat} are treated as resale, but the client does not sell ${cat} goods. Reclassify them or record the reason.`);
+  }
+ }
+ return issues;
+}
