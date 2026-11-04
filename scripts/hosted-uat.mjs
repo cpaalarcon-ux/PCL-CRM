@@ -31,6 +31,10 @@ async function identity(){
  record('Live page build matches this commit',build===expected,`page ${build}, expected ${expected}`);
  const server=await call({action:'release_info'});
  record('Live server build matches this commit',server.status===200&&server.body.build===expected,server.status===200?`server ${server.body.build||'unknown'}${server.body.commit?' · commit '+server.body.commit.slice(0,7):''}, expected ${expected}`:`HTTP ${server.status} — the server may predate release_info; deploy staff-workspace-v12`);
+ for(const slug of ['staff-workspace-v6','staff-workspace-v7','staff-workspace-v8','staff-workspace-v9','staff-workspace-v10','staff-pilot']){
+  const r=await fetch(API.replace(/staff-workspace-v12$/,slug),{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY,Origin:ORIGIN},body:'{"action":"login"}'});
+  record(`Retired endpoint ${slug} answers 410`,r.status===410,`HTTP ${r.status}`);
+ }
  const anonymous=await call({action:'workspace'});
  record('Anonymous protected call is refused',[401,403].includes(anonymous.status),`HTTP ${anonymous.status}`);
 }
