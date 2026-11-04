@@ -32,7 +32,7 @@ test('only the signatory or a Partner issues a letter; issued letters are locked
  const call=(role,p)=>as(role,a=>suiteAction(tx,a,p)),today=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date());
  const saved=await call('MANAGER',{action:'communication_save',request_id:id(),client_id:C,firm_id:F,project_id:P,channel:'Letter',subject:'Request for records',purpose:'Document request',details:'Please send the January records.',communication_date:today,signatory_id:actors.MANAGER.staff_id,status:'Open'});
  const row=async()=>(await tx`select * from erp_private.communications where communication_id=${saved.communication_id}`)[0];
- await assert.rejects(()=>call('ASSISTANT',{action:'communication_issue',communication_id:saved.communication_id,revision:(await row()).revision}),/signatory or an Engagement Partner/);
+ await assert.rejects(async()=>call('ASSISTANT',{action:'communication_issue',communication_id:saved.communication_id,revision:(await row()).revision}),/signatory or an Engagement Partner/);
  await assert.rejects(()=>call('ASSISTANT',{action:'communication_letter_pdf',communication_id:saved.communication_id}),/Issue the letter/);
  const issued=await call('MANAGER',{action:'communication_issue',communication_id:saved.communication_id,revision:(await row()).revision});
  assert.match(issued.qr_text,new RegExp('^DATE: '+today+'\nREF: '));assert.match(issued.qr_text,/SIGNATORY: Fictional MANAGER$/);
