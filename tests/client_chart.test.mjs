@@ -29,7 +29,7 @@ test('a client chart is proposed with exceptions cleared, independently approved
 
  await assert.rejects(()=>chart('MANAGER',{action:'v3_client_chart_propose',client_id:C,effective_from:'2026-01-01'}),/at least one business activity/);
  await tx`insert into erp_private.client_activities(client_id,activity_code,is_primary,pack_code,activity_name,income_stream,effective_from,evidence,created_by) values(${C},'construction',true,'Construction','Construction and building works','Business','2026-01-01','Fictional CR12',${actors.MANAGER.staff_id})`;
- await tx`insert into erp_private.client_account_mappings(client_id,source_account_name,erp_account_code,effective_from,status,created_by) values(${C},'Fictional tourism levy','21608','2026-01-01','Draft',${actors.MANAGER.staff_id})`;
+ await as('MANAGER',a=>tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,created_by) values(${C},'TL-1','Fictional tourism levy','21608','2026-01-01',${a.staff_id})`);
 
  let r=await chart('ASSISTANT',{action:'v3_client_chart_read',client_id:C,effective_from:'2026-01-01'});
  assert.equal(r.status,'Not approved');assert.deepEqual(r.packs,['Construction']);
