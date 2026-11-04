@@ -6,6 +6,7 @@ import {digest} from './improvement-actions.ts';
 import {chosenReviewer,mustBeAskedReviewer,reviewCandidates} from './review-queue.ts';
 import {readWorkbookSheet} from './workbook-reader.mjs';
 import {checkWorkbookZip} from './workspace-rules.mjs';
+import {loadCrosswalk,revenueAccount} from './sales-crosswalk.ts';
 import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal,profitByActivity,isoWeek,DATA_CUTOFF} from './ledger-rules.mjs';
 import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
@@ -101,14 +102,14 @@ async function sourceCheck(tx:any,j:any){
  const clientId=(await tx`select client_id from erp_private.projects where project_id=${j.project_id}`)[0]?.client_id;
  const accounts=await tx`select code,route,category_code,status,is_legacy from erp_private.account_catalog`;
  for(const row of r.filter((x:any)=>['Purchases','Expenditure','Non-eTIMS'].includes(x.dataset)&&x.account_code)){
-  const hint=row.normalized?.mapping_suggestion,confirmation=row.review_details?.mapping_confirmation,account=accounts.find((x:any)=>x.code===row.account_code),confirmed=confirmation?.method==='Uploaded routing and TB codes'&&hint&&String(confirmation.tb_item_code)===String(row.account_code)&&String(hint.account_code)===String(row.account_code)&&String(confirmation.routing_code)===String(hint.category_code)&&String(account?.category_code)===String(hint.category_code)&&Number(account?.route)===Number(hint.route)&&account?.status==='Active'&&!account?.is_legacy;
+  const hint=row.normalized?.mapping_suggestion,confirmation=row.review_details?.mapping_confirmation,account=accounts.find((x:any)=>x.code===row.account_code),confirmed=['Uploaded routing and TB codes','Auto-mapped — chart verified'].includes(confirmation?.method)&&hint&&String(confirmation.tb_item_code)===String(row.account_code)&&String(hint.account_code)===String(row.account_code)&&String(confirmation.routing_code)===String(hint.category_code)&&String(account?.category_code)===String(hint.category_code)&&Number(account?.route)===Number(hint.route)&&account?.status==='Active'&&!account?.is_legacy;
   if(!confirmed&&!await clientAccountAllowed(tx,clientId,row.account_code,day(row.normalized.date||row.period_start)))fail(409,`ERP account ${row.account_code} is no longer approved for this client and source date, and its uploaded code confirmation is not valid. Review the client account setup and refresh the draft.`);
  }
  if(await digest(r.map(sourceShape))!==j.source_snapshot.digest)fail(409,'A source or its review changed. Refresh the generated draft before resubmitting.');
 }
-function salesLines(r:any){
+function salesLines(r:any,cross:any[]){
  if(r.dataset!=='Sales'||r.source_revision!==r.revision||r.decision!=='Confirmed')fail(400,'Sales sources need current independent confirmation.');
- const code=({KE_VAT_STANDARD:'40000',KE_VAT_ZERO:'40020',KE_VAT_EXEMPT:'40030',KE_VAT_PETROLEUM_8:'40010'} as any)[r.vat_rate_key];
+ const code=revenueAccount(cross,{rate_key:r.vat_rate_key},String(r.normalized.date||day(r.period_start)));
  if(!code)fail(400,'Confirm the sales category and applicable dated VAT treatment before posting.');
  const net=cashAmount(r.normalized.amount),vat=cashAmount(r.normalized.vat||0),signed=(account_code:string,n:number)=>({account_code,debit:Math.max(n,0)/100,credit:Math.max(-n,0)/100,source_status:'Confirmed',source_reference:r.row_id,description:r.normalized.invoice});
  return [signed('10060',net+vat),{...signed(code,-net),activity_id:r.review_details?.activity_id||null},...(vat?[signed('21020',-vat)]:[])];
@@ -129,7 +130,7 @@ async function generateSource(tx:any,a:any,l:any,p:any){
  const claimed=await tx`select * from erp_private.ledger_sources where source_kind='Workbook row' and source_key=any(${tx.array(rows.map((r:any)=>r.row_id))}::text[])`;
  if(claimed.length){const ids=[...new Set(claimed.map((x:any)=>x.journal_id))];if(claimed.length===rows.length&&ids.length===1){const existing=one(await tx`select * from erp_private.ledger_journals where journal_id=${ids[0]}`);if(existing.period_id===l.period_id&&existing.source_snapshot.digest===await digest(rows.map(sourceShape)))return {journal_id:existing.journal_id,reused:true};}fail(409,'Some sources already belong to a journal. Select the remaining unposted rows.');}
  await checkPurchaseCredits(tx,rows);
- const items=rows.flatMap((r:any)=>kind==='Sales'?salesLines(r):costJournal(r)),snapshot={kind:'Workbook',rows:rows.map(sourceShape),digest:await digest(rows.map(sourceShape))};
+ const cross=kind==='Sales'?await loadCrosswalk(tx):[],items=rows.flatMap((r:any)=>kind==='Sales'?salesLines(r,cross):costJournal(r)),snapshot={kind:'Workbook',rows:rows.map(sourceShape),digest:await digest(rows.map(sourceShape))};
  const result=await newJournal(tx,a,l,kind,p,items,snapshot,true);
  for(const r of rows)await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id,source_revision) values('Workbook row',${r.row_id},${result.journal_id},${l.project_id},${r.revision})`;
  return result;
@@ -306,7 +307,8 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   const used=(await tx`select journal_id from erp_private.ledger_sources where source_kind='Period import' and source_key=${source.import_id}`)[0];if(used)return {...used,reused:true};
   let items:any[]=[];
   if(source.kind==='Sales'){
-   const codes:any={'16%':'40000','8%':'40010','0%':'40020',Exempt:'40030'};
+   const cross=await loadCrosswalk(tx),codes:any=Object.fromEntries(['16%','8%','0%','Exempt'].map(k=>[k,revenueAccount(cross,{vat_category:k},day(source.ends_on))]));
+   if(source.payload.groups.some((g:any)=>(cashAmount(g.net)||cashAmount(g.vat))&&!codes[g.vat_category]))fail(400,'No approved revenue account is set for this sales category and date.');
    const signed=(code:string,value:number,description:string)=>({account_code:code,debit:Math.max(value,0)/100,credit:Math.max(-value,0)/100,source_status:'Confirmed',source_reference:source.import_id,description});
    for(const g of source.payload.groups){const net=cashAmount(g.net),vat=cashAmount(g.vat);if(net||vat)items.push(signed('10060',net+vat,'Sales summary '+g.vat_category),signed(codes[g.vat_category],-net,'Net sales '+g.vat_category),...(vat?[signed('21020',-vat,'Output VAT '+g.vat_category)]:[]));}
   }else{const t=source.payload.totals;items=payrollJournal({gross_pay:t.gross,paye:t.paye,shif:t.shif,employee_ahl:t.employee_ahl,employee_nssf:t.employee_nssf,employee_pension:t.employee_pension,other_deductions:t.other_deductions,employer_ahl:t.employer_ahl,employer_nssf:t.employer_nssf,employer_nita:t.nita,evidence:source.import_id});}
@@ -328,7 +330,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(p.action==='ledger_journal_refresh'){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);
   if(j.source_snapshot.kind!=='Workbook')fail(400,'Only a generated workbook journal can refresh its sources.');
-  const rows=await reviewedRows(tx,pid,j.source_snapshot.rows.map((r:any)=>r.row_id)),items=rows.flatMap((r:any)=>j.kind==='Sales'?salesLines(r):costJournal(r));
+  const cross=j.kind==='Sales'?await loadCrosswalk(tx):[],rows=await reviewedRows(tx,pid,j.source_snapshot.rows.map((r:any)=>r.row_id)),items=rows.flatMap((r:any)=>j.kind==='Sales'?salesLines(r,cross):costJournal(r));
   await writeLines(tx,j,items);await tx`update erp_private.ledger_journals set source_snapshot=${tx.json({kind:'Workbook',rows:rows.map(sourceShape),digest:await digest(rows.map(sourceShape))})},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};
  }
  if(['ledger_journal_submit','ledger_journal_review'].includes(p.action)){

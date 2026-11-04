@@ -7,6 +7,7 @@ import {taxPeriodAction} from './tax-period-actions.ts';
 import {improvementAction} from './improvement-actions.ts';
 import {reviewQueueAction} from './review-queue.ts';
 import {handoverAction} from './handover-actions.ts';
+import {autoMapAction} from './auto-map.ts';
 import {procedureAction} from './procedure-actions.ts';
 import {presenceAction} from './presence-actions.ts';
 import {accountingAction} from './accounting-actions.ts';
@@ -318,6 +319,7 @@ async function action(id:any,p:any){
   const improvements=await improvementAction(tx,a,p,admin.storage.from(BUCKET));if(improvements!==undefined)return improvements;
   const queue=await reviewQueueAction(tx,a,p);if(queue!==undefined)return queue;
   const handover=await handoverAction(tx,a,p);if(handover!==undefined)return handover;
+  const autoMap=await autoMapAction(tx,a,p);if(autoMap!==undefined)return autoMap;
   const importedPeriod=await periodImportAction(tx,a,p,admin.storage.from(BUCKET));if(importedPeriod!==undefined)return importedPeriod;
   const purchases=await purchaseLedgerAction(tx,a,p);if(purchases!==undefined)return purchases;
   const ledger=await ledgerAction(tx,a,p,admin.storage.from(BUCKET));if(ledger!==undefined)return ledger;

@@ -1,6 +1,5 @@
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
-import {DATA_CUTOFF} from './ledger-rules.mjs';
-const cutoffMessage='The ERP holds data for periods ending 31 December 2025 onwards. Keep earlier periods in the client\u2019s previous records.';
+import {assertSupportedPeriod} from './supported-period.ts';
 import {readSourceSheet} from './source-reader.mjs';
 import {detectImportProfile,salesTotals,payrollRows,rateKeys} from './import-profiles.mjs';
 import {keys,pickRate,payrollFromRules} from './tax-registry.mjs';
@@ -36,7 +35,7 @@ async function importActivity(tx:any,clientId:string,start:string,end:string,req
 async function prepare(tx:any,a:any,project:any,p:any,storage:any){
  const kind=choice(p.kind,['Sales','Payroll']),start=date(p.starts_on),end=date(p.ends_on);
  if(!start||!end||end<start||Date.parse(end)-Date.parse(start)>366*86400000)fail(400,'Choose the reporting period.');
- if(end<DATA_CUTOFF)fail(400,cutoffMessage);
+ await assertSupportedPeriod(tx,project.client_id,start);
  if(kind==='Payroll'&&(start.slice(8)!=='01'||new Date(Date.parse(end)+86400000).toISOString().slice(8,10)!=='01'||start.slice(0,7)!==end.slice(0,7)))fail(400,'Payroll must cover one complete calendar month.');
  const doc=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and project_id=${project.project_id} and deleted_at is null and archived_at is null for share`);
  if(!['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip'].includes(doc.mime_type))fail(400,'Choose CSV, Excel or ZIP import data.');

@@ -74,3 +74,4 @@
 20261104123219 retire_suspense_account
 20261104124716 system_admin_and_chat_groups
 20261104132056 chat_people_names
+20261104134156 sales_revenue_crosswalk

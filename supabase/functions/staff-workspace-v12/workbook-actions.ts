@@ -1,4 +1,6 @@
 import {stockCategoryOptions} from './stock-category-options.ts';
+import {assertSupportedPeriod} from './supported-period.ts';
+import {autoMapRows} from './auto-map.ts';
 import {chartCatalogue} from './client-chart.ts';
 import {detectImportProfile,profilePurchase} from './import-profiles.mjs';
 import {purchaseUploadProfile,purchaseUploadRows,purchaseUploadMap,purchaseUploadHeaders,purchaseUploadRates,purchaseUploadValues,purchaseDisplayValues,purchasePendingMatch,purchaseUploadId,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from './purchase-upload.mjs';
@@ -77,7 +79,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  if(template&&p.dataset&&p.dataset!==dataset)fail(400,'The import type must match the recognised workbook.');
  if(sourceInfo.section&&!profile?.recognised&&!p.section_contract_confirmed)fail(400,'Confirm the selected KRA CSV section column mapping. A section name alone is not a validated filing contract.');
  const start=date(p.period_start),end=date(p.period_end);
- if(!start||!end||end<start)fail(400,'Choose the import period.');if(end<'2025-12-31')fail(400,'The ERP holds data for periods ending 31 December 2025 onwards. Keep earlier periods in the client\u2019s previous records.');const map=block?block.column_map:profile?.recognised?profile.column_map:importMap(p.column_map,dataset),batch=crypto.randomUUID();
+ if(!start||!end||end<start)fail(400,'Choose the import period.');await assertSupportedPeriod(tx,project.client_id,start);const map=block?block.column_map:profile?.recognised?profile.column_map:importMap(p.column_map,dataset),batch=crypto.randomUUID();
  if(!one(await tx`select erp_private.tax_period_open(${project.project_id}::uuid,${start}::date,${end}::date) as open`).open)fail(400,'Return the submitted tax case before adding source rows. Locked periods cannot receive imports.');
  const first=standard?2:Number(p.first_row||block?.first_row||header+1),last=standard?sheet.rowCount:Number(p.last_row||block?.last_row||sheet.rowCount);
  if(!standard)importRowRange({header,first,last,rowCount:sheet.rowCount,block});
@@ -139,5 +141,6 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  for(let i=0;i<rejected.length;i+=500)await tx`insert into erp_private.workbook_rejections(batch_id,source_row,reason,raw_values) select ${batch}::uuid,r.row,r.reason,r.raw from jsonb_to_recordset(${tx.json(rejected.slice(i,i+500))}::jsonb) as r(row integer,reason text,raw jsonb)`;
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
  const outstanding=pendingCount?(await pendingPurchases(tx,project.project_id,null,null,batch)).total:0;
- return {ok:true,batch_id:batch,ignored_count:ignored,dataset,source_count:source,new_count:added,duplicate_count:duplicates+pendingCount-outstanding,pending_count:outstanding,rejected_count:rejected.length-pendingCount,rejections:rejected.filter(r=>!r.pending).slice(0,100).map(r=>({row:r.row,reason:r.reason}))};
+ const auto=standard?await autoMapRows(tx,a,project,{batchId:batch}):{mapped:0,left_for_staff:0};
+ return {ok:true,batch_id:batch,auto_mapped_count:auto.mapped,auto_left_for_staff:auto.left_for_staff,ignored_count:ignored,dataset,source_count:source,new_count:added,duplicate_count:duplicates+pendingCount-outstanding,pending_count:outstanding,rejected_count:rejected.length-pendingCount,rejections:rejected.filter(r=>!r.pending).slice(0,100).map(r=>({row:r.row,reason:r.reason}))};
 }

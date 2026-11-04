@@ -7,7 +7,7 @@ import {renderDashboard} from './staff-dashboard.mjs?v=20261104-handover-v1';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261104-no-main-activity-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261104-auto-map-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261104-messenger-v2';
 import {createSuiteUI} from './staff-suite.mjs?v=20261104-messenger-v2';
 import {uploadChoices} from './staff-pilot-upload.mjs';
