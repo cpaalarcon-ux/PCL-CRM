@@ -40,7 +40,7 @@ export function excelValue(v){
  if(v.richText)return v.richText.map(x=>x.text).join('');
  if(v.text)return String(v.text);if(v.error)return String(v.error);return '';
 }
-export const importFields=['date','invoice','party','party_pin','line_id','description','amount','vat','reference','debit','credit','account','vat_category','original_invoice','original_invoice_date','document_type'];
+export const importFields=['date','invoice','party','party_pin','line_id','description','amount','vat','reference','debit','credit','account','vat_category','original_invoice','original_invoice_date','document_type','balance'];
 export function importMap(input,dataset){
  const map={};for(const [k,v] of Object.entries(input||{})){if(!importFields.includes(k))fail(400,'Unknown mapping field.');if(v!==''&&v!=null){const n=Number(v);if(!Number.isInteger(n)||n<1||n>80)fail(400,'Map columns 1–80.');map[k]=n;}}
  if(new Set(Object.values(map)).size!==Object.values(map).length)fail(400,'Each source column can map to only one field.');
@@ -64,7 +64,7 @@ export function normalizeImport(values,map,dataset,start,end){
  const hasData=dataset==='General'?Object.values(raw).some(v=>String(v).trim()!==''):
   (dataset==='Bank'?['date','reference','debit','credit']:['date','invoice','party','party_pin']).some(k=>raw[k]!=null&&String(raw[k]).trim()!==''&&raw[k]!==0);
  if(!hasData)return null;
- const row={};for(const [key,value] of Object.entries(raw))row[key]=['amount','vat','debit','credit'].includes(key)?money(value):['date','original_invoice_date'].includes(key)?excelDate(value):String(value).trim();
+ const row={};for(const [key,value] of Object.entries(raw))row[key]=['amount','vat','debit','credit','balance'].includes(key)?money(value):['date','original_invoice_date'].includes(key)?excelDate(value):String(value).trim();
  const issues=[];
  if(dataset!=='General'){
   if(!row.date||row.date<start||row.date>end)issues.push('Date is missing, invalid or outside the selected period.');
