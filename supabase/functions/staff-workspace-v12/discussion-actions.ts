@@ -1,16 +1,18 @@
 import {fail,text,uuid} from './validation.mjs';
 const one=(r:any[])=>{if(!r.length)fail(403,'This internal discussion is not available to your account.');return r[0];};
+const admin=(a:any)=>{if(a.category_code!=='ADMIN')fail(403,'Only a System Administrator can manage chat groups.');};
 const visible=async(tx:any,id:string)=>one(await tx`select * from erp_private.discussion_channels where channel_id=${id}::uuid`);
 export async function discussionAction(tx:any,a:any,p:any){
  if(!String(p.action).startsWith('discussion_'))return undefined;
  if(p.action==='discussion_candidates')return {candidates:await tx`select * from erp_private.discussion_candidates() order by full_name`};
- if(p.action==='discussion_list')return {channels:await tx`select c.*,coalesce(m.sequence,0) last_sequence,m.created_at last_message_at,
+ if(p.action==='discussion_list')return {channels:await tx`select c.*,coalesce(m.sequence,0) last_sequence,m.created_at last_message_at,left(m.body,120) last_body,m.author_id last_author_id,
  (select count(*)::int from erp_private.discussion_messages x where x.channel_id=c.channel_id and x.author_id<>${a.staff_id} and x.sequence>coalesce(r.last_sequence,0)) unread,
  case when c.kind='Direct' then (select full_name from erp_private.staff_members where staff_id=case when c.dm_low=${a.staff_id} then c.dm_high else c.dm_low end) else c.title end display_title
- from erp_private.discussion_channels c left join lateral(select sequence,created_at from erp_private.discussion_messages where channel_id=c.channel_id order by sequence desc limit 1)m on true
+ from erp_private.discussion_channels c left join lateral(select sequence,created_at,body,author_id from erp_private.discussion_messages where channel_id=c.channel_id order by sequence desc limit 1)m on true
  left join erp_private.discussion_reads r on r.channel_id=c.channel_id and r.staff_id=${a.staff_id} order by m.created_at desc nulls last,c.created_at desc limit 100`};
  if(p.action==='discussion_open'){
   if(p.kind==='Direct'){
+   if(a.category_code==='INTERN')fail(403,'Interns can reply to a conversation but cannot start one.');
    const target=uuid(p.staff_id);if(target===a.staff_id)fail(400,'Choose another staff member.');
    // Sharing a firm permits starting a direct conversation; it never permits
    // inspecting an existing conversation between two other members.
@@ -24,6 +26,21 @@ export async function discussionAction(tx:any,a:any,p:any){
   const kind=task?'Task':'Project';
   await tx`insert into erp_private.discussion_channels(kind,project_id,task_id,title,created_by) values(${kind},${project.project_id},${task?.task_id||null},${String(task?.task_name||project.project_name).slice(0,200)},${a.staff_id}) on conflict do nothing`;
   return {channel:one(await tx`select * from erp_private.discussion_channels where kind=${kind} and project_id=${project.project_id} and (${task?.task_id||null}::uuid is null or task_id=${task?.task_id||null})`)};
+ }
+ if(p.action==='discussion_staff_directory'){admin(a);return {staff:await tx`select * from erp_private.chat_staff_directory()`};}
+ if(p.action==='discussion_group_overview'){
+  const rows=await tx`select * from erp_private.chat_group_overview(${p.channel_id?uuid(p.channel_id):null}::uuid)`,groups:any[]=[];
+  for(const r of rows){let g=groups.find(x=>x.channel_id===r.channel_id);if(!g){g={channel_id:r.channel_id,title:r.title,created_at:r.created_at,members:[]};groups.push(g);}g.members.push({staff_id:r.staff_id,full_name:r.full_name,category_code:r.category_code});}
+  return {groups};
+ }
+ if(p.action==='discussion_group_create'){
+  admin(a);const members=Array.isArray(p.member_ids)?[...new Set(p.member_ids.map((x:any)=>uuid(x)))]:[];if(members.length<2)fail(400,'Choose at least two members.');if(members.length>100)fail(400,'A group can have at most 100 members.');
+  const title=text(p.title,100).trim();if(title.length<2)fail(400,'Name the group (at least 2 characters).');
+  const [r]=await tx`select erp_private.chat_group_create(${title},${tx.array(members)}::uuid[]) id`;return {ok:true,channel_id:r.id};
+ }
+ if(p.action==='discussion_group_members_set'){
+  admin(a);const list=(v:any)=>Array.isArray(v)?[...new Set(v.map((x:any)=>uuid(x)))]:[];
+  await tx`select erp_private.chat_group_members_set(${uuid(p.channel_id)}::uuid,${tx.array(list(p.add))}::uuid[],${tx.array(list(p.remove))}::uuid[])`;return {ok:true};
  }
  const c=await visible(tx,uuid(p.channel_id));
  if(p.action==='discussion_messages'){
