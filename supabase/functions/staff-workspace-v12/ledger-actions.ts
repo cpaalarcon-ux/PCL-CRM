@@ -8,6 +8,7 @@ import {readWorkbookSheet} from './workbook-reader.mjs';
 import {checkWorkbookZip} from './workspace-rules.mjs';
 import {loadCrosswalk,revenueAccount} from './sales-crosswalk.ts';
 import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal,profitByActivity,isoWeek,DATA_CUTOFF} from './ledger-rules.mjs';
+import {debtorsRead,receiptAction} from './debtors.ts';
 import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
 import {bankCloseChecks} from './bank-close.mjs';
@@ -248,6 +249,8 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  const l=await period(tx,uuid(p.period_id),pid);
  if(p.action==='ledger_read')return {...await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)),rates};
+ if(p.action==='ledger_debtors_read')return await debtorsRead(tx,l,p.as_of?date(p.as_of):day(l.ends_on));
+ if(p.action==='ledger_receipt_allocate'||p.action==='ledger_receipt_reverse')return await receiptAction(tx,a,l,p);
  if(p.action==='ledger_report_submit'){
   if(a.category_code==='INTERN')fail(403,'A staff preparer must submit financial reports.');
   const kind=choice(p.report_kind,['Month','Quarter','Year to date','Year end']),asOf=date(p.as_of),note=text(p.prepared_note,2000);if(!asOf)fail(400,'Choose the report date.');if(note.length<10)fail(400,'Add a preparer note of at least 10 characters.');
