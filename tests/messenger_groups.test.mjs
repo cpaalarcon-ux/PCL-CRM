@@ -71,10 +71,26 @@ test('System Administrators run logins and chat groups without seeing client wor
 
  // Names resolve for every participant, not only for people who can read the staff table.
  assert.ok((await chat('ASSISTANT2',{action:'discussion_messages',channel_id:g.channel_id})).messages.every(m=>m.author_name&&m.author_name.startsWith('Fictional')),'author names show for an assistant');
+ // Read ticks: a sender can see how far each person in a group or one-to-one chat has read, and nobody outside it can.
+ const gm=(await chat('ASSISTANT',{action:'discussion_messages',channel_id:g.channel_id})),latestSeq=Number(gm.messages.at(-1).sequence);
+ const pos=r=>Object.fromEntries(r.read_positions.map(x=>[x.staff_id,Number(x.last_sequence)]));
+ let rp=pos(gm);
+ assert.deepEqual(Object.keys(rp).sort(),[actors.ASSISTANT,actors.ASSISTANT2,actors.MANAGER,actors.INTERN].map(x=>x.staff_id).sort(),'the current members, and nobody who was removed or never joined');
+ assert.equal(rp[actors.ASSISTANT2.staff_id],0,'no one has read yet');
+ await chat('ASSISTANT2',{action:'discussion_read',channel_id:g.channel_id,last_sequence:latestSeq});
+ rp=pos(await chat('ASSISTANT',{action:'discussion_messages',channel_id:g.channel_id}));
+ assert.equal(rp[actors.ASSISTANT2.staff_id],latestSeq,'the reader\'s position shows to the sender');assert.equal(rp[actors.MANAGER.staff_id],0,'someone who has not read still shows as unread');
+ await assert.rejects(()=>chat('ADMIN',{action:'discussion_messages',channel_id:g.channel_id}),/not available/);
+ assert.deepEqual(await as('ADMIN',async()=>(await db.query('select * from erp_private.chat_read_positions($1)',[g.channel_id])).rows),[],'an outsider gets no read positions even by calling the function directly');
  // One-to-one: any active colleague of a shared firm; an intern may reply but not start.
  const dm=await chat('ASSISTANT',{action:'discussion_open',kind:'Direct',staff_id:actors.ASSISTANT2.staff_id});
  assert.equal(dm.channel.kind,'Direct');
  assert.equal((await chat('ASSISTANT2',{action:'discussion_list'})).channels.find(c=>c.kind==='Direct').display_title,'Fictional ASSISTANT','a one-to-one chat is titled with the other person');
+ await chat('ASSISTANT',{action:'discussion_send',channel_id:dm.channel.channel_id,request_id:id(),body:'Did the January VAT file go?'});
+ let dmr=await chat('ASSISTANT',{action:'discussion_messages',channel_id:dm.channel.channel_id});const dmSeq=Number(dmr.messages.at(-1).sequence);
+ assert.equal(dmr.read_positions.length,2,'a one-to-one chat has two people');assert.equal(Number(dmr.read_positions.find(x=>x.staff_id===actors.ASSISTANT2.staff_id).last_sequence),0);
+ await chat('ASSISTANT2',{action:'discussion_read',channel_id:dm.channel.channel_id,last_sequence:dmSeq});
+ dmr=await chat('ASSISTANT',{action:'discussion_messages',channel_id:dm.channel.channel_id});assert.equal(Number(dmr.read_positions.find(x=>x.staff_id===actors.ASSISTANT2.staff_id).last_sequence),dmSeq,'read by the other person');
  await assert.rejects(()=>chat('INTERN',{action:'discussion_open',kind:'Direct',staff_id:actors.ASSISTANT.staff_id}),/cannot start/);
  await assert.rejects(()=>chat('ASSISTANT',{action:'discussion_open',kind:'Direct',staff_id:actors.ASSISTANT.staff_id}),/another staff member/);
  // An administrator cannot open client work chats.

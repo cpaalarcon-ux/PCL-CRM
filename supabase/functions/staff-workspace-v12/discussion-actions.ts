@@ -49,7 +49,9 @@ export async function discussionAction(tx:any,a:any,p:any){
   const taskEvents=c.task_id?await tx`select event_id,event_type,reason,created_at from erp_private.task_events where task_id=${c.task_id} order by created_at desc limit 30`:[];
   const workflow=c.task_id?await tx`select event_id,action,message,from_stage,to_stage,created_at from erp_private.procedure_events where task_id=${c.task_id} order by created_at desc limit 30`:[];
   const closed=c.task_id?(await tx`select (w.stage='Closed' or t.status in('Completed','Cancelled')) closed from erp_private.task_procedures w join erp_private.tasks t using(task_id) where w.task_id=${c.task_id}`)[0]?.closed:c.project_id?(await tx`select status='Archived' closed from erp_private.projects where project_id=${c.project_id}`)[0]?.closed:false;
-  return {channel:c,messages:messages.reverse(),task_events:taskEvents,procedure_events:workflow,read_only:!!closed,has_older:messages.length===60};
+  // Read ticks: where each person in a one-to-one chat or group has read up to. Task and project discussions have no fixed members, so no ticks.
+  const reads=['Direct','Group'].includes(c.kind)?await tx`select staff_id,last_sequence::text last_sequence from erp_private.chat_read_positions(${c.channel_id})`:[];
+  return {channel:c,messages:messages.reverse(),task_events:taskEvents,procedure_events:workflow,read_only:!!closed,has_older:messages.length===60,read_positions:reads};
  }
  if(p.action==='discussion_send'){
   const rid=uuid(p.request_id),body=text(p.body,4000),reply=p.reply_to?uuid(p.reply_to):null,doc=p.document_id?uuid(p.document_id):null;
