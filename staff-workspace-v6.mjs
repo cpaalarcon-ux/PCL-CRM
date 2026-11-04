@@ -96,7 +96,7 @@ export function createWorkspaceUI(ctx){
   modal(id?'Edit project & schedule':'New project',form(body),async f=>{
     if(!schedulePreviewed)throw Error('Preview the task schedule before saving. If you change the schedule, preview it again.');
     if(Number(latestSchedulePreview?.due_now||0)>12&&!f.has('confirm_task_backlog'))throw Error('Review and confirm the catch-up task count, or change the schedule start date and preview again.');
-    const catchup=f.elements.namedItem('catchup_enabled').checked,fromMonth=f.elements.namedItem('catchup_start_month').value,toMonth=f.elements.namedItem('catchup_end_month').value;
+    const fe=$('#editForm').elements,catchup=!!fe.namedItem('catchup_enabled')?.checked,fromMonth=fe.namedItem('catchup_start_month')?.value||'',toMonth=fe.namedItem('catchup_end_month')?.value||'';
     const r=await request({...Object.fromEntries(f),action:'project_save',project_id:id,revision:p.revision,client_id:p.client_id||f.get('client_id'),firm_id:p.handling_firm_id||f.get('firm_id'),obligations:f.getAll('obligations'),enabled:f.has('enabled'),catchup_enabled:catchup,catchup_starts_on:catchup&&fromMonth?`${fromMonth}-01`:null,catchup_ends_on:catchup?monthEnd(toMonth):null,require_schedule_preview:true,schedule_previewed:true,confirm_task_backlog:f.has('confirm_task_backlog')});selected=r.project_id;
    });
   const f=$('#editForm'),el=n=>f.elements.namedItem(n);let manual=!!p.project_name,lastDefaultsKey='',schedulePreviewed=false,latestSchedulePreview=null;
