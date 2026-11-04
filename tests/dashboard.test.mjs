@@ -28,3 +28,12 @@ test('Home figures are buttons that drill into the list behind them',()=>{
  assert.equal(drillHome('overdue',doc),true);assert.equal(first.open,true,'the first overdue task opens');
  assert.equal(drillHome('nothing',doc),false);assert.equal(drillHome('reviews',{querySelector:()=>null}),false);
 });
+
+test('the shared dialog form validates field by field and places server errors beside the field',async()=>{
+ const {readFileSync}=await import('node:fs');const app=readFileSync(new URL('../staff-pilot.mjs',import.meta.url),'utf8'),css=readFileSync(new URL('../staff-pilot.css',import.meta.url),'utf8');
+ assert.match(app,/from '\.\/staff-field-errors\.mjs\?v=/);
+ assert.match(app,/form\.noValidate=true;watchForm\(form\)/);
+ assert.match(app,/const issues=validateForm\(form\);if\(issues\.length\)\{[^}]*issues\[0\]\.el\.focus\(\)/);
+ assert.match(app,/applyServerError\(form,err\.message\)\.notice/);
+ assert.match(css,/\.field-error\{/);assert.match(css,/\[aria-invalid=true\]/);
+});

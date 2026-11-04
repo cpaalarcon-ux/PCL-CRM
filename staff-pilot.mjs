@@ -3,20 +3,21 @@ import {createImprovementUI} from './staff-improvements.mjs?v=20261104-no-main-a
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261104-handover-v1';
 import {createPresenceUI} from './staff-presence.mjs?v=20261103-idle-timeout-v1';
-import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261104-drill-v1';
+import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261104-fields-v1';
+import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261104-fields-v1';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261104-drill-v1';
-import {createMessenger} from './staff-messenger.mjs?v=20261104-drill-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261104-drill-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261104-fields-v1';
+import {createMessenger} from './staff-messenger.mjs?v=20261104-fields-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261104-fields-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-dependency-map-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261029-audit-start-flow-v1';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261103-opening-tb-single-review-v3';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
-import {renderAccessGuide} from './staff-access-guide.mjs?v=20261104-drill-v1';
-import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261104-drill-v1';
+import {renderAccessGuide} from './staff-access-guide.mjs?v=20261104-fields-v1';
+import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261104-fields-v1';
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v12';
 const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -140,7 +141,7 @@ function render(){bindWorkspaceSearch();const allowed=['home'];if(canArea('proje
 function field(name,label,value='',type='text',extra=''){return `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;}
 function select(name,label,items,value='',blank='Choose…'){return `<label>${label}<select name="${name}">${options(items,value,blank)}</select></label>`;}
 function firmChecks(selected=[]){return `<fieldset class="full"><legend>Authorised / handling firms *</legend>${data.firms.map(f=>`<label><input type="checkbox" name="firm_ids" value="${f.firm_id}"${selected.includes(f.firm_id)?' checked':''}>${esc(f.firm_code+' · '+f.legal_name)}</label>`).join('')||'<p>Add a firm first.</p>'}</fieldset>`;}
-function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='Saving…',pendingMessage='Saving your changes. Please wait.',successMessage='Saved successfully.'}={}){$('#editor').classList.remove('accounting-drawer','ledger-dialog','discussion-dialog','mapping-workspace');$('#editorTitle').textContent=title;$('#editorNotice').textContent='';$('#editorBody').innerHTML=html;$('#editor').showModal();const form=$('#editForm');if(form)form.onsubmit=async e=>{e.preventDefault();const b=form.querySelector('button[type=submit]');if(!b)return;const label=b.textContent;b.disabled=true;b.textContent=pendingLabel;b.setAttribute('aria-busy','true');form.setAttribute('aria-busy','true');$('#editorNotice').textContent=pendingMessage;try{const result=await submit(new FormData(form));$('#editor').close();$('#editorBody').replaceChildren();if(refreshWorkspace)await load();notice(successMessage);if(afterSave)await afterSave(result);}catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;b.textContent=label;b.removeAttribute('aria-busy');form.removeAttribute('aria-busy');}};}
+function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='Saving…',pendingMessage='Saving your changes. Please wait.',successMessage='Saved successfully.'}={}){$('#editor').classList.remove('accounting-drawer','ledger-dialog','discussion-dialog','mapping-workspace');$('#editorTitle').textContent=title;$('#editorNotice').textContent='';$('#editorBody').innerHTML=html;$('#editor').showModal();const form=$('#editForm');if(form){form.noValidate=true;watchForm(form);}if(form)form.onsubmit=async e=>{e.preventDefault();const b=form.querySelector('button[type=submit]');if(!b)return;const issues=validateForm(form);if(issues.length){$('#editorNotice').textContent=fieldSummary(issues);issues[0].el.focus();return;}const label=b.textContent;b.disabled=true;b.textContent=pendingLabel;b.setAttribute('aria-busy','true');form.setAttribute('aria-busy','true');$('#editorNotice').textContent=pendingMessage;try{const result=await submit(new FormData(form));$('#editor').close();$('#editorBody').replaceChildren();if(refreshWorkspace)await load();notice(successMessage);if(afterSave)await afterSave(result);}catch(err){if($('#editor').open)$('#editorNotice').textContent=applyServerError(form,err.message).notice;else notice(err.message,true);}finally{b.disabled=false;b.textContent=label;b.removeAttribute('aria-busy');form.removeAttribute('aria-busy');}};}
 const form=(body,button='Save')=>`<form id="editForm" class="form-grid">${body}<button type="submit" class="primary full">${button}</button></form>`;
 async function editClient(c={}){
  const existing=data.projects.find(p=>p.client_id===c.client_id&&p.tax_master&&p.status!=='Archived'),taxDraftKey=c.client_id?`pcl-client-tax-draft:${c.client_id}`:'',storedTaxDraft=(()=>{if(!taxDraftKey)return null;try{return JSON.parse(sessionStorage.getItem(taxDraftKey)||'null');}catch{return null;}})(),savedProjectSchedule=existing&&data.schedules.find(x=>x.project_id===existing.project_id),schedule=savedProjectSchedule||storedTaxDraft;
