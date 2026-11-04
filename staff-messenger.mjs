@@ -1,11 +1,13 @@
 import {createClient} from './vendor/supabase-discussion.mjs';
+import {loadPrefs,savePrefs,incomingChats,shouldBeep,titleWithCount,createBeeper,tickFor} from './staff-messenger-alerts.mjs?v=20261104-chat-v1';
 // A WhatsApp-style messenger docked beside the account area: one-to-one chats, groups made by a System Administrator,
 // and the existing project / task discussions in one list. Messages stay immutable and private; a System Administrator
 // manages groups and members but never reads a chat they are not in.
 export function createMessenger(ctx){
  const {esc,request,notice}=ctx,d=()=>ctx.data();
  const state={open:false,view:'list',tab:'chats',channels:[],selected:null,thread:null,groups:[],directory:[],contacts:[],query:'',busy:false};
- let timer=null,client=null,subscription=null,generation=0,mounted=false;
+ let timer=null,client=null,subscription=null,generation=0,mounted=false,baselined=false,baseTitle=null,unlockBound=false;
+ const prefs=loadPrefs(),beeper=createBeeper(window),viewingId=()=>state.open&&state.view==='thread'&&document.visibilityState==='visible'?state.selected:null;
  const isAdmin=()=>d()?.me?.category_code==='ADMIN',isIntern=()=>d()?.me?.category_code==='INTERN';
  const nairobi=x=>new Date(x),sameDay=(a,b)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(a)===new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(b);
  const clock=x=>new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',hour:'2-digit',minute:'2-digit'}).format(nairobi(x));
@@ -25,22 +27,28 @@ export function createMessenger(ctx){
  function paintBadge(){
   const badge=document.querySelector('#messengerBadge'),button=document.querySelector('#messengerButton');if(!badge||!button)return;
   const n=unreadTotal();badge.hidden=!n;badge.textContent=n>99?'99+':String(n);button.setAttribute('aria-label',n?`Chat, ${n} unread`:'Chat');button.setAttribute('aria-expanded',String(state.open));
+  baseTitle??=document.title.replace(/^\(\d+\+?\)\s+/,'');document.title=titleWithCount(baseTitle,n);
  }
  async function refreshList(){
   if(!d())return;
-  try{state.channels=(await request({action:'discussion_list'})).channels||[];}catch{ /* The next poll recovers. */ }
+  try{
+   const next=(await request({action:'discussion_list'})).channels||[],fresh=incomingChats(baselined?state.channels:null,next,d().me.staff_id,{viewing:viewingId()});
+   state.channels=next;baselined=true;if(shouldBeep(fresh,prefs))beeper.play();
+  }catch{ /* The next poll recovers. */ }
   paintBadge();if(state.open&&state.view==='list'&&state.tab==='chats')paintBody();
  }
  function visibleChannels(){const q=state.query.trim().toLowerCase();return state.channels.filter(c=>!q||label(c).toLowerCase().includes(q)||String(c.last_body||'').toLowerCase().includes(q));}
- function header(title,sub,back){return `<header class="messenger-head">${back?'<button type="button" class="messenger-icon" data-msgr="back" aria-label="Back to chats">←</button>':''}<div class="messenger-title"><b>${esc(title)}</b>${sub?`<small>${esc(sub)}</small>`:''}</div><button type="button" class="messenger-icon" data-msgr="close" aria-label="Close chat">✕</button></header>`;}
+ function header(title,sub,back,extra=''){return `<header class="messenger-head">${back?'<button type="button" class="messenger-icon" data-msgr="back" aria-label="Back to chats">←</button>':''}<div class="messenger-title"><b>${esc(title)}</b>${sub?`<small>${esc(sub)}</small>`:''}</div>${extra}<button type="button" class="messenger-icon" data-msgr="close" aria-label="Close chat">✕</button></header>`;}
+ const soundButton=()=>`<button type="button" class="messenger-icon" data-msgr="sound" aria-pressed="${prefs.sound}" aria-label="${prefs.sound?'Message sound is on. Turn it off':'Message sound is off. Turn it on'}" title="${prefs.sound?'Sound on':'Sound off'}">${prefs.sound?'🔔':'🔕'}</button>`,
+  muteButton=id=>`<button type="button" class="messenger-icon" data-msgr="mute-chat" data-id="${esc(id)}" aria-pressed="${!!prefs.muted[id]}" aria-label="${prefs.muted[id]?'This chat is muted. Unmute it':'Mute sound for this chat'}" title="${prefs.muted[id]?'Muted':'Mute this chat'}">${prefs.muted[id]?'🔕':'🔔'}</button>`;
  function chatRow(c){
   const mine=c.last_author_id&&c.last_author_id===d().me.staff_id,who=mine?'You':(c.last_author_name||'Staff'),preview=c.last_body?c.last_body:'No messages yet';
-  return `<button type="button" class="messenger-row ${state.selected===c.channel_id?'selected':''}" data-msgr="open" data-id="${esc(c.channel_id)}"><span class="messenger-avatar ${c.kind==='Group'?'group':''}" aria-hidden="true">${esc(icon(c))}</span><span class="messenger-row-main"><span class="messenger-row-top"><b>${esc(label(c))}</b><small>${esc(listTime(c.last_message_at))}</small></span><span class="messenger-row-bottom"><span class="messenger-preview">${c.last_body?`<b class="messenger-who">${esc(who)}:</b> `:''}${esc(preview)}</span>${Number(c.unread)?`<span class="messenger-unread" aria-label="${Number(c.unread)} unread">${Number(c.unread)}</span>`:''}</span></span></button>`;
+  return `<button type="button" class="messenger-row ${state.selected===c.channel_id?'selected':''}" data-msgr="open" data-id="${esc(c.channel_id)}"><span class="messenger-avatar ${c.kind==='Group'?'group':''}" aria-hidden="true">${esc(icon(c))}</span><span class="messenger-row-main"><span class="messenger-row-top"><b>${esc(label(c))}${prefs.muted[c.channel_id]?' <span class="messenger-muted" role="img" aria-label="Muted" title="Muted">🔕</span>':''}</b><small>${esc(listTime(c.last_message_at))}</small></span><span class="messenger-row-bottom"><span class="messenger-preview">${c.last_body?`<b class="messenger-who">${esc(who)}:</b> `:''}${esc(preview)}</span>${Number(c.unread)?`<span class="messenger-unread" aria-label="${Number(c.unread)} unread">${Number(c.unread)}</span>`:''}</span></span></button>`;
  }
  function listView(){
   const tabs=isAdmin()?`<div class="messenger-tabs" role="tablist"><button type="button" role="tab" aria-selected="${state.tab==='chats'}" data-msgr="tab" data-id="chats" class="${state.tab==='chats'?'on':''}">Chats</button><button type="button" role="tab" aria-selected="${state.tab==='groups'}" data-msgr="tab" data-id="groups" class="${state.tab==='groups'?'on':''}">Manage groups</button></div>`:'';
   if(isAdmin()&&state.tab==='groups')return header('Manage groups','Create groups and choose who is in them')+tabs+`<div class="messenger-actions"><button type="button" class="messenger-primary" data-msgr="group-new">+ New group</button></div><div class="messenger-scroll" id="messengerBody"></div><p class="messenger-note">You manage groups and members. You cannot read a group’s messages unless you are a member.</p>`;
-  return header('Chat','Private staff conversations')+tabs+`<div class="messenger-actions"><input type="search" id="messengerSearch" placeholder="Search chats" aria-label="Search chats" value="${esc(state.query)}">${isIntern()?'':'<button type="button" class="messenger-primary" data-msgr="new">+ New chat</button>'}</div><div class="messenger-scroll" id="messengerBody"></div>`;
+  return header('Chat','Private staff conversations',false,soundButton())+tabs+`<div class="messenger-actions"><input type="search" id="messengerSearch" placeholder="Search chats" aria-label="Search chats" value="${esc(state.query)}">${isIntern()?'':'<button type="button" class="messenger-primary" data-msgr="new">+ New chat</button>'}</div><div class="messenger-scroll" id="messengerBody"></div>`;
  }
  function paintBody(){
   const body=document.querySelector('#messengerBody');if(!body)return;
@@ -52,15 +60,15 @@ export function createMessenger(ctx){
  }
  function threadView(){
   const c=state.thread?.channel,sub=c?(c.kind==='Group'?`Group · ${state.thread.members?.length||''} members`:kindLabel(c)):'';
-  return header(state.thread?label(state.thread.listing||c):'Chat',sub,true)+`<div class="messenger-messages" id="messengerMessages" tabindex="0" aria-live="polite" aria-label="Conversation messages"></div>${state.thread?.read_only?'<p class="messenger-note">This conversation is closed and read-only.</p>':`<form id="messengerSend" class="messenger-composer"><textarea name="body" rows="1" maxlength="4000" placeholder="Type a message" aria-label="Message" required></textarea><button type="submit" class="messenger-primary" aria-label="Send message">Send</button></form><small id="messengerState" class="messenger-error" role="alert"></small>`}`;
+  return header(state.thread?label(state.thread.listing||c):'Chat',sub,true,c?muteButton(c.channel_id):'')+`<div class="messenger-messages" id="messengerMessages" tabindex="0" aria-live="polite" aria-label="Conversation messages"></div>${state.thread?.read_only?'<p class="messenger-note">This conversation is closed and read-only.</p>':`<form id="messengerSend" class="messenger-composer"><textarea name="body" rows="1" maxlength="4000" placeholder="Type a message" aria-label="Message" required></textarea><button type="submit" class="messenger-primary" aria-label="Send message">Send</button></form><small id="messengerState" class="messenger-error" role="alert"></small>`}`;
  }
  function paintMessages(){
   const box=document.querySelector('#messengerMessages');if(!box||!state.thread)return;
-  const me=d().me.staff_id,group=state.thread.channel.kind!=='Direct';let day='',html='';
+  const me=d().me.staff_id,group=state.thread.channel.kind!=='Direct',positions=state.thread.read_positions,lastOwn=[...state.thread.messages].reverse().find(x=>x.author_id===me)?.message_id;let day='',html='';
   for(const m of state.thread.messages){
    const dl=dayLabel(m.created_at);if(dl!==day){day=dl;html+=`<div class="messenger-day"><span>${esc(dl)}</span></div>`;}
    const own=m.author_id===me;
-   html+=`<div class="messenger-bubble ${own?'own':''}"><div class="messenger-meta"><b class="messenger-author">${own?'You':esc(m.author_name||'Staff')}</b><small>${esc(clock(m.created_at))}</small></div><p>${esc(m.body)}</p></div>`;
+   html+=`<div class="messenger-bubble ${own?'own':''}"><div class="messenger-meta"><b class="messenger-author">${own?'You':esc(m.author_name||'Staff')}</b><small>${esc(clock(m.created_at))}${(()=>{const t=tickFor(m,me,positions);return t?` <span class="messenger-tick ${t.state}" role="img" aria-label="${esc(t.label)}" title="${esc(t.label)}">${t.glyph}</span>`:'';})()}</small></div><p>${esc(m.body)}</p>${m.message_id===lastOwn&&tickFor(m,me,positions)?`<small class="messenger-tick-label">${esc(tickFor(m,me,positions).label)}</small>`:''}</div>`;
   }
   box.innerHTML=(state.thread.has_older?`<button type="button" class="messenger-older" data-msgr="older">Load earlier messages</button>`:'')+(html||'<p class="messenger-empty">No messages yet. Say hello.</p>');
   box.scrollTop=box.scrollHeight;
@@ -108,7 +116,7 @@ export function createMessenger(ctx){
    let members=state.thread?.channel?.channel_id===id?state.thread.members:null;
    if(r.channel.kind==='Group'&&!members){try{members=(await request({action:'discussion_group_overview',channel_id:id})).groups?.[0]?.members||[];}catch{members=[];}}
    const draft=document.querySelector('#messengerSend textarea')?.value||'';
-   state.thread={channel:r.channel,listing,messages:[...r.messages,...prior],has_older:r.has_older,read_only:r.read_only,members};state.selected=id;
+   state.thread={channel:r.channel,listing,messages:[...r.messages,...prior],has_older:r.has_older,read_only:r.read_only,members,read_positions:r.read_positions||null};state.selected=id;
    if(state.open&&state.view==='thread'){paint();const t=document.querySelector('#messengerSend textarea');if(t&&draft){t.value=draft;}}
    if(!before&&document.visibilityState==='visible'&&r.messages.length&&state.open){await request({action:'discussion_read',channel_id:id,last_sequence:Number(r.messages.at(-1).sequence)});await refreshList();}
   }catch(e){if(!quiet)notice(e.message,true);}
@@ -132,6 +140,8 @@ export function createMessenger(ctx){
   const a=b.dataset.msgr,id=b.dataset.id;
   if(a==='close')return toggle(false);
   if(a==='back')return showList();
+  if(a==='sound'){prefs.sound=!prefs.sound;savePrefs(prefs);if(prefs.sound){beeper.unlock();beeper.play(Date.now(),true);}paint();return;}
+  if(a==='mute-chat'){if(prefs.muted[id])delete prefs.muted[id];else prefs.muted[id]=true;savePrefs(prefs);paint();return;}
   if(a==='tab')return showList(id);
   if(a==='open')return openChannel(id);
   if(a==='older'){const first=state.thread?.messages?.[0];if(first)await loadThread(state.selected,{before:Number(first.sequence)});return;}
@@ -186,10 +196,12 @@ export function createMessenger(ctx){
  });
  function start(){
   mount();if(timer)return;void refreshList();
-  timer=window.setInterval(()=>{if(!d()||document.visibilityState!=='visible')return;void refreshList();if(state.open&&state.view==='thread'&&state.selected)void loadThread(state.selected,{quiet:true});},15000);
+  if(!unlockBound){unlockBound=true;for(const ev of ['pointerdown','keydown'])document.addEventListener(ev,()=>beeper.unlock(),{capture:true,passive:true});}
+  // Keep checking while the tab is in the background so the title count and the beep work there; a hidden tab only refreshes the list, never the open conversation.
+  timer=window.setInterval(()=>{if(!d())return;void refreshList();if(document.visibilityState==='visible'&&state.open&&state.view==='thread'&&state.selected)void loadThread(state.selected,{quiet:true});},15000);
  }
  function stop(){
-  if(timer)window.clearInterval(timer);timer=null;generation++;if(subscription)void client?.removeChannel(subscription);subscription=null;
+  if(timer)window.clearInterval(timer);timer=null;generation++;baselined=false;if(baseTitle!==null){document.title=baseTitle;baseTitle=null;}if(subscription)void client?.removeChannel(subscription);subscription=null;
   Object.assign(state,{open:false,view:'list',tab:'chats',channels:[],selected:null,thread:null,groups:[],directory:[],contacts:[],query:''});picked=new Set();editing=null;
   const host=document.querySelector('#messenger');if(host){host.replaceChildren();delete host.dataset.ready;}
  }
