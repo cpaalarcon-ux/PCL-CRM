@@ -91,3 +91,4 @@ input[type=hidden]{display:none!important}.kyc-evidence-item{display:flex;justif
 .task-group .task{margin:0 6px}.pill-late{display:inline-block;background:#fdf0ee;color:var(--red);border:1px solid #f0b4ad;border-radius:999px;padding:0 8px;font-size:12px;font-weight:700;margin-left:4px}
 .task small.task-meta,small.task-meta{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center}.task-meta>span,.task-meta>a{display:inline-flex;align-items:center}.task-person i{font-style:normal;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
 .letter-details-qr{max-width:150px;margin:18px 0 0 auto;text-align:center}
+.letter-issue{margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
