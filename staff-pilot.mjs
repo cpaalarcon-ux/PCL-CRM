@@ -1,5 +1,5 @@
 let documentKind='Evidence';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261104-20261104-stock-vat-v1';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261104-no-main-activity-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261104-handover-v1';
 import {createPresenceUI} from './staff-presence.mjs?v=20261103-idle-timeout-v1';
@@ -7,7 +7,7 @@ import {renderDashboard} from './staff-dashboard.mjs?v=20261104-handover-v1';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261104-handover-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261104-no-main-activity-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261104-issued-letters-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-dependency-map-v1';

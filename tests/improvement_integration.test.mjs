@@ -31,9 +31,9 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  await assert.rejects(()=>call('ASSISTANT',{action:'v3_identity_save',client_id:C,revision:c.revision}),/Partner or Manager/);
  await call('MANAGER',{action:'v3_identity_save',client_id:C,revision:c.revision,legal_entity_type:'Limited company',entity_evidence:'Fictional incorporation evidence',year_end_month:'6',year_end_day:'30'});
  const activityChange=await callV12('MANAGER',{action:'v3_activities_preview',client_id:C,activities:[
-  {activity_code:'wholesale',pack_code:'Wholesale',income_stream:'Business',effective_from:'2026-01-01',is_primary:true,evidence:'Fictional wholesale evidence'},
-  {activity_code:'retail',pack_code:'Wholesale',income_stream:'Business',effective_from:'2026-01-01',is_primary:false,evidence:'Fictional retail evidence'},
-  {activity_code:'construction',pack_code:'Construction',income_stream:'Business',effective_from:'2026-01-01',is_primary:false,evidence:'Fictional construction evidence'}
+  {activity_code:'wholesale',pack_code:'Wholesale',income_stream:'Business',effective_from:'2026-01-01',evidence:'Fictional wholesale evidence'},
+  {activity_code:'retail',pack_code:'Wholesale',income_stream:'Business',effective_from:'2026-01-01',evidence:'Fictional retail evidence'},
+  {activity_code:'construction',pack_code:'Construction',income_stream:'Business',effective_from:'2026-01-01',evidence:'Fictional construction evidence'}
  ]});
  assert.equal(activityChange.preview.activities_to_add.length,3);
  assert.equal(activityChange.preview.dependencies_to_add.filter(x=>x.dependency_code==='STOCK_METHOD').length,1,'shared stock dependency appears once');
@@ -45,7 +45,10 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  const savedActivities=(await callV12('MANAGER',{action:'v3_client_read',client_id:C})).activities;
  const activity=savedActivities.find(x=>x.activity_code==='wholesale');assert.ok(activity?.activity_id);
  assert.equal(savedActivities.length,3);
- await assert.rejects(()=>callV12('MANAGER',{action:'v3_activities_preview',client_id:C,activities:[{activity_code:'hospitality',pack_code:'Hospitality',income_stream:'Business',effective_from:'2026-01-01',is_primary:true,evidence:'Fictional backdated primary'}]}),/Wholesale trade is already the primary activity/,'a second backdated primary is refused with a clear reason');
+ assert.ok(savedActivities.every(x=>!x.is_primary),'no activity is the main one');
+ const moreActivity=await callV12('MANAGER',{action:'v3_activities_preview',client_id:C,activities:[{activity_code:'hospitality',pack_code:'Hospitality',income_stream:'Business',effective_from:'2026-01-01',evidence:'Fictional hotel evidence'}]});
+ assert.equal(moreActivity.preview.activities_to_add.length,1,'a fourth activity can run alongside the others; no main activity is needed');
+ assert.ok(['Wholesale & Retail','Construction'].includes((await callV12('MANAGER',{action:'v3_client_read',client_id:C})).client.primary_sector),'the display sector follows the current activities');
  const enabledDeps=(await callV12('MANAGER',{action:'v3_client_read',client_id:C})).dependencies.map(x=>x.dependency_code);
  assert.ok(enabledDeps.includes('STOCK_METHOD'));assert.ok(enabledDeps.includes('CONTRACT_REGISTER'));
  const policyInput={action:'v3_stock_policy_add',client_id:C,activity_id:activity.activity_id,inventory_method:'Periodic',effective_from:'2026-01-01',count_frequency:'Monthly'};
