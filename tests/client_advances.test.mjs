@@ -58,7 +58,7 @@ test('advances are held by the receiving firm, applied only to that firm, linked
 
  // The database refuses an advance applied across firms or past its balance even if the action is bypassed.
  await assert.rejects(()=>tx`insert into erp_private.payments(request_id,invoice_id,project_id,client_id,firm_id,receipt_number,payment_date,method,reference,amount,advance_id,created_by) values(${id()},${invB},${P2},${C},${F2},'X/1','2026-10-06','Advance','x',100,${adv2.advance_id},${actors.PARTNER.staff_id})`,/foreign key|violates/i);
- await assert.rejects(()=>tx`insert into erp_private.payments(request_id,invoice_id,project_id,client_id,firm_id,receipt_number,payment_date,method,reference,amount,advance_id,created_by) values(${id()},${invA},${P},${C},${F},'X/2','2026-10-06','Advance','x',900,${adv.advance_id},${actors.PARTNER.staff_id})`,/not enough/,'over-application is blocked by the database');
+ await assert.rejects(()=>tx`insert into erp_private.payments(request_id,invoice_id,project_id,client_id,firm_id,receipt_number,payment_date,method,reference,amount,advance_id,created_by) values(${id()},${invA},${P},${C},${F},'X/2','2026-10-06','Advance','x',1500,${adv.advance_id},${actors.PARTNER.staff_id})`,/not enough/,'over-application is blocked by the database');
 
  // Reversal returns the credit.
  await act('PARTNER',{action:'payment_reverse',request_id:id(),payment_id:apply.payment_id,payment_date:'2026-10-07',reason:'Applied in error'});
