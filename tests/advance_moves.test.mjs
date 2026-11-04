@@ -50,7 +50,7 @@ test('advances can be refunded or moved to another firm, and posted invoices car
  await assert.rejects(()=>act('PARTNER',{...moveBase,request_id:id(),to_firm_id:F}),/different firm/);
  await assert.rejects(()=>act('PARTNER',{...moveBase,request_id:id(),to_firm_id:F3}),/not linked/);
  await assert.rejects(()=>act('PARTNER',{...moveBase,request_id:id(),to_firm_id:F2,amount:2600}),/Only KES 2500\.00/);
- await assert.rejects(()=>act('MANAGER',{...moveBase,request_id:id(),to_firm_id:F2,to_project_id:P}),/not the client|different/i,'the earmark project must belong to the receiving firm');
+ await assert.rejects(()=>act('PARTNER',{...moveBase,request_id:id(),to_firm_id:F2,to_project_id:P}),/not the client|different/i,'the earmark project must belong to the receiving firm');
  const mv=await act('PARTNER',{...moveBase,request_id:id(),to_firm_id:F2,to_project_id:P2});
  assert.match(mv.voucher_number,/^TRF\/VCQA\//);assert.match(mv.to_receipt_number,/^ADV\/VCQB\//);
  const created=(await tx`select * from erp_private.client_advances where advance_id=${mv.to_advance_id}`)[0];
