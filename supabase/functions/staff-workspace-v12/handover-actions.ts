@@ -14,7 +14,7 @@ export async function handoverAction(tx:any,a:any,p:any){
  }
  if(p.action==='task_handover_list'){
   const project=p.project_id?uuid(p.project_id):null,task=p.task_id?uuid(p.task_id):null;
-  return {handovers:await tx`select * from erp_private.handover_queue(${p.history===true},${project}::uuid,${task}::uuid)`};
+  return {handovers:await tx`select * from erp_private.handover_queue(${p.history!==true},${project}::uuid,${task}::uuid)`};
  }
  if(p.action==='task_handover_candidates'){
   decider(a);const project=uuid(p.project_id),exclude=p.exclude?uuid(p.exclude):null;
