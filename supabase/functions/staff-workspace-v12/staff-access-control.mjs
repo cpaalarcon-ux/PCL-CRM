@@ -35,7 +35,7 @@ const PREFIX_AREAS=[
   [/^(?:staff_save|staff_disable|staff_access_|account_link|master_staff_)/,'staff_access'],
   [/^(?:firm_save|firm_details|sector_save|reference_|rate_(?:save|approve|impact|test)|release_(?:check_save|read))/, 'settings'],
   [/^(?:client_save|compliance_|edd_approve|owner_add|contact_save|tax_profile_|v3_client_|v3_identity_|v3_activity_|v3_activities_|v3_stock_|v3_category_|v3_bank_|v3_opening_balance|v3_partners_add)/,'clients'],
-  [/^(?:task_|project_|schedule_|generate_tasks|engagement_|procedure_|accounting_|ledger_|purchase_ledger_|workbook_|period_import_|tax_|work_|sales_|v3_mapping_|v3_project_|v3_export_|v3_period_add|v3_suggestions|suite_export)/,'projects'],
+  [/^(?:task_|project_|schedule_|generate_tasks|engagement_|procedure_|accounting_|ledger_|purchase_ledger_|workbook_|period_import_|tax_|work_|sales_|v3_mapping_|v3_project_|v3_review_|v3_export_|v3_period_add|v3_suggestions|suite_export)/,'projects'],
   [/^audit_/, 'audit'],
   [/^(?:presence_|timer_|clock$|attendance_|leave_|roster_|performance_|credential_|timesheet_)/,'time_hr'],
   [/^(?:document_|upload$|download$|master_preview$|master_import$)/,'documents'],
