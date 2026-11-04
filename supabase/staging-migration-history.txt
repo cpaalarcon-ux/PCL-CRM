@@ -65,3 +65,4 @@
 20261104055557 bank_close_explanations
 20261104085523 coa_entity_industry_scope
 20261104092646 client_chart_versions
+20261104103500 activity_pnl_cutoff_report_reviews
