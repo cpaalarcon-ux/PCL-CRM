@@ -35,7 +35,8 @@ test('the dependency map creates each applicable task once, skips unconfirmed ob
 
  const draft=await call('MANAGER',{action:'v3_activities_dependency_tasks_apply',project_id:P,as_of:asOf});
  assert.equal(draft.created,0);assert.match(draft.skipped,/active engagement/,'a draft engagement gets no tasks yet');
- await tx`update erp_private.projects set status='Active' where project_id=${P}`;
+ // Engagement activation (KYC, letter, entity checks) is covered elsewhere; mark this fixture active directly.
+ await db.exec(`set session_replication_role=replica`);await tx`update erp_private.projects set status='Active' where project_id=${P}`;await db.exec(`set session_replication_role=origin`);
  const applied=await call('MANAGER',{action:'v3_activities_dependency_tasks_apply',project_id:P,as_of:asOf});
  assert.equal(applied.created,plan.create.length);
  const keys=(await tx`select recurring_key from erp_private.tasks where project_id=${P} and recurring_key like 'dep:%' order by 1`).map(x=>x.recurring_key);
