@@ -140,7 +140,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='advance_refund'||p.action==='advance_transfer'){
   const rid=uuid(p.request_id),dup=await tx`select movement_id,voucher_number,to_advance_id from erp_private.advance_movements where request_id=${rid}`;if(dup.length)return dup[0];
   leader(a);
-  const adv=one(await tx`select * from erp_private.client_advances where advance_id=${uuid(p.advance_id)} for update`),when=day(p.movement_date||today());
+  const adv=one(await tx`select * from erp_private.client_advances where advance_id=${uuid(p.advance_id)}`),when=day(p.movement_date||today());
   if(when>today())fail(400,'The date cannot be in the future.');
   const value=amount(p.amount);if(value<=0)fail(400,'Enter the amount.');
   const left=Number(one(await tx`select erp_private.advance_balance(${adv.advance_id}) as b`).b);if(value>left)fail(400,`Only KES ${left.toFixed(2)} of this advance is left.`);
