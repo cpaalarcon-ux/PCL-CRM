@@ -45,6 +45,7 @@ test('V3 migrations, scoped commands, multi-page selection, stock review and can
  const savedActivities=(await callV12('MANAGER',{action:'v3_client_read',client_id:C})).activities;
  const activity=savedActivities.find(x=>x.activity_code==='wholesale');assert.ok(activity?.activity_id);
  assert.equal(savedActivities.length,3);
+ await assert.rejects(()=>callV12('MANAGER',{action:'v3_activities_preview',client_id:C,activities:[{activity_code:'hospitality',pack_code:'Hospitality',income_stream:'Business',effective_from:'2026-01-01',is_primary:true,evidence:'Fictional backdated primary'}]}),/Wholesale trade is already the primary activity/,'a second backdated primary is refused with a clear reason');
  const enabledDeps=(await callV12('MANAGER',{action:'v3_client_read',client_id:C})).dependencies.map(x=>x.dependency_code);
  assert.ok(enabledDeps.includes('STOCK_METHOD'));assert.ok(enabledDeps.includes('CONTRACT_REGISTER'));
  const policyInput={action:'v3_stock_policy_add',client_id:C,activity_id:activity.activity_id,inventory_method:'Periodic',effective_from:'2026-01-01',count_frequency:'Monthly'};
