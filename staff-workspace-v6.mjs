@@ -1,7 +1,7 @@
 import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261031-preview-unsaved-v1';
 import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261031-code-confirm-v1';
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
-import {createAccountingUI} from './staff-accounting.mjs?v=20261103-activity-line-tags-v1';
+import {createAccountingUI} from './staff-accounting.mjs?v=20261104-coa-scope-v1';
 
 import {createLedgerUI} from './staff-ledger.mjs?v=20261104-bank-close-v2';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
