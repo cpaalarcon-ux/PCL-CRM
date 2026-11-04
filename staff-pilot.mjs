@@ -1,5 +1,5 @@
 let documentKind='Evidence';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261104-client-chart-v1';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261104-client-chart-v2';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261026-v4';
 import {createPresenceUI} from './staff-presence.mjs?v=20261103-idle-timeout-v1';

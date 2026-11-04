@@ -460,6 +460,8 @@ Deno.serve(async(req:Request)=>{
   if(e.code==='40001'){status=409;message='This task changed. Refresh it before forwarding or escalating.';}
   if(e.code==='23505'){status=409;message='This record already exists. Open the existing record to update it.';}
   if(['23514','23503','22P02'].includes(e.code)){status=400;message='Check the required fields, firm and project assignments.';}
+  // Messages raised by the ERP's own database guards are written for staff; show them instead of the generic text.
+  if(['23505','23514','42501','P0001'].includes(e.code)&&/PL\/pgSQL function erp_private\./.test(String(e.where||''))&&typeof e.message==='string'&&e.message.length<400)message=e.message;
   // Do not log passwords, setup tokens, JWTs, file contents or SQL parameters.
   if(status===500)console.error('staff-pilot request failed',{code:e.code||'INTERNAL',type:e.name||'Error'});
   return new Response(JSON.stringify({error:message}),{status,headers});
