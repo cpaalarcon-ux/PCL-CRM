@@ -43,6 +43,14 @@ async function stockSource(tx:any,c:any){
  const landed=(r:any)=>['50030','50040','50050'].includes(r.account_code);
  return {rows,net_sales,fingerprint:await digest(vat?{rows,net_sales}:rows),selected_count:selected.length,resale_purchases:money(selected.filter((r:any)=>!landed(r)).reduce((s:number,r:any)=>s+cost(r),0)),landed_costs:money(selected.filter(landed).reduce((s:number,r:any)=>s+cost(r),0)),unreviewed:selected.filter((r:any)=>r.source_revision!==r.revision||!['Eligible','Excluded'].includes(r.decision)).length,unallocated:rows.filter((r:any)=>!r.account_code||r.route===1&&(!r.review_details?.activity_id||!r.review_details?.stock_class)).length};
 }
+// A new stock roll opens at the last approved closing of the same activity and stock class (any earlier project of the same client).
+async function carriedOpening(tx:any,clientId:string,activityId:string,stockClass:string,startsOn:string){
+ const prior=(await tx`select c.control_id,c.ends_on,c.snapshot,c.result from erp_private.stock_controls c join erp_private.projects p using(project_id) where p.client_id=${clientId} and c.activity_id=${activityId} and c.stock_class=${stockClass} and c.status='Approved' and c.ends_on<${startsOn} order by c.ends_on desc limit 1`)[0];
+ if(!prior)return {};
+ const closing=Number(prior.snapshot?.result?.closing_value??prior.result?.closing_value);if(!Number.isFinite(closing))return {};
+ const through=prior.ends_on instanceof Date?prior.ends_on.toISOString().slice(0,10):String(prior.ends_on).slice(0,10);
+ return {opening_value:closing,carried_opening_value:closing,carried_from:prior.control_id,carried_through:through};
+}
 export async function improvementAction(tx:any,a:any,p:any,storage?:any){
  if(!String(p.action).startsWith('v3_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Client configuration and working-paper controls are unavailable to Interns.');
@@ -232,13 +240,14 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
   const [s,e]=range(p),activity=one(await tx`select * from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${pr.client_id} and effective_from<=${s} and (effective_to is null or effective_to>=${e})`),policy=one(await tx`select * from erp_private.stock_policy_versions where activity_id=${activity.activity_id} and effective_from<=${s} order by effective_from desc limit 1`);
   const vat=p.vat_category?choice(p.vat_category,VAT_CATEGORIES):null,sold=(await tx`select vat_categories_sold from erp_private.clients where client_id=${pr.client_id}`)[0]?.vat_categories_sold;
   if(vat&&sold&&!sold.includes(vat))fail(400,`Client does not sell ${vat} goods. No ${vat} stock roll is needed; change the client's VAT categories first if this is wrong.`);
-  return one(await tx`insert into erp_private.stock_controls(project_id,activity_id,policy_id,stock_class,starts_on,ends_on,prepared_by,vat_category) values(${pid},${activity.activity_id},${policy.policy_id},${vat?'VAT '+vat:text(p.stock_class,100)},${s},${e},${a.staff_id},${vat}) returning control_id`);
+  const stockClass=vat?'VAT '+vat:text(p.stock_class,100),carry=await carriedOpening(tx,pr.client_id,activity.activity_id,stockClass,s);
+  return {...one(await tx`insert into erp_private.stock_controls(project_id,activity_id,policy_id,stock_class,starts_on,ends_on,prepared_by,vat_category,inputs) values(${pid},${activity.activity_id},${policy.policy_id},${stockClass},${s},${e},${a.staff_id},${vat},${tx.json(carry)}) returning control_id`),carried_opening:carry.opening_value??null};
  }
  if(p.action==='v3_stock_create_vat'){
   const [s,e]=range(p),activity=one(await tx`select * from erp_private.client_activities where activity_id=${uuid(p.activity_id)} and client_id=${pr.client_id} and effective_from<=${s} and (effective_to is null or effective_to>=${e})`),policy=one(await tx`select * from erp_private.stock_policy_versions where activity_id=${activity.activity_id} and effective_from<=${s} order by effective_from desc limit 1`);
   const sold=(await tx`select vat_categories_sold from erp_private.clients where client_id=${pr.client_id}`)[0]?.vat_categories_sold;
   if(!sold)fail(400,'Record the VAT categories this client sells first (Client setup → VAT categories sold).');
-  const made=[];for(const vat of VAT_CATEGORIES.filter(x=>sold.includes(x))){const r=await tx`insert into erp_private.stock_controls(project_id,activity_id,policy_id,stock_class,starts_on,ends_on,prepared_by,vat_category) values(${pid},${activity.activity_id},${policy.policy_id},${'VAT '+vat},${s},${e},${a.staff_id},${vat}) on conflict do nothing returning control_id`;if(r.length)made.push(vat);}
+  const made=[];for(const vat of VAT_CATEGORIES.filter(x=>sold.includes(x))){const carry=await carriedOpening(tx,pr.client_id,activity.activity_id,'VAT '+vat,s),r=await tx`insert into erp_private.stock_controls(project_id,activity_id,policy_id,stock_class,starts_on,ends_on,prepared_by,vat_category,inputs) values(${pid},${activity.activity_id},${policy.policy_id},${'VAT '+vat},${s},${e},${a.staff_id},${vat},${tx.json(carry)}) on conflict do nothing returning control_id`;if(r.length)made.push(vat);}
   return {created:made,categories:VAT_CATEGORIES.filter(x=>sold.includes(x))};
  }
  if(['v3_stock_read','v3_stock_save','v3_stock_submit','v3_stock_review'].includes(p.action)){
@@ -253,7 +262,7 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
    await tx`update erp_private.stock_controls set status=${status},review_note=${note},reviewed_by=${a.staff_id},snapshot=${tx.json({...c.snapshot,review_note:note,reviewed_by:a.staff_id,variance_evidence_id:p.variance_evidence_id||null})} where control_id=${c.control_id}`;return {ok:true};
   }
   if(!['Draft','Returned'].includes(c.status)||c.prepared_by!==a.staff_id)fail(403,'Only the assigned preparer can change unsubmitted stock work.');
-  const inputs=p.action==='v3_stock_save'?p.inputs:c.inputs;if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||JSON.stringify(inputs).length>20000)fail(400,'Invalid stock values.');
+  const inputs=p.action==='v3_stock_save'&&p.inputs&&typeof p.inputs==='object'&&!Array.isArray(p.inputs)?{...p.inputs,...Object.fromEntries(['carried_from','carried_opening_value','carried_through'].filter(k=>c.inputs?.[k]!==undefined).map(k=>[k,c.inputs[k]]))}:p.action==='v3_stock_save'?p.inputs:c.inputs;if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||JSON.stringify(inputs).length>20000)fail(400,'Invalid stock values.');
   const result=stockValues({...inputs,...(c.vat_category?{net_sales:src.net_sales}:{}),resale_purchases:src.resale_purchases,landed_costs:src.landed_costs},policy);
   if(p.action==='v3_stock_submit'&&(result.opening_value===null||result.closing_value===null||!String(inputs.evidence_reference||'').trim()||!String(inputs.reconciliation_note||'').trim()||!src.selected_count||src.unreviewed||src.unallocated))fail(400,'Complete supported opening, cost, evidence, source allocation and row review before submission.');
   await tx`update erp_private.stock_controls set inputs=${tx.json(inputs)},result=${tx.json(result)},status=${p.action==='v3_stock_submit'?'Submitted':'Draft'},snapshot=${tx.json({inputs,result,policy,source_fingerprint:src.fingerprint,source_rows:src.rows})} where control_id=${c.control_id}`;return {ok:true};
