@@ -65,8 +65,14 @@ export async function applyDependencyTasks(tx:any,a:any,projectId:string,asOf:st
  await tx`select pg_advisory_xact_lock(hashtextextended(${projectId+':dependency-tasks'},0))`;
  const plan=await dependencyPlan(tx,projectId,asOf);
  if(plan.project.status!=='Active')return {...plan,created:0,flagged:0,skipped:'Tasks are created only for an active engagement.'};
- for(const it of plan.create)await tx`insert into erp_private.tasks(project_id,task_name,description,status,recurring_key,template_key)
-  values(${projectId},${it.label},${`Set up and maintain this working-paper area. Required by ${it.from.join(', ')} (dependency map ${it.map_version}, as of ${asOf}).`},'Pending',${'dep:'+it.dependency_code},'dependency')
+ // Assign to the engagement preparer: the reporting-schedule preparer, else the project owner, else the person applying.
+ const owner=(await tx`select coalesce(
+   (select s.assigned_to from erp_private.project_schedules s join erp_private.project_assignments x on x.project_id=s.project_id and x.staff_id=s.assigned_to where s.project_id=${projectId} and s.deleted_at is null and s.assigned_to is not null limit 1),
+   (select p.owner_staff_id from erp_private.projects p join erp_private.project_assignments x on x.project_id=p.project_id and x.staff_id=p.owner_staff_id where p.project_id=${projectId}),
+   (select x.staff_id from erp_private.project_assignments x where x.project_id=${projectId} and x.staff_id=${a.staff_id})) as staff_id`)[0]?.staff_id;
+ if(!owner&&plan.create.length)return {...plan,created:0,flagged:0,skipped:'Assign a preparer to this engagement before tasks are created.'};
+ for(const it of plan.create)await tx`insert into erp_private.tasks(project_id,assigned_to,task_name,description,status,recurring_key,template_key)
+  values(${projectId},${owner},${it.label},${`Set up and maintain this working-paper area. Required by ${it.from.join(', ')} (dependency map ${it.map_version}, as of ${asOf}).`},'Pending',${'dep:'+it.dependency_code},'dependency')
   on conflict(project_id,recurring_key) do nothing`;
  let flagged=0;
  for(const t of plan.stale)if(t.status==='Pending'){await tx`update erp_private.tasks set status='Blocked',blocked_reason=${`No longer applies from ${asOf}: the client's activities or obligations changed. Review, then cancel or complete it.`} where task_id=${t.task_id} and status='Pending'`;flagged++;}
