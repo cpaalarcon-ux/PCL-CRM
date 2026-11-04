@@ -40,7 +40,9 @@ test('journal lines carry the activity, profit is reported per activity, reports
  const sales=await ledger('ASSISTANT',{...base,action:'ledger_journal_save',kind:'Adjustment',reference:'SALES-JAN',journal_date:'2026-01-31',evidence:'Fictional sales schedules',lines:[line('10000',900,0),line('40000',0,600,W),line('40000',0,250,R),line('40000',0,50,null)]});await post(sales.journal_id);
  const stored=await tx`select account_code,activity_id from erp_private.ledger_lines where journal_id=${sales.journal_id} order by line_no`;
  assert.equal(stored[0].activity_id,null,'balance-sheet lines carry no activity');assert.equal(stored[1].activity_id,W);assert.equal(stored[2].activity_id,R);
- await assert.rejects(()=>tx`insert into erp_private.ledger_lines(journal_id,project_id,line_no,account_code,debit,credit,activity_id) values(${sales.journal_id},${P},99,'10000',1,0,${W})`,/Only income and expense lines/);
+ const draft=await ledger('ASSISTANT',{...base,action:'ledger_journal_save',kind:'Adjustment',reference:'DRAFT-TAG',journal_date:'2026-02-28',evidence:'Fictional draft',lines:[line('10000',1,0),line('40000',0,1,W)]});
+ await assert.rejects(()=>tx`update erp_private.ledger_lines set activity_id=${W} where journal_id=${draft.journal_id} and line_no=1`,/Only income and expense lines/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_journal_save',kind:'Adjustment',reference:'BAD-TAG',journal_date:'2026-02-28',evidence:'Fictional draft',lines:[line('10000',1,0),line('40000',0,1,id())]}),/does not belong to the client/);
 
  const r=await ledger('ASSISTANT',{...base,action:'ledger_read',as_of:'2026-12-31'});
  const col=name=>r.profit_by_activity.activities.find(a=>a.activity_name===name);
