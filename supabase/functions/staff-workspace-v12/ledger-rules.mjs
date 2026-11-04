@@ -31,6 +31,7 @@ export function journalIssues(lines,accounts,{kind='Adjustment',entityType='',so
  }
  for(const r of lines){if(!Number(r.debit)&&!Number(r.credit))continue;const c=accounts.find(a=>a.code===r.account_code);
   if(!c||c.status!=='Active'||c.is_legacy)issues.push(`Line ${r.line_no}: map to an active detailed account.`);
+  else if(c.in_client_chart===false)issues.push(`Line ${r.line_no}: ERP account ${r.account_code} is not in this client's approved chart of accounts.`);
   const n=Number(r.account_code);
   if(n===37000&&(Number(r.debit)||Number(r.credit)))issues.push('Resolve suspense before approval.');
   if(n>=30000&&n<=36020&&((entityType==='Limited company'&&n>=35000)||(entityType==='Sole proprietor'&&!(n>=35000&&n<=35010))||(entityType==='Partnership'&&!(n>=36000&&n<=36020))))issues.push(`Line ${r.line_no}: equity account does not match the entity type.`);

@@ -1,4 +1,5 @@
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
+import {clientChartAction,requireChartAccount,chartCatalogue} from './client-chart.ts';
 import {entityInput,partnerRatios,stockValues,suggestionFor,exportReadiness,packs,streams,asDay} from './improvement-rules.mjs';
 import {money} from './accounting-rules.mjs';
 import {dependencyTaskAction,syncClientDependencyTasks} from './dependency-tasks.ts';
@@ -43,6 +44,7 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
  if(!String(p.action).startsWith('v3_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Client configuration and working-paper controls are unavailable to Interns.');
  {const dependencyResult=await dependencyTaskAction(tx,a,p);if(dependencyResult!==undefined)return dependencyResult;}
+ {const chartResult=await clientChartAction(tx,a,p);if(chartResult!==undefined)return chartResult;}
  if(p.action==='v3_client_mapping_readiness'){
   leader(a);
   return await tx`select c.client_id,
@@ -125,6 +127,7 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
   if(!sourceName||!from||to&&to<from)fail(400,'Enter a source account name and a valid effective date range.');
   one(await tx`select client_id from erp_private.clients where client_id=${cid} and deleted_at is null`);
   const account=one(await tx`select code from erp_private.account_catalog where code=${target} and status='Active' and not is_legacy`);
+  await requireChartAccount(tx,cid,account.code,from);
   await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':client-accounts'},0))`;
   if((await tx`select mapping_id from erp_private.client_account_mappings where client_id=${cid} and coalesce(source_account_code,'')=coalesce(${sourceCode},'') and status in ('Draft','Active') and effective_from<=coalesce(${to},'infinity'::date) and coalesce(effective_to,'infinity'::date)>=${from} limit 1`).length)fail(409,'A saved account setup already covers this source code and date. Choose a non-overlapping range or review the existing setup.');
   return one(await tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to,status,created_by) values(${cid},${sourceCode},${sourceName},${account.code},${from},${to},'Draft',${a.staff_id}) returning mapping_id`);

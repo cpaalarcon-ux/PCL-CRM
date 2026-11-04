@@ -1,4 +1,5 @@
 import {pendingPurchases} from './purchase-pending.ts';
+import {chartCatalogue,approvedChart,chartMessage} from './client-chart.ts';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
 import {readWorkbookSheet} from './workbook-reader.mjs';
@@ -169,7 +170,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  const pid=uuid(p.project_id),project=one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null`);
  const rates=await tx`select * from erp_private.asset_class_rates order by class_code,effective_from desc`;
- if(p.action==='ledger_periods')return {periods:await tx`select * from erp_private.ledger_periods where project_id=${pid} order by starts_on desc`,rates,accounts:await catalogue(tx),client:(await tx`select legal_entity_type,year_end_month,year_end_day from erp_private.clients where client_id=${project.client_id}`)[0]};
+ if(p.action==='ledger_periods')return {periods:await tx`select * from erp_private.ledger_periods where project_id=${pid} order by starts_on desc`,rates,accounts:await chartCatalogue(tx,await catalogue(tx),project.client_id,new Date().toISOString().slice(0,10)),client:(await tx`select legal_entity_type,year_end_month,year_end_day from erp_private.clients where client_id=${project.client_id}`)[0]};
  await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':client-ledger'},0))`;
  if(p.action==='ledger_period_create'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${project.client_id}`);
@@ -184,7 +185,8 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  if(p.action==='ledger_journal_read'){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id}`),items=await lines(tx,j.journal_id);
-  return {journal:j,lines:items,accounts:await catalogue(tx),issues:journalIssues(items,await catalogue(tx),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot})};
+  const chartAccounts=await chartCatalogue(tx,await catalogue(tx),l.client_id,day(j.journal_date||l.starts_on));
+  return {journal:j,lines:items,accounts:chartAccounts,issues:journalIssues(items,chartAccounts,{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot})};
  }
  if(p.action==='ledger_asset_read'){const asset=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id}`);return {asset,rate:asset.rate_snapshot,calculation:assetCalculation(asset,asset.rate_snapshot,l.starts_on,l.ends_on)};}
  if(l.status!=='Open')fail(400,'This client year is closed. Its posted snapshot remains available.');
@@ -246,8 +248,8 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  if(['ledger_journal_submit','ledger_journal_review'].includes(p.action)){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);
-  if(p.action==='ledger_journal_submit'){edit(j,a);const currentLines=await lines(tx,j.journal_id),issues=journalIssues(currentLines,await catalogue(tx),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(j.kind==='Opening')for(const line of currentLines.filter((x:any)=>x.account_code))if(!await clientAccountAllowed(tx,project.client_id,line.account_code,day(l.starts_on)))issues.push(`Line ${line.line_no}: ERP account ${line.account_code} is not approved for this client’s opening balance date.`);if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id} where journal_id=${j.journal_id}`;}
-  else{leader(a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);let activated:string[]=[];if(status==='Posted'){await sourceCheck(tx,j);await confirmJournalSources(tx,a,project,j,l,p.review_note);activated=await activateJournalMappings(tx,a,project.client_id,j,l,await lines(tx,j.journal_id));}await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;return {ok:true,journal_id:j.journal_id,activated_mapping_count:activated.length};}
+  if(p.action==='ledger_journal_submit'){edit(j,a);const currentLines=await lines(tx,j.journal_id),issues=journalIssues(currentLines,await chartCatalogue(tx,await catalogue(tx),l.client_id,day(j.journal_date||l.starts_on)),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(j.kind==='Opening')for(const line of currentLines.filter((x:any)=>x.account_code))if(!await clientAccountAllowed(tx,project.client_id,line.account_code,day(l.starts_on)))issues.push(`Line ${line.line_no}: ERP account ${line.account_code} is not approved for this client’s opening balance date.`);if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id} where journal_id=${j.journal_id}`;}
+  else{leader(a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);let activated:string[]=[];if(status==='Posted'){const chart=await approvedChart(tx,l.client_id,day(j.journal_date||l.starts_on)),outside=chart?(await lines(tx,j.journal_id)).filter((x:any)=>x.account_code&&(Number(x.debit)||Number(x.credit))&&!chart.codes.has(x.account_code)):[];if(outside.length)fail(400,`Return this journal: ${[...new Set(outside.map((x:any)=>x.account_code))].map((c:any)=>chartMessage(c)).join(' ')}`);await sourceCheck(tx,j);await confirmJournalSources(tx,a,project,j,l,p.review_note);activated=await activateJournalMappings(tx,a,project.client_id,j,l,await lines(tx,j.journal_id));}await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;return {ok:true,journal_id:j.journal_id,activated_mapping_count:activated.length};}
   return {ok:true,journal_id:j.journal_id};
  }
  if(p.action==='ledger_reverse'){

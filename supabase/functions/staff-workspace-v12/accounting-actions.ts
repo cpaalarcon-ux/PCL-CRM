@@ -1,4 +1,5 @@
 import {stockCategoryOptions} from './stock-category-options.ts';
+import {chartResolver,chartMessage,chartCatalogue} from './client-chart.ts';
 import {summarySalesRows} from './period-import-actions.ts';
 import {digest} from './improvement-actions.ts';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
@@ -76,7 +77,8 @@ export async function accountingAction(tx:any,a:any,p:any){
    activityByRow.set(row.row_id,chosen);
   }
   const accounts=await tx`select * from erp_private.account_catalog order by code`,clientMappings=await tx`select erp_account_code,effective_from,effective_to,status from erp_private.client_account_mappings where client_id=${project.client_id} and status in ('Active','Draft')`;
-  const clientAccountCovers=(code:string,row:any)=>{const at=String(row.normalized.date||day(row.period_start));return clientMappings.some((m:any)=>m.erp_account_code===code&&day(m.effective_from)<=at&&(!m.effective_to||day(m.effective_to)>=at));};
+  const chartAt=await chartResolver(tx,project.client_id);
+  const clientAccountCovers=(code:string,row:any)=>{const at=String(row.normalized.date||day(row.period_start)),chart=chartAt(at);if(chart&&!chart.codes.has(code))fail(400,chartMessage(code));return clientMappings.some((m:any)=>m.erp_account_code===code&&day(m.effective_from)<=at&&(!m.effective_to||day(m.effective_to)>=at));};
   const selectedRevisions=new Map(items.map((i:any)=>[i.row_id,i]));for(const r of rows)current(r,selectedRevisions.get(r.row_id));
   const closed=await tx`select b.batch_id from erp_private.workbook_batches b where b.batch_id=any(${tx.array([...new Set(rows.map((r:any)=>r.batch_id))])}::uuid[]) and b.archived_at is null and not erp_private.tax_period_open(${pid}::uuid,b.period_start,b.period_end) limit 1`;if(closed.length)fail(400,'This period is submitted or locked.');
   const update=async(r:any,v:any,details:any)=>{await tx`update erp_private.workbook_rows set route=${v.route},category_code=${v.category_code},account_code=${v.account_code},narration=${v.narration},asset_details=${v.asset_details},first_use_status=${v.first_use_status},first_use_date=${v.first_use_date},review_details=${tx.json(details)} where row_id=${r.row_id}`;};
