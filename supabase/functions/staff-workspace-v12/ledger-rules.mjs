@@ -25,15 +25,15 @@ export function normaliseLines(input,accounts,{allowUnmapped=false,opening=false
 export function journalIssues(lines,accounts,{kind='Adjustment',entityType='',sourceSnapshot={}}={}){
  const issues=[],sum=lines.reduce((x,r)=>x+cashAmount(r.debit)-cashAmount(r.credit),0);
  if(!lines.length||!lines.some(l=>Number(l.debit)||Number(l.credit)))issues.push('Enter journal amounts.');
- if(sum!==0)issues.push(`Debits and credits differ by KES ${(sum/100).toFixed(2)}. No suspense entry is created.`);
+ if(sum!==0)issues.push(`Debits and credits differ by KES ${(sum/100).toFixed(2)}. The trial balance must balance: correct the entry. No suspense or balancing entry is created or allowed.`);
  if(kind==='Opening')for(const control of sourceSnapshot?.source_controls||[]){
   if(control.type==='difference_in_books'&&Math.abs(Number(control.difference_kes||0))>0.01)issues.push(`The source trial balance reports a non-zero “Difference in Books” of KES ${Number(control.difference_kes).toFixed(2)}. Reconcile the prior-year closing balance before submitting this opening entry.`);
  }
  for(const r of lines){if(!Number(r.debit)&&!Number(r.credit))continue;const c=accounts.find(a=>a.code===r.account_code);
-  if(!c||c.status!=='Active'||c.is_legacy)issues.push(`Line ${r.line_no}: map to an active detailed account.`);
+  if(String(r.account_code)==='37000')issues.push(`Line ${r.line_no}: there is no suspense account. Post to the correct account; the trial balance must balance.`);
+  else if(!c||c.status!=='Active'||c.is_legacy)issues.push(`Line ${r.line_no}: map to an active detailed account.`);
   else if(c.in_client_chart===false)issues.push(`Line ${r.line_no}: ERP account ${r.account_code} is not in this client's approved chart of accounts.`);
   const n=Number(r.account_code);
-  if(n===37000&&(Number(r.debit)||Number(r.credit)))issues.push('Resolve suspense before approval.');
   if(n>=30000&&n<=36020&&((entityType==='Limited company'&&n>=35000)||(entityType==='Sole proprietor'&&!(n>=35000&&n<=35010))||(entityType==='Partnership'&&!(n>=36000&&n<=36020))))issues.push(`Line ${r.line_no}: equity account does not match the entity type.`);
   if(kind==='Opening'&&(r.source_status!=='Confirmed'||String(r.source_reference||'').trim().length<3))issues.push(`Line ${r.line_no}: confirm the opening source and evidence reference.`);
  }
@@ -114,7 +114,6 @@ export function sourceApplicationSchedule(tb){
  const sources=rows.filter(r=>r.section==='Source'),applications=rows.filter(r=>r.section==='Application'),memo=rows.filter(r=>r.section==='Memo'),source_total=sum(sources,r=>r.amount),application_total=sum(applications,r=>r.amount),difference=money(source_total-application_total);
  const trial_balance_difference=money(accounts.reduce((n,a)=>n+Number(a.net||0),0)),opening_trial_balance_difference=money(accounts.reduce((n,a)=>n+Number(a.opening||0),0)),tie_out_difference=money(difference+trial_balance_difference);
  const unclassified=accounts.filter(a=>{const n=code(a);return !(n>=10000&&n<=69999);}).map(a=>({code:a.code,name:a.name,opening:money(Number(a.opening||0)),closing:money(Number(a.net||0))}));
- const suspense=accounts.filter(a=>String(a.code)==='37000'&&(Number(a.opening)||Number(a.net))).map(a=>({code:a.code,name:a.name,opening:money(Number(a.opening||0)),closing:money(Number(a.net||0))}));
  const hasActivity=list=>list.some(a=>Number(a.opening)||Number(a.net)||Number(a.movement_debit)||Number(a.movement_credit));
  const loanAccounts=accounts.filter(a=>['20070','20080','20090'].includes(String(a.code)));
  const stockAccounts=accounts.filter(a=>Number(a.code)>=10190&&Number(a.code)<=10250);
@@ -125,12 +124,12 @@ export function sourceApplicationSchedule(tb){
   {key:'other_expenses',label:'Other expense support',required:hasActivity(expenseAccounts),ledger_signal:hasActivity(expenseAccounts)?'Expense or purchase activity appears in the posted trial balance.':'No expense activity appears in the posted trial balance; confirm completeness.'},
   {key:'stock_movement',label:'Stock movement report',required:hasActivity(stockAccounts),ledger_signal:hasActivity(stockAccounts)?'Inventory balances/activity appear in the posted trial balance.':'No inventory balance/activity appears in the posted trial balance; confirm completeness.'}
  ];
- const issues=[];if(unclassified.length)issues.push('Map nonzero balances outside the supported Source & Application account ranges before annual review.');if(suspense.length)issues.push('Clear the opening-balance suspense account before annual review.');
+ const issues=[];if(unclassified.length)issues.push('Map nonzero balances outside the supported Source & Application account ranges before annual review.');
  if(Math.abs(opening_trial_balance_difference)>0.01)issues.push('The opening trial balance is out by KES '+opening_trial_balance_difference.toFixed(2)+'. Reconcile opening balances before relying on this annual schedule.');
  if(Math.abs(difference)>0.01)issues.push('Source & Application of Funds does not balance. Review posted balances and movements; the ERP will not create a balancing entry.');
  if(Math.abs(trial_balance_difference)>0.01)issues.push('The closing trial balance is out by KES '+trial_balance_difference.toFixed(2)+'.');
  if(Math.abs(tie_out_difference)>0.01)issues.push('Source & Application does not tie to the closing trial balance. Check that the opening trial balance balanced and all account classes are included.');
- return {name:'Source & Application of Funds',sources,applications,memo,source_total,application_total,difference,trial_balance_difference,opening_trial_balance_difference,tie_out_difference,balanced:Math.abs(difference)<=0.01&&Math.abs(trial_balance_difference)<=0.01&&Math.abs(opening_trial_balance_difference)<=0.01&&Math.abs(tie_out_difference)<=0.01,unclassified,suspense,requirements,issues,basis:'Calculated from posted annual opening balances and posted journal movements. Non-cash depreciation is shown separately and excluded from cash applications, as in the supplied schedule. VAT/input tax, tax credits, inventory, payables, loans, PPE and equity movements remain traceable in account details. This control does not prove source completeness or approve a tax claim.'};
+ return {name:'Source & Application of Funds',sources,applications,memo,source_total,application_total,difference,trial_balance_difference,opening_trial_balance_difference,tie_out_difference,balanced:Math.abs(difference)<=0.01&&Math.abs(trial_balance_difference)<=0.01&&Math.abs(opening_trial_balance_difference)<=0.01&&Math.abs(tie_out_difference)<=0.01,unclassified,requirements,issues,basis:'Calculated from posted annual opening balances and posted journal movements. Non-cash depreciation is shown separately and excluded from cash applications, as in the supplied schedule. VAT/input tax, tax credits, inventory, payables, loans, PPE and equity movements remain traceable in account details. This control does not prove source completeness or approve a tax claim.'};
 }
 
 export function assetCalculation(asset,rate,start,end){

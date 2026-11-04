@@ -146,6 +146,36 @@ export function createWorkspaceUI(ctx){
   const f=$('#editForm');f.elements.assigned_to.required=true;f.elements.operation.onchange=()=>{f.elements.assigned_to.innerHTML=opts(r.recipients.filter(s=>f.elements.operation.value==='Forward'||['PARTNER','MANAGER','SUPERVISOR'].includes(s.category_code)).map(s=>[s.staff_id,s.full_name]),'');};f.elements.operation.onchange();
  }
 
+ async function handover(id){
+  const t=d().tasks.find(t=>t.task_id===id);if(!t)return;
+  modal('Hand over unfinished work',form(`<p class="full"><b>${esc(t.task_name)}</b></p>`+select('scope','What are you handing over? *',[['task','This task only'],['project','All my open tasks on this project']],'task')+`<label class="full"><input type="checkbox" name="confirm" required> I cannot complete this work and am handing it over to my Supervisor, Manager or Partner for reallocation.</label><label class="full">Narration *<textarea name="narration" required minlength="10" maxlength="1000" placeholder="What is done, what is left, where the working papers are, and what the next person must know."></textarea></label><p class="info full">Nothing moves yet. A Supervisor, Manager or Partner is alerted, chooses another staff member and the task is reallocated. Your narration stays in the task history.</p>`,'Send handover'),f=>request({action:'task_handover_request',project_id:t.project_id,task_id:f.get('scope')==='project'?null:id,narration:f.get('narration')}),()=>{},{successMessage:'Handover sent. A Supervisor, Manager or Partner will reallocate it.'});
+  $('#editForm').elements.scope.required=true;
+ }
+ async function pickStaff(projectId,exclude){const r=await request({action:'task_handover_candidates',project_id:projectId,exclude});return r.candidates.map(s=>[s.staff_id,`${s.full_name} · ${s.category_code.charAt(0)+s.category_code.slice(1).toLowerCase()} · ${s.open_tasks} open`]);}
+ async function reallocate(id){
+  const t=d().tasks.find(t=>t.task_id===id);if(!t)return;const staff=await pickStaff(t.project_id,t.assigned_to);
+  modal('Reallocate work',form(`<p class="full"><b>${esc(t.task_name)}</b><br>Currently assigned to ${esc(staffName(t.assigned_to))}</p>`+select('scope','Reallocate *',[['task','This task only'],['project',`All of ${staffName(t.assigned_to)}'s open tasks on this project`]],'task')+select('new_assignee_id','New assignee *',staff)+`<label class="full">Reason *<textarea name="reason" required minlength="10" maxlength="1000" placeholder="Why the work is moving and what the new person needs to know."></textarea></label>`,'Reallocate'),f=>request({action:'task_handover_reallocate',project_id:t.project_id,task_id:f.get('scope')==='task'?id:null,from_staff_id:t.assigned_to,new_assignee_id:f.get('new_assignee_id'),reason:f.get('reason')}),()=>{},{successMessage:'Work reallocated. The new assignee has been alerted.'});
+  $('#editForm').elements.scope.required=true;$('#editForm').elements.new_assignee_id.required=true;
+ }
+ async function decideHandover(id){
+  const h=(await request({action:'task_handover_list'})).handovers.find(x=>x.handover_id===id);if(!h)return notice('This handover was already decided. Refresh Home.');
+  const staff=await pickStaff(h.project_id,h.requested_by);
+  modal('Decide handover',form(`<p class="full"><b>${esc(h.client_name)}</b> · ${esc(h.project_name)}<br>${h.task_name?esc(h.task_name):'All of the requester\'s open tasks on this project'}</p><p class="info full"><b>${esc(h.requester_name)}</b> writes: <span class="preserve-lines">${esc(h.narration)}</span></p>`+select('decision','Decision *',['Reallocated','Declined'],'Reallocated')+select('new_assignee_id','Reallocate to',staff)+`<label class="full">Note (required when declining)<textarea name="note" maxlength="1000" placeholder="Instructions for the new assignee, or why the handover is declined."></textarea></label>`,'Confirm decision'),f=>request({action:'task_handover_decide',handover_id:id,decision:f.get('decision'),new_assignee_id:f.get('decision')==='Reallocated'?f.get('new_assignee_id'):null,note:f.get('note')}),()=>{},{successMessage:'Handover decided. The requester has been alerted.'});
+  const f=$('#editForm');f.elements.decision.required=true;f.elements.decision.onchange=()=>{f.elements.new_assignee_id.required=f.elements.decision.value==='Reallocated';f.elements.note.required=f.elements.decision.value==='Declined';};f.elements.decision.onchange();
+ }
+ const stamp=v=>new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',dateStyle:'medium',timeStyle:'short'}).format(new Date(v));
+ async function paintHandovers(){
+  const box=$('#homeHandovers');if(!box)return;let rows=[];
+  try{rows=(await request({action:'task_handover_list'})).handovers.filter(h=>h.requested_by!==d().me.staff_id);}catch(e){box.querySelector('.compact-empty').textContent='The handover list could not be loaded. Refresh Home to try again.';return;}
+  const head=box.querySelector('.section-head').outerHTML.replace('</div></div>',`</div><span class="badge ${rows.length?'warn':''}">${rows.length}</span></div>`);
+  box.innerHTML=head+(rows.map(h=>`<div class="home-exception-row"><div><b>${esc(h.client_name)}</b><small>${esc(h.task_name||'All open tasks')} · ${esc(h.project_name)} · from ${esc(h.requester_name)} · ${esc(stamp(h.created_at))}</small><span class="preserve-lines">${esc(h.narration)}</span></div><button type="button" data-v6="handover-decide" data-id="${esc(h.handover_id)}">Decide</button></div>`).join('')||'<p class="muted compact-empty">No handovers are waiting.</p>');
+ }
+ async function paintTaskHandovers(id){
+  const box=$('#taskHandovers');if(!box||box.dataset.taskId!==id)return;let rows=[];
+  try{rows=(await request({action:'task_handover_list',task_id:id,history:true})).handovers;}catch(e){return;}
+  box.innerHTML=rows.length?rows.map(h=>`<div class="task"><div><strong>Handover ${esc(h.status.toLowerCase())}</strong> · ${esc(h.requester_name)}<p class="preserve-lines">${esc(h.narration)}</p><small>${esc(stamp(h.created_at))} EAT${h.new_assignee_name?` · to ${esc(h.new_assignee_name)}`:''}${h.decided_by_name?` · decided by ${esc(h.decided_by_name)}`:''}${h.status==='Declined'&&h.decision_note?` · ${esc(h.decision_note)}`:''}</small></div></div>`).join(''):'';
+ }
+
  function time(){
   week=week||dates();const end=new Date(Date.parse(week+'T00:00:00Z')+6*86400000).toISOString().slice(0,10),pids=new Set(ctx.filtered().projects.map(p=>p.project_id));
   const rows=d().timesheets.filter(t=>(!ctx.firm()||pids.has(t.project_id))&&(timeFilter==='Team approvals'?t.status==='Submitted'&&t.staff_id!==d().me.staff_id:t.staff_id===d().me.staff_id&&t.work_date.slice(0,10)>=week&&t.work_date.slice(0,10)<=end));
@@ -229,6 +259,9 @@ export function createWorkspaceUI(ctx){
   if(b.dataset.v6==='schedule-view'){showSchedules=!showSchedules;selected='';selectedPeriod='';ctx.render();}
   if(b.dataset.v6==='task')newTask();
   if(b.dataset.v6==='escalate')await escalate(id);
+  if(b.dataset.v6==='handover')await handover(id);
+  if(b.dataset.v6==='reallocate')await reallocate(id);
+  if(b.dataset.v6==='handover-decide')await decideHandover(id);
   if(b.dataset.v6==='time')editTime(id,b.dataset.taskId);
   if(b.dataset.v6==='generate'){const r=await request({action:'generate_tasks',project_id:id});await load();notice(`${r.generated} new tasks generated. Existing tasks were kept.`);}
   if(b.dataset.v6==='preview')await preview(id);
@@ -239,6 +272,6 @@ export function createWorkspaceUI(ctx){
   if(b.dataset.v6==='reverse-time')modal('Reverse approved time',form(`<p class="info full">The approved entry remains locked. This adds an equal negative entry for an auditable correction.</p>`+field('reason','Reason *','','text','required maxlength="2000"')),f=>request({...Object.fromEntries(f),action:'timesheet_reverse',timesheet_id:id}));
   if(b.dataset.v6==='sector')modal('Add primary sector',form(field('name','Sector name *','','text','required maxlength="100"')+select('parent_id','Parent category',d().sectors.map(s=>[s.sector_id,s.name]))),f=>request({...Object.fromEntries(f),action:'sector_save'}));
  }catch(err){notice(err.message,true);}finally{b.disabled=false;}});
- return {projects,time,bind,editProject,newTask,editTime,importWorkbook,openCatalog:()=>accounting.catalog(),openLedger:id=>ledger.open(id),openOpeningImport:(id,settings)=>ledger.openOpeningImport(id,settings),openOpeningJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openPurchases:id=>imported(id),openPeriodImports:id=>periodImports.open(id),selectProject(id){if(selected!==id)selectedPeriod='';selected=id;taskFilter='All';},selectPeriod(id){selectedPeriod=id;}};
+ return {projects,time,bind,paintHandovers,paintTaskHandovers,editProject,newTask,editTime,importWorkbook,openCatalog:()=>accounting.catalog(),openLedger:id=>ledger.open(id),openOpeningImport:(id,settings)=>ledger.openOpeningImport(id,settings),openOpeningJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openPurchases:id=>imported(id),openPeriodImports:id=>periodImports.open(id),selectProject(id){if(selected!==id)selectedPeriod='';selected=id;taskFilter='All';},selectPeriod(id){selectedPeriod=id;}};
 }
 
