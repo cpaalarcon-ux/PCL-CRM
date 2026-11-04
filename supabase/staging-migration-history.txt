@@ -69,3 +69,6 @@
 20261104113149 issued_letters
 20261104115715 reviewer_choice
 20261104121044 stock_vat_categories
+20261104122808 task_handovers
+20261104122836 task_handover_queue
+20261104123219 retire_suspense_account

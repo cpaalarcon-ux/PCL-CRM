@@ -1,14 +1,13 @@
 // Bank-centred month/year close checks (review item 7). Pure function; the ledger read calls it.
 // Bank and mobile-money statements are the cash control:
 // - missing statements are "Not ready", never treated as zero;
-// - every statement line must be matched or explained (mapped to an ERP account, not suspense);
-// - opening-balance suspense must be cleared;
+// - every statement line must be matched or explained (mapped to an ERP account; there is no suspense account);
 // - an own-account transfer must pair with the opposite line on a different statement: exact opposite
 //   amount, dated within 3 days, each line used once;
 // - statement movement must agree with the posted movement on the bank and mobile-money accounts.
 // Each check names its blocker so staff see exactly what stops the close.
 export const STATEMENT_ACCOUNTS=['10020','10030','10040','20080'];
-const SUSPENSE='37000',WINDOW_DAYS=3;
+const WINDOW_DAYS=3;
 const cents=v=>Math.round(Number(v||0)*100);
 const kes=c=>(c/100).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
 const dayNo=d=>Math.round(Date.parse(String(d).slice(0,10)+'T00:00:00Z')/864e5);
@@ -43,12 +42,8 @@ export function bankCloseChecks({bankRows=[],tb=[],explanations=[]}={}){
   add('STATEMENTS','Bank and mobile-money statements imported',activity?'Not ready':'Not applicable',activity?'The ledger has bank or mobile-money balances or movements, but no statement lines are imported for this period. Import every statement before closing.':'No bank or mobile-money accounts are used in this period.');
  }else add('STATEMENTS','Bank and mobile-money statements imported','Pass',`${bankRows.length} statement line(s) across ${new Set(bankRows.map(r=>r.batch_id)).size} statement(s).`);
 
- const unexplained=bankRows.filter(r=>!r.account_code||String(r.account_code)===SUSPENSE);
- if(bankRows.length)add('LINES_EXPLAINED','Every statement line matched or explained',unexplained.length?'Blocked':'Pass',unexplained.length?`${unexplained.length} line(s) are unmatched or in suspense, for example ${unexplained.slice(0,3).map(ref).join('; ')}.`:'All lines are mapped to an ERP account.');
-
- const suspense=tb.find(a=>String(a.code)===SUSPENSE);
- const suspenseNet=cents(suspense?.net);
- add('SUSPENSE_CLEAR','Suspense cleared',suspenseNet?'Blocked':'Pass',suspenseNet?`Account 37000 still holds KES ${kes(suspenseNet)}. Clear it with an evidenced adjusting journal.`:'Account 37000 is nil.');
+ const unexplained=bankRows.filter(r=>!r.account_code);
+ if(bankRows.length)add('LINES_EXPLAINED','Every statement line matched or explained',unexplained.length?'Blocked':'Pass',unexplained.length?`${unexplained.length} line(s) are not mapped to an ERP account, for example ${unexplained.slice(0,3).map(ref).join('; ')}.`:'All lines are mapped to an ERP account.');
 
  const transfers=bankRows.filter(r=>STATEMENT_ACCOUNTS.includes(String(r.account_code))).map(r=>({r,amount:lineAmount(r),day:dayNo(r.normalized?.date)})).sort((x,y)=>x.day-y.day||x.amount-y.amount);
  const used=new Set(),unpaired=[];
