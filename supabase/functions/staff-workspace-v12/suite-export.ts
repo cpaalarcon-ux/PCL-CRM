@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import {PDFDocument,StandardFonts} from 'pdf-lib';
 import {fail,uuid} from './validation.mjs';
 import {taxSummary} from './tax-review-actions.ts';
-import {vat3Schedules} from './vat3-rules.mjs';
+import {vat3File} from './vat3-export.ts';
 import {one,leader} from './suite-actions.ts';
 const clean=(v:any)=>typeof v==='object'&&v!==null?JSON.stringify(v):v??'';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
@@ -35,7 +35,7 @@ function returnLines(kind:string,result:any,profile:any){
   'Tax case calculation and reviewed source rows',confirm,'Preparation mapping only'
  ]);
 }
-async function workbook(sheets:any[]){const book=new ExcelJS.Workbook();for(const [name,headers,rows] of sheets){const sheet=book.addWorksheet(name.slice(0,31));sheet.addRow(headers);for(const r of rows)sheet.addRow(r.map(clean));sheet.eachRow((r:any)=>{r.eachCell((c:any)=>{c.font={name:'Arial',size:9};c.alignment={wrapText:true,vertical:'top'};});});sheet.columns.forEach((c:any)=>c.width=24);sheet.getRow(1).font={name:'Arial',size:9,bold:true};sheet.pageSetup={paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0};}return new Uint8Array(await book.xlsx.writeBuffer());}
+import {workbook} from './workbook-file.ts';
 async function pdf(title:string,lines:string[]){const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica);let page=doc.addPage(),y=790;
  for(const original of [title,'',...lines])for(const line0 of String(original).split('\n')){
   let line=line0.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7e]/g,' ');
@@ -56,19 +56,7 @@ export async function suiteExport(tx:any,a:any,p:any,storage:any){
   const calculated=locked?c.result:current.result,testing=calculated.testing_only===true,profile=locked?(snapshot?.profile||current.profile):current.profile,sourceApp=locked?(snapshot?.source_application||current.source_application):current.source_application;
   if(rows.length>10000)fail(400,'Split exports into smaller reviewed periods.');
   if(p.format==='vat3'){
-   if(c.kind!=='VAT')fail(400,'The VAT3 schedules are only available for a VAT case.');
-   if(!locked)fail(400,'The VAT3 schedules are available once the Manager has locked the VAT case.');
-   if(calculated.testing_only===true)fail(400,'This case used a testing rate and is not for filing.');
-   const v=vat3Schedules({rows,result:calculated,inputs:c.inputs||{}});
-   const book=await workbook([
-    ['Start Here',['Read before using','Instruction'],[
-     ['Purpose','VAT3 schedules prepared from the Manager-reviewed VAT case, in the order of the KRA VAT annexes.'],
-     ['Important','This is a preparation file, not a KRA submission or receipt. Confirm the schedule letters and column order against the current KRA VAT return before uploading or keying figures into iTax.'],
-     ['Client',client.company_name],['KRA PIN',client.kra_pin||'Not recorded'],['Return period',`${dateText(c.starts_on)} to ${dateText(c.ends_on)}`],['ERP case status',c.status],['Case reference',c.case_id],
-     ['Reviewed by',staffNames.get(c.reviewed_by)||'Not recorded'],['Only reviewed lines',`Sales lines are included when confirmed and purchase lines when eligible. Skipped: ${v.counts.skipped.sales} sales, ${v.counts.skipped.purchases} purchases.`],
-     ['Tie-out',v.issues.length?'REVIEW REQUIRED':'Schedules agree to the tax case'],...v.issues.map((x:string)=>['Action required',x])
-    ]],...v.sheets]);
-   bytes=book;mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';name=`VAT3_Schedules_${dateText(c.starts_on)}_${dateText(c.ends_on)}_${id.slice(0,8)}.xlsx`;
+   const f=await vat3File(c,client,staffNames,rows,calculated,locked);bytes=f.bytes;mime=f.mime;name=f.name;
    await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'exports','DOWNLOAD',${id},${tx.json({kind:'VAT3',name})})`;
    return {name,mime,base64:base64(bytes)};
   }
