@@ -1,4 +1,5 @@
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
+import {currentSectors} from './activity-sectors.ts';
 import {syncClientDependencyTasks} from './dependency-tasks.ts';
 import {number,day} from './suite-rules.mjs';
 import {one,leader,today} from './suite-actions.ts';
@@ -118,7 +119,8 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='engagement_save'){
   if(e&&String(e.revision)!==revision(p.revision))fail(409,'Engagement controls changed. Refresh first.');if(e?.stage==='Finalized')fail(400,'The engagement is finalized.');
   const letter=p.signed_letter_id?uuid(p.signed_letter_id):null;if(letter)one(await tx`select document_id from erp_private.documents where document_id=${letter} and project_id=${project.project_id} and category='Signed Engagement Letters' and mime_type='application/pdf' and is_locked`);
-  const isAudit=project.service_code.startsWith('AUD-'),required=isAudit&&(project.is_pie||['Financial Services','Public Sector'].includes(project.primary_sector)||p.eqr_required===true);
+  const sectors=await currentSectors(tx,project.client_id);
+  const isAudit=project.service_code.startsWith('AUD-'),required=isAudit&&(project.is_pie||[...sectors,project.primary_sector].some((x:any)=>['Financial Services','Public Sector'].includes(x))||p.eqr_required===true);
   const reviewer=isAudit&&p.eqr_reviewer_id?uuid(p.eqr_reviewer_id):null,clearance=isAudit&&p.eqr_document_id?uuid(p.eqr_document_id):null;
   const preservedClearance=clearance&&e?.eqr_document_id===clearance&&e?.eqr_reviewer_id===reviewer&&e?.eqr_cleared_by;
   if(clearance&&!preservedClearance){if(a.category_code!=='PARTNER')fail(403,'Only the Engagement Partner can record EQR clearance.');if(!reviewer||reviewer===a.staff_id)fail(400,'Choose an independent reviewer.');one(await tx`select staff_id from erp_private.assignment_candidates() where staff_id=${reviewer} and category_code in ('PARTNER','MANAGER') and firm_id=${project.handling_firm_id}`);
