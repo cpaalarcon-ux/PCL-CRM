@@ -9,6 +9,7 @@ import {checkWorkbookZip} from './workspace-rules.mjs';
 import {loadCrosswalk,revenueAccount} from './sales-crosswalk.ts';
 import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal,profitByActivity,isoWeek,DATA_CUTOFF} from './ledger-rules.mjs';
 import {debtorsRead,receiptAction} from './debtors.ts';
+import {stockRollsRead,stockJournalPlan} from './stock-journal.ts';
 import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
 import {bankCloseChecks} from './bank-close.mjs';
@@ -299,6 +300,11 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   return {ok:true,status};
  }
  if(project.status==='Archived')fail(400,'Archived projects cannot change client working papers.');
+ if(p.action==='ledger_stock_read')return await stockRollsRead(tx,l);
+ if(p.action==='ledger_stock_propose'){
+  const plan=await stockJournalPlan(tx,l,p.control_id),items=normaliseLines(plan.lines,await catalogue(tx),{});
+  return await newJournal(tx,a,l,'Stock',{reference:plan.reference,journal_date:plan.journal_date,description:plan.description,evidence:plan.evidence},items,plan.snapshot);
+ }
  if(p.action==='ledger_journal_save'){
   const accounts=await catalogue(tx),kind=choice(p.kind,['Opening','Payroll','Adjustment','Stock']),items=normaliseLines(p.lines,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll'});
   if(kind==='Opening')for(const line of items.filter((x:any)=>x.account_code))if(!await clientAccountAllowed(tx,project.client_id,line.account_code,day(l.starts_on)))fail(400,`ERP account ${line.account_code} is not approved for this client’s opening balance date. Add it under Clients → Client accounts; it is reviewed when this journal is approved and posted.`);
