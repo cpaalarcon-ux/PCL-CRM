@@ -3,6 +3,7 @@ import {pendingPurchases} from './purchase-pending.ts';
 import {chartCatalogue,approvedChart,chartMessage} from './client-chart.ts';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
+import {chosenReviewer,mustBeAskedReviewer,reviewCandidates} from './review-queue.ts';
 import {readWorkbookSheet} from './workbook-reader.mjs';
 import {checkWorkbookZip} from './workspace-rules.mjs';
 import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal,profitByActivity,isoWeek,DATA_CUTOFF} from './ledger-rules.mjs';
@@ -193,7 +194,7 @@ async function report(tx:any,l:any,to:string){
  const activities=await tx`select activity_id,activity_name,pack_code,is_primary,effective_from,effective_to from erp_private.client_activities where client_id=${l.client_id} order by is_primary desc,activity_name`;
  const profit_by_activity=profitByActivity(profitLines,activities),week=isoWeek(new Date().toISOString().slice(0,10));
  const current_week={...week,as_of:week.ends_on<day(l.starts_on)?null:week.ends_on>day(l.ends_on)?day(l.ends_on):week.ends_on};
- const prior_year=await priorYear(tx,l),report_reviews=await tx`select review_id,report_kind,starts_on,as_of,prepared_note,status,prepared_by,reviewed_by,reviewed_at,review_note,created_at,revision from erp_private.ledger_report_reviews where period_id=${l.period_id} order by created_at desc limit 100`;
+ const prior_year=await priorYear(tx,l),report_reviews=await tx`select review_id,report_kind,starts_on,as_of,prepared_note,status,prepared_by,reviewed_by,reviewed_at,review_note,created_at,revision,requested_reviewer_id,erp_private.reviewer_label(requested_reviewer_id) requested_reviewer_name from erp_private.ledger_report_reviews where period_id=${l.period_id} order by created_at desc limit 100`;
  const pending=await tx`select r.row_id,r.source_row,r.dataset,r.account_code,r.normalized,r.revision,v.source_revision,v.decision,j.journal_id,j.status as journal_status from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v using(row_id) left join erp_private.ledger_sources s on s.source_kind='Workbook row' and s.source_key=r.row_id::text left join erp_private.ledger_journals j on j.journal_id=s.journal_id
  where r.project_id=${l.project_id} and b.archived_at is null and not r.is_split_parent and r.dataset in ('Sales','Purchases','Expenditure','Non-eTIMS') and coalesce(nullif(r.normalized->>'date',''),b.period_start::text)>=${day(l.starts_on)} and coalesce(nullif(r.normalized->>'date',''),b.period_end::text)<=${to} and (j.status is distinct from 'Posted') order by r.created_at,r.source_row limit 2001`;
  const assets=await tx`select * from erp_private.ledger_assets where period_id=${l.period_id} order by created_at`,charges=await tx`select c.*,j.status as journal_status from erp_private.ledger_asset_charges c join erp_private.ledger_journals j using(journal_id) where c.project_id=${l.project_id} and c.starts_on>=${day(l.starts_on)} and c.ends_on<=${to}`;
@@ -210,7 +211,7 @@ async function report(tx:any,l:any,to:string){
  if(ppe_sources.length)issues.push(ppe_sources.length+' PPE source(s) still need an asset and shared-rate record.');
  if(!journals.some((j:any)=>j.kind==='Stock'&&j.status==='Posted'))issues.push('Confirm stock / cost-of-sales completeness separately before relying on gross profit.');
  const balance=money(tb.reduce((sum:any,r:any)=>sum+r.net,0));if(balance!==0)issues.push('The trial balance is not balanced.');
- return {period:l,pending_information,as_of:to,accounts,tb,profit,profit_by_activity,activities,current_week,prior_year,report_reviews,data_cutoff:DATA_CUTOFF,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,close_checks:bankClose.checks,close_explanations:closeExplanations,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
+ return {period:l,pending_information,as_of:to,accounts,tb,profit,profit_by_activity,activities,current_week,prior_year,report_reviews,reviewers:await reviewCandidates(tx,(await tx`select client_id from erp_private.projects where project_id=${l.project_id}`)[0].client_id),data_cutoff:DATA_CUTOFF,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,close_checks:bankClose.checks,close_explanations:closeExplanations,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
 }
 
 export async function annualTaxLedgerControl(tx:any,projectId:string,start:string,end:string){
@@ -249,11 +250,11 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   const kind=choice(p.report_kind,['Month','Quarter','Year to date','Year end']),asOf=date(p.as_of),note=text(p.prepared_note,2000);if(!asOf)fail(400,'Choose the report date.');if(note.length<10)fail(400,'Add a preparer note of at least 10 characters.');
   const {snapshot}=await reportSnapshot(tx,l,kind,asOf);
   if((await tx`select 1 from erp_private.ledger_report_reviews where period_id=${l.period_id} and report_kind=${kind} and as_of=${asOf} and status='Submitted'`).length)fail(409,'This report is already waiting for review.');
-  return one(await tx`insert into erp_private.ledger_report_reviews(project_id,period_id,report_kind,starts_on,as_of,snapshot,snapshot_digest,prepared_note,prepared_by) values(${l.project_id},${l.period_id},${kind},${snapshot.starts_on},${asOf},${tx.json(snapshot)},${await digest(snapshot)},${note},${a.staff_id}) returning review_id,status`);
+  return one(await tx`insert into erp_private.ledger_report_reviews(project_id,period_id,report_kind,starts_on,as_of,snapshot,snapshot_digest,prepared_note,prepared_by,requested_reviewer_id) values(${l.project_id},${l.period_id},${kind},${snapshot.starts_on},${asOf},${tx.json(snapshot)},${await digest(snapshot)},${note},${a.staff_id},${await chosenReviewer(tx,a,(await tx`select client_id from erp_private.projects where project_id=${l.project_id}`)[0].client_id,p.requested_reviewer_id)}) returning review_id,status`);
  }
  if(p.action==='ledger_report_review'){
   leader(a);const r=one(await tx`select * from erp_private.ledger_report_reviews where review_id=${uuid(p.review_id)} and period_id=${l.period_id} for update`);rev(r,p);
-  if(r.status!=='Submitted')fail(400,'Only a submitted report can be approved or returned.');if(r.prepared_by===a.staff_id)fail(403,'A different Manager or Partner must review this report.');
+  if(r.status!=='Submitted')fail(400,'Only a submitted report can be approved or returned.');if(r.prepared_by===a.staff_id)fail(403,'A different Manager or Partner must review this report.');await mustBeAskedReviewer(tx,a,r.requested_reviewer_id);
   const status=choice(p.status,['Approved','Returned']),note=text(p.review_note,2000);if(note.length<10)fail(400,'Enter a review note of at least 10 characters.');
   if(status==='Approved'){const {snapshot}=await reportSnapshot(tx,l,r.report_kind,day(r.as_of));if(await digest(snapshot)!==r.snapshot_digest)fail(409,'The posted figures changed after this report was submitted. Return it so the preparer submits the current figures.');}
   await tx`update erp_private.ledger_report_reviews set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where review_id=${r.review_id}`;return {ok:true,status};

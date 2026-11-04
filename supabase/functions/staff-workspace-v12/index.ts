@@ -5,6 +5,7 @@ import {referenceAction} from './reference-actions.ts';
 import {discussionAction} from './discussion-actions.ts';
 import {taxPeriodAction} from './tax-period-actions.ts';
 import {improvementAction} from './improvement-actions.ts';
+import {reviewQueueAction} from './review-queue.ts';
 import {procedureAction} from './procedure-actions.ts';
 import {presenceAction} from './presence-actions.ts';
 import {accountingAction} from './accounting-actions.ts';
@@ -310,6 +311,7 @@ async function action(id:any,p:any){
   const audit=await auditAction(tx,a,p,admin.storage.from(BUCKET));if(audit!==undefined)return audit;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
   const improvements=await improvementAction(tx,a,p,admin.storage.from(BUCKET));if(improvements!==undefined)return improvements;
+  const queue=await reviewQueueAction(tx,a,p);if(queue!==undefined)return queue;
   const importedPeriod=await periodImportAction(tx,a,p,admin.storage.from(BUCKET));if(importedPeriod!==undefined)return importedPeriod;
   const purchases=await purchaseLedgerAction(tx,a,p);if(purchases!==undefined)return purchases;
   const ledger=await ledgerAction(tx,a,p,admin.storage.from(BUCKET));if(ledger!==undefined)return ledger;
