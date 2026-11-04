@@ -4,6 +4,7 @@
 // dated version; a different Manager or Partner approves it. Once a version is approved, account
 // choices and postings for that client are limited to it from its effective date.
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
+import {chosenReviewer,mustBeAskedReviewer,reviewCandidates} from './review-queue.ts';
 
 const one=(r:any[])=>{if(!r.length)fail(403,'Record unavailable to this account.');return r[0];};
 const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must maintain the client chart of accounts.');};
@@ -83,13 +84,13 @@ async function proposal(tx:any,clientId:string,from:string){
 export async function clientChartAction(tx:any,a:any,p:any){
  if(!['v3_client_chart_read','v3_client_chart_propose','v3_client_chart_review'].includes(p.action))return undefined;
  if(p.action==='v3_client_chart_read'){
-  const cid=uuid(p.client_id),versions=await tx`select version_id,effective_from,entity_type,packs,cardinality(accounts) account_count,extra_accounts,status,prepared_by,prepared_at,reviewed_by,reviewed_at,review_note,revision from erp_private.client_chart_versions where client_id=${cid} order by created_at desc limit 20`;
+  const cid=uuid(p.client_id),versions=await tx`select version_id,effective_from,entity_type,packs,cardinality(accounts) account_count,extra_accounts,status,prepared_by,prepared_at,reviewed_by,reviewed_at,review_note,revision,requested_reviewer_id,erp_private.reviewer_label(requested_reviewer_id) requested_reviewer_name from erp_private.client_chart_versions where client_id=${cid} order by created_at desc limit 20`;
   const firstPeriod=(await tx`select min(starts_on) d from erp_private.ledger_periods where client_id=${cid}`)[0]?.d;
   const from=date(p.effective_from)||day(firstPeriod)||`${new Date().getUTCFullYear()}-01-01`;
   const {catalog,...prop}=await proposal(tx,cid,from);
   const current=versions.find((v:any)=>v.status==='Approved');
   const stale=current?prop.packs.filter((x:string)=>!(current.packs||[]).includes(x)):[];
-  return {...prop,effective_from:from,versions,draft:versions.find((v:any)=>v.status==='Draft')||null,current:current||null,
+  return {...prop,reviewers:await reviewCandidates(tx,cid),effective_from:from,versions,draft:versions.find((v:any)=>v.status==='Draft')||null,current:current||null,
    status:current?(stale.length?'Out of date':'Approved'):versions.some((v:any)=>v.status==='Draft')?'Pending review':'Not approved',
    stale_packs:stale,extra_choices:catalog.filter((x:any)=>x.status==='Active'&&!x.is_legacy&&!prop.accounts.some((y:any)=>y.code===x.code)).map((x:any)=>({code:x.code,name:x.name}))};
  }
@@ -112,14 +113,14 @@ export async function clientChartAction(tx:any,a:any,p:any){
   const missing=prop.exceptions.filter((e:any)=>!extras.some((x:any)=>x.code===e.code));
   if(missing.length)fail(400,`These accounts are already used by the client but are outside the proposed chart: ${missing.slice(0,8).map((e:any)=>`${e.code} ${e.name} (${e.reason})`).join('; ')}${missing.length>8?` and ${missing.length-8} more`:''}. Add each as an extra account with a reason, or correct the mapping first.`);
   const codes=[...prop.accounts.map((x:any)=>x.code),...extras.map((x:any)=>x.code)].sort();
-  return one(await tx`insert into erp_private.client_chart_versions(client_id,effective_from,entity_type,packs,accounts,extra_accounts,prepared_by,note)
-   values(${cid},${from},${prop.client.legal_entity_type},${tx.array?tx.array(prop.packs):prop.packs},${tx.array?tx.array(codes):codes},${tx.json(extras)},${a.staff_id},${text(p.note||'',2000,false)||null}) returning version_id,status`);
+  return one(await tx`insert into erp_private.client_chart_versions(client_id,effective_from,entity_type,packs,accounts,extra_accounts,prepared_by,note,requested_reviewer_id)
+   values(${cid},${from},${prop.client.legal_entity_type},${tx.array?tx.array(prop.packs):prop.packs},${tx.array?tx.array(codes):codes},${tx.json(extras)},${a.staff_id},${text(p.note||'',2000,false)||null},${await chosenReviewer(tx,a,cid,p.requested_reviewer_id)}) returning version_id,status`);
  }
  // v3_client_chart_review
  leader(a);const v=one(await tx`select * from erp_private.client_chart_versions where version_id=${uuid(p.version_id)} for update`);
  if(String(v.revision)!==revision(p.revision))fail(409,'This chart version changed. Refresh before reviewing.');
  if(v.status!=='Draft')fail(400,'Only a chart version waiting for review can be approved or returned.');
- if(v.prepared_by===a.staff_id)fail(403,'A different Manager or Partner must review this client chart.');
+ if(v.prepared_by===a.staff_id)fail(403,'A different Manager or Partner must review this client chart.');await mustBeAskedReviewer(tx,a,v.requested_reviewer_id);
  const status=choice(p.status,['Approved','Returned']),note=text(p.review_note,2000);if(note.length<10)fail(400,'Enter a review note of at least 10 characters.');
  if(status==='Approved'){
   const prop=await proposal(tx,v.client_id,day(v.effective_from)),codes=new Set(v.accounts);
