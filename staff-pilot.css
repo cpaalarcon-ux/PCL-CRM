@@ -122,3 +122,4 @@ input[type=hidden]{display:none!important}.kyc-evidence-item{display:flex;justif
 .messenger-row-top small{font-weight:400}.messenger-who{color:var(--green);font-weight:700}.messenger-preview{font-weight:400;color:#475569}
 .messenger-meta{display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin-bottom:2px}.messenger-meta small{color:var(--muted);font-size:11px}.messenger-bubble .messenger-author{color:var(--navy)}.messenger-bubble.own .messenger-author{color:var(--green)}
 .messenger-bubble small{text-align:right}
+.auto-map{color:#0b6b3a;font-weight:700}

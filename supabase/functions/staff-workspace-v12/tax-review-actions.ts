@@ -5,6 +5,7 @@ import {taxKinds,pickRate,profileIssues,keys,testRate,payrollFromRules,simpleTax
 import {fail,text,uuid,choice,revision,date} from './validation.mjs';
 import {range,day,number,amount,round,filingKinds,vatCalculation,incomeCalculation,payrollCalculation} from './suite-rules.mjs';
 import {one,leader,today} from './suite-actions.ts';
+import {assertSupportedPeriod} from './supported-period.ts';
 import {annualTaxLedgerControl} from './ledger-actions.ts';
 import {stockGateIssues} from './stock-vat.ts';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
@@ -138,7 +139,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
  if(!String(p.action).startsWith('tax_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Tax compilation requires a staff preparer.');
  if(p.action==='tax_create'){
-  const pid=uuid(p.project_id);one(await tx`select project_id from erp_private.projects where project_id=${pid}`);const [start,end]=range(p.starts_on,p.ends_on),kind=choice(p.kind,taxKinds);if(end<'2025-12-31')fail(400,'The ERP holds data for periods ending 31 December 2025 onwards. Keep earlier periods in the client\u2019s previous records.');
+  const pid=uuid(p.project_id),proj=one(await tx`select project_id,client_id from erp_private.projects where project_id=${pid}`);const [start,end]=range(p.starts_on,p.ends_on),kind=choice(p.kind,taxKinds);await assertSupportedPeriod(tx,proj.client_id,start);
   await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
   if((await tx`select case_id from erp_private.tax_cases where project_id=${pid} and kind=${kind} and starts_on<=${end} and ends_on>=${start}`).length)fail(400,'A tax case already overlaps this period. Open the existing case.');
   return one(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values(${pid},${kind},${start},${end},${a.staff_id}) returning case_id`);

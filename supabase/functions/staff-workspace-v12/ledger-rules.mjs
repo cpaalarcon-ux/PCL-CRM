@@ -197,3 +197,12 @@ export function isoWeek(dateText){
  return {year,week,starts_on:start.toISOString().slice(0,10),ends_on:end.toISOString().slice(0,10),label:`${year} – Week ${week}`};
 }
 export const DATA_CUTOFF='2025-12-31';
+// The ERP holds financial years ending 31 December 2025 or later. A client's first supported year starts the day after the previous
+// year-end, so a December client starts on 1 January 2025 and a June client on 1 July 2025.
+export function firstSupportedStart(month=12,day=31){
+ const m=Math.min(12,Math.max(1,Math.trunc(Number(month))||12)),d=Math.max(1,Math.trunc(Number(day))||31);
+ const yearEnd=y=>Date.UTC(y,m-1,Math.min(d,new Date(Date.UTC(y,m,0)).getUTCDate()));
+ const y=yearEnd(2025)>=Date.parse(DATA_CUTOFF+'T00:00:00Z')?2025:2026;
+ return new Date(yearEnd(y-1)+86400000).toISOString().slice(0,10);
+}
+export const unsupportedPeriodMessage=start=>`The ERP holds data for periods ending 31 December 2025 onwards. This client's first supported date is ${start}. Keep earlier periods in the client\u2019s previous records.`;
