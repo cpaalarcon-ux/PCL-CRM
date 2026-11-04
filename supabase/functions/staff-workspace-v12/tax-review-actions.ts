@@ -136,7 +136,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
  if(!String(p.action).startsWith('tax_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Tax compilation requires a staff preparer.');
  if(p.action==='tax_create'){
-  const pid=uuid(p.project_id);one(await tx`select project_id from erp_private.projects where project_id=${pid}`);const [start,end]=range(p.starts_on,p.ends_on),kind=choice(p.kind,taxKinds);
+  const pid=uuid(p.project_id);one(await tx`select project_id from erp_private.projects where project_id=${pid}`);const [start,end]=range(p.starts_on,p.ends_on),kind=choice(p.kind,taxKinds);if(end<'2025-12-31')fail(400,'The ERP holds data for periods ending 31 December 2025 onwards. Keep earlier periods in the client\u2019s previous records.');
   await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
   if((await tx`select case_id from erp_private.tax_cases where project_id=${pid} and kind=${kind} and starts_on<=${end} and ends_on>=${start}`).length)fail(400,'A tax case already overlaps this period. Open the existing case.');
   return one(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values(${pid},${kind},${start},${end},${a.staff_id}) returning case_id`);
