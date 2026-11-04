@@ -34,3 +34,21 @@ test('statement movement must agree with posted bank movement; balances stay vis
  assert.equal(status(off,'STATEMENT_BALANCES'),'Not checked');
  assert.equal(off.checks.find(c=>c.code==='STATEMENT_BALANCES').blocking,false);
 });
+test('mapped statement balances must run continuously; breaks and gaps block',()=>{
+ const b=(id,date,credit,debit,balance,src)=>({row_id:id,batch_id:'S1',source_row:src,account_code:'40000',normalized:{date,credit,debit,balance,reference:id}});
+ const good=bankCloseChecks({bankRows:[b('a','2026-09-01',1000,0,6000,2),b('b','2026-09-02',0,300,5700,3)],tb:tb(700)});
+ const g=good.checks.find(c=>c.code==='STATEMENT_BALANCES');assert.equal(g.status,'Pass');assert.match(g.detail,/opening KES 5,000\.00 → closing KES 5,700\.00/);
+ const broken=bankCloseChecks({bankRows:[b('a','2026-09-01',1000,0,6000,2),b('b','2026-09-02',0,300,5800,3)],tb:tb(700)});
+ assert.equal(status(broken,'STATEMENT_BALANCES'),'Blocked');assert.match(broken.checks.find(c=>c.code==='STATEMENT_BALANCES').detail,/expected KES 5,700\.00/);
+ const gap=bankCloseChecks({bankRows:[b('a','2026-09-01',1000,0,6000,2),b('b','2026-09-02',0,300,null,3)],tb:tb(700)});
+ assert.equal(status(gap,'STATEMENT_BALANCES'),'Blocked');
+});
+test('an accepted explanation clears only the exact current difference',()=>{
+ const rows=[row('a','S1','40000','2026-09-02',1000)];
+ const accepted=[{check_code:'STATEMENT_TO_LEDGER',status:'Accepted',difference_cents:10000,explanation:'Deposit of 28 Sept clears on 2 Oct',evidence_reference:'REC-09'}];
+ const ok=bankCloseChecks({bankRows:rows,tb:tb(900),explanations:accepted});
+ assert.equal(status(ok,'STATEMENT_TO_LEDGER'),'Explained');assert.equal(ok.checks.find(c=>c.code==='STATEMENT_TO_LEDGER').blocking,false);
+ assert.equal(status(bankCloseChecks({bankRows:rows,tb:tb(850),explanations:accepted}),'STATEMENT_TO_LEDGER'),'Blocked','a changed difference blocks again');
+ const pending=bankCloseChecks({bankRows:rows,tb:tb(900),explanations:[{...accepted[0],status:'Submitted'}]});
+ assert.equal(status(pending,'STATEMENT_TO_LEDGER'),'Blocked');assert.match(pending.checks.find(c=>c.code==='STATEMENT_TO_LEDGER').detail,/waiting for a different Manager or Partner/);
+});

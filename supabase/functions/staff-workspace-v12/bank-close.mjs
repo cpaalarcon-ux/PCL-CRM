@@ -15,7 +15,27 @@ const dayNo=d=>Math.round(Date.parse(String(d).slice(0,10)+'T00:00:00Z')/864e5);
 const lineAmount=r=>cents(r.normalized?.credit)-cents(r.normalized?.debit);
 const ref=r=>r.normalized?.reference||r.normalized?.description||('row '+(r.source_row??r.row_id));
 
-export function bankCloseChecks({bankRows=[],tb=[]}={}){
+// Statement balances: when the import maps a balance column, every line's running balance must equal the
+// previous balance plus the line's movement, and each statement's opening and closing balance is shown.
+function balanceCheck(rows){
+ const label='Statement opening and closing balances';
+ const withBalance=rows.filter(r=>r.normalized?.balance!=null&&r.normalized.balance!=='');
+ if(!withBalance.length)return ['STATEMENT_BALANCES',label,'Not checked','No balance column was mapped when the statements were imported. Map the balance column to check opening and closing balances, or compare them by hand and keep the evidence.'];
+ const byStatement=new Map();for(const r of rows){const list=byStatement.get(r.batch_id)||[];list.push(r);byStatement.set(r.batch_id,list);}
+ const breaks=[],missing=[],summary=[];
+ for(const [batch,list] of byStatement){
+  list.sort((x,y)=>String(x.normalized?.date).localeCompare(String(y.normalized?.date))||Number(x.source_row||0)-Number(y.source_row||0));
+  const gaps=list.filter(r=>r.normalized?.balance==null||r.normalized.balance==='');
+  if(gaps.length){missing.push(`${gaps.length} line(s) without a balance`);continue;}
+  for(let i=1;i<list.length;i++){const expected=cents(list[i-1].normalized.balance)+lineAmount(list[i]);if(cents(list[i].normalized.balance)!==expected)breaks.push(`${ref(list[i])} shows KES ${kes(cents(list[i].normalized.balance))}, expected KES ${kes(expected)}`);}
+  const opening=cents(list[0].normalized.balance)-lineAmount(list[0]),closing=cents(list[list.length-1].normalized.balance);
+  summary.push(`opening KES ${kes(opening)} → closing KES ${kes(closing)}`);
+ }
+ if(missing.length||breaks.length)return ['STATEMENT_BALANCES',label,'Blocked',[...missing,...breaks.slice(0,3)].join('; ')+(breaks.length>3?` and ${breaks.length-3} more break(s)`:'')+'. Check the statement import.'];
+ return ['STATEMENT_BALANCES',label,'Pass',`Running balances are continuous on ${summary.length} statement(s): ${summary.join('; ')}.`];
+}
+
+export function bankCloseChecks({bankRows=[],tb=[],explanations=[]}={}){
  const checks=[],add=(code,label,status,detail)=>checks.push({code,label,status,detail,blocking:['Blocked','Not ready'].includes(status)});
  const statementTb=tb.filter(a=>STATEMENT_ACCOUNTS.includes(String(a.code)));
  const activity=statementTb.some(a=>Number(a.opening)||Number(a.net)||Number(a.movement_debit)||Number(a.movement_credit));
@@ -43,8 +63,12 @@ export function bankCloseChecks({bankRows=[],tb=[]}={}){
   const statementNet=bankRows.reduce((n,r)=>n+lineAmount(r),0);
   const ledgerNet=statementTb.reduce((n,a)=>n+cents(a.movement_debit)-cents(a.movement_credit),0);
   const diff=statementNet-ledgerNet;
-  add('STATEMENT_TO_LEDGER','Statement movement agrees with the posted bank movement',diff?'Blocked':'Pass',diff?`Statements show a net movement of KES ${kes(statementNet)}; posted movement on bank and mobile-money accounts is KES ${kes(ledgerNet)}. Difference KES ${kes(diff)}: post or explain the missing entries.`:`Both show KES ${kes(statementNet)}.`);
-  add('STATEMENT_BALANCES','Statement opening and closing balances','Not checked','The bank import does not capture statement balances. Compare each statement\'s opening and closing balance with the ledger and keep the evidence.');
+  const accepted=diff?explanations.find(e=>e.check_code==='STATEMENT_TO_LEDGER'&&e.status==='Accepted'&&Number(e.difference_cents)===diff):null;
+  const pendingExplanation=diff?explanations.find(e=>e.check_code==='STATEMENT_TO_LEDGER'&&e.status==='Submitted'&&Number(e.difference_cents)===diff):null;
+  const gap=`Statements show a net movement of KES ${kes(statementNet)}; posted movement on bank and mobile-money accounts is KES ${kes(ledgerNet)}. Difference KES ${kes(diff)}`;
+  add('STATEMENT_TO_LEDGER','Statement movement agrees with the posted bank movement',!diff?'Pass':accepted?'Explained':'Blocked',!diff?`Both show KES ${kes(statementNet)}.`:accepted?`${gap}, accepted as explained: ${accepted.explanation} (evidence ${accepted.evidence_reference}).`:pendingExplanation?`${gap}. An explanation is waiting for a different Manager or Partner to review it.`:`${gap}: post the missing entries, or record an evidenced explanation for review.`);
+  checks[checks.length-1].difference_cents=diff;checks[checks.length-1].explanation=accepted||pendingExplanation||null;
+  add(...balanceCheck(bankRows));
  }
  return {checks,blocking:checks.filter(c=>c.blocking).map(c=>`${c.label}: ${c.detail}`)};
 }

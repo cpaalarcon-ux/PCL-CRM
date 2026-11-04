@@ -62,3 +62,4 @@
 20261103172501 enforce_idle_timeout_server_side
 20261103190829 kyc_evidence_record_policy
 20261104054307 server_only_tables_and_fk_indexes
+20261104055557 bank_close_explanations

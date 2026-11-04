@@ -136,7 +136,8 @@ async function report(tx:any,l:any,to:string){
  const pendingImports=await tx`select i.import_id from erp_private.period_imports i where i.project_id=${l.project_id} and i.starts_on>=${day(l.starts_on)} and i.ends_on<=${to} and i.status<>'Superseded' and not exists(select 1 from erp_private.ledger_sources s join erp_private.ledger_journals j using(journal_id) where s.source_kind='Period import' and s.source_key=i.import_id::text and j.status='Posted')`;
  const pending_information=await pendingPurchases(tx,l.project_id,day(l.starts_on),to);
  const bankRows=await tx`select r.row_id,r.batch_id,r.source_row,r.account_code,r.normalized from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${l.project_id} and b.archived_at is null and not r.is_split_parent and r.dataset='Bank' and coalesce(nullif(r.normalized->>'date',''),b.period_start::text)>=${day(l.starts_on)} and coalesce(nullif(r.normalized->>'date',''),b.period_end::text)<=${to} order by r.source_row limit 20000`;
- const bankClose=bankCloseChecks({bankRows,tb});
+ const closeExplanations=await tx`select explanation_id,check_code,as_of,difference_cents,explanation,evidence_reference,status,prepared_by,reviewed_by,reviewed_at,review_note,revision from erp_private.bank_close_explanations where period_id=${l.period_id} and status in ('Submitted','Accepted') order by created_at desc`;
+ const bankClose=bankCloseChecks({bankRows,tb,explanations:closeExplanations});
  const issues:string[]=bankClose.blocking.map((x:string)=>'Bank close – '+x);if(pending_information.total)issues.push(pending_information.total+' credit note(s) are Pending information and excluded from posted figures. Complete original invoice details before relying on final totals.');if(pendingImports.length)issues.push(pendingImports.length+' sales/payroll summary import(s) still await independent posting.');if(!journals.some((j:any)=>j.kind==='Opening'&&j.status==='Posted'))issues.push('Opening balances are not yet independently posted.');
  const drafts=journals.filter((j:any)=>j.status!=='Posted');if(drafts.length)issues.push(drafts.length+' journal(s) await preparation or review.');
  if(pending.length)issues.push((pending.length>2000?'More than 2,000':pending.length)+' imported row(s) are not posted.');
@@ -144,7 +145,7 @@ async function report(tx:any,l:any,to:string){
  if(ppe_sources.length)issues.push(ppe_sources.length+' PPE source(s) still need an asset and shared-rate record.');
  if(!journals.some((j:any)=>j.kind==='Stock'&&j.status==='Posted'))issues.push('Confirm stock / cost-of-sales completeness separately before relying on gross profit.');
  const balance=money(tb.reduce((sum:any,r:any)=>sum+r.net,0));if(balance!==0)issues.push('The trial balance is not balanced.');
- return {period:l,pending_information,as_of:to,accounts,tb,profit,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,close_checks:bankClose.checks,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
+ return {period:l,pending_information,as_of:to,accounts,tb,profit,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,close_checks:bankClose.checks,close_explanations:closeExplanations,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
 }
 
 export async function annualTaxLedgerControl(tx:any,projectId:string,start:string,end:string){
@@ -187,6 +188,23 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  if(p.action==='ledger_asset_read'){const asset=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id}`);return {asset,rate:asset.rate_snapshot,calculation:assetCalculation(asset,asset.rate_snapshot,l.starts_on,l.ends_on)};}
  if(l.status!=='Open')fail(400,'This client year is closed. Its posted snapshot remains available.');
+ if(p.action==='ledger_close_explanation_save'||p.action==='ledger_close_explanation_review'){
+  // The difference is always recomputed on the server; the client never supplies the amount.
+  const asOf=p.as_of?date(p.as_of):day(l.ends_on),current=(await report(tx,l,asOf)).close_checks.find((c:any)=>c.code==='STATEMENT_TO_LEDGER');
+  if(p.action==='ledger_close_explanation_save'){
+   if(!current?.difference_cents)fail(400,'There is no statement-to-ledger difference to explain.');
+   const explanation=text(p.explanation,4000),evidence=text(p.evidence_reference,500);
+   if(explanation.length<20)fail(400,'Explain the difference in at least 20 characters, for example which items are in transit and when they clear.');
+   await tx`update erp_private.bank_close_explanations set status='Withdrawn' where period_id=${l.period_id} and check_code='STATEMENT_TO_LEDGER' and status='Submitted' and prepared_by=${a.staff_id}`;
+   return one(await tx`insert into erp_private.bank_close_explanations(project_id,period_id,check_code,as_of,difference_cents,explanation,evidence_reference,prepared_by) values(${pid},${l.period_id},'STATEMENT_TO_LEDGER',${asOf},${current.difference_cents},${explanation},${evidence},${a.staff_id}) returning explanation_id,difference_cents`);
+  }
+  leader(a);const e=one(await tx`select * from erp_private.bank_close_explanations where explanation_id=${uuid(p.explanation_id)} and period_id=${l.period_id} for update`);rev(e,p);
+  if(e.status!=='Submitted'||e.prepared_by===a.staff_id)fail(403,'A different Manager or Partner must review this explanation.');
+  const status=choice(p.status,['Accepted','Returned']),note=text(p.review_note,2000);if(note.length<10)fail(400,'Record a review conclusion of at least 10 characters.');
+  if(status==='Accepted'&&Number(e.difference_cents)!==Number(current?.difference_cents||0))fail(409,'The difference has changed since this explanation was recorded. Return it and record a new one.');
+  await tx`update erp_private.bank_close_explanations set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where explanation_id=${e.explanation_id}`;
+  return {ok:true,status};
+ }
  if(project.status==='Archived')fail(400,'Archived projects cannot change client working papers.');
  if(p.action==='ledger_journal_save'){
   const accounts=await catalogue(tx),kind=choice(p.kind,['Opening','Payroll','Adjustment','Stock']),items=normaliseLines(p.lines,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll'});
