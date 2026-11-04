@@ -1,9 +1,9 @@
 import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261104-activity-v1';
-import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261104-advances-v1';
+import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261104-queue-v1';
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
-import {createAccountingUI} from './staff-accounting.mjs?v=20261104-advances-v1';
+import {createAccountingUI} from './staff-accounting.mjs?v=20261104-queue-v1';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261104-advances-v1';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261104-queue-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 export function createWorkspaceUI(ctx){
@@ -272,6 +272,6 @@ export function createWorkspaceUI(ctx){
   if(b.dataset.v6==='reverse-time')modal('Reverse approved time',form(`<p class="info full">The approved entry remains locked. This adds an equal negative entry for an auditable correction.</p>`+field('reason','Reason *','','text','required maxlength="2000"')),f=>request({...Object.fromEntries(f),action:'timesheet_reverse',timesheet_id:id}));
   if(b.dataset.v6==='sector')modal('Add primary sector',form(field('name','Sector name *','','text','required maxlength="100"')+select('parent_id','Parent category',d().sectors.map(s=>[s.sector_id,s.name]))),f=>request({...Object.fromEntries(f),action:'sector_save'}));
  }catch(err){notice(err.message,true);}finally{b.disabled=false;}});
- return {projects,time,bind,paintHandovers,paintTaskHandovers,editProject,newTask,editTime,importWorkbook,openCatalog:()=>accounting.catalog(),openLedger:id=>ledger.open(id),openOpeningImport:(id,settings)=>ledger.openOpeningImport(id,settings),openOpeningJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openPurchases:id=>imported(id),openPeriodImports:id=>periodImports.open(id),selectProject(id){if(selected!==id)selectedPeriod='';selected=id;taskFilter='All';},selectPeriod(id){selectedPeriod=id;}};
+ return {projects,time,bind,paintHandovers,paintTaskHandovers,editProject,newTask,editTime,importWorkbook,openCatalog:()=>accounting.catalog(),openLedger:id=>ledger.open(id),openOpeningImport:(id,settings)=>ledger.openOpeningImport(id,settings),openOpeningJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openPurchases:id=>imported(id),openPeriodImports:id=>periodImports.open(id),selectProject(id){if(selected!==id)selectedPeriod='';selected=id;taskFilter='All';},selectPeriod(id){selectedPeriod=id;}};
 }
 

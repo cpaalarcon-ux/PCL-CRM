@@ -123,3 +123,5 @@ input[type=hidden]{display:none!important}.kyc-evidence-item{display:flex;justif
 .messenger-meta{display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin-bottom:2px}.messenger-meta small{color:var(--muted);font-size:11px}.messenger-bubble .messenger-author{color:var(--navy)}.messenger-bubble.own .messenger-author{color:var(--green)}
 .messenger-bubble small{text-align:right}
 .auto-map{color:#0b6b3a;font-weight:700}
+
+#crumbs{margin:0 0 12px}.workspace-breadcrumb span[aria-hidden]{color:var(--muted)}.workspace-breadcrumb [aria-current=page]{font-weight:600;color:var(--text)}.workspace-breadcrumb a{text-decoration:none}.workspace-breadcrumb a:hover{text-decoration:underline}.ledger-dialog .workspace-breadcrumb{margin:0 0 10px}
