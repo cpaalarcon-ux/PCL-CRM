@@ -72,7 +72,7 @@ test('exact routing + TB code pairs are mapped automatically; a Manager can remo
  assert.equal((await get('STOCK')).account_code,null);
  // A locked or filed period is corrected only through a controlled adjustment.
  await tx`update erp_private.workbook_rows set route=2,category_code='EXP08',account_code='62500',review_details=${tx.json({mapping_confirmation:{method:AUTO_METHOD}})} where row_key='AM-PLAIN'`;
- await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,status,prepared_by) values(${P},'PAYE','2026-09-01','2026-09-30','Locked',${actors.ASSISTANT.staff_id})`;
+ await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,status,prepared_by,reviewed_by,review_snapshot) values(${P},'PAYE','2026-09-01','2026-09-30','Locked',${actors.ASSISTANT.staff_id},${actors.MANAGER.staff_id},'{}')`;
  const plain=await get('PLAIN');
  await assert.rejects(()=>auto('MANAGER',{action:'workbook_mapping_remove',row_ids:[plain.row_id],reason:'Period is locked now'}),/locked or filed/);
 
