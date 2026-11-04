@@ -6,15 +6,15 @@ const projectUi=fs.readFileSync(new URL('../staff-workspace-v6.mjs',import.meta.
 const appHtml=fs.readFileSync(new URL('../staff-pilot.html',import.meta.url),'utf8');
 
 test('draft project explains that retained UAT tasks do not mean the project is active',()=>{
- assert.match(projectUi,/Schedule configured · task release held/);
+ assert.match(projectUi,/Held until activation/,'the status steps show that tasks are held while Draft');
  assert.match(projectUi,/Earlier UAT carry-over/);
- assert.match(projectUi,/Draft project:<\/b> the schedule is saved, but no new tasks are released/);
- assert.match(projectUi,/Existing UAT tasks remain visible from earlier testing but do not make this draft project active/);
+ assert.match(projectUi,/<b>Draft:<\/b> the schedule is saved but no new tasks are released/);
+ assert.match(projectUi,/they do not activate the project or release new tasks/);
  assert.match(projectUi,/financial outputs are not ready/);
 });
 
 test('staging build cache key changes with the release-identity check',()=>{
- assert.match(appHtml,/2026-11-04\.4/);
+ assert.match(appHtml,/2026-11-04\.5/);
  assert.match(appHtml,/20261103-release-check-v1/);
 });
 

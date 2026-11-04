@@ -73,3 +73,19 @@ input[type=hidden]{display:none!important}.kyc-evidence-item{display:flex;justif
 .period-chip:hover{filter:brightness(.97);border-color:var(--green)}
 @media(max-width:760px){.work-row-count{margin-left:0;width:100%}.work-board-summary .legend{margin-left:0}}
 .work-board-more{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 0}
+
+/* Project page */
+.project-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}.project-head h3{margin:0 0 4px}.project-head p{margin:0}
+.project-primary{display:flex;gap:8px;flex-wrap:wrap}
+.project-steps{display:flex;gap:10px;list-style:none;padding:0;margin:16px 0;flex-wrap:wrap}.project-steps li{display:flex;gap:10px;align-items:center;flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.project-steps li b{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#e9eef1;color:var(--muted);font-size:13px}
+.project-steps li span{display:flex;flex-direction:column;font-weight:600;color:var(--text)}.project-steps li small{font-weight:400;color:var(--muted)}
+.project-steps li.done b{background:var(--green);color:#fff}.project-steps li.done{border-color:#9cc3ae}
+.project-action-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.project-action-groups section{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--paper);display:flex;flex-direction:column;gap:8px}
+.project-action-groups h4{margin:0 0 2px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.project-action-groups button{text-align:left;width:100%}
+.project-help{margin-top:8px}.project-help summary{cursor:pointer;color:var(--green);font-weight:600}
+.task-group{border:1px solid var(--line);border-radius:10px;margin:10px 0;background:var(--paper)}.task-group>summary{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;cursor:pointer;background:#f6f9f8;border-radius:10px}
+.task-group>summary span{color:var(--muted);font-size:13px}.task-group>summary em{color:var(--red);font-style:normal;font-weight:700}.task-group[open]>summary{border-bottom:1px solid var(--line);border-radius:10px 10px 0 0}
+.task-group .task{margin:0 6px}.pill-late{display:inline-block;background:#fdf0ee;color:var(--red);border:1px solid #f0b4ad;border-radius:999px;padding:0 8px;font-size:12px;font-weight:700;margin-left:4px}
