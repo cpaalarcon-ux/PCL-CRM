@@ -1,6 +1,24 @@
+import {letterPdf,letterDetails} from './letter-pdf.mjs';
 import {automaticBreakMinutes,lateClockIn} from './attendance-rules.mjs';
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
 import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,busySeason,weekdays,round,recurringFeePeriods} from './suite-rules.mjs';
+// pdf-lib is supplied by index.ts so modules loaded in tests do not need it.
+let PDFLib:any=null;export function setPdfLib(lib:any){PDFLib=lib;}
+const roleLabels:any={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Supervisor',ASSISTANT:'Assistant',INTERN:'Intern'};
+async function issuedLetter(tx:any,c:any){
+ const firm=(await tx`select legal_name,physical_address,phone,email,kra_pin from erp_private.firms where firm_id=${c.firm_id}`)[0];
+ const client=(await tx`select company_name from erp_private.clients where client_id=${c.client_id}`)[0],contact=c.contact_id?(await tx`select full_name,job_title from erp_private.client_contacts where contact_id=${c.contact_id}`)[0]:null;
+ const signer=(await tx`select full_name,category_code from erp_private.staff_members where staff_id=${c.signatory_id}`)[0];
+ if(!firm||!client||!signer)fail(400,'The letter needs its firm, client and signatory records.');
+ const letterDate=String(c.communication_date instanceof Date?c.communication_date.toISOString():c.communication_date).slice(0,10),issuedAt=new Date(c.issued_at);
+ const attention=contact?[contact.full_name,contact.job_title].filter(Boolean).join(', '):'';
+ const qr_text=letterDetails({reference:c.reference,subject:c.subject||c.purpose,issuedBy:firm.legal_name,addressedTo:client.company_name,attention:contact?.full_name,signatory:signer.full_name,letterDate});
+ if(!PDFLib)fail(500,'Letter PDF generation is not available.');
+ const bytes=await letterPdf({reference:c.reference,subject:c.subject,purpose:c.purpose,details:c.details,firm,addressed_to:client.company_name,attention,letter_date_text:new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(letterDate+'T00:00:00Z')),signatory_name:signer.full_name,signatory_role:roleLabels[signer.category_code]||'',issued_at:issuedAt.toISOString(),issued_on:new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(issuedAt),qr_text},PDFLib);
+ const sha256=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
+ let s='';for(let i=0;i<bytes.length;i+=16384)s+=String.fromCharCode(...bytes.subarray(i,i+16384));
+ return {file_name:String(c.reference).replace(/[^A-Za-z0-9]+/g,'_')+'_letter.pdf',mime_type:'application/pdf',base64:btoa(s),sha256,qr_text};
+}
 export const one=(rows:any[])=>{if(!rows.length)fail(403,'This record is not available to your account.');return rows[0];};
 export const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must perform this action.');};
 const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Partner approval is required.');};
@@ -139,6 +157,23 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'communications','QR_GENERATE',${c.communication_id},'{}')`;
   return c;
  }
+ if(p.action==='communication_issue'||p.action==='communication_letter_pdf'){
+  const c=one(await tx`select * from erp_private.communications where communication_id=${uuid(p.communication_id)} and deleted_at is null for update`);
+  if(c.channel!=='Letter')fail(400,'Only letters are issued on the letterhead.');
+  if(p.action==='communication_issue'){
+   current(c,p);if(c.issued_at)fail(409,'This letter is already issued. Download the issued PDF.');
+   if(a.staff_id!==c.signatory_id&&a.category_code!=='PARTNER')fail(403,'Only the named signatory or an Engagement Partner can issue this letter.');
+   if(!String(c.details||'').trim()||!String(c.subject||'').trim())fail(400,'Complete the subject and letter body before issuing.');
+   const issuedAt=(await tx`select date_trunc('second',now()) t`)[0].t,file=await issuedLetter(tx,{...c,issued_at:issuedAt});
+   await tx`update erp_private.communications set issued_at=${issuedAt},issued_by=${a.staff_id},issued_sha256=${file.sha256},status=case when status='Open' then 'Waiting' else status end where communication_id=${c.communication_id}`;
+   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'communications','LETTER_ISSUED',${c.communication_id},${tx.json({reference:c.reference,sha256:file.sha256})})`;
+   return file;
+  }
+  if(!c.issued_at)fail(400,'Issue the letter before downloading the letterhead PDF.');
+  const file=await issuedLetter(tx,c);if(file.sha256!==c.issued_sha256)fail(409,'The issued letter could not be reproduced exactly. Do not send a new copy; ask the Engagement Partner to review the record history.');
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'communications','LETTER_DOWNLOADED',${c.communication_id},${tx.json({sha256:file.sha256})})`;
+  return file;
+ }
  if(p.action==='communication_save'){
   const cid=uuid(p.client_id),firm=uuid(p.firm_id),pid=p.project_id?uuid(p.project_id):null;one(await tx`select client_id from erp_private.clients where client_id=${cid}`);one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm}`);
   if(pid)one(await tx`select project_id from erp_private.projects where project_id=${pid} and client_id=${cid} and handling_firm_id=${firm}`);
@@ -146,7 +181,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const signatory=uuid(p.signatory_id);if(signatory!==a.staff_id)one(await tx`select staff_id from erp_private.assignment_candidates() where staff_id=${signatory} and firm_id=${firm}`);
   const when=day(p.communication_date);if(when>today()&&p.channel!=='Meeting')fail(400,'Use today or a past date for a recorded communication.');
   const vals={subject:text(p.subject,200),purpose:text(p.purpose,1000),details:text(p.details,8000),channel:choice(p.channel,['Letter','Email','Call','Meeting','Visit','Internal note']),followup:date(p.followup_date),link:safeUrl(p.meeting_link,true),status:choice(p.status||'Open',['Open','Waiting','Closed'])};
-  if(p.communication_id){const old=one(await tx`select * from erp_private.communications where communication_id=${uuid(p.communication_id)} for update`);current(old,p);if(old.client_id!==cid||old.firm_id!==firm||old.project_id!==pid)fail(400,'Create another communication to change its client or firm.');
+  if(p.communication_id){const old=one(await tx`select * from erp_private.communications where communication_id=${uuid(p.communication_id)} for update`);current(old,p);if(old.issued_at)fail(409,'This letter has been issued and is locked. Record a new letter for any change.');if(old.client_id!==cid||old.firm_id!==firm||old.project_id!==pid)fail(400,'Create another communication to change its client or firm.');
    await tx`update erp_private.communications set subject=${vals.subject},purpose=${vals.purpose},details=${vals.details},channel=${vals.channel},communication_date=${when},followup_date=${vals.followup},meeting_link=${vals.link},status=${vals.status},signatory_id=${signatory},contact_id=${contact} where communication_id=${old.communication_id}`;return {ok:true};}
   const rid=uuid(p.request_id),exists=await tx`select communication_id from erp_private.communications where request_id=${rid}`;if(exists.length)return exists[0];
   const ref=await nextNumber(tx,firm,'COM',when);return one(await tx`insert into erp_private.communications(request_id,reference,client_id,firm_id,project_id,contact_id,channel,subject,purpose,details,communication_date,followup_date,meeting_link,signatory_id,owner_id,status)
