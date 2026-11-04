@@ -21,7 +21,7 @@ test('a selected activity is saved as a standard label, while Other requires a c
 test('activity choices suggest the matching industry pack without changing the income stream',()=>{
   assert.equal(suggestedIndustryPack('construction'),'Construction');
   assert.equal(suggestedIndustryPack('hospitality'),'Hospitality');
-  assert.equal(suggestedIndustryPack('retail'),'Wholesale');
+  assert.equal(suggestedIndustryPack('retail'),'Retail');
   assert.equal(suggestedIndustryPack('professional'),'Consultancy');
   assert.equal(suggestedIndustryPack('healthcare'),'Other');
   assert.equal(suggestedIndustryPack('unknown'),'');

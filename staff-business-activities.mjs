@@ -12,7 +12,7 @@ const activities = [
   ['professional', 'Professional and consultancy services', 'Consultancy'],
   ['public', 'Public sector and infrastructure', 'Other'],
   ['real_estate', 'Real estate and rental services', 'Other'],
-  ['retail', 'Retail trade', 'Wholesale'],
+  ['retail', 'Retail trade', 'Retail'],
   ['transport', 'Transport and logistics', 'Other'],
   ['utilities', 'Utilities and energy', 'Other'],
   ['wholesale', 'Wholesale trade', 'Wholesale'],
