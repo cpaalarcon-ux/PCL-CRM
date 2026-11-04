@@ -36,9 +36,10 @@ export async function suiteRead(tx:any){const [r]=await tx`select jsonb_build_ob
  'staff_rates',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.staff_rates order by effective_from desc limit 1000)x),
  'budgets',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.project_budgets order by effective_from desc limit 1000)x),
  'recurring_fees',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.recurring_fee_schedules order by starts_on desc limit 1000)x),
- 'invoices',(select coalesce(jsonb_agg(x),'[]') from (select i.*,coalesce((select sum(p.amount) from erp_private.payments p where p.invoice_id=i.invoice_id),0) as paid_amount from erp_private.invoices i where deleted_at is null order by invoice_date desc limit 1000)x),
+ 'invoices',(select coalesce(jsonb_agg(x),'[]') from (select i.*,coalesce((select sum(p.amount) from erp_private.payments p where p.invoice_id=i.invoice_id),0) as paid_amount,(select to_jsonb(e)-'project_id'-'firm_id' from erp_private.invoice_etims e where e.invoice_id=i.invoice_id) as etims from erp_private.invoices i where deleted_at is null order by invoice_date desc limit 1000)x),
  'payments',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.payments order by payment_date desc limit 1000)x),
- 'advances',(select coalesce(jsonb_agg(x),'[]') from (select a.*,round(a.amount-coalesce((select sum(p.amount) from erp_private.payments p where p.advance_id=a.advance_id),0),2) as balance from erp_private.client_advances a order by a.received_date desc,a.created_at desc limit 1000)x),
+ 'advance_movements',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.advance_movements order by movement_date desc,created_at desc limit 1000)x),
+ 'advances',(select coalesce(jsonb_agg(x),'[]') from (select a.*,erp_private.advance_balance(a.advance_id) as balance from erp_private.client_advances a order by a.received_date desc,a.created_at desc limit 1000)x),
  'communications',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.communications where deleted_at is null order by communication_date desc limit 500)x),
  'contacts',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.client_contacts where deleted_at is null)x),
  'compliance',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.client_compliance where deleted_at is null)x),
@@ -135,6 +136,41 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   return one(await tx`insert into erp_private.client_advances(request_id,client_id,firm_id,project_id,receipt_number,received_date,method,reference,amount,purpose,created_by)
    values(${rid},${cid},${firm},${pid},${receipt},${when},${choice(p.method,['Cash','M-Pesa','Bank','Cheque'])},${text(p.reference,200)},${value},${text(p.purpose||'',300,false)||null},${a.staff_id}) returning advance_id,receipt_number`);
  }
+
+ if(p.action==='advance_refund'||p.action==='advance_transfer'){
+  const rid=uuid(p.request_id),dup=await tx`select movement_id,voucher_number,to_advance_id from erp_private.advance_movements where request_id=${rid}`;if(dup.length)return dup[0];
+  leader(a);
+  const adv=one(await tx`select * from erp_private.client_advances where advance_id=${uuid(p.advance_id)} for update`),when=day(p.movement_date||today());
+  if(when>today())fail(400,'The date cannot be in the future.');
+  const value=amount(p.amount);if(value<=0)fail(400,'Enter the amount.');
+  const left=Number(one(await tx`select erp_private.advance_balance(${adv.advance_id}) as b`).b);if(value>left)fail(400,`Only KES ${left.toFixed(2)} of this advance is left.`);
+  const reason=text(p.reason,500).trim();if(reason.length<10)fail(400,'Give the reason (at least 10 characters).');
+  const reference=text(p.reference,200).trim();if(!reference)fail(400,'Record how the money moved (bank, M-Pesa or cheque reference, or the signed voucher).');
+  if(p.action==='advance_refund'){
+   const voucher=await nextNumber(tx,adv.firm_id,'RFD',when);
+   return one(await tx`insert into erp_private.advance_movements(request_id,advance_id,client_id,firm_id,kind,amount,movement_date,voucher_number,method,reference,reason,created_by)
+    values(${rid},${adv.advance_id},${adv.client_id},${adv.firm_id},'Refund',${value},${when},${voucher},${choice(p.method,['Cash','M-Pesa','Bank','Cheque'])},${reference},${reason},${a.staff_id}) returning movement_id,voucher_number`);
+  }
+  const toFirm=uuid(p.to_firm_id);if(toFirm===adv.firm_id)fail(400,'Choose a different firm from the one holding the advance.');
+  if(!(await tx`select 1 from erp_private.client_firm_links where client_id=${adv.client_id} and firm_id=${toFirm}`).length)fail(400,'The client is not linked to that firm. Link the client to the firm first.');
+  let toProject=null;if(p.to_project_id){toProject=uuid(p.to_project_id);await financial(tx,toProject,true);const pr=one(await tx`select client_id,handling_firm_id from erp_private.projects where project_id=${toProject}`);if(pr.client_id!==adv.client_id||pr.handling_firm_id!==toFirm)fail(400,'That project is not the client’s project in the receiving firm.');}
+  const receipt=await nextNumber(tx,toFirm,'ADV',when),voucher=await nextNumber(tx,adv.firm_id,'TRF',when);
+  const next=one(await tx`insert into erp_private.client_advances(request_id,client_id,firm_id,project_id,receipt_number,received_date,method,reference,amount,purpose,created_by)
+   values(${crypto.randomUUID()},${adv.client_id},${toFirm},${toProject},${receipt},${when},'Transfer',${text('Transfer from '+adv.receipt_number+' · '+reference,200)},${value},${text(reason,300,false)||null},${a.staff_id}) returning advance_id,receipt_number`);
+  const mv=one(await tx`insert into erp_private.advance_movements(request_id,advance_id,client_id,firm_id,kind,amount,movement_date,voucher_number,reference,reason,to_advance_id,created_by)
+   values(${rid},${adv.advance_id},${adv.client_id},${adv.firm_id},'Transfer',${value},${when},${voucher},${reference},${reason},${next.advance_id},${a.staff_id}) returning movement_id,voucher_number`);
+  return {...mv,to_advance_id:next.advance_id,to_receipt_number:next.receipt_number};
+ }
+ if(p.action==='invoice_etims_record'){
+  const i=one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} for update`);await financial(tx,i.project_id,true);
+  if(i.status!=='Posted')fail(400,'Record the eTIMS reference on a posted invoice.');
+  if((await tx`select 1 from erp_private.invoice_etims where invoice_id=${i.invoice_id}`).length)fail(400,'An eTIMS reference is already recorded for this invoice. It cannot be changed; correct a mistake with a credit note in eTIMS and record that.');
+  const no=text(p.etims_invoice_no,100).trim();if(!no)fail(400,'Enter the invoice number shown on eTIMS.');
+  const url=text(p.qr_url||'',500,false).trim();if(url&&!/^https:\/\/\S+$/.test(url))fail(400,'The QR / verification link must start with https://.');
+  const issued=day(p.etims_issued_on);if(issued>today())fail(400,'The eTIMS issue date cannot be in the future.');
+  if((await tx`select 1 from erp_private.invoice_etims where firm_id=${i.firm_id} and etims_invoice_no=${no}`).length)fail(400,'That eTIMS invoice number is already recorded against another invoice of this firm.');
+  return one(await tx`insert into erp_private.invoice_etims(invoice_id,project_id,firm_id,etims_invoice_no,qr_url,etims_issued_on,recorded_by) values(${i.invoice_id},${i.project_id},${i.firm_id},${no},${url||null},${issued},${a.staff_id}) returning invoice_id`);
+ }
  if(p.action==='payment_add'||p.action==='payment_reverse'||p.action==='advance_apply'){
   const request=uuid(p.request_id);const exists=await tx`select payment_id from erp_private.payments where request_id=${request}`;if(exists.length)return exists[0];
   const old=p.action==='payment_reverse'?one(await tx`select * from erp_private.payments where payment_id=${uuid(p.payment_id)}`):null;
@@ -147,7 +183,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
    if(adv.client_id!==i.client_id||adv.firm_id!==i.firm_id)fail(400,'An advance can only be applied to an invoice issued by the firm that received it.');
    if(adv.project_id&&adv.project_id!==i.project_id)fail(400,'This advance is earmarked for another project.');
    if(when<adv.received_date.toISOString().slice(0,10))fail(400,'An advance cannot be applied before the date it was received.');
-   left=round(Number(adv.amount)-Number(one(await tx`select coalesce(sum(amount),0) used from erp_private.payments where advance_id=${adv.advance_id}`).used));
+   left=Number(one(await tx`select erp_private.advance_balance(${adv.advance_id}) as b`).b);
    if(left<=0)fail(400,'This advance has no credit left.');
   }
   const value=old?-Number(old.amount):adv?((p.amount===undefined||p.amount===null||p.amount==='')?Math.min(left,balance):amount(p.amount)):amount(p.amount);
@@ -162,7 +198,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   leader(a);const cid=uuid(p.client_id),[from,to]=range(p.starts_on,p.ends_on),combine=p.combine===true||p.combine==='true',firm=!combine&&p.firm_id?uuid(p.firm_id):null;one(await tx`select client_id from erp_private.clients where client_id=${cid}`);
   const names=new Map((await tx`select firm_id,firm_code,legal_name from erp_private.firms`).map((f:any)=>[f.firm_id,f]));
   const invoices=await tx`select invoice_date as date,invoice_number as reference,firm_id,description,total_amount as debit,0::numeric as credit from erp_private.invoices where client_id=${cid} and status='Posted' and invoice_date<=${to} and (${firm}::uuid is null or firm_id=${firm})`,payments=await tx`select p.payment_date as date,p.receipt_number as reference,p.firm_id,p.method||' / '||p.reference as description,0::numeric as debit,p.amount as credit from erp_private.payments p join erp_private.invoices i using(invoice_id) where p.client_id=${cid} and i.status='Posted' and p.payment_date<=${to} and (${firm}::uuid is null or p.firm_id=${firm})`;
-  const advances=(await tx`select a.advance_id,a.firm_id,a.project_id,a.receipt_number,a.received_date,a.method,a.reference,a.amount,a.purpose,round(a.amount-coalesce((select sum(p.amount) from erp_private.payments p where p.advance_id=a.advance_id and p.payment_date<=${to}),0),2) as balance from erp_private.client_advances a where a.client_id=${cid} and a.received_date<=${to} and (${firm}::uuid is null or a.firm_id=${firm}) order by a.received_date,a.receipt_number`).map((x:any)=>({...x,firm_code:names.get(x.firm_id)?.firm_code||''}));
+  const advances=(await tx`select a.advance_id,a.firm_id,a.project_id,a.receipt_number,a.received_date,a.method,a.reference,a.amount,a.purpose,round(a.amount-coalesce((select sum(p.amount) from erp_private.payments p where p.advance_id=a.advance_id and p.payment_date<=${to}),0)-coalesce((select sum(m.amount) from erp_private.advance_movements m where m.advance_id=a.advance_id and m.movement_date<=${to}),0),2) as balance from erp_private.client_advances a where a.client_id=${cid} and a.received_date<=${to} and (${firm}::uuid is null or a.firm_id=${firm}) order by a.received_date,a.receipt_number`).map((x:any)=>({...x,firm_code:names.get(x.firm_id)?.firm_code||''}));
   const iso=(d:any)=>d instanceof Date?d.toISOString().slice(0,10):String(d).slice(0,10);
   const all=[...invoices,...payments].map((r:any)=>({...r,firm_code:names.get(r.firm_id)?.firm_code||''})).sort((a:any,b:any)=>String(a.date).localeCompare(String(b.date))||a.reference.localeCompare(b.reference));
   const section=(list:any[])=>{let bal=round(list.filter(r=>iso(r.date)<from).reduce((s,r)=>s+Number(r.debit)-Number(r.credit),0));const opening=bal;const rows=list.filter(r=>iso(r.date)>=from).map(r=>{bal=round(bal+Number(r.debit)-Number(r.credit));return {...r,balance:bal};});return {opening,closing:bal,rows,invoiced:round(rows.reduce((s,r)=>s+Number(r.debit),0)),paid:round(rows.reduce((s,r)=>s+Number(r.credit),0))};};
@@ -178,7 +214,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
    left join lateral (select sum(t.hours) hours,sum(t.hours*r.cost_rate) cost,count(*) filter(where r.rate_id is null) missing_rates from erp_private.timesheets t left join erp_private.staff_rates r on r.staff_id=t.staff_id and t.work_date between r.effective_from and r.effective_to where t.project_id=p.project_id and t.status='Approved')t on true
    left join lateral(select sum(net_amount) billed from erp_private.invoices i where i.project_id=p.project_id and i.status='Posted')i on true
    left join lateral(select sum(amount) paid from erp_private.payments x where x.project_id=p.project_id)pay on true
-   left join lateral(select sum(a.amount-coalesce((select sum(x.amount) from erp_private.payments x where x.advance_id=a.advance_id),0)) held from erp_private.client_advances a where a.project_id=p.project_id)adv on true where erp_private.finance_allowed(p.project_id) order by p.project_name`};
+   left join lateral(select sum(erp_private.advance_balance(a.advance_id)) held from erp_private.client_advances a where a.project_id=p.project_id)adv on true where erp_private.finance_allowed(p.project_id) order by p.project_name`};
  }
  if(p.action==='billing_by_task'){
   const pid=uuid(p.project_id);await financial(tx,pid);
