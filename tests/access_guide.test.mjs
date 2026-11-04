@@ -14,7 +14,7 @@ const api=fs.readFileSync(new URL('../supabase/functions/staff-workspace-v12/ind
 
 test('home and staff access pages show the reconciled, role-based guide',()=>{
  assert.match(ui,/renderAccessGuide\(data\.me\.category_code,esc\)/);
- assert.deepEqual(ACCESS_ROLES.map(x=>x.code),['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN']);
+ assert.deepEqual(ACCESS_ROLES.map(x=>x.code),['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN','ADMIN']);
  assert.match(renderAccessGuide('ASSISTANT',x=>x),/Your access · Audit Assistant/);
  assert.match(renderAccessGuide('INTERN',x=>x),/Assigned task-level support work only/);
  assert.match(renderAccessGuide('MANAGER',x=>x),/can restrict ERP areas for an individual from Staff &amp; access/);

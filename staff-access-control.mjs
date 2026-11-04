@@ -17,11 +17,13 @@ const AREA_CODES=STAFF_ACCESS_AREAS.map(x=>x.code);
 const LEADER_AREAS=['clients','projects','time_hr','documents','communications','billing_wip','audit','leads','staff_access','settings'];
 const TEAM_AREAS=['clients','projects','time_hr','documents','communications','audit'];
 const INTERN_AREAS=['projects','time_hr','documents','communications'];
+const ADMIN_AREAS=['communications','staff_access'];
 
 export function defaultStaffAreas(role){
   if(role==='PARTNER'||role==='MANAGER')return [...LEADER_AREAS];
   if(role==='SUPERVISOR'||role==='ASSISTANT')return [...TEAM_AREAS];
   if(role==='INTERN')return [...INTERN_AREAS];
+  if(role==='ADMIN')return [...ADMIN_AREAS];
   return [];
 }
 

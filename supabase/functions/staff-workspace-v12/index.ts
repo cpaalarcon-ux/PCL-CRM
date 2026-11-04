@@ -43,6 +43,8 @@ const nonce=()=>Array.from(crypto.getRandomValues(new Uint8Array(32))).map(x=>x.
 const decode=(jwt:string)=>JSON.parse(atob(jwt.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
 const deny=()=>fail(403,'This record or action is not available to your account.');
 const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))deny();};
+const ORDINARY=['SUPERVISOR','ASSISTANT','INTERN'];
+const staffAdmin=(a:any)=>{if(!['PARTNER','MANAGER','ADMIN'].includes(a.category_code))deny();};
 const one=(rows:any[])=>{if(!rows.length)deny();return rows[0];};
 async function limit(key:string,max=20){
  const hash=await sha(key);
@@ -100,6 +102,7 @@ async function requireStaffArea(tx:any,a:any,area:string){
 }
 async function canManageStaffRecord(tx:any,a:any,target:any){
  if(target.staff_id===a.staff_id)fail(403,'Ask another Engagement Partner to manage your own access.');
+ if(a.category_code==='ADMIN'){if(!ORDINARY.includes(target.category_code))deny();return;}
  const [scope]=await tx`select erp_private.manages(${target.staff_id}::uuid) as allowed`;
  if(!scope?.allowed)deny();
  if(a.category_code==='MANAGER'&&['PARTNER','MANAGER'].includes(target.category_code))deny();
@@ -162,7 +165,7 @@ async function signIn(p:any){
 async function accountLink(id:any,p:any){
  const staffId=uuid(p.staff_id),raw=nonce(),hash=await sha(raw);
  const selected=await scoped(id,async(tx,a)=>{
-  await requireStaffArea(tx,a,'staff_access');leader(a);const s=one(await tx`select staff_id,login_id,category_code from erp_private.staff_members where staff_id=${staffId} and deleted_at is null`);
+  await requireStaffArea(tx,a,'staff_access');staffAdmin(a);const s=one(await tx`select staff_id,login_id,category_code from erp_private.staff_members where staff_id=${staffId} and deleted_at is null`);
   await canManageStaffRecord(tx,a,s);
   return {staff:s,actor:a};
  });
@@ -172,7 +175,8 @@ async function accountLink(id:any,p:any){
   await tx`select set_config('request.jwt.claims',${JSON.stringify(id.claims)},true)`;
   const [check]=await tx`select erp_private.manages(${staffId}::uuid) as allowed,(erp_private.actor()).staff_id as actor,
    (erp_private.actor()).category_code as actor_category,(select category_code from erp_private.staff_members where staff_id=${staffId}) as target_category`;
-  if(!check.allowed||!check.actor)deny();
+  const adminOk=check.actor_category==='ADMIN'&&ORDINARY.includes(check.target_category);
+  if((!check.allowed&&!adminOk)||!check.actor)deny();
   if(check.actor_category==='MANAGER'&&['PARTNER','MANAGER'].includes(check.target_category))deny();
   await tx`update erp_private.staff_members set access_status='Pending setup',sessions_invalid_before=now() where staff_id=${staffId}`;
   await tx`update erp_private.pilot_sessions set revoked_at=now() where staff_id=${staffId}`;
@@ -334,7 +338,7 @@ async function action(id:any,p:any){
     where task_id=${task} and revision=${rev} returning task_id`;
    if(!changed.length)fail(409,'Task changed or is no longer assigned to you. Refresh the workspace.');return {ok:true};
   }
-  leader(a);
+  if(!(a.category_code==='ADMIN'&&['staff_access_read','staff_access_save','staff_save','staff_disable'].includes(p.action)))leader(a);
   if(p.action==='staff_access_read'){
    const target=one(await tx`select staff_id,full_name,category_code,revision from erp_private.staff_members where staff_id=${uuid(p.staff_id)} and deleted_at is null`);
    await canManageStaffRecord(tx,a,target);
@@ -403,7 +407,7 @@ async function action(id:any,p:any){
    }else{
     const staffIdentifier=text(p.staff_identifier,80).toUpperCase(),loginId=login(p.login_id);
     await tx`insert into erp_private.staff_members(staff_id,staff_identifier,login_id,full_name,category_code,manager_id,employment_type,billing_status,branch_location,contract_start_date,contract_end_date)
-    values(${sid},${staffIdentifier},${loginId},${values.full_name},${values.category_code},${a.staff_id},${values.employment_type},${values.billing_status},${values.branch_location},${values.contract_start_date},${values.contract_end_date})`;
+    values(${sid},${staffIdentifier},${loginId},${values.full_name},${values.category_code},${a.category_code==='ADMIN'?null:a.staff_id},${values.employment_type},${values.billing_status},${values.branch_location},${values.contract_start_date},${values.contract_end_date})`;
    }
    const firms=Array.isArray(p.firm_ids)?p.firm_ids.map(uuid):[];
    if(!firms.length)fail(400,'Choose at least one firm for the staff member.');
@@ -419,6 +423,7 @@ async function action(id:any,p:any){
   if(p.action==='staff_disable'){
    const sid=uuid(p.staff_id);if(sid===a.staff_id)deny();const target=one(await tx`select category_code from erp_private.staff_members where staff_id=${sid}`);
    if(a.category_code==='MANAGER'&&['PARTNER','MANAGER'].includes(target.category_code))deny();
+   if(a.category_code==='ADMIN'&&!ORDINARY.includes(target.category_code))deny();
    one(await tx`update erp_private.staff_members set access_status='Inactive' where staff_id=${sid} returning staff_id`);
    return {ok:true};
   }

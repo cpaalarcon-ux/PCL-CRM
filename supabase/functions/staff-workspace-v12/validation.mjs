@@ -8,13 +8,15 @@ export const date=v=>{if(!v)return null;const d=new Date(v+'T00:00:00Z');if(!/^\
 export const password=v=>{if(typeof v!=="string"||v.length<14||v.length>128||!/[a-z]/.test(v)||!/[A-Z]/.test(v)||!/[0-9]/.test(v))fail(400,"Use 14–128 characters with uppercase, lowercase and a number.");return v;};
 export const login=v=>{v=text(v,80).toLowerCase();if(!/^[a-z0-9][a-z0-9._-]{2,79}$/.test(v))fail(400,"Use a valid staff login ID.");return v;};
 export const revision=v=>{const s=String(v);if(!/^[1-9][0-9]{0,17}$/.test(s))fail(400,'Refresh this record before saving.');return s;};
-export const categories=['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN'];
+export const categories=['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN','ADMIN'];
 export const sectors=['Agribusiness','Financial Services','Energy','Healthcare','NGO','Public Sector','SME/Startup','Legal','Education'];
 export const branches=['Nairobi','Bungoma','Kisii','Other'];
 export const statuses=['Pending','In Progress','In Review','Blocked','Completed','Cancelled'];
 export function staffInput(p,actor,old=null){
  const category=choice(p.category_code,categories), employment=choice(p.employment_type,['Permanent','Contract','Internship','Consultant']);
  if(actor.category_code==='MANAGER' && (['PARTNER','MANAGER'].includes(category)||old&&['PARTNER','MANAGER'].includes(old.category_code)))fail(403,'Only the Engagement Partner can manage Partner or Manager accounts.');
+ if(actor.category_code==='ADMIN' && (!['SUPERVISOR','ASSISTANT','INTERN'].includes(category)||old&&!['SUPERVISOR','ASSISTANT','INTERN'].includes(old.category_code)))fail(403,'A System Administrator manages Supervisor, Assistant and Intern logins only.');
+ if(actor.category_code!=='PARTNER' && (category==='ADMIN'||old&&old.category_code==='ADMIN'))fail(403,'Only the Engagement Partner can manage System Administrator accounts.');
  const start=date(p.contract_start_date),end=date(p.contract_end_date);
  if((employment==='Contract'||employment==='Internship'||category==='INTERN')&&!end)fail(400,'A contract end date is required.');
  if(start&&end&&start>end)fail(400,'The contract end date must follow its start date.');
