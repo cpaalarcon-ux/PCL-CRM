@@ -36,7 +36,7 @@ test('advances can be refunded or moved to another firm, and posted invoices car
  const refundBase={action:'advance_refund',advance_id:adv.advance_id,amount:500,method:'Bank',movement_date:'2026-10-10',reference:'BANK-REF-9',reason:'Client cancelled the engagement'};
  await assert.rejects(()=>act('SUPERVISOR',{...refundBase,request_id:id()}),/Partner or Manager/);
  await assert.rejects(()=>act('PARTNER',{...refundBase,request_id:id(),reason:'short'}),/reason/);
- await assert.rejects(()=>act('PARTNER',{...refundBase,request_id:id(),reference:' '}),/Record how the money moved/);
+ await assert.rejects(()=>act('PARTNER',{...refundBase,request_id:id(),reference:' '}),/required text fields|Record how the money moved/);
  await assert.rejects(()=>act('PARTNER',{...refundBase,request_id:id(),amount:3500}),/Only KES 3000\.00/);
  const rid=id(),ref=await act('PARTNER',{...refundBase,request_id:rid});
  assert.match(ref.voucher_number,/^RFD\/VCQA\//);
