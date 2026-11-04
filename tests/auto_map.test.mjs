@@ -63,9 +63,18 @@ test('exact routing + TB code pairs are mapped automatically; a Manager can remo
  const manual=await get('MANUAL');await auto('MANAGER',{action:'workbook_mapping_remove',row_ids:[manual.row_id],reason:'Remove then map by hand instead'});
  const again=await get('MANUAL');await map('ASSISTANT',{action:'workbook_map',project_id:P,row_id:again.row_id,revision:again.revision,route:2,account_code:'62500'});
  await assert.rejects(()=>auto('MANAGER',{action:'workbook_mapping_remove',row_ids:[again.row_id],reason:'Try removing a hand mapping'}),/mapped by staff/);
- // A submitted period blocks the removal.
+ // A submitted period is not frozen: removing a mapping cancels the review and returns the case to its preparer.
  await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,status,prepared_by) values(${P},'VAT','2026-09-01','2026-09-30','Submitted',${actors.ASSISTANT.staff_id})`;
- await assert.rejects(()=>auto('MANAGER',{action:'workbook_mapping_remove',row_ids:[stock.row_id],reason:'Period is already submitted'}),/submitted or locked/);
+ const back=await auto('MANAGER',{action:'workbook_mapping_remove',row_ids:[stock.row_id],reason:'Period is already submitted'});
+ assert.equal(back.removed,1);assert.equal(back.returned_cases,1);
+ const vatCase=(await tx`select status,review_note,reviewed_by from erp_private.tax_cases where project_id=${P} and kind='VAT'`)[0];
+ assert.equal(vatCase.status,'Returned');assert.match(vatCase.review_note,/Review cancelled.*Period is already submitted/);assert.equal(vatCase.reviewed_by,actors.MANAGER.staff_id);
+ assert.equal((await get('STOCK')).account_code,null);
+ // A locked or filed period is corrected only through a controlled adjustment.
+ await tx`update erp_private.workbook_rows set route=2,category_code='EXP08',account_code='62500',review_details=${tx.json({mapping_confirmation:{method:AUTO_METHOD}})} where row_key='AM-PLAIN'`;
+ await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,status,prepared_by) values(${P},'PAYE','2026-09-01','2026-09-30','Locked',${actors.ASSISTANT.staff_id})`;
+ const plain=await get('PLAIN');
+ await assert.rejects(()=>auto('MANAGER',{action:'workbook_mapping_remove',row_ids:[plain.row_id],reason:'Period is locked now'}),/locked or filed/);
 
  // Periods: nothing may start before the client's first financial year that ends on or after 31 Dec 2025.
  assert.equal(firstSupportedStart(12,31),'2025-01-01');assert.equal(firstSupportedStart(6,30),'2025-07-01');

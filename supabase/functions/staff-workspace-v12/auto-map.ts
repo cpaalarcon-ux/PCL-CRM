@@ -64,20 +64,26 @@ export async function autoMapAction(tx:any,a:any,p:any){
  const ids=Array.isArray(p.row_ids)?[...new Set(p.row_ids.map((x:any)=>uuid(x)))]:[];if(!ids.length||ids.length>500)fail(400,'Select between 1 and 500 rows.');
  const rows=await tx`select r.*,b.period_start,b.period_end from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and b.archived_at is null and r.row_id=any(${tx.array(ids)}::uuid[]) order by r.row_id for update of r`;
  if(rows.length!==ids.length)fail(403,'All selected rows must belong to this authorised project.');
- const stamp=new Date().toISOString(),updates:any[]=[];
+ const stamp=new Date().toISOString(),updates:any[]=[],returnCases=new Map<string,any>();
  for(const r of rows){
   if(!isCost(r)||!r.account_code)fail(400,`Source row ${r.source_row} is not mapped.`);
   const method=r.review_details?.mapping_confirmation?.method;
   if(!CODE_METHODS.includes(method))fail(400,`Source row ${r.source_row} was mapped by staff in the mapping screen. Correct it there; only mappings made from the uploaded codes are removed here.`);
   const open=(await tx`select erp_private.tax_period_open(${pid}::uuid,${day(r.period_start)}::date,${day(r.period_end)}::date) as open`)[0].open;
-  if(!open)fail(400,`The period of source row ${r.source_row} is submitted or locked. Return the tax case for re-review first; a posted period is corrected by a controlled adjustment.`);
+  if(!open){
+   // A submitted period is not frozen: the review is cancelled and the case goes back to its preparer. A locked or filed period is corrected only by a controlled adjustment.
+   const cases=await tx`select case_id,status,kind,starts_on,ends_on from erp_private.tax_cases where project_id=${pid} and status in ('Submitted','Locked','Filed') and starts_on<=${day(r.period_end)}::date and ends_on>=${day(r.period_start)}::date`;
+   if(!cases.length||cases.some((c:any)=>c.status!=='Submitted'))fail(400,`The period of source row ${r.source_row} is locked or filed. Correct it through a controlled adjustment; the original posting is kept.`);
+   for(const c of cases)returnCases.set(c.case_id,c);
+  }
   const used=(await tx`select journal_id from erp_private.ledger_sources where source_kind='Workbook row' and source_key=${r.row_id}::text limit 1`)[0];
   if(used)fail(400,`Source row ${r.source_row} is already in a journal. Return or reverse that journal first.`);
   const details={...(r.review_details||{})};delete details.mapping_confirmation;details.auto_map_blocked=true;
   details.mapping_history=[...(Array.isArray(details.mapping_history)?details.mapping_history:[]),{action:'Mapping removed',by:a.staff_id,at:stamp,reason,previous:{route:r.route,category_code:r.category_code,account_code:r.account_code,method},uploaded_codes:r.normalized?.mapping_suggestion||null}];
   updates.push({row_id:r.row_id,review_details:details,previous:{route:r.route,category_code:r.category_code,account_code:r.account_code,method}});
  }
+ for(const c of returnCases.values())await tx`update erp_private.tax_cases set status='Returned',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${('Review cancelled: a Manager or Partner removed an account mapping in this period. Reason: '+reason).slice(0,2000)} where case_id=${c.case_id} and status='Submitted'`;
  for(const u of updates)await tx`update erp_private.workbook_rows set route=null,category_code=null,account_code=null,asset_details=null,first_use_status=null,first_use_date=null,review_details=${tx.json(u.review_details)} where row_id=${u.row_id}`;
  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,before_values,after_values) values(${a.auth_user_id},current_user,'workbook_rows','MAPPING_REMOVED',${pid},${tx.json({rows:updates.map((u:any)=>({row_id:u.row_id,...u.previous}))})},${tx.json({status:'Unmapped',reason,removed_by:a.staff_id})})`;
- return {ok:true,removed:updates.length};
+ return {ok:true,removed:updates.length,returned_cases:returnCases.size};
 }

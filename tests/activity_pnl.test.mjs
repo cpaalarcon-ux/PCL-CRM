@@ -47,7 +47,7 @@ test('journal lines carry the activity, profit is reported per activity, reports
  const r=await ledger('ASSISTANT',{...base,action:'ledger_read',as_of:'2026-12-31'});
  const col=name=>r.profit_by_activity.activities.find(a=>a.activity_name===name);
  assert.equal(col('Wholesale trade').sales,600);assert.equal(col('Retail trade').sales,250);assert.equal(r.profit_by_activity.unallocated.sales,50);assert.equal(r.profit_by_activity.total.sales,900);
- assert.equal(r.current_week.week>=1,true);assert.equal(r.prior_year.source,'Opening balances');assert.equal(r.data_cutoff,'2025-12-31');
+ assert.deepEqual(r.unmapped,{count:0,value:0},'the trial balance reports unmapped purchase rows (none here)');assert.equal(r.current_week.week>=1,true);assert.equal(r.prior_year.source,'Opening balances');assert.equal(r.data_cutoff,'2025-12-31');
 
  await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_report_submit',report_kind:'Month',as_of:'2026-01-31',prepared_note:'short'}),/at least 10 characters/);
  await ledger('ASSISTANT',{...base,action:'ledger_report_submit',report_kind:'Month',as_of:'2026-01-31',prepared_note:'January sales agree to the fictional schedules.'});
