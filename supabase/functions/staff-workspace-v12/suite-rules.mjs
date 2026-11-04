@@ -1,4 +1,4 @@
-import {fail,text,choice,date} from './validation.mjs';
+import {fail,text,choice,date,uuid} from './validation.mjs';
 export const round=v=>Math.round((v+Number.EPSILON)*100)/100;
 export function number(v,min=0,max=1e12){if(v===''||v===null||v===undefined||!Number.isFinite(Number(v))||Number(v)<min||Number(v)>max)fail(400,'Enter a valid number within the permitted range.');return Number(v);}
 export const amount=v=>round(number(v));
@@ -27,7 +27,7 @@ export function payrollCalculation(p,rate){if(!Array.isArray(p.employees)||!p.em
 }
 export function busySeason(start,end){[start,end]=range(start,end);for(let y=Number(start.slice(0,4));y<=Number(end.slice(0,4));y++)if(start<=`${y}-04-30`&&end>=`${y}-01-15`)return true;return false;}
 export function weekdays(start,end){[start,end]=range(start,end);if((Date.parse(end)-Date.parse(start))/86400000>366)fail(400,'Request at most one year at a time.');const days=[];for(let t=Date.parse(start+'T00:00:00Z');t<=Date.parse(end+'T00:00:00Z');t+=86400000){const d=new Date(t);if(d.getUTCDay()>0&&d.getUTCDay()<6)days.push(d.toISOString().slice(0,10));}return days;}
-export function invoiceLines(lines){if(!Array.isArray(lines)||!lines.length||lines.length>50)fail(400,'Add between 1 and 50 invoice lines.');return lines.map(l=>{const quantity=number(l.quantity,.01,1e6),unit_price=amount(l.unit_price),vat_rate=number(l.vat_rate??0,0,100),net=round(quantity*unit_price),vat=round(net*vat_rate/100);return {description:text(l.description,300),quantity,unit_price,vat_rate,net,vat,total:round(net+vat)};});}
+export function invoiceLines(lines){if(!Array.isArray(lines)||!lines.length||lines.length>50)fail(400,'Add between 1 and 50 invoice lines.');return lines.map(l=>{const quantity=number(l.quantity,.01,1e6),unit_price=amount(l.unit_price),vat_rate=number(l.vat_rate??0,0,100),net=round(quantity*unit_price),vat=round(net*vat_rate/100);const link=l.task_id?{task_id:uuid(l.task_id)}:{},milestone=text(l.milestone||'',120,false);return {description:text(l.description,300),quantity,unit_price,vat_rate,net,vat,total:round(net+vat),...link,...(milestone?{milestone}:{})};});}
 const addMonthsAnchored=(iso,months)=>{const [y,m,d]=iso.split('-').map(Number),monthIndex=y*12+(m-1)+months,year=Math.floor(monthIndex/12),month=((monthIndex%12)+12)%12,day=Math.min(d,new Date(Date.UTC(year,month+1,0)).getUTCDate());return new Date(Date.UTC(year,month,day)).toISOString().slice(0,10);};
 export function recurringFeePeriods(startsOn,endsOn,frequency,through,limit=120){
  const start=day(startsOn),end=endsOn?day(endsOn):null,cutoff=day(through),step=({Monthly:1,Quarterly:3,Annually:12})[frequency];

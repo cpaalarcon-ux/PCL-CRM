@@ -43,7 +43,7 @@ const PREFIX_AREAS=[
   [/^(?:presence_|timer_|clock$|attendance_|leave_|roster_|performance_|credential_|timesheet_)/,'time_hr'],
   [/^(?:document_|upload$|download$|master_preview$|master_import$)/,'documents'],
   [/^(?:discussion_|communication_|ticket_|notification_read$)/,'communications'],
-  [/^(?:invoice_|payment_|fee_schedule_|budget_|wip_report$|statement$|staff_rate_)/,'billing_wip'],
+  [/^(?:invoice_|payment_|advance_|billing_|fee_schedule_|budget_|wip_report$|statement$|staff_rate_)/,'billing_wip'],
 ];
 
 export function areaForStaffAction(action){
