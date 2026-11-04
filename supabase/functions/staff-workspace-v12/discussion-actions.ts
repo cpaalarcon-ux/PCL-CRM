@@ -5,9 +5,9 @@ const visible=async(tx:any,id:string)=>one(await tx`select * from erp_private.di
 export async function discussionAction(tx:any,a:any,p:any){
  if(!String(p.action).startsWith('discussion_'))return undefined;
  if(p.action==='discussion_candidates')return {candidates:await tx`select * from erp_private.discussion_candidates() order by full_name`};
- if(p.action==='discussion_list')return {channels:await tx`select c.*,coalesce(m.sequence,0) last_sequence,m.created_at last_message_at,left(m.body,120) last_body,m.author_id last_author_id,
+ if(p.action==='discussion_list')return {channels:await tx`select c.*,coalesce(m.sequence,0) last_sequence,m.created_at last_message_at,left(m.body,120) last_body,m.author_id last_author_id,(select p.full_name from erp_private.chat_people(c.channel_id) p where p.staff_id=m.author_id) last_author_name,
  (select count(*)::int from erp_private.discussion_messages x where x.channel_id=c.channel_id and x.author_id<>${a.staff_id} and x.sequence>coalesce(r.last_sequence,0)) unread,
- case when c.kind='Direct' then (select full_name from erp_private.staff_members where staff_id=case when c.dm_low=${a.staff_id} then c.dm_high else c.dm_low end) else c.title end display_title
+ case when c.kind='Direct' then (select p.full_name from erp_private.chat_people(c.channel_id) p where p.staff_id=case when c.dm_low=${a.staff_id} then c.dm_high else c.dm_low end) else c.title end display_title
  from erp_private.discussion_channels c left join lateral(select sequence,created_at,body,author_id from erp_private.discussion_messages where channel_id=c.channel_id order by sequence desc limit 1)m on true
  left join erp_private.discussion_reads r on r.channel_id=c.channel_id and r.staff_id=${a.staff_id} order by m.created_at desc nulls last,c.created_at desc limit 100`};
  if(p.action==='discussion_open'){
@@ -45,7 +45,7 @@ export async function discussionAction(tx:any,a:any,p:any){
  const c=await visible(tx,uuid(p.channel_id));
  if(p.action==='discussion_messages'){
   const before=p.before_sequence?Math.max(1,Math.trunc(Number(p.before_sequence))):null;
-  const messages=await tx`select m.*,s.full_name author_name,d.file_name from erp_private.discussion_messages m left join erp_private.staff_members s on s.staff_id=m.author_id left join erp_private.documents d on d.document_id=m.document_id where m.channel_id=${c.channel_id} and (${before}::bigint is null or m.sequence<${before}) order by m.sequence desc limit 60`;
+  const messages=await tx`select m.*,s.full_name author_name,d.file_name from erp_private.discussion_messages m left join erp_private.chat_people(${c.channel_id}) s on s.staff_id=m.author_id left join erp_private.documents d on d.document_id=m.document_id where m.channel_id=${c.channel_id} and (${before}::bigint is null or m.sequence<${before}) order by m.sequence desc limit 60`;
   const taskEvents=c.task_id?await tx`select event_id,event_type,reason,created_at from erp_private.task_events where task_id=${c.task_id} order by created_at desc limit 30`:[];
   const workflow=c.task_id?await tx`select event_id,action,message,from_stage,to_stage,created_at from erp_private.procedure_events where task_id=${c.task_id} order by created_at desc limit 30`:[];
   const closed=c.task_id?(await tx`select (w.stage='Closed' or t.status in('Completed','Cancelled')) closed from erp_private.task_procedures w join erp_private.tasks t using(task_id) where w.task_id=${c.task_id}`)[0]?.closed:c.project_id?(await tx`select status='Archived' closed from erp_private.projects where project_id=${c.project_id}`)[0]?.closed:false;

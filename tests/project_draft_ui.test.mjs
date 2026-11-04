@@ -14,7 +14,7 @@ test('draft project explains that retained UAT tasks do not mean the project is 
 });
 
 test('staging build cache key changes with the release-identity check',()=>{
- assert.match(appHtml,/2026-11-04\.17/);
+ assert.match(appHtml,/2026-11-04\.18/);
  assert.match(appHtml,/20261103-release-check-v1/);
 });
 

@@ -73,3 +73,4 @@
 20261104122836 task_handover_queue
 20261104123219 retire_suspense_account
 20261104124716 system_admin_and_chat_groups
+20261104132056 chat_people_names

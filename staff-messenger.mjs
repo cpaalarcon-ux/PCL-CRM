@@ -9,7 +9,7 @@ export function createMessenger(ctx){
  const isAdmin=()=>d()?.me?.category_code==='ADMIN',isIntern=()=>d()?.me?.category_code==='INTERN';
  const nairobi=x=>new Date(x),sameDay=(a,b)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(a)===new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(b);
  const clock=x=>new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',hour:'2-digit',minute:'2-digit'}).format(nairobi(x));
- const listTime=x=>{if(!x)return '';const t=nairobi(x),n=new Date();return sameDay(t,n)?clock(x):new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',day:'2-digit',month:'short'}).format(t);};
+ const listTime=x=>{if(!x)return '';const t=nairobi(x),n=new Date();return sameDay(t,n)?'Today '+clock(x):sameDay(t,new Date(n.getTime()-86400000))?'Yesterday '+clock(x):new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',day:'2-digit',month:'short'}).format(t)+' '+clock(x);};
  const dayLabel=x=>{const t=nairobi(x),n=new Date();return sameDay(t,n)?'Today':sameDay(t,new Date(n.getTime()-86400000))?'Yesterday':new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',dateStyle:'medium'}).format(t);};
  const initials=name=>String(name||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]?.toUpperCase()||'').join('')||'?';
  const label=c=>c.display_title||c.title||'Conversation';
@@ -34,8 +34,8 @@ export function createMessenger(ctx){
  function visibleChannels(){const q=state.query.trim().toLowerCase();return state.channels.filter(c=>!q||label(c).toLowerCase().includes(q)||String(c.last_body||'').toLowerCase().includes(q));}
  function header(title,sub,back){return `<header class="messenger-head">${back?'<button type="button" class="messenger-icon" data-msgr="back" aria-label="Back to chats">←</button>':''}<div class="messenger-title"><b>${esc(title)}</b>${sub?`<small>${esc(sub)}</small>`:''}</div><button type="button" class="messenger-icon" data-msgr="close" aria-label="Close chat">✕</button></header>`;}
  function chatRow(c){
-  const mine=c.last_author_id&&c.last_author_id===d().me.staff_id,preview=c.last_body?((mine?'You: ':'')+c.last_body):'No messages yet';
-  return `<button type="button" class="messenger-row ${state.selected===c.channel_id?'selected':''}" data-msgr="open" data-id="${esc(c.channel_id)}"><span class="messenger-avatar ${c.kind==='Group'?'group':''}" aria-hidden="true">${esc(icon(c))}</span><span class="messenger-row-main"><span class="messenger-row-top"><b>${esc(label(c))}</b><small>${esc(listTime(c.last_message_at))}</small></span><span class="messenger-row-bottom"><span class="messenger-preview">${esc(preview)}</span>${Number(c.unread)?`<span class="messenger-unread" aria-label="${Number(c.unread)} unread">${Number(c.unread)}</span>`:''}</span></span></button>`;
+  const mine=c.last_author_id&&c.last_author_id===d().me.staff_id,who=mine?'You':(c.last_author_name||'Staff'),preview=c.last_body?c.last_body:'No messages yet';
+  return `<button type="button" class="messenger-row ${state.selected===c.channel_id?'selected':''}" data-msgr="open" data-id="${esc(c.channel_id)}"><span class="messenger-avatar ${c.kind==='Group'?'group':''}" aria-hidden="true">${esc(icon(c))}</span><span class="messenger-row-main"><span class="messenger-row-top"><b>${esc(label(c))}</b><small>${esc(listTime(c.last_message_at))}</small></span><span class="messenger-row-bottom"><span class="messenger-preview">${c.last_body?`<b class="messenger-who">${esc(who)}:</b> `:''}${esc(preview)}</span>${Number(c.unread)?`<span class="messenger-unread" aria-label="${Number(c.unread)} unread">${Number(c.unread)}</span>`:''}</span></span></button>`;
  }
  function listView(){
   const tabs=isAdmin()?`<div class="messenger-tabs" role="tablist"><button type="button" role="tab" aria-selected="${state.tab==='chats'}" data-msgr="tab" data-id="chats" class="${state.tab==='chats'?'on':''}">Chats</button><button type="button" role="tab" aria-selected="${state.tab==='groups'}" data-msgr="tab" data-id="groups" class="${state.tab==='groups'?'on':''}">Manage groups</button></div>`:'';
@@ -60,7 +60,7 @@ export function createMessenger(ctx){
   for(const m of state.thread.messages){
    const dl=dayLabel(m.created_at);if(dl!==day){day=dl;html+=`<div class="messenger-day"><span>${esc(dl)}</span></div>`;}
    const own=m.author_id===me;
-   html+=`<div class="messenger-bubble ${own?'own':''}">${group&&!own?`<b class="messenger-author">${esc(m.author_name||'Staff')}</b>`:''}<p>${esc(m.body)}</p><small>${esc(clock(m.created_at))}</small></div>`;
+   html+=`<div class="messenger-bubble ${own?'own':''}"><div class="messenger-meta"><b class="messenger-author">${own?'You':esc(m.author_name||'Staff')}</b><small>${esc(clock(m.created_at))}</small></div><p>${esc(m.body)}</p></div>`;
   }
   box.innerHTML=(state.thread.has_older?`<button type="button" class="messenger-older" data-msgr="older">Load earlier messages</button>`:'')+(html||'<p class="messenger-empty">No messages yet. Say hello.</p>');
   box.scrollTop=box.scrollHeight;
