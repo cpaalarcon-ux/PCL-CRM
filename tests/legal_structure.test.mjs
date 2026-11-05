@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
-import {applyLegalStructure,requireClassified,requireRightChart} from '../supabase/functions/staff-workspace-v12/legal-structure-actions.ts';
+import {applyLegalStructure,requireClassified,requireRightChart,classifyClientsAction} from '../supabase/functions/staff-workspace-v12/legal-structure-actions.ts';
 import {familyFor,STRUCTURES} from '../supabase/functions/staff-workspace-v12/legal-structure.mjs';
-import {familyOf,familyHint,legalStructureFields} from '../staff-legal-structure.mjs';
+import {familyOf,familyHint,legalStructureFields,unclassified,classifyTable,classifyItems} from '../staff-legal-structure.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),C=id(),C2=id(),C3=id(),P=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);
@@ -84,6 +84,25 @@ test('Legal structure: mandatory classification, accounting family, audit trail 
  // Draft non-profit accounts wait for a Partner; nothing is active by default.
  const npo=await tx`select code,status,entity_types from erp_private.account_catalog where 'Non-profit organisation'=any(entity_types) order by code`;
  assert.ok(npo.length>=8);assert.ok(npo.every(x=>x.status==='Draft'&&x.entity_types.length===1));
+
+ // Bulk "Classify clients": all or nothing, one audit entry per client, Managers and Partners only.
+ const C4=id(),C5=id(),C6=id();
+ await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id,client_category) values(${C4},'Kilele Hardware',${actors.MANAGER.staff_id},'Corporate'),(${C5},'Tumaini Women Group',${actors.MANAGER.staff_id},null),(${C6},'Safari Tyres',${actors.MANAGER.staff_id},null)`;
+ const bulk=(role,p)=>as(role,a=>classifyClientsAction(tx,a,p));
+ const {areaForStaffAction}=await import('../supabase/functions/staff-workspace-v12/staff-access-control.mjs');assert.equal(areaForStaffAction('client_classify_save'),'clients');
+ await assert.rejects(()=>bulk('SUPERVISOR',{items:[{client_id:C4,legal_structure:'Limited Company',legal_subtype:'Private Limited Company'}]}),/access to this action/);
+ await assert.rejects(()=>bulk('MANAGER',{items:[{client_id:C4}]}),/at least one client/);
+ await assert.rejects(()=>bulk('MANAGER',{items:[{client_id:C4,legal_structure:'Limited Company',legal_subtype:'Private Limited Company'},{client_id:C5,legal_structure:'Partnership',legal_subtype:'SACCO'}]}),/Tumaini Women Group: That subcategory does not belong/);
+ assert.equal((await client(C4)).legal_structure,null,'one bad row saves nothing');
+ await assert.rejects(()=>bulk('MANAGER',{items:[{client_id:C,legal_structure:'Partnership',legal_subtype:'General Partnership'}]}),/already classified/);
+ const saved=await bulk('MANAGER',{note:'Fictional: classified from the registration certificates on file',items:[{client_id:C4,legal_structure:'Limited Company',legal_subtype:'Private Limited Company'},{client_id:C5,legal_structure:'Non-Profit Organisation',legal_subtype:'CBO'},{client_id:C6}]});
+ assert.equal(saved.classified,2);
+ assert.equal((await client(C5)).client_category,'Non-Profit');assert.equal((await client(C6)).legal_structure,null,'a blank row is left for later');
+ for(const cid of [C4,C5]){const rows2=await audit(cid);assert.equal(rows2.length,1);assert.match(rows2[0].after_values.reason,/registration certificates/);}
+ const list=unclassified(await tx`select client_id,company_name,legal_structure,legal_subtype,client_category,kra_pin from erp_private.clients`);assert.ok(list.some(x=>x.client_id===C6)&&!list.some(x=>x.client_id===C4));
+ assert.match(classifyTable({clients:list,rows,esc:s=>String(s??''),options:(i,v,b)=>`<option>${b}</option>`}),/Safari Tyres/);
+ const fd=new FormData();fd.set('structure_a','Partnership');fd.set('subtype_a','General Partnership');fd.set('structure_b','');fd.set('subtype_b','');fd.set('structure_c','Individual');fd.set('subtype_c','');
+ assert.deepEqual(classifyItems(fd),[{client_id:'a',legal_structure:'Partnership',legal_subtype:'General Partnership'},{client_id:'c',legal_structure:'Individual',legal_subtype:''}]);
 
  // Screen helper: fields render the pairs, the hint explains the family, and a Supervisor cannot reopen a classified client.
  const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),options=(items,value,blank)=>`<option value="">${blank}</option>`+items.map(x=>`<option value="${esc(x)}"${x===value?' selected':''}>${esc(x)}</option>`).join('');

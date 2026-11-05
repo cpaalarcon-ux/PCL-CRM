@@ -1,9 +1,9 @@
 import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261104-activity-v1';
-import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261105-legal-gates-v1';
+import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261105-classify-v1';
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
-import {createAccountingUI} from './staff-accounting.mjs?v=20261105-legal-gates-v1';
+import {createAccountingUI} from './staff-accounting.mjs?v=20261105-classify-v1';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261105-legal-gates-v1';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261105-classify-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 export function createWorkspaceUI(ctx){

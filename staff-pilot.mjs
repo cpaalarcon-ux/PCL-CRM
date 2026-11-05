@@ -1,24 +1,24 @@
 let documentKind='Evidence';
 import {createImprovementUI} from './staff-improvements.mjs?v=20261104-no-main-activity-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
-import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261105-legal-gates-v1';
+import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261105-classify-v1';
 import {createPresenceUI} from './staff-presence.mjs?v=20261103-idle-timeout-v1';
-import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-legal-gates-v1';
-import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261105-legal-gates-v1';
+import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-classify-v1';
+import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261105-classify-v1';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261105-legal-gates-v1';
-import {createMessenger} from './staff-messenger.mjs?v=20261105-legal-gates-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261105-legal-gates-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261105-classify-v1';
+import {createMessenger} from './staff-messenger.mjs?v=20261105-classify-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261105-classify-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
-import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter} from './staff-legal-structure.mjs?v=20261105-legal-gates-v1';
+import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261105-classify-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-dependency-map-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261029-audit-start-flow-v1';
-import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261105-legal-gates-v1';
+import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261105-classify-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
-import {renderAccessGuide} from './staff-access-guide.mjs?v=20261105-legal-gates-v1';
-import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261105-legal-gates-v1';
+import {renderAccessGuide} from './staff-access-guide.mjs?v=20261105-classify-v1';
+import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261105-classify-v1';
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v12';
 const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -84,9 +84,15 @@ function bindWorkspaceSearch(){const input=$('#workspaceSearch');if(!input)retur
 
 function clientMappingLabel(s){const activities=Number(s?.activity_count||0),methods=Number(s?.stock_method_count||0),categories=Number(s?.category_count||0),accounts=Number(s?.approved_account_count||0),pending=Number(s?.pending_account_count||0),stock=activities?(methods&&categories?`${activities} activities · ${methods} stock methods · ${categories} categories`:`${activities} activities · stock setup incomplete`):'No activity saved';return [accounts?'good':'warn',`${accounts} general mappings active${pending?` · ${pending} awaiting review`:''} · ${stock}`];}
 async function loadClientMappingReadiness(){if(!isLeader()||clientMappingReadiness||clientMappingReadinessRequest)return;clientMappingReadinessRequest=request({action:'v3_client_mapping_readiness'}).then(rows=>{clientMappingReadiness=new Map(rows.map(x=>[x.client_id,x]));if(view==='clients')document.querySelectorAll('[data-client-mapping-status]').forEach(node=>{const [style,label]=clientMappingLabel(clientMappingReadiness.get(node.dataset.clientMappingStatus));node.innerHTML=`<span class="badge ${style}">${esc(label)}</span>`;});}).catch(error=>{if(view==='clients')document.querySelectorAll('[data-client-mapping-status]').forEach(node=>node.textContent='Setup status unavailable · retry by reopening Clients');}).finally(()=>{clientMappingReadinessRequest=null;});await clientMappingReadinessRequest;}
+function classifyClients(){
+ const list=unclassified(data.clients),rows=structureRows(data);
+ if(!list.length){notice('Every client already has a Legal structure and Subcategory.');return;}
+ modal('Classify clients',form(classifyTable({clients:list,rows,esc,options}),'Save classifications'),f=>{const items=classifyItems(f);if(!items.length)throw Error('Choose a Legal structure and Subcategory for at least one client.');return request({action:'client_classify_save',items,note:f.get('note')||''});},result=>notice(`${result.classified} client(s) classified.`));
+ bindClassifyTable($('#editor'),rows,options);
+}
 function clients(){
  const rows=filtered().clients;
- const actions=isLeader()?'<div class="actions"><button data-v6="sector">+ Add sector</button><button class="primary" data-new="client">+ Add client</button><button data-suite="import-clients">Import clients from Excel</button></div>':'';
+ const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button data-v6="sector">+ Add sector</button><button class="primary" data-new="client">+ Add client</button><button data-suite="import-clients">Import clients from Excel</button></div>':'';
  const setupHeading=isLeader()?'<th>Purchase mapping setup</th>':'';
  const openingHeading=isLeader()?'<th>Opening TB setup</th>':'';
  const body=rows.map(c=>{
@@ -255,6 +261,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.myReview==='journal')await v6.openJournal(b.dataset.project,b.dataset.period,b.dataset.id);
  if(b.dataset.myReview==='report'){notice('Opening the ledger: go to Reports, then choose Review beside the submitted report.');await v6.openLedger(b.dataset.project);}
  if(b.dataset.searchProject)navigateWorkspace('projects',b.dataset.searchProject);
+ if(b.hasAttribute('data-classify-clients'))classifyClients();
  if(b.closest('#workspaceSearchResults'))$('#workspaceSearchResults').hidden=true;
  if(b.dataset.view){if(b.closest('#editor')&&$('#editor').open)$('#editor').close();navigateWorkspace(b.dataset.view);}
  if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload,firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}

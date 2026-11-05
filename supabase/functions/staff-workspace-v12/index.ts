@@ -28,7 +28,7 @@ import {engagementAction} from './engagement-actions.ts';
 import {auditAction} from './audit-actions.ts';
 import {suiteExport} from './suite-export.ts';
 import {masterImport} from './master-import.ts';
-import {applyLegalStructure,requireRightChart} from './legal-structure-actions.ts';
+import {applyLegalStructure,requireRightChart,classifyClientsAction} from './legal-structure-actions.ts';
 import { createClient } from 'supabase';
 import postgres from 'postgres';
 import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
@@ -377,6 +377,7 @@ async function action(id:any,p:any){
    else await tx`insert into erp_private.firms(firm_code,legal_name) values(${code},${name})`;
    return {ok:true};
   }
+  if(p.action==='client_classify_save')return await classifyClientsAction(tx,a,p);
   if(p.action==='client_save'){
    const cid=p.client_id?uuid(p.client_id):crypto.randomUUID();
    if(p.purchase_setup)fail(409,'Business activities are maintained in Client setup as a dated multi-select batch. Save the client first, then preview and submit the activity change for independent review.');
