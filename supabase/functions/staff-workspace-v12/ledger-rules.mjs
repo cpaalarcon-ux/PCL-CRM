@@ -2,7 +2,7 @@ import {fail} from './validation.mjs';
 import {cents,money} from './accounting-rules.mjs';
 
 export const ledgerKinds=['Opening','Purchases','Sales','Stock','Payroll','Depreciation','Adjustment','Reversal','Year close'];
-export const entityTypes=['Limited company','Sole proprietor','Partnership'];
+export const entityTypes=['Limited company','Sole proprietor','Partnership','Non-profit organisation'];
 export const day=v=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 export const staffReviewer=a=>['PARTNER','MANAGER'].includes(a.category_code);
 export const expenseBelowGrossProfit=code=>/^\d{5}$/.test(String(code))&&Number(code)>=51000&&Number(code)<=68000;
@@ -34,7 +34,7 @@ export function journalIssues(lines,accounts,{kind='Adjustment',entityType='',so
   else if(!c||c.status!=='Active'||c.is_legacy)issues.push(`Line ${r.line_no}: map to an active detailed account.`);
   else if(c.in_client_chart===false)issues.push(`Line ${r.line_no}: ERP account ${r.account_code} is not in this client's approved chart of accounts.`);
   const n=Number(r.account_code);
-  if(n>=30000&&n<=36020&&((entityType==='Limited company'&&n>=35000)||(entityType==='Sole proprietor'&&!(n>=35000&&n<=35010))||(entityType==='Partnership'&&!(n>=36000&&n<=36020))))issues.push(`Line ${r.line_no}: equity account does not match the entity type.`);
+  if(n>=30000&&n<=36020&&((entityType==='Limited company'&&n>=35000)||(entityType==='Sole proprietor'&&!(n>=35000&&n<=35010))||(entityType==='Non-profit organisation'&&(n<=31000||n>=35000))||(entityType==='Partnership'&&!(n>=36000&&n<=36020))))issues.push(`Line ${r.line_no}: equity account does not match the entity type.`);
   if(kind==='Opening'&&(r.source_status!=='Confirmed'||String(r.source_reference||'').trim().length<3))issues.push(`Line ${r.line_no}: confirm the opening source and evidence reference.`);
  }
  return [...new Set(issues)];

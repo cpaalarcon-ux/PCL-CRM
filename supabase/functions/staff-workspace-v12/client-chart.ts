@@ -99,7 +99,7 @@ export async function clientChartAction(tx:any,a:any,p:any){
   await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':client-chart'},0))`;
   if((await tx`select 1 from erp_private.client_chart_versions where client_id=${cid} and status='Draft'`).length)fail(409,'A client chart version is already waiting for review. Review or return it first.');
   const prop=await proposal(tx,cid,from);
-  if(!['Limited company','Partnership','Sole proprietor','Other legal entity'].includes(prop.client.legal_entity_type))fail(400,'Confirm the legal entity type before proposing the client chart.');
+  if(!['Limited company','Partnership','Sole proprietor','Non-profit organisation','Other legal entity'].includes(prop.client.legal_entity_type))fail(400,'Confirm the legal entity type before proposing the client chart.');
   if(!prop.packs.length)fail(400,'Approve at least one business activity before proposing the client chart.');
   const extras:any[]=[],seen=new Set<string>();
   for(const x of Array.isArray(p.extra_accounts)?p.extra_accounts.slice(0,200):[]){

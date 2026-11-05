@@ -1,6 +1,7 @@
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {syncClientSector} from './activity-sectors.ts';
 import {clientChartAction,requireChartAccount,chartCatalogue} from './client-chart.ts';
+import {familyFor} from './legal-structure.mjs';
 import {entityInput,partnerRatios,stockValues,suggestionFor,exportReadiness,packs,streams,asDay,VAT_CATEGORIES,vatCategoriesInput} from './improvement-rules.mjs';
 import {salesNetByCategory} from './stock-vat.ts';
 import {money} from './accounting-rules.mjs';
@@ -156,6 +157,9 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
  }
  if(p.action==='v3_identity_save'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);const v=entityInput(p);
+  if(c.legal_structure){const types=await tx`select structure,subtype,engine_family from erp_private.legal_structure_types`,family=familyFor(types,c.legal_structure,c.legal_subtype);
+   if(family&&v.legal_entity_type&&v.legal_entity_type!==family)fail(400,`The legal entity type follows the client’s Legal structure (${c.legal_structure}${c.legal_subtype?' · '+c.legal_subtype:''} → ${family}). Change the Legal structure in Edit client instead.`);
+   if(family&&!v.legal_entity_type)v.legal_entity_type=family;}
   const predecessor=p.predecessor_client_id?uuid(p.predecessor_client_id):null;if(predecessor){if(predecessor===c.client_id)fail(400,'Choose a different predecessor client.');one(await tx`select client_id from erp_private.clients where client_id=${predecessor} and deleted_at is null`);
    const cycle=await tx`with recursive chain as (select client_id,predecessor_client_id,ARRAY[client_id] as seen from erp_private.clients where client_id=${predecessor} union all select c.client_id,c.predecessor_client_id,chain.seen||c.client_id from erp_private.clients c join chain on c.client_id=chain.predecessor_client_id where not c.client_id=any(chain.seen) and cardinality(chain.seen)<100) select client_id from chain where client_id=${c.client_id} limit 1`;if(cycle.length)fail(400,'A successor link cannot create a cycle.');
   }
