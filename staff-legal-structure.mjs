@@ -45,3 +45,29 @@ export const structureLabel=(c,esc)=>c.legal_structure?`${esc(c.legal_structure)
 export function structureFilter(rows,esc){
  return `<label class="inline-filter">Legal structure <select id="clientStructureFilter"><option value="">All</option>${structuresOf(rows).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}<option value="__missing">Not classified</option></select></label>`;
 }
+
+// Bulk "Classify clients": every client without a complete classification, with the same two dependent dropdowns.
+export const unclassified=clients=>clients.filter(c=>!c.legal_structure||!c.legal_subtype);
+export function classifyTable({clients,rows,esc,options}){
+ const structures=structuresOf(rows);
+ return `<p class="info full">Choose the Legal structure and Subcategory from each client’s registration document. Leave a row blank to classify it later. Everything you fill in is saved together, and each client gets its own audit entry.</p>
+  <div class="scroll full"><table><thead><tr><th>Client</th><th>Now</th><th>Legal structure</th><th>Subcategory</th></tr></thead><tbody>${clients.map(c=>`<tr data-classify="${esc(c.client_id)}"><td>${esc(c.company_name)}<small>${esc(c.kra_pin||'KRA PIN missing')}</small></td><td><small>${esc(c.legal_structure?`${c.legal_structure} · subcategory missing`:c.client_category?`Older category: ${c.client_category}`:'Not classified')}</small></td>
+   <td><select name="structure_${esc(c.client_id)}" aria-label="Legal structure for ${esc(c.company_name)}">${options(structures,c.legal_structure,'Choose…')}</select></td>
+   <td><select name="subtype_${esc(c.client_id)}" aria-label="Subcategory for ${esc(c.company_name)}">${options(subtypesOf(rows,c.legal_structure),'',c.legal_structure?'Choose…':'Choose a structure first')}</select></td></tr>`).join('')}</tbody></table></div>
+  <label class="full">Note for the audit trail (optional)<textarea name="note" maxlength="1000" placeholder="For example, classified from the registration certificates on file"></textarea></label>`;
+}
+export function bindClassifyTable(root,rows,options){
+ for(const tr of root.querySelectorAll('tr[data-classify]')){
+  const s=tr.querySelector('select[name^="structure_"]'),u=tr.querySelector('select[name^="subtype_"]');
+  s.addEventListener('change',()=>{u.innerHTML=options(subtypesOf(rows,s.value),'',s.value?'Choose…':'Choose a structure first');});
+ }
+}
+export function classifyItems(formData){
+ const items=[];
+ for(const [k,v] of formData.entries()){
+  if(!k.startsWith('structure_'))continue;
+  const id=k.slice('structure_'.length),sub=formData.get('subtype_'+id);
+  if(v||sub)items.push({client_id:id,legal_structure:v||'',legal_subtype:sub||''});
+ }
+ return items;
+}

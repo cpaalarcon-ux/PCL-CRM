@@ -1,4 +1,4 @@
-import {fail,text} from './validation.mjs';
+import {fail,text,uuid,HttpError} from './validation.mjs';
 import {STRUCTURES,pairOk,familyFor} from './legal-structure.mjs';
 const deny=():never=>fail(403,'You do not have access to this action.');
 // Saves the Legal Structure + Subcategory chosen on Edit client. A first classification is open to anyone who can save the client;
@@ -52,4 +52,25 @@ export async function requireRightChart(tx:any,cid:string,what:string){
  const chart=(await tx`select version_id from erp_private.client_chart_versions where client_id=${cid} and status='Approved' and entity_type=${c.legal_entity_type} limit 1`)[0];
  if(!chart)fail(409,`The chart of accounts for this ${c.legal_entity_type} client is not approved yet. Open Client accounts → Chart of accounts, propose it and have an independent Manager or Partner approve it before ${what}.`);
  return c;
+}
+
+// Bulk "Classify clients": a Manager or Partner sets the Legal structure and Subcategory of many unclassified clients at once.
+// All or nothing, one audit entry per client (same as the single edit); a failure names the client that caused it.
+export async function classifyClientsAction(tx:any,a:any,p:any){
+ if(!['PARTNER','MANAGER'].includes(a.category_code))deny();
+ const items=Array.isArray(p.items)?p.items:[];
+ if(items.length>100)fail(400,'Classify at most 100 clients at a time.');
+ const note=text(p.note||'',1000,false),seen=new Set<string>();let done=0;
+ for(const it of items){
+  if(!it?.legal_structure&&!it?.legal_subtype)continue;
+  const cid=uuid(it.client_id);if(seen.has(cid))continue;seen.add(cid);
+  const name=(await tx`select company_name from erp_private.clients where client_id=${cid} and deleted_at is null`)[0]?.company_name;
+  if(!name)fail(403,'A client in the list is not available to your account.');
+  const c=(await tx`select legal_structure,legal_subtype from erp_private.clients where client_id=${cid}`)[0];
+  if(c?.legal_structure&&c?.legal_subtype)fail(409,`${name} is already classified. Change it from Edit client, with a reason.`);
+  try{const r=await applyLegalStructure(tx,a,cid,{legal_structure:it.legal_structure,legal_subtype:it.legal_subtype,legal_structure_reason:note},false);if(r.changed)done++;}
+  catch(e:any){if(e instanceof HttpError)throw new HttpError(e.status,`${name}: ${e.message}`);throw e;}
+ }
+ if(!done)fail(400,'Choose a Legal structure and Subcategory for at least one client.');
+ return {ok:true,classified:done};
 }

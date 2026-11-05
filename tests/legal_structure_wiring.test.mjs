@@ -10,3 +10,7 @@ test('draft project, client year, opening TB and chart proposal are gated on the
 test('the checklist tells staff what unlocks project, client year and opening TB',()=>{
  assert.match(read('staff-setup-guide.mjs'),/stay locked until the Legal structure and Subcategory are set and the matching client chart of accounts is approved/);
 });
+test('the Classify clients screen is routed and offered to Managers and Partners with unclassified clients',()=>{
+ assert.match(read(fn+'index.ts'),/client_classify_save'\)return await classifyClientsAction/);
+ const pilot=read('staff-pilot.mjs');assert.match(pilot,/data-classify-clients/);assert.match(pilot,/action:'client_classify_save'/);assert.match(pilot,/Classify clients \(\$\{toClassify\}\)/);
+});
