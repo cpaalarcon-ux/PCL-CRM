@@ -1,13 +1,14 @@
 import {createClient} from './vendor/supabase-discussion.mjs';
 import {loadPrefs,savePrefs,incomingChats,shouldBeep,titleWithCount,createBeeper,tickFor} from './staff-messenger-alerts.mjs?v=20261104-chat-v1';
+import {createCalls,callsSupported} from './staff-chat-call.mjs?v=20261104-call-v1';
 // A WhatsApp-style messenger docked beside the account area: one-to-one chats, groups made by a System Administrator,
 // and the existing project / task discussions in one list. Messages stay immutable and private; a System Administrator
 // manages groups and members but never reads a chat they are not in.
 export function createMessenger(ctx){
  const {esc,request,notice}=ctx,d=()=>ctx.data();
  const state={open:false,view:'list',tab:'chats',channels:[],selected:null,thread:null,groups:[],directory:[],contacts:[],query:'',busy:false};
- let timer=null,client=null,subscription=null,generation=0,mounted=false,baselined=false,baseTitle=null,unlockBound=false;
- const prefs=loadPrefs(),beeper=createBeeper(window),viewingId=()=>state.open&&state.view==='thread'&&document.visibilityState==='visible'?state.selected:null;
+ let timer=null,callTimer=null,client=null,subscription=null,userSub=null,userToken=null,userOk=false,generation=0,mounted=false,baselined=false,baseTitle=null,unlockBound=false;
+ const prefs=loadPrefs(),beeper=createBeeper(window),calls=createCalls({request,notice,beeper,onChange:()=>paintBadge()}),viewingId=()=>state.open&&state.view==='thread'&&document.visibilityState==='visible'?state.selected:null;
  const isAdmin=()=>d()?.me?.category_code==='ADMIN',isIntern=()=>d()?.me?.category_code==='INTERN';
  const nairobi=x=>new Date(x),sameDay=(a,b)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(a)===new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(b);
  const clock=x=>new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',hour:'2-digit',minute:'2-digit'}).format(nairobi(x));
@@ -27,7 +28,7 @@ export function createMessenger(ctx){
  function paintBadge(){
   const badge=document.querySelector('#messengerBadge'),button=document.querySelector('#messengerButton');if(!badge||!button)return;
   const n=unreadTotal();badge.hidden=!n;badge.textContent=n>99?'99+':String(n);button.setAttribute('aria-label',n?`Chat, ${n} unread`:'Chat');button.setAttribute('aria-expanded',String(state.open));
-  baseTitle??=document.title.replace(/^\(\d+\+?\)\s+/,'');document.title=titleWithCount(baseTitle,n);
+  baseTitle??=document.title.replace(/^\(\d+\+?\)\s+/,'');const counted=titleWithCount(baseTitle,n);document.title=calls.ringing()?'📞 Incoming call · '+counted:counted;
  }
  async function refreshList(){
   if(!d())return;
@@ -40,6 +41,7 @@ export function createMessenger(ctx){
  function visibleChannels(){const q=state.query.trim().toLowerCase();return state.channels.filter(c=>!q||label(c).toLowerCase().includes(q)||String(c.last_body||'').toLowerCase().includes(q));}
  function header(title,sub,back,extra=''){return `<header class="messenger-head">${back?'<button type="button" class="messenger-icon" data-msgr="back" aria-label="Back to chats">←</button>':''}<div class="messenger-title"><b>${esc(title)}</b>${sub?`<small>${esc(sub)}</small>`:''}</div>${extra}<button type="button" class="messenger-icon" data-msgr="close" aria-label="Close chat">✕</button></header>`;}
  const soundButton=()=>`<button type="button" class="messenger-icon" data-msgr="sound" aria-pressed="${prefs.sound}" aria-label="${prefs.sound?'Message sound is on. Turn it off':'Message sound is off. Turn it on'}" title="${prefs.sound?'Sound on':'Sound off'}">${prefs.sound?'🔔':'🔕'}</button>`,
+  callButtons=c=>{if(c.kind!=='Direct'||state.thread?.read_only||!callsSupported(window))return '';const n=esc(label(state.thread.listing||c));return `<button type="button" class="messenger-icon" data-msgr="call-audio" aria-label="Start a voice call with ${n}" title="Voice call">📞</button><button type="button" class="messenger-icon" data-msgr="call-video" aria-label="Start a video call with ${n}" title="Video call">📹</button>`;},
   muteButton=id=>`<button type="button" class="messenger-icon" data-msgr="mute-chat" data-id="${esc(id)}" aria-pressed="${!!prefs.muted[id]}" aria-label="${prefs.muted[id]?'This chat is muted. Unmute it':'Mute sound for this chat'}" title="${prefs.muted[id]?'Muted':'Mute this chat'}">${prefs.muted[id]?'🔕':'🔔'}</button>`;
  function chatRow(c){
   const mine=c.last_author_id&&c.last_author_id===d().me.staff_id,who=mine?'You':(c.last_author_name||'Staff'),preview=c.last_body?c.last_body:'No messages yet';
@@ -60,7 +62,7 @@ export function createMessenger(ctx){
  }
  function threadView(){
   const c=state.thread?.channel,sub=c?(c.kind==='Group'?`Group · ${state.thread.members?.length||''} members`:kindLabel(c)):'';
-  return header(state.thread?label(state.thread.listing||c):'Chat',sub,true,c?muteButton(c.channel_id):'')+`<div class="messenger-messages" id="messengerMessages" tabindex="0" aria-live="polite" aria-label="Conversation messages"></div>${state.thread?.read_only?'<p class="messenger-note">This conversation is closed and read-only.</p>':`<form id="messengerSend" class="messenger-composer"><textarea name="body" rows="1" maxlength="4000" placeholder="Type a message" aria-label="Message" required></textarea><button type="submit" class="messenger-primary" aria-label="Send message">Send</button></form><small id="messengerState" class="messenger-error" role="alert"></small>`}`;
+  return header(state.thread?label(state.thread.listing||c):'Chat',sub,true,c?callButtons(c)+muteButton(c.channel_id):'')+`<div class="messenger-messages" id="messengerMessages" tabindex="0" aria-live="polite" aria-label="Conversation messages"></div>${state.thread?.read_only?'<p class="messenger-note">This conversation is closed and read-only.</p>':`<form id="messengerSend" class="messenger-composer"><textarea name="body" rows="1" maxlength="4000" placeholder="Type a message" aria-label="Message" required></textarea><button type="submit" class="messenger-primary" aria-label="Send message">Send</button></form><small id="messengerState" class="messenger-error" role="alert"></small>`}`;
  }
  function paintMessages(){
   const box=document.querySelector('#messengerMessages');if(!box||!state.thread)return;
@@ -100,11 +102,23 @@ export function createMessenger(ctx){
   const box=document.querySelector('#messengerPick');if(!box)return;q=q.trim().toLowerCase();
   box.innerHTML=state.directory.filter(s=>!q||s.full_name.toLowerCase().includes(q)).map(s=>`<label class="messenger-pick"><input type="checkbox" value="${esc(s.staff_id)}" ${picked.has(s.staff_id)?'checked':''}><span class="messenger-avatar" aria-hidden="true">${esc(initials(s.full_name))}</span><span><b>${esc(s.full_name)}</b><small>${esc(roleLabel(s.category_code))}</small></span></label>`).join('')||'<p class="messenger-empty">No staff match.</p>';
  }
+ const newClient=()=>createClient('https://yfjiculexbzpkvtapudk.supabase.co','sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc',{auth:{persistSession:false,autoRefreshToken:false}});
+ // My own call topic: a ring or hang-up reaches me at once. Polling in start() covers the time realtime is not connected.
+ async function userLive(){
+  try{
+   const raw=JSON.parse(localStorage.getItem('pcl-staff-session-v2')||'null');if(!raw?.access_token||!d())return;
+   // Only a real signed token is worth a live connection (a placeholder token would just be refused and retried for ever).
+   if(!/^[\w-]+\.[\w-]+\.[\w-]+$/.test(raw.access_token))return;
+   if(userSub&&raw.access_token===userToken)return;
+   client??=newClient();await client.realtime.setAuth(raw.access_token);userToken=raw.access_token;
+   if(!userSub)userSub=client.channel('pcl-user:'+d().me.staff_id,{config:{private:true}}).on('broadcast',{event:'call'},()=>calls.poke()).subscribe(st=>{userOk=st==='SUBSCRIBED';});
+  }catch{ /* The checks in start() keep calls ringing without realtime. */ }
+ }
  async function live(channel){
   try{
    const raw=JSON.parse(localStorage.getItem('pcl-staff-session-v2')||'null');if(!raw?.access_token)return;
-   client??=createClient('https://yfjiculexbzpkvtapudk.supabase.co','sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc',{auth:{persistSession:false,autoRefreshToken:false}});
-   await client.realtime.setAuth(raw.access_token);if(subscription){await client.removeChannel(subscription);subscription=null;}
+   client??=newClient();
+   await client.realtime.setAuth(raw.access_token);userToken=raw.access_token;if(subscription){await client.removeChannel(subscription);subscription=null;}
    subscription=client.channel('pcl-discussion:'+channel,{config:{private:true}}).on('broadcast',{event:'changed'},()=>{if(state.selected===channel&&state.open&&document.visibilityState==='visible')void loadThread(channel,{quiet:true});void refreshList();}).subscribe();
   }catch{ /* The poll below keeps messages arriving without realtime. */ }
  }
@@ -142,6 +156,7 @@ export function createMessenger(ctx){
   if(a==='back')return showList();
   if(a==='sound'){prefs.sound=!prefs.sound;savePrefs(prefs);if(prefs.sound){beeper.unlock();beeper.play(Date.now(),true);}paint();return;}
   if(a==='mute-chat'){if(prefs.muted[id])delete prefs.muted[id];else prefs.muted[id]=true;savePrefs(prefs);paint();return;}
+  if(a==='call-audio'||a==='call-video'){const c=state.thread?.channel;if(c)return calls.start(c.channel_id,a==='call-video'?'video':'audio',label(state.thread.listing||c));return;}
   if(a==='tab')return showList(id);
   if(a==='open')return openChannel(id);
   if(a==='older'){const first=state.thread?.messages?.[0];if(first)await loadThread(state.selected,{before:Number(first.sequence)});return;}
@@ -176,7 +191,7 @@ export function createMessenger(ctx){
   if(e.target.closest('#messengerButton')){toggle();return;}
   const b=e.target.closest('[data-msgr]');if(b){try{await click(b);}catch(err){notice(err.message,true);}return;}
   const openers=e.target.closest('[data-messenger-open]');if(openers){toggle(true);return;}
-  if(state.open&&!e.target.closest('#messenger'))toggle(false);
+  if(state.open&&!e.target.closest('#messenger,#callOverlay'))toggle(false);
  });
  document.addEventListener('input',e=>{
   if(e.target.id==='messengerSearch'){state.query=e.target.value;paintBody();}
@@ -195,13 +210,14 @@ export function createMessenger(ctx){
   if(e.key==='Enter'&&!e.shiftKey&&e.target.matches?.('#messengerSend textarea')){e.preventDefault();e.target.form.requestSubmit();}
  });
  function start(){
-  mount();if(timer)return;void refreshList();
+  mount();if(timer)return;void refreshList();void calls.check();void userLive();
   if(!unlockBound){unlockBound=true;for(const ev of ['pointerdown','keydown'])document.addEventListener(ev,()=>beeper.unlock(),{capture:true,passive:true});}
   // Keep checking while the tab is in the background so the title count and the beep work there; a hidden tab only refreshes the list, never the open conversation.
-  timer=window.setInterval(()=>{if(!d())return;void refreshList();if(document.visibilityState==='visible'&&state.open&&state.view==='thread'&&state.selected)void loadThread(state.selected,{quiet:true});},15000);
+  timer=window.setInterval(()=>{if(!d())return;void refreshList();void calls.check();void userLive();if(document.visibilityState==='visible'&&state.open&&state.view==='thread'&&state.selected)void loadThread(state.selected,{quiet:true});},15000);
+  callTimer=window.setInterval(()=>{if(d()&&!userOk)void calls.check();},5000);
  }
  function stop(){
-  if(timer)window.clearInterval(timer);timer=null;generation++;baselined=false;if(baseTitle!==null){document.title=baseTitle;baseTitle=null;}if(subscription)void client?.removeChannel(subscription);subscription=null;
+  if(timer)window.clearInterval(timer);timer=null;if(callTimer)window.clearInterval(callTimer);callTimer=null;calls.stop();if(userSub)void client?.removeChannel(userSub);userSub=null;userToken=null;userOk=false;generation++;baselined=false;if(baseTitle!==null){document.title=baseTitle;baseTitle=null;}if(subscription)void client?.removeChannel(subscription);subscription=null;
   Object.assign(state,{open:false,view:'list',tab:'chats',channels:[],selected:null,thread:null,groups:[],directory:[],contacts:[],query:''});picked=new Set();editing=null;
   const host=document.querySelector('#messenger');if(host){host.replaceChildren();delete host.dataset.ready;}
  }

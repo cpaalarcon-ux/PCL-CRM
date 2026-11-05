@@ -79,3 +79,4 @@
 20261104142903 customer_receipt_allocations
 20261104150046 advance_moves_etims
 20261104184325 chat_read_positions
+20261105061727 chat_calls
