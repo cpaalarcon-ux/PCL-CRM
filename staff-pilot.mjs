@@ -1,23 +1,23 @@
 let documentKind='Evidence';
 import {createImprovementUI} from './staff-improvements.mjs?v=20261104-no-main-activity-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
-import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261105-escalate-v1';
+import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261105-opening-replace-v1';
 import {createPresenceUI} from './staff-presence.mjs?v=20261103-idle-timeout-v1';
-import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-escalate-v1';
-import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261105-escalate-v1';
+import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-opening-replace-v1';
+import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261105-opening-replace-v1';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261105-escalate-v1';
-import {createMessenger} from './staff-messenger.mjs?v=20261105-escalate-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261105-escalate-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261105-opening-replace-v1';
+import {createMessenger} from './staff-messenger.mjs?v=20261105-opening-replace-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261105-opening-replace-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-dependency-map-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261029-audit-start-flow-v1';
-import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261105-escalate-v1';
+import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261105-opening-replace-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
-import {renderAccessGuide} from './staff-access-guide.mjs?v=20261105-escalate-v1';
-import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261105-escalate-v1';
+import {renderAccessGuide} from './staff-access-guide.mjs?v=20261105-opening-replace-v1';
+import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261105-opening-replace-v1';
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v12';
 const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -101,6 +101,7 @@ function clients(){
  }).join('');
  return `<div class="card"><div class="section-head"><h2>Clients</h2>${actions}</div><p class="muted">Use the setup guide to move each client through identity and year-end, opening TB import, period source posting, tax checks and project release. Create a draft project and client year first, then the preparer can upload, map and import the opening TB in one sitting. An independent Manager or Partner reviews the mappings and journal together and posts once. Complete Wholesale first, then repeat for Construction.</p>${isLeader()?'<p class="muted">Draft project setup does not unlock reporting or task release. Reports use posted entries only, and tasks stay locked until the opening balances are posted or confirmed not applicable and engagement checks are complete.</p><div class="actions"><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a></div>':''}<input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients"><div class="scroll"><table><thead><tr><th>Client</th><th>Sector / branch</th><th>File updates needed</th>${setupHeading}${openingHeading}</tr></thead><tbody>${body}</tbody></table></div>${!rows.length?empty('No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}</div>`;
 }
+function removeImportSource(documentId,after){const d=data.documents.find(x=>x.document_id===documentId);if(!d)throw Error('That upload is no longer available. Refresh and try again.');modal('Remove incorrect import upload',form(`<p class="info full"><b>${esc(d.file_name)}</b><br>This removes the source and its imported rows from active mapping. It does not permanently delete the file, imported data or accounting history. They remain available in Archived sources. If any row has been mapped, reviewed or posted, a Partner or Manager must archive it as a controlled correction.</p><label class="full">Why is this upload being removed? *<textarea name="reason" required minlength="3" maxlength="1000" placeholder="For example, the wrong client workbook was uploaded"></textarea></label><label class="full"><input name="confirm_remove" type="checkbox" required> I confirm this is the wrong upload and want to remove it from active mapping.</label>`,'Confirm removal'),f=>request({action:'document_archive',document_id:d.document_id,reason:f.get('reason'),confirmed:f.has('confirm_remove')}),result=>{documentKind='Archived sources';render();notice(`Removed from active mapping. ${result.retained_rows||0} imported row(s) and the original file remain available in Archived sources.`);if(after)after();});}
 function stageOpeningTB(clientId){const c=data.clients.find(x=>x.client_id===clientId);if(!c)return;const firms=data.client_firms.filter(x=>x.client_id===clientId),firmId=firms.length===1?firms[0].firm_id:'';upload({openingTB:true,client_id:clientId,firm_id:firmId});}
 async function clientAccountSetup(clientId,options={}){
  if(Object.prototype.hasOwnProperty.call(options,'onReturn'))clientAccountReturn=options.onReturn;
@@ -269,7 +270,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.task)navigateWorkspace('task',b.dataset.task);
  if(b.dataset.taskEdit){const t=data.tasks.find(x=>x.task_id===b.dataset.taskEdit);if(t)editTask(t);}
  if(b.dataset.documentKind){documentKind=b.dataset.documentKind;render();}
- if(b.dataset.archiveSource){const d=data.documents.find(x=>x.document_id===b.dataset.archiveSource);if(d)modal('Remove incorrect import upload',form(`<p class="info full"><b>${esc(d.file_name)}</b><br>This removes the source and its imported rows from active mapping. It does not permanently delete the file, imported data or accounting history. They remain available in Archived sources. If any row has been mapped, reviewed or posted, a Partner or Manager must archive it as a controlled correction.</p><label class="full">Why is this upload being removed? *<textarea name="reason" required minlength="3" maxlength="1000" placeholder="For example, the wrong client workbook was uploaded"></textarea></label><label class="full"><input name="confirm_remove" type="checkbox" required> I confirm this is the wrong upload and want to remove it from active mapping.</label>`,'Confirm removal'),f=>request({action:'document_archive',document_id:d.document_id,reason:f.get('reason'),confirmed:f.has('confirm_remove')}),result=>{documentKind='Archived sources';render();notice(`Removed from active mapping. ${result.retained_rows||0} imported row(s) and the original file remain available in Archived sources.`);});}
+ if(b.dataset.archiveSource)removeImportSource(b.dataset.archiveSource);
  if(b.hasAttribute('data-new-source'))upload({category:'Import Sources',excelOnly:true});
  if(b.hasAttribute('data-open-opening'))upload({openingTB:true});
  if(b.dataset.taskExcel){const t=data.tasks.find(x=>x.task_id===b.dataset.taskExcel),p=data.projects.find(x=>x.project_id===t?.project_id);if(t&&p)upload({client_id:p.client_id,firm_id:p.handling_firm_id,project_id:p.project_id,task_id:t.task_id,category:'Import Sources',excelOnly:true,dataset:/bank/i.test(t.task_name)&&!/purchases|mapping/i.test(t.task_name)?'Bank':/sales/i.test(t.task_name)?'Sales':'Purchases',period_start:t.period_start?.slice(0,10),period_end:t.period_end?.slice(0,10)});}
@@ -285,7 +286,7 @@ const v6=createWorkspaceUI({$,esc,field,select,form,modal,request,load,notice,sh
 const leads=createLeadsUI({esc,field,select,form,modal,request,notice,badge,shortDate,firmName,clientName,today,data:()=>data,firm:()=>firm,render});
 const messenger=createMessenger({esc,request,notice,data:()=>data});
 const suite=createSuiteUI({upload,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openTask:id=>navigateWorkspace('task',id)});
-const setupGuide=createSetupGuideUI({$,esc,modal,request,notice,shortDate,data:()=>data,filtered,openClientSettings:improvements.client,openClientAccounts:(id,options)=>clientAccountSetup(id,options),stageOpening:stageOpeningTB,openLedger:id=>v6.openLedger(id),openOpeningImport:(id,settings)=>v6.openOpeningImport(id,settings),uploadOpeningAndImport,openOpeningJournal:(id,periodId,journalId)=>v6.openOpeningJournal(id,periodId,journalId),openPurchases:id=>v6.openPurchases(id),openPeriodImports:id=>v6.openPeriodImports(id),openTaxPeriods:()=>suite.taxList(),openProject:id=>navigateWorkspace('projects',id),openProjects:()=>navigateWorkspace('projects'),openClients:()=>navigateWorkspace('clients')});
+const setupGuide=createSetupGuideUI({$,esc,modal,request,notice,shortDate,data:()=>data,filtered,openClientSettings:improvements.client,openClientAccounts:(id,options)=>clientAccountSetup(id,options),stageOpening:stageOpeningTB,openLedger:id=>v6.openLedger(id),openOpeningImport:(id,settings)=>v6.openOpeningImport(id,settings),uploadOpeningAndImport,removeOpeningSource:(id,after)=>removeImportSource(id,after),openOpeningJournal:(id,periodId,journalId)=>v6.openOpeningJournal(id,periodId,journalId),openPurchases:id=>v6.openPurchases(id),openPeriodImports:id=>v6.openPeriodImports(id),openTaxPeriods:()=>suite.taxList(),openProject:id=>navigateWorkspace('projects',id),openProjects:()=>navigateWorkspace('projects'),openClients:()=>navigateWorkspace('clients')});
 const audit=createAuditUI({esc,field,select,form,modal,request,notice,shortDate,empty,render,data:()=>data,openClients:()=>navigateWorkspace('clients'),openProjects:()=>navigateWorkspace('projects'),createAuditProject:()=>{navigateWorkspace('projects');v6.editProject(null,{service_code:'AUD-STAT'});}});
 presence=createPresenceUI({$,esc,modal,form,field,select,request,load,notice,logout:()=>signedOut('Signed out.'),logTime:id=>v6.editTime(id),data:()=>data});
 procedures=createProcedureUI({$,esc,field,select,form,modal,request,notice,today,data:()=>data});

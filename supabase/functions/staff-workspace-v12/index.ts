@@ -274,7 +274,9 @@ async function action(id:any,p:any){
     or exists(select 1 from erp_private.mapping_history h where h.row_id=r.row_id)
     or exists(select 1 from erp_private.ledger_sources s where s.source_kind='Workbook row' and s.source_key=r.row_id::text))::int as protected_rows
    from erp_private.workbook_batches b left join erp_private.workbook_rows r using(batch_id) where b.document_id=${documentId} and b.archived_at is null`);
-  const protectedImports=Number((await tx`select count(*)::int n from erp_private.period_imports where document_id=${documentId}`)[0].n),protectedOpeningEntries=Number((await tx`select count(*)::int n from erp_private.ledger_journals where source_snapshot->>'document_id'=${documentId}::text`)[0].n);
+  const protectedImports=Number((await tx`select count(*)::int n from erp_private.period_imports where document_id=${documentId}`)[0].n),openingJournals=await tx`select status from erp_private.ledger_journals where source_snapshot->>'document_id'=${documentId}::text`,protectedOpeningEntries=openingJournals.filter((x:any)=>['Submitted','Posted'].includes(x.status)).length;
+  // An opening draft (Draft or Returned) does not lock its source: the corrected upload replaces it. Once submitted, the reviewer returns it first.
+  if(openingJournals.some((x:any)=>x.status==='Submitted'))fail(409,'This opening TB is waiting for independent review. Ask the reviewer to return it, then remove the upload and upload the corrected TB.');
   const manager=['PARTNER','MANAGER'].includes(a.category_code);
   if((counts.protected_rows||protectedImports||protectedOpeningEntries)&&!manager)fail(403,'This upload has mapped, reviewed or used records. Ask a Partner or Manager to archive it as a controlled correction.');
   if(!manager&&doc.uploaded_by!==a.staff_id)fail(403,'Only the uploader or a Partner or Manager can remove this unused import source.');
