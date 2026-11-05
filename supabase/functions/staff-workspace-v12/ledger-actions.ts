@@ -465,8 +465,8 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   if(kind==='Opening'){
    for(const [id,code] of retargets)await tx`update erp_private.client_account_mappings set erp_account_code=${code} where mapping_id=${id} and status='Draft' and created_by=${a.staff_id}`;
    for(const [group,g] of chosenGroups){
-    const clash=await tx`select mapping_id from erp_private.client_account_mappings where client_id=${project.client_id} and coalesce(source_account_code,'')=${g.sourceCode} and status in ('Draft','Active') and effective_from<=${day(l.starts_on)} and (effective_to is null or effective_to>=${day(l.starts_on)}) limit 1`;
-    if(clash.length)fail(409,`A saved account setup already covers source code ${g.sourceCode}. Ask a Manager to review the existing client account mapping.`);
+    const clash=await tx`select mapping_id from erp_private.client_account_mappings where client_id=${project.client_id} and coalesce(nullif(btrim(source_account_code),''),'name:'||lower(btrim(source_account_name)))=${g.sourceCode||('name:'+String(g.name||'').trim().toLowerCase())} and status in ('Draft','Active') and effective_from<=${day(l.starts_on)} and (effective_to is null or effective_to>=${day(l.starts_on)}) limit 1`;
+    if(clash.length)fail(409,`A saved account setup already covers ${g.sourceCode?'source code '+g.sourceCode:'source account '+g.name}. Ask a Manager to review the existing client account mapping.`);
     const made=one(await tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,status,created_by) values(${project.client_id},${g.sourceCode||null},${g.name},${g.code},${day(l.starts_on)},'Draft',${a.staff_id}) returning mapping_id`);
     for(const row of sourceRows)if(row.group_key===group){row.client_mapping_id=made.mapping_id;}
    }
