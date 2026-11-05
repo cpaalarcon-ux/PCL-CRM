@@ -44,7 +44,8 @@ test('submitting for review notifies the Managers and Partners who can decide it
 
  // 3. A client activity change that is waiting blocks the client's mappings. It is on the Home list of every other Manager and Partner.
  const version=(await db.query(`select version_id from erp_private.dependency_map_versions limit 1`)).rows[0].version_id;
- await db.query(`insert into erp_private.client_setup_change_sets(client_id,version_id,proposed_activities,preview,status,submitted_by,submitted_at,created_by) values($1,$2,$3,$4,'Pending review',$5,now(),$5)`,[C,version,JSON.stringify({activities:[]}),JSON.stringify({activities_to_add:[{activity_name:'Wholesale trade'}]}),actors.MANAGER.staff_id]);
+ await as('MANAGER',async a=>{const [row]=await tx`insert into erp_private.client_setup_change_sets(client_id,version_id,proposed_activities,preview,created_by) values(${C},${version},${tx.json({activities:[]})}::jsonb,${tx.json({activities_to_add:[{activity_name:'Wholesale trade'}]})}::jsonb,${a.staff_id}) returning change_id`;
+  await tx`update erp_private.client_setup_change_sets set status='Pending review',submitted_by=${a.staff_id},submitted_at=now() where change_id=${row.change_id}`;});
  const setupItems=async role=>(await queue(role)).items.filter(x=>x.kind==='setup');
  assert.deepEqual(await setupItems('MANAGER'),[],'the person who submitted it is not asked to approve it');
  assert.deepEqual(await setupItems('ASSISTANT'),[]);
