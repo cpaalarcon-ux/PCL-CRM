@@ -1,6 +1,6 @@
 import {createClient} from './vendor/supabase-discussion.mjs';
-import {loadPrefs,savePrefs,incomingChats,shouldBeep,titleWithCount,createBeeper,tickFor} from './staff-messenger-alerts.mjs?v=20261104-chat-v1';
-import {createCalls,callsSupported} from './staff-chat-call.mjs?v=20261104-call-v1';
+import {loadPrefs,savePrefs,incomingChats,shouldBeep,titleWithCount,createBeeper,tickFor} from './staff-messenger-alerts.mjs?v=20261104-call-v2';
+import {createCalls,callsSupported} from './staff-chat-call.mjs?v=20261104-call-v2';
 // A WhatsApp-style messenger docked beside the account area: one-to-one chats, groups made by a System Administrator,
 // and the existing project / task discussions in one list. Messages stay immutable and private; a System Administrator
 // manages groups and members but never reads a chat they are not in.
@@ -135,7 +135,7 @@ export function createMessenger(ctx){
    if(!before&&document.visibilityState==='visible'&&r.messages.length&&state.open){await request({action:'discussion_read',channel_id:id,last_sequence:Number(r.messages.at(-1).sequence)});await refreshList();}
   }catch(e){if(!quiet)notice(e.message,true);}
  }
- async function openChannel(id){state.view='thread';state.selected=id;state.thread=null;paint();await loadThread(id);await live(id);document.querySelector('#messengerSend textarea')?.focus();}
+ async function openChannel(id){state.view='thread';state.selected=id;state.thread=null;paint();calls.prepare();await loadThread(id);await live(id);document.querySelector('#messengerSend textarea')?.focus();}
  async function send(form){
   const area=form.querySelector('textarea'),btn=form.querySelector('button[type=submit]'),body=area.value.trim();if(!body||!state.selected)return;
   btn.disabled=true;btn.dataset.request??=crypto.randomUUID();
@@ -214,7 +214,7 @@ export function createMessenger(ctx){
   if(!unlockBound){unlockBound=true;for(const ev of ['pointerdown','keydown'])document.addEventListener(ev,()=>beeper.unlock(),{capture:true,passive:true});}
   // Keep checking while the tab is in the background so the title count and the beep work there; a hidden tab only refreshes the list, never the open conversation.
   timer=window.setInterval(()=>{if(!d())return;void refreshList();void calls.check();void userLive();if(document.visibilityState==='visible'&&state.open&&state.view==='thread'&&state.selected)void loadThread(state.selected,{quiet:true});},15000);
-  callTimer=window.setInterval(()=>{if(d()&&!userOk)void calls.check();},5000);
+  callTimer=window.setInterval(()=>{if(d()&&!userOk)void calls.check();},3000);
  }
  function stop(){
   if(timer)window.clearInterval(timer);timer=null;if(callTimer)window.clearInterval(callTimer);callTimer=null;calls.stop();if(userSub)void client?.removeChannel(userSub);userSub=null;userToken=null;userOk=false;generation++;baselined=false;if(baseTitle!==null){document.title=baseTitle;baseTitle=null;}if(subscription)void client?.removeChannel(subscription);subscription=null;

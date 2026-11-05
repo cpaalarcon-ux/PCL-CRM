@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
-import {clockText,mediaProblem,endMessage,gatherComplete,callsSupported} from '../staff-chat-call.mjs';
+import {clockText,mediaProblem,endMessage,gatherComplete,callsSupported,loadLouder,saveLouder,LOUD_GAIN} from '../staff-chat-call.mjs';
+import {createBeeper} from '../staff-messenger-alerts.mjs';
 const env={};globalThis.Deno={env:{get:k=>env[k]}};
 const {iceConfig}=await import('../supabase/functions/staff-workspace-v12/call-actions.ts');
 
@@ -57,4 +58,41 @@ test('the chat shows call buttons in one-to-one chats only and keeps the call sc
  assert.match(m,/pcl-user:/);assert.match(m,/\\w-\]\+\\\.\[\\w-\]\+\\\.\[\\w-\]\+\$/,'no live connection for a token that is not a signed token');
  const css=fs.readFileSync(new URL('../staff-pilot.css',import.meta.url),'utf8');assert.match(css,/\.call-overlay\{/);
  const headers=fs.readFileSync(new URL('../_headers',import.meta.url),'utf8');assert.match(headers,/microphone=\(self\)/);assert.match(headers,/camera=\(self\)/);assert.match(headers,/geolocation=\(\)/);
+});
+
+test('route finding goes as soon as the route that matters is found, not after the slowest one',async()=>{
+ const make=()=>{const l=new Map(),pc={iceGatheringState:'gathering',addEventListener:(n,f)=>l.set(n,f),removeEventListener:n=>l.delete(n)};return {pc,fire:(n,e)=>l.get(n)?.(e),listeners:l};};
+ const cand=t=>({candidate:{candidate:`candidate:1 1 udp 2122260223 192.0.2.2 5000 typ ${t} generation 0`}});
+ // A relay is wanted: a local route alone does not end the wait; the relay route does, after a short grace.
+ const a=make();let doneA=false;const pa=gatherComplete(a.pc,5000,globalThis,{want:'relay',grace:20}).then(()=>{doneA=true;});
+ a.fire('icecandidate',cand('host'));a.fire('icecandidate',cand('srflx'));await new Promise(r=>setTimeout(r,60));assert.equal(doneA,false,'still waiting for the relay route');
+ const t0=Date.now();a.fire('icecandidate',cand('relay'));await pa;assert.ok(Date.now()-t0<300,'goes shortly after the relay route');assert.equal(a.listeners.size,0,'listeners are removed');
+ // No relay: the internet-facing address is the one that matters.
+ const b=make();const pb=gatherComplete(b.pc,5000,globalThis,{want:'srflx',grace:10});b.fire('icecandidate',cand('srflx'));const t1=Date.now();await pb;assert.ok(Date.now()-t1<300);
+ // Nothing arrives: the time limit applies.
+ const c=make();const t2=Date.now();await gatherComplete(c.pc,40,globalThis,{want:'relay'});assert.ok(Date.now()-t2<400);
+});
+
+test('the call ring is loud for the person called, soft for the caller, and does nothing until the browser allows sound',()=>{
+ const made=[];
+ class Ctx{constructor(){this.state='suspended';this.currentTime=0;this.destination={};}
+  resume(){this.state='running';}
+  createGain(){const g={gain:{value:1,setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}};made.push(['gain',g]);return g;}
+  createOscillator(){const o={frequency:{value:0},connect(){},start(){},stop(){}};made.push(['osc',o]);return o;}
+  createDynamicsCompressor(){const c={connect(){}};made.push(['comp',c]);return c;}}
+ const beeper=createBeeper({AudioContext:Ctx});
+ assert.equal(beeper.ring(1),false,'silent before the first click or key press');
+ beeper.unlock();assert.equal(beeper.ring(1),true);
+ const kinds=n=>made.filter(([k])=>k===n).length;assert.equal(kinds('osc'),4,'two bursts of two tones');assert.equal(kinds('comp'),1,'a limiter is used');
+ const level=()=>made.filter(([k])=>k==='gain')[0][1].gain.value;assert.equal(level(),0.5);
+ made.length=0;beeper.ring(0.3);assert.ok(Math.abs(level()-0.15)<1e-9,'the caller hears a soft ring-back');
+ made.length=0;beeper.ring(9);assert.equal(level(),0.5,'never louder than full');
+ assert.equal(typeof beeper.play,'function');
+});
+
+test('the louder button is remembered per browser and survives blocked storage',()=>{
+ const m=new Map(),store={getItem:k=>m.has(k)?m.get(k):null,setItem:(k,v)=>m.set(k,v)};
+ assert.equal(loadLouder(store),false);saveLouder(true,store);assert.equal(loadLouder(store),true);saveLouder(false,store);assert.equal(loadLouder(store),false);
+ assert.equal(loadLouder({getItem(){throw new Error('blocked');}}),false);saveLouder(true,{setItem(){throw new Error('blocked');}});
+ assert.equal(LOUD_GAIN,2);
 });

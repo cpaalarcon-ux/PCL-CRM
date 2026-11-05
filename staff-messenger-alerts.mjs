@@ -39,7 +39,23 @@ export function createBeeper(win=globalThis,{minGapMs=2000}={}){
    return true;
   }catch{return false;}
  };
- return {unlock,play};
+ // A phone-style ring for calls: two bursts of a two-tone sound, much louder than the message chime, with a limiter so small speakers
+ // do not crackle. `volume` 0..1; the caller hears a soft version (ring-back) while waiting. Same browser rule as above about first sound.
+ const ring=(volume=1)=>{
+  try{
+   if(!ctx||ctx.state!=='running')return false;
+   const t=ctx.currentTime,out=ctx.createGain(),comp=ctx.createDynamicsCompressor?.();
+   out.gain.value=Math.min(1,Math.max(0,Number(volume)||0))*0.5;
+   if(comp){out.connect(comp);comp.connect(ctx.destination);}else out.connect(ctx.destination);
+   for(const at of [0,0.55])for(const freq of [740,880]){
+    const o=ctx.createOscillator(),g=ctx.createGain();o.type='triangle';o.frequency.value=freq;
+    g.gain.setValueAtTime(0.0001,t+at);g.gain.exponentialRampToValueAtTime(0.5,t+at+0.03);g.gain.setValueAtTime(0.5,t+at+0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+at+0.46);
+    o.connect(g);g.connect(out);o.start(t+at);o.stop(t+at+0.5);
+   }
+   return true;
+  }catch{return false;}
+ };
+ return {unlock,play,ring};
 }
 
 // Tick state of one of my messages. Only one-to-one chats and groups have read positions; task and project discussions get none.
