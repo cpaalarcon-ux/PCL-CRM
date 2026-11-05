@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs';
 import {requireRightChart} from './legal-structure-actions.ts';
 import {pendingPurchases} from './purchase-pending.ts';
-import {chartCatalogue,approvedChart,chartMessage} from './client-chart.ts';
+import {chartCatalogue,approvedChart,chartMessage,requireChartAccount} from './client-chart.ts';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
 import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,notifyOutcome} from './review-queue.ts';
@@ -402,7 +402,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   if(kind==='Opening'&&!openingConfirmed)fail(400,'Confirm the approved prior-year trial balance before importing opening balances.');
   if(kind==='Opening'&&sourceEvidence.length<3)fail(400,'Enter the source workbook and approval reference once for this opening-balance upload.');
   if(!col('source_name')||!col('debit')||!col('credit'))fail(400,'Map account name, debit and credit columns.');
-  const accounts=await catalogue(tx),items:any[]=[],sourceRows:any[]=[],sourceControls:any[]=[],clientMappings=kind==='Opening'?await tx`select mapping_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to from erp_private.client_account_mappings where client_id=${project.client_id} and status in ('Active','Draft') and effective_from<=${day(l.starts_on)} and (effective_to is null or effective_to>=${day(l.starts_on)})`:[];
+  const accounts=await catalogue(tx),items:any[]=[],sourceRows:any[]=[],sourceControls:any[]=[],chosenGroups=new Map<string,any>(),retargets=new Map<string,string>(),chartChecked=new Set<string>(),accountChoices=p.account_overrides&&typeof p.account_overrides==='object'?p.account_overrides:{},choiceConfirmed=p.mapping_confirmations&&typeof p.mapping_confirmations==='object'?p.mapping_confirmations:{},clientMappings=kind==='Opening'?await tx`select mapping_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to,status,created_by from erp_private.client_account_mappings where client_id=${project.client_id} and status in ('Active','Draft') and effective_from<=${day(l.starts_on)} and (effective_to is null or effective_to>=${day(l.starts_on)})`:[];
   for(let r=header+1;r<=sheet.rowCount;r++){
    const read=(k:string)=>col(k)?get(r,col(k)!):null,name=String(read('source_name')||'').trim(),legacy=String(read('legacy_code')||'').trim();
    if(!name&&!legacy)continue;
@@ -414,12 +414,29 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
    if(kind!=='Opening'&&explicitCode&&legacyCode&&explicitCode!==legacyCode)fail(400,`Source row ${r}: ERP TB item code and master account code do not match.`);
    const sourceMatches=kind==='Opening'?openingTbMappingMatches(clientMappings,sourceCode,name):[],sourceMapping=sourceMatches.length===1?sourceMatches[0]:null;
    if(sourceMatches.length>1)fail(400,`Source row ${r}: more than one approved client account mapping matches this source. Ask a Manager to resolve the duplicate client setup.`);
-   if(sourceMapping&&explicitCode&&sourceMapping.erp_account_code!==explicitCode)fail(400,`Source row ${r}: ERP TB item code ${explicitCode} differs from the approved client mapping ${sourceMapping.erp_account_code}.`);
-   const targetCode=kind==='Opening'?sourceMapping?.erp_account_code||'':explicitCode||legacyCode,account=accounts.find(x=>x.code===targetCode),suppliedRouting=String(read('routing_code')||'').trim().toUpperCase();
-   if(suppliedRouting&&account&&suppliedRouting!==String(account.category_code||'').toUpperCase())fail(400,`Source row ${r}: routing code does not match ERP TB item code ${targetCode}.`);
-   const mappingIssue=kind==='Opening'&&!sourceMapping?'No approved client account mapping matches this source code/name for the financial-year start.':'';
+   // A Manager or Partner's confirmed choice on the import screen (a source account → an ERP account) is applied here. It creates a client account
+   // mapping that is Pending review (Draft) and is activated when a different Manager or Partner approves and posts the opening journal.
+   const picked=kind==='Opening'&&staffReviewer(a)&&String(accountChoices[String(r)]??'').trim()&&(choiceConfirmed[String(r)]===true||choiceConfirmed[String(r)]==='true')?String(accountChoices[String(r)]).trim():'';
+   if(picked){
+    const chosenAccount=accounts.find(x=>x.code===picked);
+    if(!chosenAccount||chosenAccount.status!=='Active'||chosenAccount.is_legacy)fail(400,`Source row ${r}: ERP account ${picked} is not an active detailed account.`);
+    if(!chartChecked.has(picked)){await requireChartAccount(tx,project.client_id,picked,day(l.starts_on));chartChecked.add(picked);}
+    if(sourceMapping&&sourceMapping.erp_account_code!==picked){
+     if(!(sourceMapping.status==='Draft'&&sourceMapping.created_by===a.staff_id))fail(400,`Source row ${r}: ${sourceCode||name} is already mapped to ERP account ${sourceMapping.erp_account_code} by a reviewed client mapping. A Manager must end that mapping before a different account is used.`);
+     retargets.set(sourceMapping.mapping_id,picked);
+    }
+    if(!sourceMapping){
+     const group=sourceCode.toLowerCase()+'|'+name.toLowerCase(),seen=chosenGroups.get(group);
+     if(seen&&seen.code!==picked)fail(400,`Source rows ${seen.rows[0]} and ${r} are the same source account ${sourceCode||name} but use different ERP accounts. Choose one ERP account for the source account.`);
+     if(seen)seen.rows.push(r);else chosenGroups.set(group,{code:picked,rows:[r],sourceCode,name});
+    }
+   }
+   if(sourceMapping&&explicitCode&&!picked&&sourceMapping.erp_account_code!==explicitCode)fail(400,`Source row ${r}: ERP TB item code ${explicitCode} differs from the approved client mapping ${sourceMapping.erp_account_code}.`);
+   const targetCode=kind==='Opening'?picked||sourceMapping?.erp_account_code||'':explicitCode||legacyCode,account=accounts.find(x=>x.code===targetCode),suppliedRouting=String(read('routing_code')||'').trim().toUpperCase();
+   if(suppliedRouting&&account&&!picked&&suppliedRouting!==String(account.category_code||'').toUpperCase())fail(400,`Source row ${r}: routing code does not match ERP TB item code ${targetCode}.`);
+   const mappingIssue=kind==='Opening'&&!sourceMapping&&!picked?(staffReviewer(a)?'No approved client account mapping matches this source code/name for the financial-year start.':'No approved client account mapping matches this source. Client account mappings are set up by a Manager or Partner: ask one to map and import this opening TB.'):'';
    items.push({account_code:targetCode||null,legacy_code:sourceCode||legacy,source_name:name,debit:Math.max(net,0),credit:Math.max(-net,0),source_status:kind==='Opening'?(!negative&&openingConfirmed?'Confirmed':'Unverified'):!negative&&read('source_status')==='Confirmed'?'Confirmed':'Unverified',source_reference:kind==='Opening'?`${doc.file_name} | ${sheet.name} | row ${r}`:String(read('source_reference')||doc.file_name),description:'Excel row '+r+(negative?' - sign presentation normalised; confirm original source':'' )});
-   sourceRows.push({source_row:r,original_debit:debit,original_credit:credit,source_name:name,legacy_code:sourceCode||legacy,source_tb_item_code:explicitCode,tb_item_code:targetCode||'',routing_code:suppliedRouting||String(account?.category_code||''),account_code:targetCode||'',client_mapping_id:sourceMapping?.mapping_id||null,mapping_issue:mappingIssue});
+   sourceRows.push({source_row:r,original_debit:debit,original_credit:credit,source_name:name,legacy_code:sourceCode||legacy,source_tb_item_code:explicitCode,tb_item_code:targetCode||'',routing_code:suppliedRouting||String(account?.category_code||''),account_code:targetCode||'',client_mapping_id:sourceMapping?.mapping_id||null,mapping_issue:mappingIssue,group_key:picked&&!sourceMapping?sourceCode.toLowerCase()+'|'+name.toLowerCase():undefined});
   }
   const key=await digest({document:doc.sha256,sheet:sheet.name,header,kind,period:l.period_id,...(kind==='Opening'?{upload:doc.document_id}:{})}),existing=(await tx`select journal_id from erp_private.ledger_sources where source_kind=${kind+' workbook'} and source_key=${key}`)[0];if(existing)return {...existing,reused:true,imported_count:0,duplicate_count:items.length};
   // A corrected upload replaces an unposted opening draft in place (its old lines are zeroed and kept in the audit history). Once the draft is
@@ -430,6 +447,16 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
    if(openingDraft.status==='Posted')fail(409,'The opening balance entry is already posted. Posted opening corrections require a reviewed adjustment.');
    if(openingDraft.source_snapshot?.kind!=='Excel')fail(409,'An opening balance entry already exists for this financial year. Open it from Entry register and edit the draft there.');
    edit(openingDraft,a);
+  }
+  if(kind==='Opening'){
+   for(const [id,code] of retargets)await tx`update erp_private.client_account_mappings set erp_account_code=${code} where mapping_id=${id} and status='Draft' and created_by=${a.staff_id}`;
+   for(const [group,g] of chosenGroups){
+    const clash=await tx`select mapping_id from erp_private.client_account_mappings where client_id=${project.client_id} and coalesce(source_account_code,'')=${g.sourceCode} and status in ('Draft','Active') and effective_from<=${day(l.starts_on)} and (effective_to is null or effective_to>=${day(l.starts_on)}) limit 1`;
+    if(clash.length)fail(409,`A saved account setup already covers source code ${g.sourceCode}. Ask a Manager to review the existing client account mapping.`);
+    const made=one(await tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,status,created_by) values(${project.client_id},${g.sourceCode||null},${g.name},${g.code},${day(l.starts_on)},'Draft',${a.staff_id}) returning mapping_id`);
+    for(const row of sourceRows)if(row.group_key===group){row.client_mapping_id=made.mapping_id;}
+   }
+   for(const row of sourceRows)delete row.group_key;
   }
   if(!items.length)fail(400,'No nonzero account rows were found. Check that you selected the prior-year closing columns, not a comparison or total column.');const parsed=normaliseLines(items,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll'});
   const totals=parsed.reduce((t:any,line:any)=>({debit:t.debit+cashAmount(line.debit),credit:t.credit+cashAmount(line.credit)}),{debit:0,credit:0});
