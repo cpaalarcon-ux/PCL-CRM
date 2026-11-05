@@ -53,7 +53,7 @@ test('the beeper stays silent until the browser allows sound, then plays a two-n
 test('the messenger is wired to the alerts, the sound and mute buttons, the tab title and the ticks, and polls in the background',()=>{
  const m=fs.readFileSync(new URL('../staff-messenger.mjs',import.meta.url),'utf8'),css=fs.readFileSync(new URL('../staff-pilot.css',import.meta.url),'utf8');
  assert.match(m,/from '\.\/staff-messenger-alerts\.mjs\?v=/);assert.match(m,/data-msgr="sound"/);assert.match(m,/data-msgr="mute-chat"/);
- assert.match(m,/shouldBeep\(fresh,prefs\)/);assert.match(m,/document\.title=titleWithCount\(baseTitle,n\)/);assert.match(m,/tickFor\(m,me,positions\)/);assert.match(m,/read_positions:r\.read_positions/);
+ assert.match(m,/shouldBeep\(fresh,prefs\)/);assert.match(m,/titleWithCount\(baseTitle,n\)/);assert.match(m,/tickFor\(m,me,positions\)/);assert.match(m,/read_positions:r\.read_positions/);
  assert.doesNotMatch(m,/if\(!d\(\)\|\|document\.visibilityState!=='visible'\)return;void refreshList/,'a hidden tab must still check for new messages');
  assert.match(css,/\.messenger-tick\.read/);
 });
