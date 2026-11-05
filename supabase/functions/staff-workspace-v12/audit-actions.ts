@@ -30,10 +30,13 @@ function sourceOptions(p:any,sheet:any){
  if(new Set(Object.values(map)).size!==4)fail(400,'Choose a different column for account code, account name, debit and credit.');
  return {header:h,first,last,map,headers:Array.from({length:count},(_,i)=>String(rawCell(sheet,h,i+1)??''))};
 }
-async function source(tx:any,p:any,storage:any){
- const file=one(await tx`select * from erp_private.audit_files where audit_file_id=${uuid(p.audit_file_id)} and file_status<>'Archived' for update`);
- const doc=one(await tx`select * from erp_private.documents where document_id=${uuid(p.source_document_id)} and category='Import Sources' and deleted_at is null and archived_at is null
-  and (project_id=${file.project_id} or (project_id is null and client_id=${file.client_id} and handling_firm_id=${file.handling_firm_id} and import_purpose='Opening TB')) for share`);
+async function source(tx:any,a:any,p:any,storage:any){
+ // Row locks need update rights. Assistants prepare the audit trial balance but cannot update the file, so they read without a lock.
+ const lock=['PARTNER','MANAGER'].includes(a.category_code),fileId=uuid(p.audit_file_id);
+ const file=one(lock?await tx`select * from erp_private.audit_files where audit_file_id=${fileId} and file_status<>'Archived' for update`:await tx`select * from erp_private.audit_files where audit_file_id=${fileId} and file_status<>'Archived'`);
+ const doc=one(lock?await tx`select * from erp_private.documents where document_id=${uuid(p.source_document_id)} and category='Import Sources' and deleted_at is null and archived_at is null
+  and (project_id=${file.project_id} or (project_id is null and client_id=${file.client_id} and handling_firm_id=${file.handling_firm_id} and import_purpose='Opening TB')) for share`:await tx`select * from erp_private.documents where document_id=${uuid(p.source_document_id)} and category='Import Sources' and deleted_at is null and archived_at is null
+  and (project_id=${file.project_id} or (project_id is null and client_id=${file.client_id} and handling_firm_id=${file.handling_firm_id} and import_purpose='Opening TB'))`);
  if(!/\.(xlsx|csv)$/i.test(doc.file_name)||!['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv'].includes(doc.mime_type))fail(400,'Choose an XLSX or UTF-8 CSV import source linked to this audit engagement, or its staged opening TB.');
  const fetched=await storage.download(doc.object_key);if(fetched.error||!fetched.data)fail(404,'The private trial-balance source is unavailable.');
  const bytes=new Uint8Array(await fetched.data.arrayBuffer());if(bytes.length>10*1024*1024)fail(400,'Audit trial-balance source files must be 10 MB or smaller.');
@@ -144,14 +147,14 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
  }
 
  if(p.action==='audit_tb_source_preview'){
-  const {sourceInfo}=await source(tx,p,storage),sheet=sourceInfo.sheet,header=Math.trunc(Number(p.header_row));if(!Number.isInteger(header)||header<1||header>200||header>=sheet.rowCount)fail(400,'Choose a valid heading row.');
+  const {sourceInfo}=await source(tx,a,p,storage),sheet=sourceInfo.sheet,header=Math.trunc(Number(p.header_row));if(!Number.isInteger(header)||header<1||header>200||header>=sheet.rowCount)fail(400,'Choose a valid heading row.');
   return {sheet_name:sheet.name,row_count:sheet.rowCount,sheets:sourceInfo.sheets,headers:Array.from({length:sheet.columnCount},(_,i)=>String(rawCell(sheet,header,i+1)??'')),preview:Array.from({length:Math.min(5,sheet.rowCount-header)},(_,i)=>({row:header+i+1,values:Array.from({length:sheet.columnCount},(_,c)=>rawCell(sheet,header+i+1,c+1))}))};
  }
 
  if(p.action==='audit_tb_preview'||p.action==='audit_tb_import'){
   if(p.action==='audit_tb_import'&&a.category_code==='INTERN')fail(403,'A staff preparer must import the audit trial balance.');
   if(p.action==='audit_tb_import'&&p.confirmed!==true)fail(400,'Confirm the selected worksheet, period, columns, row range and source totals before importing.');
-  const {file,doc,sourceInfo}=await source(tx,p,storage),sheet=sourceInfo.sheet;
+  const {file,doc,sourceInfo}=await source(tx,a,p,storage),sheet=sourceInfo.sheet;
   if(p.action==='audit_tb_preview'){
    const c=sourceOptions(p,sheet),preview=[];for(let r=c.first;r<=Math.min(c.last,c.first+9);r++){preview.push({source_row:r,values:Object.fromEntries(Object.entries(c.map).map(([k,col]:any)=>[k,rawCell(sheet,r,col)]))});}
    const parsed=parseRows(sheet,c);return {sheet_name:sheet.name,sheets:sourceInfo.sheets,headers:c.headers,preview,source_rows:parsed.rows.length,total_debit:parsed.debit,total_credit:parsed.credit,difference:decimal(scaled(parsed.debit)-scaled(parsed.credit)),balanced:parsed.debit===parsed.credit};
@@ -180,7 +183,7 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
  }
 
  if(p.action==='audit_tb_map'){
-  const line=one(await tx`select l.*,i.status as import_status,i.revision as import_revision,i.handling_firm_id as firm,f.file_status as file_status from erp_private.audit_tb_lines l join erp_private.audit_tb_imports i on i.audit_tb_import_id=l.audit_tb_import_id join erp_private.audit_files f on f.audit_file_id=i.audit_file_id where l.audit_tb_line_id=${uuid(p.audit_tb_line_id)} for update of i,l,f`);
+  const line=one(await tx`select l.*,i.status as import_status,i.revision as import_revision,i.handling_firm_id as firm,f.file_status as file_status from erp_private.audit_tb_lines l join erp_private.audit_tb_imports i on i.audit_tb_import_id=l.audit_tb_import_id join erp_private.audit_files f on f.audit_file_id=i.audit_file_id where l.audit_tb_line_id=${uuid(p.audit_tb_line_id)} for update of i,l`);
   if(line.import_status!=='Draft')fail(400,'Confirmed source rows are locked. Ask a Partner or Manager to supersede this import before correction.');if(!['Draft','Returned'].includes(line.file_status))fail(400,'Trial-balance mappings are locked after the audit file is prepared.');rev({revision:line.import_revision},p);
   const area=choice(p.audit_area,AREAS),fs=choice(p.financial_statement_line,FS_LINES),code=line.legacy_account_code,name=line.legacy_account_name,reason=text(p.change_reason||'',1000,false);
   const existing=(await tx`select * from erp_private.audit_account_mappings where handling_firm_id=${line.firm} and legacy_account_code=${code} for update`)[0];let mapped:any;
