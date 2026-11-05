@@ -73,20 +73,20 @@ test('route finding goes as soon as the route that matters is found, not after t
  const c=make();const t2=Date.now();await gatherComplete(c.pc,40,globalThis,{want:'relay'});assert.ok(Date.now()-t2<400);
 });
 
-test('the call ring is loud for the person called, soft for the caller, and does nothing until the browser allows sound',()=>{
+test('the call ring is loud for the person called, only a soft buzz for the caller, and silent until the browser allows sound',()=>{
  const made=[];
  class Ctx{constructor(){this.state='suspended';this.currentTime=0;this.destination={};}
   resume(){this.state='running';}
   createGain(){const g={gain:{value:1,setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}};made.push(['gain',g]);return g;}
-  createOscillator(){const o={frequency:{value:0},connect(){},start(){},stop(){}};made.push(['osc',o]);return o;}
-  createDynamicsCompressor(){const c={connect(){}};made.push(['comp',c]);return c;}}
+  createOscillator(){const o={type:'',frequency:{value:0},connect(){},start(){},stop(){}};made.push(['osc',o]);return o;}
+  createDynamicsCompressor(){const c={threshold:{value:0},ratio:{value:0},connect(){}};made.push(['comp',c]);return c;}}
  const beeper=createBeeper({AudioContext:Ctx});
  assert.equal(beeper.ring(1),false,'silent before the first click or key press');
- beeper.unlock();assert.equal(beeper.ring(1),true);
- const kinds=n=>made.filter(([k])=>k===n).length;assert.equal(kinds('osc'),4,'two bursts of two tones');assert.equal(kinds('comp'),1,'a limiter is used');
- const level=()=>made.filter(([k])=>k==='gain')[0][1].gain.value;assert.equal(level(),0.5);
- made.length=0;beeper.ring(0.3);assert.ok(Math.abs(level()-0.15)<1e-9,'the caller hears a soft ring-back');
- made.length=0;beeper.ring(9);assert.equal(level(),0.5,'never louder than full');
+ beeper.unlock();assert.equal(beeper.ring(1,'ring'),true);
+ const all=n=>made.filter(([k])=>k===n).map(([,v])=>v),level=()=>all('gain')[0].gain.value;
+ assert.equal(all('osc').length,9,'three bursts of three tones');assert.ok(all('osc').every(o=>o.type==='square'),'a square wave carries furthest');assert.equal(all('comp')[0].threshold.value,-8,'a limiter is used');assert.equal(level(),0.9);
+ made.length=0;beeper.ring(0.5,'buzz');assert.equal(all('osc').length,2,'a soft double buzz');assert.ok(all('osc').every(o=>o.type==='triangle'&&o.frequency.value===220),'low and gentle');assert.equal(level(),0.25);
+ made.length=0;beeper.ring(9);assert.equal(level(),0.9,'never louder than full');
  assert.equal(typeof beeper.play,'function');
 });
 

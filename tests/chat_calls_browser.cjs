@@ -6,7 +6,7 @@ const root=path.resolve(__dirname,'..');
 const PAGE=`<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/staff-pilot.css"></head><body><main><p>Call test page</p></main><script type="module">
 import {createCalls} from '/staff-chat-call.mjs';
 window.__notices=[];
-window.calls=createCalls({request:p=>window.rpc(p),notice:(m,e)=>window.__notices.push(m),beeper:{play(){window.__rings=(window.__rings||0)+1;return true;},ring(v){(window.__ringVolumes??=[]).push(v);return true;}}});
+window.calls=createCalls({request:p=>window.rpc(p),notice:(m,e)=>window.__notices.push(m),beeper:{play(){window.__rings=(window.__rings||0)+1;return true;},ring(v,style){(window.__ringVolumes??=[]).push(v);(window.__ringStyles??=[]).push(style);return true;}}});
 window.ready=true;</script></body></html>`;
 const server=http.createServer((req,res)=>{
  const url=decodeURIComponent(req.url.split('?')[0]);
@@ -73,7 +73,7 @@ function rpc(who,p){
  await until(B,()=>document.querySelector('#callStatus')?.textContent==='Incoming voice call');
  assert.ok(await visible(B),'incoming call box is shown');assert.equal(await B.evaluate(()=>window.calls.ringing()),true);
  assert.deepEqual(await B.$$eval('#callButtons button',bs=>bs.map(b=>b.textContent.trim())),['✓ Answer','✕ Decline']);
- await B.waitForTimeout(300);assert.deepEqual(await B.evaluate(()=>window.__ringVolumes.slice(0,1)),[1],'the called person hears the full ring');assert.ok((await A.evaluate(()=>window.__ringVolumes||[])).every(v=>v<1)&&(await A.evaluate(()=>window.__ringVolumes.length))>=1,'the caller hears only a soft ring-back');
+ await B.waitForTimeout(300);assert.deepEqual(await B.evaluate(()=>[window.__ringVolumes[0],window.__ringStyles[0]]),[1,'ring'],'the called person hears the full, loud ring');assert.ok((await A.evaluate(()=>window.__ringStyles||[])).length>=1&&(await A.evaluate(()=>window.__ringStyles)).every(s=>s==='buzz')&&(await A.evaluate(()=>window.__ringVolumes)).every(v=>v<1),'the caller hears only a soft buzz');
  await B.click('[data-call=accept]');
  await until(A,()=>document.querySelector('#callStatus')?.textContent==='In call');await until(B,()=>document.querySelector('#callStatus')?.textContent==='In call');
  {const a=await A.evaluate(()=>window.calls.timing()),b=await B.evaluate(()=>window.calls.timing());

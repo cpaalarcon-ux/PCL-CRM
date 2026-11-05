@@ -191,12 +191,12 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
  }
  const watch=(call,ms=POLL_RING_MS)=>{win.clearInterval(call.pollTimer);call.pollTimer=win.setInterval(()=>void poll(call),ms);};
  function tone(call){
-  if(!beeper)return;const ring=()=>{if(cur===call&&call.status==='incoming'){if(!beeper.ring?.(1))beeper.play?.(Date.now(),true);}};
+  if(!beeper)return;const ring=()=>{if(cur===call&&call.status==='incoming'){if(!beeper.ring?.(1,'ring'))beeper.play?.(Date.now(),true);}};
   ring();call.toneTimer=win.setInterval(ring,TONE_MS);
  }
- // The caller hears a soft ring-back while the other phone rings, so it is clear something is happening.
+ // The caller hears only a soft, low buzz while the other phone rings, so it is clear something is happening.
  function ringback(call){
-  if(!beeper?.ring)return;const ring=()=>{if(cur===call&&call.status==='ringing')beeper.ring(0.3);};
+  if(!beeper?.ring)return;const ring=()=>{if(cur===call&&call.status==='ringing')beeper.ring(0.5,'buzz');};
   ring();call.toneTimer=win.setInterval(ring,TONE_MS);
  }
  // Boost the other person's voice: through a gain stage and a limiter, so quiet speakers get louder without crackling.
