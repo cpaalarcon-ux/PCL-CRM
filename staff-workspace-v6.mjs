@@ -1,9 +1,9 @@
 import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261104-activity-v1';
-import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261104-alerts-v1';
+import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261105-escalate-v1';
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
-import {createAccountingUI} from './staff-accounting.mjs?v=20261104-alerts-v1';
+import {createAccountingUI} from './staff-accounting.mjs?v=20261105-escalate-v1';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261104-alerts-v1';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261105-escalate-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 export function createWorkspaceUI(ctx){
@@ -70,7 +70,7 @@ export function createWorkspaceUI(ctx){
     <ol class="project-steps">${[['Schedule',!!s,s?(s.enabled?'Configured':scheduleEnded(s)?'Ended':'Paused'):'Not set'],['Engagement checks',p.status==='Active',p.status==='Active'?'Complete':'Open'],['Tasks released',p.status==='Active'&&!!s?.enabled,p.status==='Active'?(s?.enabled?'Releasing':'Held'):'Held until activation']].map(([label,done,state],n)=>`<li class="${done?'done':''}"><b>${n+1}</b><span>${esc(label)}<small>${esc(state)}</small></span></li>`).join('')}</ol>
     ${p.status==='Draft'?'<p class="info"><b>Draft:</b> the schedule is saved but no new tasks are released and financial outputs are not ready. Resolve the opening TB, complete the engagement checks, then activate.</p>':''}${s?.catchup_starts_on?`<p class="info"><b>One catch-up upload:</b> ${shortDate(s.catchup_starts_on)}–${shortDate(s.catchup_ends_on)}. Recurring tasks start from ${shortDate(s.starts_on)}.</p>`:''}
     <div class="project-action-groups">
-     <section><h4>Engagement & schedule</h4>${editor()?`<button data-v6="project" data-id="${p.project_id}">Edit project & schedule</button>`:''}${s?`<button data-v6="preview" data-id="${p.project_id}">Upcoming schedule</button>`:''}${editor()&&s&&s.enabled?`<button data-v6="schedule-pause" data-id="${p.project_id}">Pause recurring tasks</button>`:editor()&&s&&!scheduleEnded(s)?`<button data-v6="schedule-resume" data-id="${p.project_id}">Resume recurring tasks</button>`:''}${editor()&&leader()?`<button data-v6="archive-ready" data-id="${p.project_id}">Archive closed periods</button>`:''}${editor()&&leader()&&p.status!=='Draft'?`<button data-suite="engagement" data-id="${p.project_id}">Review engagement</button>`:''}${editor()&&leader()&&s&&!scheduleEnded(s)?`<button class="danger" data-v6="schedule-cancel" data-id="${p.project_id}">End recurrence</button>`:''}</section>
+     <section><h4>Engagement & schedule</h4>${editor()?`<button data-v6="project" data-id="${p.project_id}">Edit project & schedule</button>`:''}${["SUPERVISOR","ASSISTANT"].includes(d().me.category_code)?`<button data-v6="ask-manager" data-project="${p.project_id}">Ask a Manager to decide</button>`:''}${s?`<button data-v6="preview" data-id="${p.project_id}">Upcoming schedule</button>`:''}${editor()&&s&&s.enabled?`<button data-v6="schedule-pause" data-id="${p.project_id}">Pause recurring tasks</button>`:editor()&&s&&!scheduleEnded(s)?`<button data-v6="schedule-resume" data-id="${p.project_id}">Resume recurring tasks</button>`:''}${editor()&&leader()?`<button data-v6="archive-ready" data-id="${p.project_id}">Archive closed periods</button>`:''}${editor()&&leader()&&p.status!=='Draft'?`<button data-suite="engagement" data-id="${p.project_id}">Review engagement</button>`:''}${editor()&&leader()&&s&&!scheduleEnded(s)?`<button class="danger" data-v6="schedule-cancel" data-id="${p.project_id}">End recurrence</button>`:''}</section>
      ${d().me.category_code!=='INTERN'?`<section><h4>Source imports</h4><button data-v6="rows" data-id="${p.project_id}">Classify purchase imports</button><button type="button" data-period-import="${p.project_id}">Sales totals & payroll imports</button><button data-purchase-ledger="${p.project_id}">Purchase ledgers</button></section>
      <section><h4>Accounting & tax</h4><button data-ledger="open" data-id="${p.project_id}">Client accounting & profit</button><button data-accounting="reconciliations" data-id="${p.project_id}">Sales & VAT reconciliation</button><button data-v3="project" data-id="${p.project_id}">Stock / requests / exports</button></section>`:''}
      <section><h4>Reports & team</h4><button data-v6="report" data-id="${p.project_id}">Project report</button><button data-chat-project="${p.project_id}">Project discussion</button></section>
@@ -144,6 +144,17 @@ export function createWorkspaceUI(ctx){
   const t=d().tasks.find(t=>t.task_id===id),r=await request({action:'task_recipients',task_id:id});
   modal('Forward or escalate task',form(`<p class="full"><b>${esc(t.task_name)}</b><br>Currently assigned to ${esc(staffName(t.assigned_to))}</p>`+select('operation','Action *',['Forward','Escalate'],editor()?'Forward':'Escalate')+select('assigned_to','Receiving staff member *',[])+`<label class="full">Forwarding / escalation message *<textarea name="reason" required minlength="3" maxlength="1000" placeholder="Explain the work to handle, what is missing and any next step."></textarea></label><p class="info full">The task moves to this staff member. Your message, sender, recipient and time are kept in the task history, and the recipient receives an in-app alert.</p>`,'Confirm & send task'),f=>request({...Object.fromEntries(f),action:'task_escalate',task_id:id,revision:t.revision}));
   const f=$('#editForm');f.elements.assigned_to.required=true;f.elements.operation.onchange=()=>{f.elements.assigned_to.innerHTML=opts(r.recipients.filter(s=>f.elements.operation.value==='Forward'||['PARTNER','MANAGER','SUPERVISOR'].includes(s.category_code)).map(s=>[s.staff_id,s.full_name]),'');};f.elements.operation.onchange();
+ }
+
+ // Ask a Manager to decide something a Supervisor or Assistant cannot handle. Nothing on the work moves; the Manager or Partner answers on Home.
+ async function askManager(taskId,projectId){
+  const t=taskId?d().tasks.find(x=>x.task_id===taskId):null,pid=t?t.project_id:projectId,p=d().projects.find(x=>x.project_id===pid);if(!p)return;
+  let reviewers=[];try{reviewers=(await request({action:'v3_review_candidates',client_id:p.client_id})).reviewers||[];}catch(e){reviewers=[];}
+  modal('Ask a Manager to decide',form(`<p class="full"><b>${esc(t?t.task_name:p.project_name)}</b><br>${esc(clientName(p.client_id))}</p>`+select('manager_id','Send to',reviewers.map(r=>[r.staff_id,`${r.full_name} · ${r.category_code.charAt(0)+r.category_code.slice(1).toLowerCase()}`]),'','Any Manager or Partner')+`<label class="full">What you cannot handle, and what you need decided *<textarea name="reason" required minlength="10" maxlength="1000" placeholder="For example: the client wants to add a new activity and I cannot approve it; please decide how to treat this invoice."></textarea></label><p class="info full">The Manager or Partner is alerted and sees it on Home under Waiting for my review. Nothing on the work changes until they answer, and you are alerted when they do.</p>`,'Send to a Manager'),f=>request({action:'task_escalation_raise',project_id:pid,task_id:taskId||null,manager_id:f.get('manager_id')||null,reason:f.get('reason')}),()=>{},{successMessage:'Sent. The Manager has been alerted.'});
+ }
+ async function answerEscalation(id){
+  const e=((await request({action:'task_escalation_list'})).escalations||[]).find(x=>x.escalation_id===id);if(!e)return notice('This was already answered. Refresh Home.');
+  modal('Answer escalation',form(`<p class="full"><b>${esc(e.client_name)}</b> · ${esc(e.project_name)}${e.task_name?` · ${esc(e.task_name)}`:''}</p><p class="info full"><b>${esc(e.raiser_name)}</b> writes: <span class="preserve-lines">${esc(e.reason)}</span></p><label class="full">Your decision or instruction *<textarea name="note" required minlength="10" maxlength="1000" placeholder="What should be done, and by whom."></textarea></label><p class="info full">${esc(e.raiser_name)} is alerted with your answer.</p>`,'Send answer'),f=>request({action:'task_escalation_resolve',escalation_id:id,note:f.get('note')}),()=>{},{successMessage:'Answered. The person who escalated has been alerted.'});
  }
 
  async function handover(id){
@@ -259,6 +270,8 @@ export function createWorkspaceUI(ctx){
   if(b.dataset.v6==='schedule-view'){showSchedules=!showSchedules;selected='';selectedPeriod='';ctx.render();}
   if(b.dataset.v6==='task')newTask();
   if(b.dataset.v6==='escalate')await escalate(id);
+  if(b.dataset.v6==='ask-manager')await askManager(b.dataset.task||null,b.dataset.project||null);
+  if(b.dataset.v6==='answer-escalation')await answerEscalation(id);
   if(b.dataset.v6==='handover')await handover(id);
   if(b.dataset.v6==='reallocate')await reallocate(id);
   if(b.dataset.v6==='handover-decide')await decideHandover(id);
@@ -272,6 +285,6 @@ export function createWorkspaceUI(ctx){
   if(b.dataset.v6==='reverse-time')modal('Reverse approved time',form(`<p class="info full">The approved entry remains locked. This adds an equal negative entry for an auditable correction.</p>`+field('reason','Reason *','','text','required maxlength="2000"')),f=>request({...Object.fromEntries(f),action:'timesheet_reverse',timesheet_id:id}));
   if(b.dataset.v6==='sector')modal('Add primary sector',form(field('name','Sector name *','','text','required maxlength="100"')+select('parent_id','Parent category',d().sectors.map(s=>[s.sector_id,s.name]))),f=>request({...Object.fromEntries(f),action:'sector_save'}));
  }catch(err){notice(err.message,true);}finally{b.disabled=false;}});
- return {projects,time,bind,paintHandovers,paintTaskHandovers,editProject,newTask,editTime,importWorkbook,openCatalog:()=>accounting.catalog(),openLedger:id=>ledger.open(id),openOpeningImport:(id,settings)=>ledger.openOpeningImport(id,settings),openOpeningJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openPurchases:id=>imported(id),openPeriodImports:id=>periodImports.open(id),selectProject(id){if(selected!==id)selectedPeriod='';selected=id;taskFilter='All';},selectPeriod(id){selectedPeriod=id;}};
+ return {projects,time,bind,answerEscalation,paintHandovers,paintTaskHandovers,editProject,newTask,editTime,importWorkbook,openCatalog:()=>accounting.catalog(),openLedger:id=>ledger.open(id),openOpeningImport:(id,settings)=>ledger.openOpeningImport(id,settings),openOpeningJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openPurchases:id=>imported(id),openPeriodImports:id=>periodImports.open(id),selectProject(id){if(selected!==id)selectedPeriod='';selected=id;taskFilter='All';},selectPeriod(id){selectedPeriod=id;}};
 }
 
