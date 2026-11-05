@@ -56,7 +56,9 @@ test('Partners, Managers and Supervisors see all work in their firms; Assistants
  assert.deepEqual(await reviewers('MANAGER2'),['Fictional MANAGER','Fictional PARTNER']);
 
  // Escalation: a Supervisor sends something they cannot handle to a named Manager. Partners are alerted as well; other Managers are not.
- const notes=async role=>(await db.query(`select message from erp_private.notifications where recipient_id=$1 order by created_at`,[actors[role].staff_id])).rows.map(x=>x.message);
+ const all=async role=>(await db.query(`select message from erp_private.notifications where recipient_id=$1 order by created_at`,[actors[role].staff_id])).rows.map(x=>x.message);
+ const seen={};for(const role of Object.keys(actors))seen[role]=(await all(role)).length; // task assignment alerts from the set-up above are not escalations
+ const notes=async role=>(await all(role)).slice(seen[role]);
  const raise=(role,task,reason,manager)=>as(role,async()=>(await tx`select erp_private.escalation_raise(${P}::uuid,${task}::uuid,${reason},${manager}::uuid) id`)[0].id);
  const listed=(role,history=false)=>as(role,()=>tx`select * from erp_private.escalation_list(${history})`);
  const eid=await raise('SUPERVISOR',TM,'The client wants to add wholesale trade and I cannot approve it.',actors.MANAGER2.staff_id);
