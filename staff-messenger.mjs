@@ -1,6 +1,6 @@
 import {createClient} from './vendor/supabase-discussion.mjs';
-import {loadPrefs,savePrefs,incomingChats,shouldBeep,titleWithCount,createBeeper,tickFor} from './staff-messenger-alerts.mjs?v=20261105-escalate-v1';
-import {createCalls,callsSupported} from './staff-chat-call.mjs?v=20261105-escalate-v1';
+import {loadPrefs,savePrefs,incomingChats,shouldBeep,titleWithCount,createBeeper,tickFor} from './staff-messenger-alerts.mjs?v=20261105-opening-replace-v1';
+import {createCalls,callsSupported} from './staff-chat-call.mjs?v=20261105-opening-replace-v1';
 // A WhatsApp-style messenger docked beside the account area: one-to-one chats, groups made by a System Administrator,
 // and the existing project / task discussions in one list. Messages stay immutable and private; a System Administrator
 // manages groups and members but never reads a chat they are not in.
