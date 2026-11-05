@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import release from './release.json' with {type:'json'};
 import {periodImportAction} from './period-import-actions.ts';
 import {referenceAction} from './reference-actions.ts';
+import {staffRightsAction} from './staff-rights-actions.ts';
 import {discussionAction} from './discussion-actions.ts';
 import {taxPeriodAction} from './tax-period-actions.ts';
 import {improvementAction} from './improvement-actions.ts';
@@ -202,14 +203,14 @@ async function referenceUpload(req:Request,id:any){
  if(!['application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/pdf','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mime))fail(400,'Use DOCX, PDF, XLSX or ZIP for a private reference.');
  if(mime==='application/vnd.openxmlformats-officedocument.wordprocessingml.document'){const zip=await JSZip.loadAsync(bytes);if(!zip.file('word/document.xml'))fail(400,'This file is not a valid Word document.');}
  const digest=await sha(bytes),rid=crypto.randomUUID(),key='references/'+rid+'/'+digest+'.'+name.split('.').at(-1);let uploaded=false;
- try{return await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'settings');leader(a);const old=(await tx`select reference_id from erp_private.reference_documents where sha256=${digest}`)[0];if(old)return {...old,duplicate:true};
+ try{return await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'settings');if(a.category_code!=='ADMIN')leader(a);const old=(await tx`select reference_id from erp_private.reference_documents where sha256=${digest}`)[0];if(old)return {...old,duplicate:true};
   await bucket();const result=await admin.storage.from(BUCKET).upload(key,bytes,{contentType:mime,upsert:false});if(result.error)fail(502,'The private reference could not be stored.');uploaded=true;
   const prior=f.get('supersedes_id')?uuid(f.get('supersedes_id')):null;
   await tx`insert into erp_private.reference_documents(reference_id,title,version_label,file_name,object_key,sha256,mime_type,file_size_bytes,supersedes_id,uploaded_by) values(${rid},${text(f.get('title'),200)},${text(f.get('version_label'),80)},${name},${key},${digest},${mime},${bytes.length},${prior},${a.staff_id})`;
   await tx`insert into erp_private.reference_access_events(reference_id,actor_id,action) values(${rid},${a.staff_id},'UPLOAD')`;return {reference_id:rid};
  });}catch(e){if(uploaded)await admin.storage.from(BUCKET).remove([key]);throw e;}
 }
-async function referenceDownload(id:any,p:any){return await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'settings');leader(a);const r=one(await tx`select * from erp_private.reference_documents where reference_id=${uuid(p.reference_id)}`),file=await admin.storage.from(BUCKET).download(r.object_key);if(file.error||!file.data)fail(404,'This private reference is unavailable.');await tx`insert into erp_private.reference_access_events(reference_id,actor_id,action) values(${r.reference_id},${a.staff_id},'DOWNLOAD')`;return {blob:file.data,name:r.file_name};});}
+async function referenceDownload(id:any,p:any){return await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'settings');if(a.category_code!=='ADMIN')leader(a);const r=one(await tx`select * from erp_private.reference_documents where reference_id=${uuid(p.reference_id)}`),file=await admin.storage.from(BUCKET).download(r.object_key);if(file.error||!file.data)fail(404,'This private reference is unavailable.');await tx`insert into erp_private.reference_access_events(reference_id,actor_id,action) values(${r.reference_id},${a.staff_id},'DOWNLOAD')`;return {blob:file.data,name:r.file_name};});}
 async function upload(req:Request,id:any){
  const f=await req.formData(),file=f.get('file');if(!(file instanceof File))fail(400,'Choose a file.');
  const bytes=new Uint8Array(await file.arrayBuffer()),name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_'),mime=fileType(name,bytes);
@@ -308,6 +309,7 @@ async function action(id:any,p:any){
    return {...scopeWorkspaceRecords(filterWorkspaceAccess(w,areas),a.category_code,a.staff_id),release:'v12-uat-individual-area-access-v2'};
   }
   const requestArea=areaForStaffAction(String(p.action||''));if(!requestArea)deny();await requireStaffArea(tx,a,requestArea);
+  const rights=await staffRightsAction(tx,a,p);if(rights!==undefined)return rights;
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
   const discussion=await discussionAction(tx,a,p);if(discussion!==undefined)return discussion;
   const periods=await taxPeriodAction(tx,a,p);if(periods!==undefined)return periods;

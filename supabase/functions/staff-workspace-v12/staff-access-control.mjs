@@ -17,8 +17,9 @@ const AREA_CODES=STAFF_ACCESS_AREAS.map(x=>x.code);
 const LEADER_AREAS=['clients','projects','time_hr','documents','communications','billing_wip','audit','leads','staff_access','settings'];
 const TEAM_AREAS=['clients','projects','time_hr','documents','communications','audit'];
 const INTERN_AREAS=['projects','time_hr','documents','communications'];
-// System Administrators run logins and chat groups; they see no client, project, document, ledger or finance area.
-const ADMIN_AREAS=['communications','staff_access'];
+// System Administrators run logins, chat groups and system settings (sectors, private reference documents, go-live readiness).
+// They see no client, project, document, ledger or finance area, and cannot approve anything.
+const ADMIN_AREAS=['communications','staff_access','settings'];
 
 export function defaultStaffAreas(role){
   if(role==='PARTNER'||role==='MANAGER')return [...LEADER_AREAS];
@@ -35,7 +36,7 @@ export function effectiveStaffAreas(role,restricted=[]){
 
 const PREFIX_AREAS=[
   [/^lead_/, 'leads'],
-  [/^(?:staff_save|staff_disable|staff_access_|account_link|master_staff_)/,'staff_access'],
+  [/^(?:staff_save|staff_disable|staff_access_|staff_right_|staff_rights_|account_link|master_staff_)/,'staff_access'],
   [/^(?:firm_save|firm_details|sector_save|reference_|rate_(?:save|approve|impact|test)|release_(?:check_save|read))/, 'settings'],
   [/^(?:client_save|client_classify_|compliance_|edd_approve|owner_add|contact_save|tax_profile_|v3_client_|v3_identity_|v3_activity_|v3_activities_|v3_stock_|v3_vat_|v3_category_|v3_bank_|v3_opening_balance|v3_partners_add)/,'clients'],
   [/^(?:task_|project_|schedule_|generate_tasks|engagement_|procedure_|accounting_|ledger_|purchase_ledger_|workbook_|period_import_|tax_|work_|sales_|v3_mapping_|v3_project_|v3_review_|v3_export_|v3_period_add|v3_suggestions|suite_export)/,'projects'],

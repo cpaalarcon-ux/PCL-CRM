@@ -57,7 +57,7 @@ async function previewSchedule(tx:any,s:any,cid:string){
 }
 export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='sector_save'){
-  if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must add sectors.');
+  if(!['PARTNER','MANAGER','ADMIN'].includes(a.category_code))fail(403,'A Partner, Manager or System Administrator must add sectors.');
   const name=text(p.name,100),parent=p.parent_id?uuid(p.parent_id):null;
   return {sector:one(await tx`insert into erp_private.sectors(name,parent_id) values(${name},${parent}) returning sector_id,name,parent_id`)};
  }
