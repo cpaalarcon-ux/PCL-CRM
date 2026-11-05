@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
-import {mapAllAccounts} from './helpers/client-mappings.mjs';
+import {mapAllAccounts,readyForLedger} from './helpers/client-mappings.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {ledgerAction}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
 const {annualTaxLedgerControl}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
@@ -25,6 +25,7 @@ test('Client ledger: source integrity, maker/checker, entity profit and shared P
  await tx`insert into erp_private.accounting_policies(client_id,inventory_method,notes,configured_by) values(${C},'Periodic','Fictional periodic policy',${actors.MANAGER.staff_id})`;
  await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by) values(${B},${P},${D},'Purchases',1,'Purchases','2026-09-01','2026-09-30','{}',205,205,0,0,${actors.ASSISTANT.staff_id})`;
  await tx`update erp_private.clients set legal_entity_type='Limited company',entity_evidence='Fictional verified incorporation',year_end_month=12,year_end_day=31 where client_id=${C}`;
+ await readyForLedger(tx,C);
  const setup=await ledger('MANAGER',{action:'ledger_period_create',project_id:P,starts_on:'2026-01-01',ends_on:'2026-12-31'}),base={project_id:P,period_id:setup.period_id};
  await assert.rejects(()=>ledger('ASSISTANT',{action:'ledger_period_create',project_id:P,starts_on:'2025-01-01',ends_on:'2025-12-31'}),/Manager or Partner/);
  await assert.rejects(()=>ledger('INTERN',{action:'ledger_periods',project_id:P}),/Interns/);await assert.rejects(()=>ledger('ASSISTANT',{action:'ledger_periods',project_id:P2}),/available/);

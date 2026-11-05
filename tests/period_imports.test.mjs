@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
-import {mapAllAccounts} from './helpers/client-mappings.mjs';
+import {mapAllAccounts,readyForLedger} from './helpers/client-mappings.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {purchaseLedgerAction}=await import('../supabase/functions/staff-workspace-v12/purchase-ledger-actions.ts');
 const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
@@ -48,6 +48,7 @@ test('Period imports: summary-only storage, overlap replacement, independent rev
  const revised={...base,document_id:second};await assert.rejects(()=>save(revised),/replacement/);const replacement=await save(revised,[saved.import_id]);await approve(replacement.import_id);assert.equal((await read(saved.import_id)).status,'Superseded');assert.equal((await as('ASSISTANT',()=>summarySalesRows(tx,P,'2026-09-01','2026-09-30')))[0].normalized.amount,2000);
  const partial={...base,starts_on:'2026-09-10'};await assert.rejects(()=>save(partial,[replacement.import_id]),/fully cover/);
  await tx`update erp_private.clients set legal_entity_type='Limited company',entity_evidence='Fictional legal company evidence',year_end_month=12,year_end_day=31 where client_id=${C}`;
+ await readyForLedger(tx,C);
  const l=await ledger('MANAGER',{action:'ledger_period_create',starts_on:'2026-01-01',ends_on:'2026-12-31'});
  const journal=await ledger('ASSISTANT',{action:'ledger_period_import_create',period_id:l.period_id,import_id:replacement.import_id});assert.equal((await ledger('ASSISTANT',{action:'ledger_period_import_create',period_id:l.period_id,import_id:replacement.import_id})).journal_id,journal.journal_id);
  async function post(j){let r=(await ledger('ASSISTANT',{action:'ledger_journal_read',period_id:l.period_id,journal_id:j})).journal;await ledger('ASSISTANT',{action:'ledger_journal_submit',period_id:l.period_id,journal_id:j,revision:r.revision});r=(await ledger('ASSISTANT',{action:'ledger_journal_read',period_id:l.period_id,journal_id:j})).journal;await ledger('MANAGER',{action:'ledger_journal_review',period_id:l.period_id,journal_id:j,revision:r.revision,status:'Posted',review_note:'Fictional independently confirmed balanced posting'});}

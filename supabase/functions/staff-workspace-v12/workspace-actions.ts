@@ -1,6 +1,7 @@
 import {fail,text,uuid,date,revision,choice} from './validation.mjs';
 import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate} from './workspace-rules.mjs';
 import {obligationWorkIssue} from './tax-registry.mjs';
+import {requireRightChart} from './legal-structure-actions.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'This record is not available to your account.');return r[0];};
 const editor=(a:any)=>{if(!projectEditor(a))fail(403,'A Partner, Manager or Supervisor must manage this project.');};
 async function requireProjectSetup(tx:any,cid:string){
@@ -84,7 +85,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   let cid=p.client_id?uuid(p.client_id):null;if(!cid&&p.project_id)cid=one(await tx`select client_id from erp_private.projects where project_id=${uuid(p.project_id)} and deleted_at is null`).client_id;
   if(!cid)fail(400,'Choose the client before previewing its reporting schedule.');
   const firm=p.firm_id?uuid(p.firm_id):null;if(!firm)fail(400,'Choose the handling firm before previewing the reporting schedule.');
-  await requireProjectSetup(tx,cid);
+  await requireProjectSetup(tx,cid);if(!p.project_id)await requireRightChart(tx,cid,'creating the draft project');
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
   let existingSchedule=null;if(p.project_id){const project=one(await tx`select client_id,handling_firm_id from erp_private.projects where project_id=${uuid(p.project_id)} and deleted_at is null`);if(project.client_id!==cid||project.handling_firm_id!==firm)fail(400,'Choose the client and handling firm assigned to this project.');existingSchedule=(await tx`select project_id from erp_private.project_schedules where project_id=${uuid(p.project_id)} and deleted_at is null limit 1`)[0]||null;}
   if(!existingSchedule&&s.pack==='Tax Compilation'&&s.frequency!=='Once-off'&&s.starts_on.slice(8,10)!=='01')fail(400,'Set recurring work to the first day of the client’s current reporting month. Earlier missing months can be added as one catch-up task.');
@@ -107,6 +108,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    if(preview.due_now>12&&p.confirm_task_backlog!==true)fail(400,`The schedule would create ${preview.due_now} tasks now. Review the catch-up count and confirm, or change the start date.`);
   }
   if(!old||s.enabled&&s.obligations.length)await requireProjectSetup(tx,cid);
+  if(!old)await requireRightChart(tx,cid,'creating the draft project');
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
   // Partners can explicitly select any registered firm; other categories require existing firm access.
   if(a.category_code==='PARTNER')await tx`insert into erp_private.staff_firm_access(staff_id,firm_id) values(${a.staff_id},${firm}) on conflict(staff_id,firm_id) do update set deleted_at=null`;

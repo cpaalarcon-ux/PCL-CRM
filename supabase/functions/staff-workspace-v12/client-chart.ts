@@ -4,6 +4,7 @@
 // dated version; a different Manager or Partner approves it. Once a version is approved, account
 // choices and postings for that client are limited to it from its effective date.
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
+import {requireClassified} from './legal-structure-actions.ts';
 import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,notifyOutcome} from './review-queue.ts';
 
 const one=(r:any[])=>{if(!r.length)fail(403,'Record unavailable to this account.');return r[0];};
@@ -98,6 +99,7 @@ export async function clientChartAction(tx:any,a:any,p:any){
   leader(a);const cid=uuid(p.client_id),from=date(p.effective_from);if(!from)fail(400,'Choose the date the client chart applies from.');
   await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':client-chart'},0))`;
   if((await tx`select 1 from erp_private.client_chart_versions where client_id=${cid} and status='Draft'`).length)fail(409,'A client chart version is already waiting for review. Review or return it first.');
+  await requireClassified(tx,cid,'proposing the chart of accounts');
   const prop=await proposal(tx,cid,from);
   if(!['Limited company','Partnership','Sole proprietor','Non-profit organisation','Other legal entity'].includes(prop.client.legal_entity_type))fail(400,'Confirm the legal entity type before proposing the client chart.');
   if(!prop.packs.length)fail(400,'Approve at least one business activity before proposing the client chart.');

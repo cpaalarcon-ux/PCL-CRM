@@ -28,7 +28,7 @@ import {engagementAction} from './engagement-actions.ts';
 import {auditAction} from './audit-actions.ts';
 import {suiteExport} from './suite-export.ts';
 import {masterImport} from './master-import.ts';
-import {applyLegalStructure} from './legal-structure-actions.ts';
+import {applyLegalStructure,requireRightChart} from './legal-structure-actions.ts';
 import { createClient } from 'supabase';
 import postgres from 'postgres';
 import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
@@ -229,6 +229,7 @@ async function upload(req:Request,id:any){
   if(importPurpose==='Opening TB'){
    leader(a);const client=one(await tx`select legal_entity_type,entity_evidence,year_end_month,year_end_day,opening_balance_status from erp_private.clients where client_id=${cid} and deleted_at is null`);
    if(!client.legal_entity_type||String(client.entity_evidence||'').trim().length<10||!client.year_end_month||!client.year_end_day)fail(400,'Confirm the client’s legal entity and financial year-end in Clients → Entity / activities before staging the opening TB.');
+   await requireRightChart(tx,cid,'staging the opening TB');
    if(client.opening_balance_status==='No opening balances')fail(409,'The client is marked as having no opening balances. Reset that confirmation before uploading a trial balance.');
   }
   assertDocumentLinks({client_id:cid,firm_id:firm,project_id:pid,task_id:tid},project,task);
