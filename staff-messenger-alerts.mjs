@@ -39,18 +39,20 @@ export function createBeeper(win=globalThis,{minGapMs=2000}={}){
    return true;
   }catch{return false;}
  };
- // A phone-style ring for calls: two bursts of a two-tone sound, much louder than the message chime, with a limiter so small speakers
- // do not crackle. `volume` 0..1; the caller hears a soft version (ring-back) while waiting. Same browser rule as above about first sound.
- const ring=(volume=1)=>{
+ // Call sounds. style 'ring' (the person being called): a loud phone ring, three bursts of three tones in a square wave, which carries
+ // much further than a chime, through a limiter so small speakers do not crackle. style 'buzz' (the caller, while waiting): only a soft,
+ // low double buzz. `volume` 0..1. Same browser rule as above about the first sound after a page load.
+ const ring=(volume=1,style='ring')=>{
   try{
    if(!ctx||ctx.state!=='running')return false;
-   const t=ctx.currentTime,out=ctx.createGain(),comp=ctx.createDynamicsCompressor?.();
-   out.gain.value=Math.min(1,Math.max(0,Number(volume)||0))*0.5;
-   if(comp){out.connect(comp);comp.connect(ctx.destination);}else out.connect(ctx.destination);
-   for(const at of [0,0.55])for(const freq of [740,880]){
-    const o=ctx.createOscillator(),g=ctx.createGain();o.type='triangle';o.frequency.value=freq;
-    g.gain.setValueAtTime(0.0001,t+at);g.gain.exponentialRampToValueAtTime(0.5,t+at+0.03);g.gain.setValueAtTime(0.5,t+at+0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+at+0.46);
-    o.connect(g);g.connect(out);o.start(t+at);o.stop(t+at+0.5);
+   const loud=style!=='buzz',level=Math.min(1,Math.max(0,Number(volume)||0)),t=ctx.currentTime,out=ctx.createGain(),comp=ctx.createDynamicsCompressor?.();
+   out.gain.value=level*(loud?0.9:0.5);
+   if(comp){if(comp.threshold)comp.threshold.value=-8;if(comp.ratio)comp.ratio.value=20;out.connect(comp);comp.connect(ctx.destination);}else out.connect(ctx.destination);
+   const bursts=loud?[0,0.5,1]:[0,0.3],tones=loud?[740,880,1320]:[220],peak=loud?0.3:0.5,length=loud?0.36:0.2;
+   for(const at of bursts)for(const freq of tones){
+    const o=ctx.createOscillator(),g=ctx.createGain();o.type=loud?'square':'triangle';o.frequency.value=freq;
+    g.gain.setValueAtTime(0.0001,t+at);g.gain.exponentialRampToValueAtTime(peak,t+at+0.02);g.gain.setValueAtTime(peak,t+at+length);g.gain.exponentialRampToValueAtTime(0.0001,t+at+length+0.05);
+    o.connect(g);g.connect(out);o.start(t+at);o.stop(t+at+length+0.08);
    }
    return true;
   }catch{return false;}
