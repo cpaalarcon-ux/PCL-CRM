@@ -107,6 +107,8 @@ export function createMessenger(ctx){
  async function userLive(){
   try{
    const raw=JSON.parse(localStorage.getItem('pcl-staff-session-v2')||'null');if(!raw?.access_token||!d())return;
+   // Only a real signed token is worth a live connection (a placeholder token would just be refused and retried for ever).
+   if(!/^[\w-]+\.[\w-]+\.[\w-]+$/.test(raw.access_token))return;
    if(userSub&&raw.access_token===userToken)return;
    client??=newClient();await client.realtime.setAuth(raw.access_token);userToken=raw.access_token;
    if(!userSub)userSub=client.channel('pcl-user:'+d().me.staff_id,{config:{private:true}}).on('broadcast',{event:'call'},()=>calls.poke()).subscribe(st=>{userOk=st==='SUBSCRIBED';});
