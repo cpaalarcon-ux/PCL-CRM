@@ -17,7 +17,7 @@ test('Home opens a pending setup change and the checklist names the approval blo
  assert.match(guide,/a==='setup-change'\)await ctx\.openClientSettings\(id\)/);
 });
 test('the alert functions are internal and only the API role can run them',()=>{
- const sql=read('supabase/migrations/99999999999999_review_alerts.sql');
+ const sql=read('supabase/migrations/20261105085343_review_alerts.sql');
  assert.match(sql,/REVOKE ALL ON FUNCTION erp_private\.notify_reviewers[^;]*FROM PUBLIC,anon,authenticated,service_role/);assert.match(sql,/GRANT EXECUTE ON FUNCTION erp_private\.notify_outcome[^;]*TO erp_api/);
  assert.match(sql,/ON CONFLICT \(event_key\) DO NOTHING/);
 });
