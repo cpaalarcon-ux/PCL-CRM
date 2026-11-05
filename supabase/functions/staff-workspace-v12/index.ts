@@ -28,6 +28,7 @@ import {engagementAction} from './engagement-actions.ts';
 import {auditAction} from './audit-actions.ts';
 import {suiteExport} from './suite-export.ts';
 import {masterImport} from './master-import.ts';
+import {applyLegalStructure} from './legal-structure-actions.ts';
 import { createClient } from 'supabase';
 import postgres from 'postgres';
 import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
@@ -384,14 +385,15 @@ async function action(id:any,p:any){
    if(pin&&!/^[A-Z][0-9]{9}[A-Z]$/.test(pin))fail(400,'Check the KRA PIN format.');
    const sector=p.primary_sector?text(p.primary_sector,100):null,branch=p.branch_location?choice(p.branch_location,branches):null;
    if(sector&&!(await tx`select sector_id from erp_private.sectors where name=${sector} and deleted_at is null`).length)fail(400,'Choose a saved sector, or add it with Add sector before saving this client.');
-   const cat=p.client_category?choice(p.client_category,['Corporate','Non-Profit','Public Entity','Individual']):null;
+   const cat=p.legal_structure?null:p.client_category?choice(p.client_category,['Corporate','Non-Profit','Public Entity','Individual']):null;
    if(p.client_id){
     const rev=revision(p.revision);
-    const rows=await tx`update erp_private.clients set company_name=${name},kra_pin=${pin},primary_sector=${sector},branch_location=${branch},client_category=${cat}
+    const rows=await tx`update erp_private.clients set company_name=${name},kra_pin=${pin},primary_sector=${sector},branch_location=${branch},client_category=coalesce(${cat},client_category)
     where client_id=${cid} and revision=${rev} returning client_id`;
     if(!rows.length)fail(409,'Client changed or is unavailable. Refresh before editing.');
    }else await tx`insert into erp_private.clients(client_id,company_name,kra_pin,primary_sector,branch_location,client_category,record_status,owner_staff_id,is_uat_fixture)
     values(${cid},${name},${pin},${sector},${branch},${cat},'Existing',${a.staff_id},${isUatFixture})`;
+   await applyLegalStructure(tx,a,cid,p,!p.client_id);
    const firms=Array.isArray(p.firm_ids)?p.firm_ids.map(uuid):[];if(!firms.length)fail(400,'Select at least one handling firm.');
    for(const firm of firms){
     const [allowed]=await tx`select erp_private.firm_allowed(${firm}::uuid) as ok`;if(!allowed.ok)deny();

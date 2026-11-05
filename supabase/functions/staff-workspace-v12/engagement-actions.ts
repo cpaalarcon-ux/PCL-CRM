@@ -90,13 +90,13 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   return {ok:true,changed_items:changed,change_version:version};
  }
  if(p.action==='compliance_verify'||p.action==='edd_approve'){
-  const c=one(await tx`select x.*,c.missing_fields from erp_private.client_compliance x join erp_private.clients c using(client_id) where client_id=${uuid(p.client_id)} for update of x`);
+  const c=one(await tx`select x.*,c.missing_fields,c.legal_structure,c.legal_subtype from erp_private.client_compliance x join erp_private.clients c using(client_id) where client_id=${uuid(p.client_id)} for update of x`);
   if(String(c.revision)!==revision(p.revision))fail(409,'Compliance details changed. Refresh first.');
   if(p.action==='edd_approve'){if(a.category_code!=='PARTNER')fail(403,'Only the Engagement Partner may approve enhanced due diligence.');if(!c.verified_by)fail(400,'Verify the KYC file first.');await tx`update erp_private.client_compliance set edd_approved_by=${a.staff_id},edd_approved_at=now(),notes=notes||E'\nEDD: '||${text(p.reason,2000)} where client_id=${c.client_id}`;return {ok:true};}
   if(c.last_edited_by===a.staff_id)fail(403,'You made the latest KYC change. A different Manager or Partner must verify this file.');
   const pending=await tx`select version_id,recorded_by from erp_private.client_kyc_change_versions where client_id=${c.client_id} and status='Pending review' for update`;
   if(pending.some((v:any)=>v.recorded_by===a.staff_id))fail(403,'You recorded a pending KYC change. A different Manager or Partner must verify this file.');
-  if(c.missing_fields.length||!c.conflict_checked||!c.sanctions_date||!c.sanctions_result||!c.review_due)fail(400,'Complete client fields, conflict review, screening and next review date.');
+  if(c.missing_fields.length||!c.legal_structure||!c.conflict_checked||!c.sanctions_date||!c.sanctions_result||!c.review_due)fail(400,'Complete client fields, conflict review, screening and next review date.');
   const evidence=await tx`select * from erp_private.client_kyc_evidence where client_id=${c.client_id} and deleted_at is null`,gaps=kycGaps(c.entity_type,await kycRules(tx),evidence,today());
   if(gaps.length)fail(400,'Current KYC evidence is missing or expired for: '+gaps.join(', ')+'.');
   if(c.entity_type==='Company'&&!(await tx`select owner_id from erp_private.beneficial_owners where client_id=${c.client_id} and deleted_at is null`).length)fail(400,'Company KYC requires at least one beneficial owner or controller record.');
