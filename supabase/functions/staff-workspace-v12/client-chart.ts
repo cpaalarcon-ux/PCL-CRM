@@ -4,7 +4,7 @@
 // dated version; a different Manager or Partner approves it. Once a version is approved, account
 // choices and postings for that client are limited to it from its effective date.
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
-import {chosenReviewer,mustBeAskedReviewer,reviewCandidates} from './review-queue.ts';
+import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,notifyOutcome} from './review-queue.ts';
 
 const one=(r:any[])=>{if(!r.length)fail(403,'Record unavailable to this account.');return r[0];};
 const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must maintain the client chart of accounts.');};
@@ -113,8 +113,10 @@ export async function clientChartAction(tx:any,a:any,p:any){
   const missing=prop.exceptions.filter((e:any)=>!extras.some((x:any)=>x.code===e.code));
   if(missing.length)fail(400,`These accounts are already used by the client but are outside the proposed chart: ${missing.slice(0,8).map((e:any)=>`${e.code} ${e.name} (${e.reason})`).join('; ')}${missing.length>8?` and ${missing.length-8} more`:''}. Add each as an extra account with a reason, or correct the mapping first.`);
   const codes=[...prop.accounts.map((x:any)=>x.code),...extras.map((x:any)=>x.code)].sort();
-  return one(await tx`insert into erp_private.client_chart_versions(client_id,effective_from,entity_type,packs,accounts,extra_accounts,prepared_by,note,requested_reviewer_id)
-   values(${cid},${from},${prop.client.legal_entity_type},${tx.array?tx.array(prop.packs):prop.packs},${tx.array?tx.array(codes):codes},${tx.json(extras)},${a.staff_id},${text(p.note||'',2000,false)||null},${await chosenReviewer(tx,a,cid,p.requested_reviewer_id)}) returning version_id,status`);
+  const made=one(await tx`insert into erp_private.client_chart_versions(client_id,effective_from,entity_type,packs,accounts,extra_accounts,prepared_by,note,requested_reviewer_id)
+   values(${cid},${from},${prop.client.legal_entity_type},${tx.array?tx.array(prop.packs):prop.packs},${tx.array?tx.array(codes):codes},${tx.json(extras)},${a.staff_id},${text(p.note||'',2000,false)||null},${await chosenReviewer(tx,a,cid,p.requested_reviewer_id)}) returning version_id,status,requested_reviewer_id`);
+  await notifyReviewers(tx,cid,`client chart of accounts effective ${from}`,'review:chart:'+made.version_id,made.requested_reviewer_id);
+  return {version_id:made.version_id,status:made.status};
  }
  // v3_client_chart_review
  leader(a);const v=one(await tx`select * from erp_private.client_chart_versions where version_id=${uuid(p.version_id)} for update`);
@@ -128,5 +130,6 @@ export async function clientChartAction(tx:any,a:any,p:any){
   if(missing.length)fail(409,`The client has started using accounts outside this version since it was proposed (${missing.slice(0,5).map((e:any)=>e.code).join(', ')}). Return it and propose a new version.`);
  }
  await tx`update erp_private.client_chart_versions set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where version_id=${v.version_id}`;
+ await notifyOutcome(tx,v.prepared_by,v.client_id,'client chart of accounts',status,note,'outcome:chart:'+v.version_id+':'+status);
  return {ok:true,status};
 }

@@ -5,6 +5,7 @@ import {entityInput,partnerRatios,stockValues,suggestionFor,exportReadiness,pack
 import {salesNetByCategory} from './stock-vat.ts';
 import {money} from './accounting-rules.mjs';
 import {dependencyTaskAction,syncClientDependencyTasks} from './dependency-tasks.ts';
+import {notifyReviewers,notifyOutcome} from './review-queue.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'Record unavailable to this account.');return r[0];};
 const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must maintain client configuration.');};
 const reviewer=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'Independent Supervisor, Manager or Partner review required.');};
@@ -103,7 +104,9 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
   const change=one(await tx`select * from erp_private.client_setup_change_sets where change_id=${uuid(p.change_id)} and client_id=${cid} for update`);fresh(change,p);
   if(p.action==='v3_activities_submit'){
    if(change.status!=='Draft'||change.created_by!==a.staff_id)fail(409,'Only the preparer can submit their draft activity change. Refresh the client setup.');if(p.confirm_preview!==true)fail(400,'Confirm that you reviewed the impact preview.');
-   await tx`update erp_private.client_setup_change_sets set status='Pending review',submitted_by=${a.staff_id},submitted_at=now() where change_id=${change.change_id}`;return {ok:true,status:'Pending review'};
+   await tx`update erp_private.client_setup_change_sets set status='Pending review',submitted_by=${a.staff_id},submitted_at=now() where change_id=${change.change_id}`;
+   {const names=[...new Set((change.preview?.activities_to_add||change.proposed_activities?.activities||[]).map((x:any)=>String(x.activity_name||x.activity_code||'').replace(/_/g,' ')).filter(Boolean))];await notifyReviewers(tx,cid,`client activity change${names.length?' ('+names.join(', ')+')':''}, which blocks account mapping until approved`,'review:setup:'+change.change_id+':'+Date.now());}
+   return {ok:true,status:'Pending review'};
   }
   if(change.status!=='Pending review'||change.submitted_by===a.staff_id)fail(403,'A different Manager or Partner must review this pending client activity change.');const status=choice(p.status,['Approved','Returned']),note=text(p.review_note,2000);if(note.length<10)fail(400,'Record a review conclusion or return reason of at least 10 characters.');
   if(status==='Approved'){
@@ -117,12 +120,13 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
    await syncClientSector(tx,cid);
    await syncClientDependencyTasks(tx,a,cid);
   }
-  await tx`update erp_private.client_setup_change_sets set status=${status},review_note=${note},reviewed_by=${a.staff_id},reviewed_at=now() where change_id=${change.change_id}`;return {ok:true,status};
+  await tx`update erp_private.client_setup_change_sets set status=${status},review_note=${note},reviewed_by=${a.staff_id},reviewed_at=now() where change_id=${change.change_id}`;await notifyOutcome(tx,change.submitted_by,cid,'client activity change',status,note,'outcome:setup:'+change.change_id);return {ok:true,status};
  }
  if(p.action==='v3_activity_add')fail(409,'The single-activity shortcut has been removed. Open Client setup → Activities / end dates to select multiple dated activities, preview dependencies and submit one change for independent review.');
  if(p.action==='v3_client_accounts_read'){
   leader(a);const cid=uuid(p.client_id),client=one(await tx`select client_id,company_name,year_end_month,year_end_day from erp_private.clients where client_id=${cid} and deleted_at is null`);
-  return {client,accounts:await tx`select code,name,account_group,route,category_code,statement,tax_note from erp_private.account_catalog where status='Active' and not is_legacy order by code`,mappings:await tx`select m.*,a.name as erp_account_name,a.account_group,a.route,a.category_code,a.statement,a.tax_note from erp_private.client_account_mappings m join erp_private.account_catalog a on a.code=m.erp_account_code where m.client_id=${cid} order by case m.status when 'Draft' then 0 when 'Active' then 1 else 2 end,m.source_account_name,m.effective_from desc`,opening_sources:await tx`select document_id,file_name,handling_firm_id,uploaded_at,sha256 from erp_private.documents where client_id=${cid} and project_id is null and category='Import Sources' and import_purpose='Opening TB' and archived_at is null and deleted_at is null order by uploaded_at desc`};
+  // Activity changes waiting for approval hold back every general mapping for this client, so the checklist must be able to say so.
+  return {pending_setup_changes:await tx`select s.change_id,s.submitted_at,s.preview,coalesce(m.full_name,'a colleague') submitted_by_name from erp_private.client_setup_change_sets s left join erp_private.staff_members m on m.staff_id=s.submitted_by where s.client_id=${cid} and s.status='Pending review' order by s.submitted_at`,client,accounts:await tx`select code,name,account_group,route,category_code,statement,tax_note from erp_private.account_catalog where status='Active' and not is_legacy order by code`,mappings:await tx`select m.*,a.name as erp_account_name,a.account_group,a.route,a.category_code,a.statement,a.tax_note from erp_private.client_account_mappings m join erp_private.account_catalog a on a.code=m.erp_account_code where m.client_id=${cid} order by case m.status when 'Draft' then 0 when 'Active' then 1 else 2 end,m.source_account_name,m.effective_from desc`,opening_sources:await tx`select document_id,file_name,handling_firm_id,uploaded_at,sha256 from erp_private.documents where client_id=${cid} and project_id is null and category='Import Sources' and import_purpose='Opening TB' and archived_at is null and deleted_at is null order by uploaded_at desc`};
  }
  if(p.action==='v3_client_account_mapping_tb_preview'){
   leader(a);fail(409,'Opening TB mappings are now resolved during ledger import. Open Client accounting, select the client year, then map and import the staged workbook.');
