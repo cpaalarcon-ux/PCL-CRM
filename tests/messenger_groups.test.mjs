@@ -23,7 +23,7 @@ test('System Administrators run logins and chat groups without seeing client wor
  await assert.rejects(()=>as('MANAGER',()=>tx`insert into erp_private.staff_members(staff_id,staff_identifier,login_id,full_name,category_code,employment_type,manager_id) values(${id()},'NEWADM','newadm','Fictional New Admin','ADMIN','Permanent',${actors.MANAGER.staff_id})`),/System Administrator|row-level security/);
  await assert.rejects(()=>tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors.ADMIN.staff_id},${F},'ADMIN')`,/cannot be assigned to client work/);
  for(const table of ['clients','projects','tasks','documents','ledger_lines'])assert.equal(await count('ADMIN',table),0,`a System Administrator sees no ${table}`);
- assert.deepEqual(defaultStaffAreas('ADMIN'),['communications','staff_access']);
+ assert.deepEqual(defaultStaffAreas('ADMIN'),['communications','staff_access','settings']);
  assert.equal(staffAreaCanUse('ADMIN',[],areaForStaffAction('client_save')),false);assert.equal(staffAreaCanUse('ADMIN',[],areaForStaffAction('staff_save')),true);assert.equal(staffAreaCanUse('ADMIN',[],areaForStaffAction('discussion_list')),true);
 
  // Logins: an administrator creates ordinary staff but never a Manager or another administrator.
