@@ -1,6 +1,6 @@
 import {createDiscussionUI} from './staff-discussion.mjs?v=20261026-v4';
 import {communicationQr,letterDetails,letterDetailsQr} from './staff-communication-qr.mjs?v=20261104-letter-details';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261105-rights-v1';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261105-check-v1';
 import {defaultTaxReportingPeriod} from './staff-tax-period-defaults.mjs?v=20261031-tax-period-defaults-v1';
 export function createSuiteUI(ctx){
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,clientName,projectName,staffName,firmName,today,empty}=ctx;

@@ -19,3 +19,16 @@ export async function readyForLedger(tx,clientId){
  await tx`insert into erp_private.client_chart_versions(client_id,effective_from,entity_type,packs,accounts,status,prepared_by,reviewed_by,reviewed_at,review_note)
   values(${clientId},'2020-01-01',${c.legal_entity_type},${'{Wholesale}'},${'{'+codes.join(',')+'}'},'Approved',${leaders[0].staff_id},${leaders[1].staff_id},now(),'Fictional approval for ledger tests')`;
 }
+
+// Work an Assistant prepares must be checked by a Supervisor, Manager or Partner before a different Manager or Partner can approve it.
+// Tests that exercise other controls record that check with a fixture Supervisor, so they can keep posting through their usual reviewer.
+export async function checkJournal(tx,journalId){
+ let s=(await tx`select staff_id from erp_private.staff_members where staff_identifier='FIXTURE-CHECKER'`)[0];
+ if(!s){
+  const u=crypto.randomUUID(),sid=crypto.randomUUID();
+  await tx`insert into auth.users(id) values(${u})`;
+  await tx`insert into erp_private.staff_members(staff_id,auth_user_id,staff_identifier,login_id,full_name,category_code,employment_type,contract_end_date,access_status,sessions_invalid_before) values(${sid},${u},'FIXTURE-CHECKER','fixture-checker','Fictional Supervisor checker','SUPERVISOR','Permanent','2030-12-31','Inactive',now()-interval '1 day')`;
+  s={staff_id:sid};
+ }
+ await tx`update erp_private.ledger_journals set checked_by=${s.staff_id},checked_at=now(),check_note='Fixture check against the source schedule' where journal_id=${journalId} and status='Submitted' and checked_by is null`;
+}

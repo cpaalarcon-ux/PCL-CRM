@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
-import {readyForLedger} from './helpers/client-mappings.mjs';
+import {readyForLedger,checkJournal} from './helpers/client-mappings.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {ledgerAction}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),C=id(),P=id(),actors={};
@@ -25,7 +25,7 @@ test('posting a depreciation journal confirms its submitted asset in the same in
  const prepare=async(role,name)=>{const asset=await ledger(role,{...base,action:'ledger_asset_save',asset_name:name,asset_account:'15006',rate_id:computer.rate_id,first_use_date:'2026-01-01',cost:100000,business_percentage:100,noncommercial_vehicle:false,evidence:'Fictional invoice, ownership and first-use evidence'});
   const read=()=>ledger('ASSISTANT',{...base,action:'ledger_asset_read',asset_id:asset.asset_id});await ledger(role,{...base,action:'ledger_asset_submit',asset_id:asset.asset_id,revision:(await read()).asset.revision});
   const charge=await ledger('ASSISTANT',{...base,action:'ledger_depreciation_create',asset_id:asset.asset_id,starts_on:'2026-01-01',ends_on:'2026-12-31',reference:'DEP-'+name.slice(-1),evidence:'Fictional annual class-rate calculation'});
-  let j=await ledger('ASSISTANT',{...base,action:'ledger_journal_read',journal_id:charge.journal_id});await ledger('ASSISTANT',{...base,action:'ledger_journal_submit',journal_id:charge.journal_id,revision:j.journal.revision});
+  let j=await ledger('ASSISTANT',{...base,action:'ledger_journal_read',journal_id:charge.journal_id});await ledger('ASSISTANT',{...base,action:'ledger_journal_submit',journal_id:charge.journal_id,revision:j.journal.revision});await checkJournal(tx,charge.journal_id);
   j=await ledger('ASSISTANT',{...base,action:'ledger_journal_read',journal_id:charge.journal_id});return {asset,journal:j.journal,read};};
  const status=async assetId=>(await tx`select status,reviewed_by from erp_private.ledger_assets where asset_id=${assetId}`)[0];
 
