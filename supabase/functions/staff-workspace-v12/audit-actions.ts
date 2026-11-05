@@ -7,6 +7,7 @@ const MODEL_DEMO_NAME='Model File Ltd — Audit Demonstration';
 const MODEL_DEMO_WARNING='DEMONSTRATION DATA — NOT A REAL AUDIT / NOT FOR ISSUANCE';
 const AREAS=['Permanent file','Acceptance and ethics','Planning','Risk assessment','Cash and bank','Trade receivables','Inventories','Property, plant and equipment','Trade payables','Borrowings','Taxation','Revenue','Payroll and expenses','Equity','Commitments and contingencies','Completion','Reporting and quality'];
 const FS_LINES=['Assets','Liabilities','Equity','Revenue','Cost of sales','Operating expenses','Finance costs','Tax expense','Cash flows','Disclosure only','Not applicable'];
+const isoDay=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 const one=(r:any[])=>{if(!r.length)fail(403,'Audit record or engagement unavailable.');return r[0];};
 const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Manager or Engagement Partner must complete this audit control.');};
 const editor=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'An Audit Supervisor, Manager or Partner must complete this review.');};
@@ -159,7 +160,7 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
   if(p.action==='audit_tb_import'&&!['Draft','Returned'].includes(file.file_status))fail(400,'Trial-balance imports are locked after the file is prepared for review.');
   const c=sourceOptions(p,sheet),parsed=parseRows(sheet,c),period=choice(p.period_kind,['Current','Comparative']);
   if(doc.import_purpose==='Opening TB'&&period!=='Comparative')fail(400,'A client-staged opening TB is comparative/prior-year data.');
-  const previousEnd=period==='Comparative'?(file.previous_audit_file_id?(await tx`select ends_on from erp_private.audit_files where audit_file_id=${file.previous_audit_file_id}`)[0]?.ends_on:new Date(Date.parse(file.starts_on+'T00:00:00Z')-86400000).toISOString().slice(0,10)):file.ends_on,periodEnd=previousEnd;
+  const previousEnd=period==='Comparative'?(file.previous_audit_file_id?(await tx`select ends_on from erp_private.audit_files where audit_file_id=${file.previous_audit_file_id}`)[0]?.ends_on:new Date(Date.parse(isoDay(file.starts_on)+'T00:00:00Z')-86400000).toISOString().slice(0,10)):file.ends_on,periodEnd=previousEnd;
   const signature=await sha(JSON.stringify({doc:doc.sha256,file:file.audit_file_id,sheet:sheet.name,period,periodEnd,c}));
   const duplicate=(await tx`select audit_tb_import_id from erp_private.audit_tb_imports where audit_file_id=${file.audit_file_id} and import_signature=${signature} and period_kind=${period} and status in ('Draft','Confirmed') order by created_at desc limit 1`)[0];if(duplicate)return {ok:true,audit_tb_import_id:duplicate.audit_tb_import_id,reused:true,row_count:0};
   const active=(await tx`select audit_tb_import_id,status from erp_private.audit_tb_imports where audit_file_id=${file.audit_file_id} and period_kind=${period} and status in ('Draft','Confirmed') for update`)[0];
@@ -174,12 +175,12 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
    select ${importId},${file.audit_file_id},${file.project_id},${file.handling_firm_id},x.source_row,x.legacy_account_code,x.legacy_account_name,x.source_debit,x.source_credit,x.audit_account_id,x.audit_area,x.financial_statement_line,x.mapping_confidence
    from jsonb_to_recordset(${tx.json(values.slice(i,i+500))}::jsonb) x(source_row integer,legacy_account_code text,legacy_account_name text,source_debit numeric,source_credit numeric,audit_account_id uuid,audit_area text,financial_statement_line text,mapping_confidence text)`;
   await tx`update erp_private.audit_tb_imports set superseded_by=${importId} where audit_tb_import_id=(select audit_tb_import_id from erp_private.audit_tb_imports where audit_file_id=${file.audit_file_id} and period_kind=${period} and status='Superseded' and superseded_by is null order by created_at desc limit 1)`;
-  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'AUDIT_TB_IMPORT')`;
+  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'DOWNLOAD')`;
   return {ok:true,audit_tb_import_id:importId,row_count:values.length,total_debit:parsed.debit,total_credit:parsed.credit,unmapped_count:values.filter((x:any)=>!x.audit_account_id).length,import_kind:period};
  }
 
  if(p.action==='audit_tb_map'){
-  const line=one(await tx`select l.*,i.status as import_status,i.revision as import_revision,i.handling_firm_id as firm,f.file_status as file_status from erp_private.audit_tb_lines l join erp_private.audit_tb_imports i using(audit_tb_import_id) join erp_private.audit_files f using(audit_file_id) where l.audit_tb_line_id=${uuid(p.audit_tb_line_id)} for update of i,l,f`);
+  const line=one(await tx`select l.*,i.status as import_status,i.revision as import_revision,i.handling_firm_id as firm,f.file_status as file_status from erp_private.audit_tb_lines l join erp_private.audit_tb_imports i on i.audit_tb_import_id=l.audit_tb_import_id join erp_private.audit_files f on f.audit_file_id=i.audit_file_id where l.audit_tb_line_id=${uuid(p.audit_tb_line_id)} for update of i,l,f`);
   if(line.import_status!=='Draft')fail(400,'Confirmed source rows are locked. Ask a Partner or Manager to supersede this import before correction.');if(!['Draft','Returned'].includes(line.file_status))fail(400,'Trial-balance mappings are locked after the audit file is prepared.');rev({revision:line.import_revision},p);
   const area=choice(p.audit_area,AREAS),fs=choice(p.financial_statement_line,FS_LINES),code=line.legacy_account_code,name=line.legacy_account_name,reason=text(p.change_reason||'',1000,false);
   const existing=(await tx`select * from erp_private.audit_account_mappings where handling_firm_id=${line.firm} and legacy_account_code=${code} for update`)[0];let mapped:any;

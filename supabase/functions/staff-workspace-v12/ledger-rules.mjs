@@ -12,6 +12,10 @@ const finite=(v,label,min=0,max=1e12)=>{if(v===''||v==null||typeof v==='boolean'
 
 export function normaliseLines(input,accounts,{allowUnmapped=false,opening=false,payroll=false}={}){
  if(!Array.isArray(input)||!input.length||input.length>2000)fail(400,'Enter 1–2,000 journal lines.');
+ if(opening){
+  const bad=input.map((r,i)=>({i,code:String(r.account_code||'').trim(),r})).filter(x=>x.code&&accounts.some(a=>a.code===x.code)&&Number(x.code)>=40000&&(Number(x.r.debit)||Number(x.r.credit)));
+  if(bad.length){const shown=bad.slice(0,6).map(x=>`line ${x.i+1} (${x.r.legacy_code?x.r.legacy_code+' ':''}${String(x.r.source_name||'').slice(0,40)} → ERP ${x.code})`).join('; ');fail(400,`Opening year-start balances must use balance-sheet and equity accounts. ${bad.length} line(s) use an income or expense account: ${shown}${bad.length>6?' and more':''}. Close prior-year income and expenses to retained earnings (or proprietor/partner capital) in the source TB, or map these lines to the correct equity account.`);}
+ }
  return input.map((r,i)=>{
   const code=String(r.account_code||'').trim(),account=accounts.find(a=>a.code===code),debit=cashAmount(r.debit===''||r.debit==null?0:r.debit),credit=cashAmount(r.credit===''||r.credit==null?0:r.credit);
   if(debit<0||credit<0||debit&&credit)fail(400,`Line ${i+1}: use a positive amount on one side only.`);
