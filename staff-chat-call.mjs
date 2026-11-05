@@ -2,11 +2,16 @@
 // Sound and picture travel straight between the two browsers; the server only sets the call up (who is calling whom, ringing,
 // answered, ended) and passes each browser the other's connection details. Nothing is recorded.
 // The screen is built here and not in the messenger so a call survives the chat panel being closed or repainted.
+const LOUD_KEY='pcl-call-louder-v1';
 const STUN=[{urls:['stun:stun.cloudflare.com:3478']}];
 const END_STATES=['Declined','Missed','Ended','Failed'];
-const RING_MS=45000,CONNECT_MS=25000,WEAK_MS=8000,GATHER_MS=3500,POLL_MS=2000,TONE_MS=2500,SHOW_END_MS=3500;
+const RING_MS=45000,CONNECT_MS=25000,WEAK_MS=8000,GATHER_MS=3000,GATHER_PLAIN_MS=1500,GRACE_MS=200,POLL_RING_MS=1000,POLL_ACTIVE_MS=3000,CONFIG_MS=600000,TONE_MS=2500,SHOW_END_MS=3500;
 
 export const callsSupported=(win=globalThis)=>!!(win.RTCPeerConnection&&win.navigator?.mediaDevices?.getUserMedia);
+
+export const loadLouder=(storage=globalThis.localStorage)=>{try{return storage?.getItem(LOUD_KEY)==='1';}catch{return false;}};
+export const saveLouder=(on,storage=globalThis.localStorage)=>{try{storage?.setItem(LOUD_KEY,on?'1':'0');}catch{ /* The choice then lasts until the page closes. */ }};
+export const LOUD_GAIN=2;
 
 export const clockText=sec=>{const s=Math.max(0,Math.floor(Number(sec)||0));return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;};
 
@@ -33,18 +38,21 @@ export function endMessage({status,role,other='your colleague',seconds=0,relay=t
 }
 
 // Wait until the browser has found its connection routes (so one complete description can be sent), but never longer than `ms`.
-export function gatherComplete(pc,ms=GATHER_MS,win=globalThis){
+// Waiting for every last route is slow, so once the route that matters has appeared ("relay" when a relay is set up, otherwise
+// "srflx", the address the internet sees) it waits only a short grace period for the rest and goes.
+export function gatherComplete(pc,ms=GATHER_MS,win=globalThis,{want=null,grace=GRACE_MS}={}){
  return new Promise(resolve=>{
   if(pc.iceGatheringState==='complete')return resolve();
-  let done=false,timer=null;
-  const finish=()=>{if(done)return;done=true;win.clearTimeout(timer);pc.removeEventListener('icegatheringstatechange',check);resolve();};
+  let done=false,cap=null,soon=null;
+  const finish=()=>{if(done)return;done=true;win.clearTimeout(cap);win.clearTimeout(soon);pc.removeEventListener('icegatheringstatechange',check);pc.removeEventListener('icecandidate',found);resolve();};
   const check=()=>{if(pc.iceGatheringState==='complete')finish();};
-  pc.addEventListener('icegatheringstatechange',check);timer=win.setTimeout(finish,ms);
+  const found=e=>{if(want&&!soon&&new RegExp(' typ '+want+'( |$)').test(e?.candidate?.candidate||''))soon=win.setTimeout(finish,grace);};
+  pc.addEventListener('icegatheringstatechange',check);pc.addEventListener('icecandidate',found);cap=win.setTimeout(finish,ms);
  });
 }
 
 export function createCalls({request,notice,beeper=null,onChange=()=>{},win=globalThis,doc=globalThis.document}){
- let cur=null,checking=false,endedTimer=null,overlay=null,gone=false;
+ let cur=null,checking=false,endedTimer=null,overlay=null,gone=false,lastMarks=null;
  const $=sel=>overlay?.querySelector(sel);
  const initials=name=>String(name||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]?.toUpperCase()||'').join('')||'?';
 
@@ -64,9 +72,10 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
  };
  function buttons(call){
   const mute=`<button type="button" class="call-btn" data-call="mute" aria-pressed="${!!call.muted}">${call.muted?'🔇 Unmute':'🎤 Mute'}</button>`,
+   loud=`<button type="button" class="call-btn" data-call="loud" aria-pressed="${!!call.loud}" title="Boost the other person's voice">🔊 Louder</button>`,
    cam=call.local?.getVideoTracks?.().length?`<button type="button" class="call-btn" data-call="camera" aria-pressed="${!!call.camOff}">${call.camOff?'📷 Camera off':'📹 Camera on'}</button>`:'';
   if(call.status==='incoming')return BTN.accept+BTN.decline;
-  if(call.status==='active'||call.status==='weak')return mute+cam+BTN.end;
+  if(call.status==='active'||call.status==='weak')return mute+loud+cam+BTN.end;
   return BTN.end;
  }
  function paint(){
@@ -77,7 +86,7 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
   const label=video?'video call':'voice call';
   setText('#callStatus',{starting:video?'Starting camera…':'Starting…',ringing:'Ringing…',incoming:`Incoming ${label}`,connecting:'Connecting…',weak:'Connection weak. Reconnecting…',active:'In call'}[call.status]||'');
   setText('#callHint',call.status==='incoming'?'Your colleague is calling you from the chat.':call.status==='ringing'&&call.relay===false?'No relay service is set up, so this call may not connect on some networks.':'');
-  const box=$('#callButtons'),html=buttons(call);if(box&&box.dataset.state!==call.status+(call.muted?'m':'')+(call.camOff?'c':'')){box.innerHTML=html;box.dataset.state=call.status+(call.muted?'m':'')+(call.camOff?'c':'');}
+  const html=buttons(call),key=call.status+(call.muted?'m':'')+(call.camOff?'c':'')+(call.loud?'l':''),box=$('#callButtons');if(box&&box.dataset.state!==key){box.innerHTML=html;box.dataset.state=key;}
   overlay.classList.toggle('has-local-video',!!call.local?.getVideoTracks?.().length&&!call.camOff);
   overlay.classList.toggle('has-remote-video',!!call.remote?.getVideoTracks?.().length);
   onChange();
@@ -90,21 +99,28 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
  }
  function hideEnded(){win.clearTimeout(endedTimer);endedTimer=null;if(!cur&&overlay){overlay.hidden=true;const r=$('#callRemote'),l=$('#callLocal');if(r)r.srcObject=null;if(l)l.srcObject=null;}onChange();}
 
+ // Connection servers are asked for once and kept for ten minutes (the relay passes last two hours), so a call does not wait for them.
+ let cfg=null,cfgAt=0;
  async function loadConfig(){
-  try{const c=await request({action:'discussion_call_config'});if(Array.isArray(c?.ice_servers)&&c.ice_servers.length)return {ice_servers:c.ice_servers,relay:!!c.relay};}catch{ /* Fall back to the public server. */ }
+  if(cfg&&Date.now()-cfgAt<CONFIG_MS)return cfg;
+  try{const c=await request({action:'discussion_call_config'});if(Array.isArray(c?.ice_servers)&&c.ice_servers.length){cfg={ice_servers:c.ice_servers,relay:!!c.relay};cfgAt=Date.now();return cfg;}}catch{ /* Fall back to the public server. */ }
   return {ice_servers:STUN,relay:false};
  }
+ const prepare=()=>{if(callsSupported(win))void loadConfig();};
+ const gather=(pc,call)=>gatherComplete(pc,call.relay?GATHER_MS:GATHER_PLAIN_MS,win,{want:call.relay?'relay':'srflx'});
+ // Voice settings: echo removal, noise reduction and automatic level on, one clean channel, and a hint that this is speech.
+ const tuned=stream=>{try{stream.getAudioTracks().forEach(t=>{t.contentHint='speech';});stream.getVideoTracks().forEach(t=>{t.contentHint='motion';});}catch{ /* A hint only. */ }return stream;};
  async function getMedia(video,{fallback=false}={}){
-  const md=win.navigator.mediaDevices,audio={echoCancellation:true,noiseSuppression:true,autoGainControl:true};
-  if(!video)return md.getUserMedia({audio,video:false});
-  try{return await md.getUserMedia({audio,video:{width:{ideal:640},height:{ideal:480},frameRate:{ideal:24}}});}
+  const md=win.navigator.mediaDevices,audio={echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1};
+  if(!video)return tuned(await md.getUserMedia({audio,video:false}));
+  try{return tuned(await md.getUserMedia({audio,video:{width:{ideal:960},height:{ideal:540},frameRate:{ideal:30}}}));}
   catch(e){
    if(!fallback)throw e;
-   const s=await md.getUserMedia({audio,video:false});notice('Your camera could not be started, so you joined with voice only.',true);return s;
+   const s=await md.getUserMedia({audio,video:false});notice('Your camera could not be started, so you joined with voice only.',true);return tuned(s);
   }
  }
  function makePc(call,config){
-  const pc=new win.RTCPeerConnection({iceServers:config.ice_servers});call.pc=pc;call.relay=config.relay;
+  const pc=new win.RTCPeerConnection({iceServers:config.ice_servers,iceCandidatePoolSize:2});call.pc=pc;call.relay=config.relay;
   pc.ontrack=e=>{
    call.remote??=new win.MediaStream();if(!call.remote.getTracks().includes(e.track))call.remote.addTrack(e.track);
    const el=$('#callRemote');if(el){if(el.srcObject!==call.remote)el.srcObject=call.remote;void el.play?.()?.catch?.(()=>{});}
@@ -119,7 +135,7 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
   const s=call.pc.connectionState;
   if(s==='connected'){
    win.clearTimeout(call.weakTimer);win.clearTimeout(call.connectTimer);call.weakTimer=null;
-   if(!call.since){call.since=Date.now();call.clock=win.setInterval(()=>{if(cur===call)setText('#callTimer',clockText((Date.now()-call.since)/1000));},1000);setText('#callTimer','0:00');capBitrate(call);}
+   if(!call.since){call.since=Date.now();call.marks.up=call.since;lastMarks=call.marks;watch(call,POLL_ACTIVE_MS);call.clock=win.setInterval(()=>{if(cur===call)setText('#callTimer',clockText((Date.now()-call.since)/1000));},1000);setText('#callTimer','0:00');capBitrate(call);if(loadLouder())setLoud(call,true);}
    call.status='active';paint();
   }else if(s==='disconnected'){
    if(call.status==='active'){call.status='weak';paint();}
@@ -128,13 +144,20 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
  }
  // Keep the picture modest so a call works on ordinary office and mobile internet.
  function capBitrate(call){
-  try{for(const sender of call.pc.getSenders()){if(sender.track?.kind!=='video')continue;const p=sender.getParameters();p.encodings=p.encodings?.length?p.encodings:[{}];p.encodings[0].maxBitrate=700000;void sender.setParameters(p).catch(()=>{});}}catch{ /* Best effort. */ }
+  // Voice gets a generous, high-priority share (clear speech); the picture is capped so a call still works on ordinary connections and adapts down on weak ones.
+  try{for(const sender of call.pc.getSenders()){
+   const kind=sender.track?.kind;if(kind!=='video'&&kind!=='audio')continue;
+   const p=sender.getParameters();p.encodings=p.encodings?.length?p.encodings:[{}];
+   p.encodings[0].maxBitrate=kind==='audio'?64000:1200000;if(kind==='audio'){p.encodings[0].priority='high';p.encodings[0].networkPriority='high';}
+   void sender.setParameters(p).catch(()=>{});
+  }}catch{ /* Best effort. */ }
  }
 
  function stopMedia(call){
   for(const k of ['pollTimer','ringTimer','connectTimer','weakTimer','toneTimer'])if(call[k]){win.clearTimeout(call[k]);win.clearInterval(call[k]);call[k]=null;}
   if(call.clock){win.clearInterval(call.clock);call.clock=null;}
   try{call.local?.getTracks().forEach(t=>t.stop());}catch{ /* Already stopped. */ }
+  try{void call.audio?.ctx.close?.();call.audio=null;}catch{ /* Already closed. */ }
   try{if(call.pc){call.pc.ontrack=null;call.pc.onconnectionstatechange=null;call.pc.close();}}catch{ /* Already closed. */ }
  }
  function finish(call,status){
@@ -166,28 +189,50 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
   try{const r=await request({action:'discussion_call_get',call_id:call.id});await apply(call,r?.call);}catch{ /* The next poll retries. */ }
   finally{call.polling=false;}
  }
- const watch=call=>{call.pollTimer=win.setInterval(()=>void poll(call),POLL_MS);};
+ const watch=(call,ms=POLL_RING_MS)=>{win.clearInterval(call.pollTimer);call.pollTimer=win.setInterval(()=>void poll(call),ms);};
  function tone(call){
-  if(!beeper)return;const ring=()=>{if(cur===call&&call.status==='incoming')beeper.play(Date.now(),true);};
+  if(!beeper)return;const ring=()=>{if(cur===call&&call.status==='incoming'){if(!beeper.ring?.(1))beeper.play?.(Date.now(),true);}};
   ring();call.toneTimer=win.setInterval(ring,TONE_MS);
+ }
+ // The caller hears a soft ring-back while the other phone rings, so it is clear something is happening.
+ function ringback(call){
+  if(!beeper?.ring)return;const ring=()=>{if(cur===call&&call.status==='ringing')beeper.ring(0.3);};
+  ring();call.toneTimer=win.setInterval(ring,TONE_MS);
+ }
+ // Boost the other person's voice: through a gain stage and a limiter, so quiet speakers get louder without crackling.
+ // The picture element stays attached (muted) because some browsers only deliver remote sound to this path that way.
+ function setLoud(call,on){
+  call.loud=!!on;saveLouder(call.loud);
+  try{
+   const el=$('#callRemote');
+   if(call.loud&&call.remote?.getAudioTracks().length&&!call.audio){
+    const Ctx=win.AudioContext||win.webkitAudioContext,ctx=new Ctx(),src=ctx.createMediaStreamSource(call.remote),gain=ctx.createGain(),comp=ctx.createDynamicsCompressor(),analyser=ctx.createAnalyser();
+    gain.gain.value=LOUD_GAIN;src.connect(gain);gain.connect(comp);comp.connect(ctx.destination);comp.connect(analyser);void ctx.resume?.();call.audio={ctx,analyser};
+   }
+   if(el)el.muted=call.loud&&!!call.audio;
+   if(!call.loud&&call.audio){void call.audio.ctx.close?.();call.audio=null;}
+  }catch{call.loud=false;call.audio=null;const el=$('#callRemote');if(el)el.muted=false;notice('Your browser could not boost the volume.',true);}
+  paint();
  }
 
  async function start(channelId,media,other){
   if(cur)return notice('You are already on a call.',true);
   if(!callsSupported(win))return notice('Calls are not supported by this browser. Use a current version of Chrome, Edge, Firefox or Safari.',true);
   gone=false;build();win.clearTimeout(endedTimer);
-  const call=cur={role:'caller',media,other,status:'starting'};paint();$('#callButtons button')?.focus?.();
+  const call=cur={role:'caller',media,other,status:'starting',marks:{t0:Date.now()}};paint();$('#callButtons button')?.focus?.();
   try{
-   call.local=await getMedia(media==='video');if(cur!==call){stopMedia(call);return;}
-   const config=await loadConfig();if(cur!==call){stopMedia(call);return;}
+   // The microphone (and camera) and the connection servers are asked for at the same time.
+   const configP=loadConfig();call.local=await getMedia(media==='video').catch(e=>{void configP;throw e;});if(cur!==call){stopMedia(call);return;}
+   const config=await configP;if(cur!==call){stopMedia(call);return;}
    const pc=makePc(call,config);attachLocal(call);
    call.local.getTracks().forEach(t=>pc.addTrack(t,call.local));
-   await pc.setLocalDescription(await pc.createOffer());await gatherComplete(pc,GATHER_MS,win);
+   await pc.setLocalDescription(await pc.createOffer());await gather(pc,call);
    if(cur!==call){stopMedia(call);return;}
+   call.marks.ready=Date.now();
    const r=await request({action:'discussion_call_start',channel_id:channelId,offer_sdp:pc.localDescription.sdp,media});
-   call.id=r.call_id;
+   call.marks.sent=Date.now();call.id=r.call_id;
    if(cur!==call||call.ending){await request({action:'discussion_call_end',call_id:call.id,outcome:'hangup'}).catch(()=>{});return;}
-   call.status='ringing';paint();watch(call);
+   call.status='ringing';paint();watch(call);ringback(call);
    call.ringTimer=win.setTimeout(()=>{if(cur===call&&call.status==='ringing')void hangup(call,'hangup');},RING_MS);
   }catch(e){
    if(cur!==call)return;
@@ -205,23 +250,32 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
    if(!callsSupported(win)){await request({action:'discussion_call_end',call_id:v.call_id,outcome:'decline'}).catch(()=>{});notice('A colleague tried to call you, but this browser does not support calls.',true);return;}
    build();win.clearTimeout(endedTimer);
    const call=cur={role:'callee',id:v.call_id,media:v.media,other:v.other_name,offer:v.offer_sdp,status:'incoming'};
-   paint();watch(call);tone(call);$('#callButtons button')?.focus?.();
+   paint();watch(call);tone(call);$('#callButtons button')?.focus?.();warm(call);
   }catch{ /* The next check retries. */ }
   finally{checking=false;}
  }
 
+ // While the phone rings, the answering side already gets its connection ready (servers, offer read, routes found), so Answer is quick.
+ function warm(call){
+  call.warming=(async()=>{
+   const config=await loadConfig();if(cur!==call||call.pc)return;
+   makePc(call,config);await call.pc.setRemoteDescription({type:'offer',sdp:call.offer});
+  })().catch(()=>{try{call.pc?.close();}catch{ /* Replaced on Answer. */ }call.pc=null;});
+ }
  async function accept(call){
   win.clearInterval(call.toneTimer);call.toneTimer=null;call.status='connecting';paint();
   try{
+   call.marks={t0:Date.now()};
    call.local=await getMedia(call.media==='video',{fallback:true});if(cur!==call){stopMedia(call);return;}
-   const config=await loadConfig();if(cur!==call){stopMedia(call);return;}
-   const pc=makePc(call,config);attachLocal(call);
-   await pc.setRemoteDescription({type:'offer',sdp:call.offer});
+   await call.warming;if(cur!==call){stopMedia(call);return;}
+   if(!call.pc?.remoteDescription){try{call.pc?.close();}catch{ /* Replaced below. */ }call.pc=null;const config=await loadConfig();if(cur!==call){stopMedia(call);return;}makePc(call,config);await call.pc.setRemoteDescription({type:'offer',sdp:call.offer});}
+   const pc=call.pc;attachLocal(call);
    call.local.getTracks().forEach(t=>pc.addTrack(t,call.local));
-   await pc.setLocalDescription(await pc.createAnswer());await gatherComplete(pc,GATHER_MS,win);
+   await pc.setLocalDescription(await pc.createAnswer());await gather(pc,call);
    if(cur!==call)return;
+   call.marks.ready=Date.now();
    await request({action:'discussion_call_answer',call_id:call.id,answer_sdp:pc.localDescription.sdp});
-   call.answered=true;paint();
+   call.marks.sent=Date.now();call.answered=true;paint();
    call.connectTimer=win.setTimeout(()=>{if(cur===call&&call.pc?.connectionState!=='connected')void hangup(call,'failed');},CONNECT_MS);
   }catch(e){
    if(cur!==call)return;
@@ -238,6 +292,7 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
   if(a==='decline')return hangup(call,'decline');
   if(a==='end')return hangup(call,'hangup');
   if(a==='mute'){call.muted=!call.muted;call.local?.getAudioTracks().forEach(t=>{t.enabled=!call.muted;});paint();return;}
+  if(a==='loud'){setLoud(call,!call.loud);return;}
   if(a==='camera'){call.camOff=!call.camOff;call.local?.getVideoTracks().forEach(t=>{t.enabled=!call.camOff;});paint();return;}
  }
  // Something changed on the server for me: look again straight away.
@@ -247,5 +302,6 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
   if(cur){const c=cur;void hangup(c,'hangup');}
   overlay?.remove();overlay=null;
  }
- return {start,check,poke,stop,busy:()=>!!cur,ringing:()=>cur?.status==='incoming',supported:()=>callsSupported(win)};
+ // levels(): how much sound is reaching the speaker through the boost path (used by the tests; 0 when the boost is off).
+ return {prepare,timing:()=>({...(lastMarks||{})}),levels:()=>{const a=cur?.audio?.analyser;if(!a)return 0;const d=new Uint8Array(a.fftSize);a.getByteTimeDomainData(d);return d.reduce((m,v)=>Math.max(m,Math.abs(v-128)),0);},start,check,poke,stop,busy:()=>!!cur,ringing:()=>cur?.status==='incoming',supported:()=>callsSupported(win)};
 }
