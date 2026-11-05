@@ -1,14 +1,16 @@
 // Client chart of accounts (Step 2 of the entity / industry chart design).
 // A client's chart = core accounts + the entity layer for its legal type + the industry packs of
-// its activities + any extra accounts a Manager adds with a reason. A Manager or Partner proposes a
-// dated version; a different Manager or Partner approves it. Once a version is approved, account
+// its activities + any extra accounts a Manager adds with a reason. An Assistant, Supervisor, Manager or Partner proposes a
+// dated version; work prepared by an Assistant is checked by a Supervisor, Manager or Partner; a different Manager or Partner approves it. Once a version is approved, account
 // choices and postings for that client are limited to it from its effective date.
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {requireClassified} from './legal-structure-actions.ts';
 import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,notifyOutcome} from './review-queue.ts';
 
 const one=(r:any[])=>{if(!r.length)fail(403,'Record unavailable to this account.');return r[0];};
-const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must maintain the client chart of accounts.');};
+const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must approve the client chart of accounts.');};
+const preparer=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(a.category_code))fail(403,'Your account cannot propose a client chart of accounts.');};
+const checker=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner must check this chart.');};
 const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 
 export function chartLayer(account:any){
@@ -83,9 +85,9 @@ async function proposal(tx:any,clientId:string,from:string){
 }
 
 export async function clientChartAction(tx:any,a:any,p:any){
- if(!['v3_client_chart_read','v3_client_chart_propose','v3_client_chart_review'].includes(p.action))return undefined;
+ if(!['v3_client_chart_read','v3_client_chart_propose','v3_client_chart_check','v3_client_chart_review'].includes(p.action))return undefined;
  if(p.action==='v3_client_chart_read'){
-  const cid=uuid(p.client_id),versions=await tx`select version_id,effective_from,entity_type,packs,cardinality(accounts) account_count,extra_accounts,status,prepared_by,prepared_at,reviewed_by,reviewed_at,review_note,revision,requested_reviewer_id,erp_private.reviewer_label(requested_reviewer_id) requested_reviewer_name from erp_private.client_chart_versions where client_id=${cid} order by created_at desc limit 20`;
+  const cid=uuid(p.client_id),versions=await tx`select version_id,effective_from,entity_type,packs,cardinality(accounts) account_count,extra_accounts,status,prepared_by,prepared_at,reviewed_by,reviewed_at,review_note,revision,requested_reviewer_id,erp_private.reviewer_label(requested_reviewer_id) requested_reviewer_name,checked_by,checked_at,check_note,erp_private.reviewer_label(checked_by) checked_by_name,erp_private.is_junior_preparer(prepared_by) needs_check from erp_private.client_chart_versions where client_id=${cid} order by created_at desc limit 20`;
   const firstPeriod=(await tx`select min(starts_on) d from erp_private.ledger_periods where client_id=${cid}`)[0]?.d;
   const from=date(p.effective_from)||day(firstPeriod)||`${new Date().getUTCFullYear()}-01-01`;
   const {catalog,...prop}=await proposal(tx,cid,from);
@@ -96,7 +98,7 @@ export async function clientChartAction(tx:any,a:any,p:any){
    stale_packs:stale,extra_choices:catalog.filter((x:any)=>x.status==='Active'&&!x.is_legacy&&!prop.accounts.some((y:any)=>y.code===x.code)).map((x:any)=>({code:x.code,name:x.name}))};
  }
  if(p.action==='v3_client_chart_propose'){
-  leader(a);const cid=uuid(p.client_id),from=date(p.effective_from);if(!from)fail(400,'Choose the date the client chart applies from.');
+  preparer(a);const cid=uuid(p.client_id),from=date(p.effective_from);if(!from)fail(400,'Choose the date the client chart applies from.');
   await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':client-chart'},0))`;
   if((await tx`select 1 from erp_private.client_chart_versions where client_id=${cid} and status='Draft'`).length)fail(409,'A client chart version is already waiting for review. Review or return it first.');
   await requireClassified(tx,cid,'proposing the chart of accounts');
@@ -120,12 +122,32 @@ export async function clientChartAction(tx:any,a:any,p:any){
   await notifyReviewers(tx,cid,`client chart of accounts effective ${from}`,'review:chart:'+made.version_id,made.requested_reviewer_id);
   return {version_id:made.version_id,status:made.status};
  }
+ if(p.action==='v3_client_chart_check'){
+  checker(a);const v=one(await tx`select * from erp_private.client_chart_versions where version_id=${uuid(p.version_id)} for update`);
+  if(String(v.revision)!==revision(p.revision))fail(409,'This chart version changed. Refresh before checking.');
+  if(v.status!=='Draft')fail(400,'Only a chart version waiting for review can be checked.');
+  if(v.prepared_by===a.staff_id)fail(403,'A different Supervisor, Manager or Partner must check this client chart.');
+  if(v.checked_by)fail(409,'This chart version has already been checked.');
+  const outcome=choice(p.outcome,['Checked','Returned']),note=text(p.check_note,2000);if(note.length<10)fail(400,'Enter a check note of at least 10 characters.');
+  if(outcome==='Returned'){
+   await tx`update erp_private.client_chart_versions set status='Returned',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where version_id=${v.version_id}`;
+   await notifyOutcome(tx,v.prepared_by,v.client_id,'client chart of accounts','Returned',note,'outcome:chart:'+v.version_id+':Returned');
+   return {ok:true,status:'Returned'};
+  }
+  await tx`update erp_private.client_chart_versions set checked_by=${a.staff_id},checked_at=now(),check_note=${note} where version_id=${v.version_id}`;
+  await notifyReviewers(tx,v.client_id,`client chart of accounts effective ${day(v.effective_from)} (checked, ready to approve)`,'review:chart-checked:'+v.version_id,v.requested_reviewer_id);
+  return {ok:true,status:'Checked'};
+ }
  // v3_client_chart_review
  leader(a);const v=one(await tx`select * from erp_private.client_chart_versions where version_id=${uuid(p.version_id)} for update`);
  if(String(v.revision)!==revision(p.revision))fail(409,'This chart version changed. Refresh before reviewing.');
  if(v.status!=='Draft')fail(400,'Only a chart version waiting for review can be approved or returned.');
  if(v.prepared_by===a.staff_id)fail(403,'A different Manager or Partner must review this client chart.');await mustBeAskedReviewer(tx,a,v.requested_reviewer_id);
  const status=choice(p.status,['Approved','Returned']),note=text(p.review_note,2000);if(note.length<10)fail(400,'Enter a review note of at least 10 characters.');
+ if(status==='Approved'&&(await tx`select erp_private.is_junior_preparer(${v.prepared_by}) j`)[0]?.j){
+  if(!v.checked_by)fail(409,'This chart was prepared by an Assistant. A Supervisor, Manager or Partner must check it before it can be approved.');
+  if(v.checked_by===a.staff_id)fail(403,'You checked this chart. A different Manager or Partner must approve it.');
+ }
  if(status==='Approved'){
   const prop=await proposal(tx,v.client_id,day(v.effective_from)),codes=new Set(v.accounts);
   const missing=prop.exceptions.filter((e:any)=>!codes.has(e.code));

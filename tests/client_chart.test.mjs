@@ -40,7 +40,7 @@ test('a client chart is proposed with exceptions cleared, independently approved
  assert.ok(r.awaiting_partner_approval.some(x=>x.code==='40160'),'Draft construction accounts are listed as awaiting Partner approval');
  assert.deepEqual(r.exceptions.map(x=>x.code),['21608'],'a used account outside the proposal is an exception');
 
- await assert.rejects(()=>chart('ASSISTANT',{action:'v3_client_chart_propose',client_id:C,effective_from:'2026-01-01'}),/Partner or Manager/);
+ await assert.rejects(()=>chart('ASSISTANT',{action:'v3_client_chart_review',version_id:id(),revision:1,status:'Approved',review_note:'An Assistant cannot approve a chart'}),/Partner or Manager/);
  await assert.rejects(()=>chart('MANAGER',{action:'v3_client_chart_propose',client_id:C,effective_from:'2026-01-01'}),/already used by the client/);
  await assert.rejects(()=>chart('MANAGER',{action:'v3_client_chart_propose',client_id:C,effective_from:'2026-01-01',extra_accounts:[{code:'35000',reason:'Fictional wrong entity'}]}),/Sole proprietor only/);
  await chart('MANAGER',{action:'v3_client_chart_propose',client_id:C,effective_from:'2026-01-01',extra_accounts:[{code:'21608',reason:'Client runs a site canteen subject to the levy'}]});

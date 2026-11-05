@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
-import {readyForLedger} from './helpers/client-mappings.mjs';
+import {readyForLedger,checkJournal} from './helpers/client-mappings.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {ledgerAction}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
 const {improvementAction}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
@@ -31,6 +31,7 @@ test('a new client account mapping is reviewed once, when an independent reviewe
  const opening=await save();
  let j=await ledger('ASSISTANT',{...base,action:'ledger_journal_read',journal_id:opening.journal_id});
  await ledger('ASSISTANT',{...base,action:'ledger_journal_submit',journal_id:opening.journal_id,revision:j.journal.revision});
+ await checkJournal(tx,opening.journal_id);
  j=await ledger('ASSISTANT',{...base,action:'ledger_journal_read',journal_id:opening.journal_id});
  await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_journal_review',journal_id:opening.journal_id,revision:j.journal.revision,status:'Posted',review_note:'Manager who set up the mappings tries to post'}),/You set up the client account mapping/);
  assert.equal((await tx`select status from erp_private.ledger_journals where journal_id=${opening.journal_id}`)[0].status,'Submitted','a refused review leaves the journal unposted');

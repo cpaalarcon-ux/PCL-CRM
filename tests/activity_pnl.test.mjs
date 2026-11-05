@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
-import {mapAllAccounts,readyForLedger} from './helpers/client-mappings.mjs';
+import {mapAllAccounts,readyForLedger,checkJournal} from './helpers/client-mappings.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {ledgerAction}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
 const {isoWeek,profitByActivity,profitReport}=await import('../supabase/functions/staff-workspace-v12/ledger-rules.mjs');
@@ -35,7 +35,7 @@ test('journal lines carry the activity, profit is reported per activity, reports
  await assert.rejects(()=>ledger('MANAGER',{action:'ledger_period_create',project_id:P,starts_on:'2024-01-01',ends_on:'2024-12-31'}),/periods ending 31 December 2025 onwards/);
  const period=await ledger('MANAGER',{action:'ledger_period_create',project_id:P,starts_on:'2026-01-01',ends_on:'2026-12-31'}),base={project_id:P,period_id:period.period_id};
  const jr=async jid=>ledger('ASSISTANT',{...base,action:'ledger_journal_read',journal_id:jid});
- const post=async jid=>{let x=await jr(jid);await ledger('ASSISTANT',{...base,action:'ledger_journal_submit',journal_id:jid,revision:x.journal.revision});x=await jr(jid);await ledger('MANAGER',{...base,action:'ledger_journal_review',journal_id:jid,revision:x.journal.revision,status:'Posted',review_note:'Fictional independent review.'});};
+ const post=async jid=>{let x=await jr(jid);await ledger('ASSISTANT',{...base,action:'ledger_journal_submit',journal_id:jid,revision:x.journal.revision});await checkJournal(tx,jid);x=await jr(jid);await ledger('MANAGER',{...base,action:'ledger_journal_review',journal_id:jid,revision:x.journal.revision,status:'Posted',review_note:'Fictional independent review.'});};
  const line=(code,debit,credit,activity_id)=>({account_code:code,debit,credit,activity_id,source_status:'Confirmed',source_reference:'Fictional source'});
  const opening=await ledger('ASSISTANT',{...base,action:'ledger_journal_save',kind:'Opening',reference:'OPEN-2026',journal_date:'2026-01-01',evidence:'Fictional approved TB',lines:[line('10000',1000,0),line('30000',0,1000)]});await post(opening.journal_id);
  const sales=await ledger('ASSISTANT',{...base,action:'ledger_journal_save',kind:'Adjustment',reference:'SALES-JAN',journal_date:'2026-01-31',evidence:'Fictional sales schedules',lines:[line('10000',900,0),line('40000',0,600,W),line('40000',0,250,R),line('40000',0,50,null)]});await post(sales.journal_id);

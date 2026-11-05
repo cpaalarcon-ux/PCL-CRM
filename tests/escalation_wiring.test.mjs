@@ -13,5 +13,5 @@ test('Supervisors and Assistants get the Ask a Manager button; Managers answer f
  assert.match(task,/\['SUPERVISOR','ASSISTANT'\]\.includes\(d\.me\.category_code\)&&open&&p\?`<button type="button" data-v6="ask-manager"/);
  assert.match(v6,/\["SUPERVISOR","ASSISTANT"\]\.includes\(d\(\)\.me\.category_code\)\?`<button data-v6="ask-manager"/);
  assert.match(v6,/b\.dataset\.v6==='ask-manager'\)await askManager\(/);assert.match(v6,/b\.dataset\.v6==='answer-escalation'\)await answerEscalation\(id\)/);
- assert.match(pilot,/myReview==='escalation'\)await v6\.answerEscalation\(b\.dataset\.id\)/);assert.match(pilot,/x\.kind==='escalation'\?'Answer':'Open to review'/);
+ assert.match(pilot,/myReview==='escalation'\)await v6\.answerEscalation\(b\.dataset\.id\)/);assert.match(pilot,/x\.kind==='escalation'\?'Answer':x\.action==='check'\?'Open to check':'Open to review'/);
 });

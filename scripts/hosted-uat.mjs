@@ -74,7 +74,10 @@ async function mappingFlow(base,period){
  let r=await ok({...base,action:'ledger_journal_read',journal_id:j.journal_id},as('ASSISTANT'));
  await ok({...base,action:'ledger_journal_submit',journal_id:j.journal_id,revision:r.journal.revision},as('ASSISTANT'));
  r=await ok({...base,action:'ledger_journal_read',journal_id:j.journal_id},as('ASSISTANT'));
- await refused('Mapping creator cannot post the journal that uses it',{...base,action:'ledger_journal_review',journal_id:j.journal_id,revision:r.journal.revision,status:'Posted',review_note:'Hosted UAT self-review attempt'},as('MANAGER'),/You set up the client account mapping/);
+ await refused('An Assistant journal cannot be posted before it is checked',{...base,action:'ledger_journal_review',journal_id:j.journal_id,revision:r.journal.revision,status:'Posted',review_note:'Hosted UAT unchecked posting attempt'},as('PARTNER'),/must check it before/);
+ await ok({...base,action:'ledger_journal_check',journal_id:j.journal_id,revision:r.journal.revision,outcome:'Checked',check_note:'Hosted UAT check against the source schedule'},as('MANAGER'));
+ r=await ok({...base,action:'ledger_journal_read',journal_id:j.journal_id},as('ASSISTANT'));
+ await refused('The checker or mapping creator cannot post the journal',{...base,action:'ledger_journal_review',journal_id:j.journal_id,revision:r.journal.revision,status:'Posted',review_note:'Hosted UAT self-review attempt'},as('MANAGER'),/You checked this entry|You set up the client account mapping/);
  const posted=await ok({...base,action:'ledger_journal_review',journal_id:j.journal_id,revision:r.journal.revision,status:'Posted',review_note:'Hosted UAT independent review of mapping and journal'},as('PARTNER'));
  record('Independent posting activates the new mapping',posted.activated_mapping_count>=1,`activated ${posted.activated_mapping_count}`);
  const rev=await ok({...base,action:'ledger_reverse',journal_id:j.journal_id,reference:'HUAT-R-'+stamp,journal_date:date,evidence:'Reversal of the fictional hosted UAT adjustment'},as('MANAGER'));
@@ -106,7 +109,9 @@ async function depreciationFlow(base,period,rates){
  let j=await ok({...base,action:'ledger_journal_read',journal_id:charge.journal_id},as('ASSISTANT'));
  await ok({...base,action:'ledger_journal_submit',journal_id:charge.journal_id,revision:j.journal.revision},as('ASSISTANT'));
  j=await ok({...base,action:'ledger_journal_read',journal_id:charge.journal_id},as('ASSISTANT'));
- await ok({...base,action:'ledger_journal_review',journal_id:charge.journal_id,revision:j.journal.revision,status:'Posted',review_note:'Hosted UAT review of classification, class rate and charge'},as('MANAGER'));
+ await ok({...base,action:'ledger_journal_check',journal_id:charge.journal_id,revision:j.journal.revision,outcome:'Checked',check_note:'Hosted UAT check of classification, class rate and charge'},as('MANAGER'));
+ j=await ok({...base,action:'ledger_journal_read',journal_id:charge.journal_id},as('ASSISTANT'));
+ await ok({...base,action:'ledger_journal_review',journal_id:charge.journal_id,revision:j.journal.revision,status:'Posted',review_note:'Hosted UAT review of classification, class rate and charge'},as('PARTNER'));
  a=await ok({...base,action:'ledger_asset_read',asset_id:asset.asset_id},as('ASSISTANT'));
  record('Depreciation posting approves the submitted asset',a.asset.status==='Approved'&&a.asset.reviewed_by===sessions.MANAGER.me.staff_id,`asset ${a.asset.status}`);
 }
