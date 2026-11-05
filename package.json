@@ -6,7 +6,7 @@
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs tests/*.test.cjs",
-    "test:browser": "node tests/staff_signin_boot.cjs && node tests/improvement_browser.cjs"
+    "test:browser": "node tests/staff_signin_boot.cjs && node tests/improvement_browser.cjs && node tests/chat_calls_browser.cjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.2",

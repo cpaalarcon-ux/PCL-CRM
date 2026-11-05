@@ -1,9 +1,11 @@
 import {fail,text,uuid} from './validation.mjs';
+import {callAction} from './call-actions.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'This internal discussion is not available to your account.');return r[0];};
 const admin=(a:any)=>{if(a.category_code!=='ADMIN')fail(403,'Only a System Administrator can manage chat groups.');};
 const visible=async(tx:any,id:string)=>one(await tx`select * from erp_private.discussion_channels where channel_id=${id}::uuid`);
 export async function discussionAction(tx:any,a:any,p:any){
  if(!String(p.action).startsWith('discussion_'))return undefined;
+ if(String(p.action).startsWith('discussion_call_')){const call=await callAction(tx,a,p);if(call!==undefined)return call;fail(400,'Unknown call action.');}
  if(p.action==='discussion_candidates')return {candidates:await tx`select * from erp_private.discussion_candidates() order by full_name`};
  if(p.action==='discussion_list')return {channels:await tx`select c.*,coalesce(m.sequence,0) last_sequence,m.created_at last_message_at,left(m.body,120) last_body,m.author_id last_author_id,(select p.full_name from erp_private.chat_people(c.channel_id) p where p.staff_id=m.author_id) last_author_name,
  (select count(*)::int from erp_private.discussion_messages x where x.channel_id=c.channel_id and x.author_id<>${a.staff_id} and x.sequence>coalesce(r.last_sequence,0)) unread,
