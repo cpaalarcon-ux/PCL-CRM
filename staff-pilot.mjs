@@ -1,23 +1,23 @@
 let documentKind='Evidence';
 import {createImprovementUI} from './staff-improvements.mjs?v=20261104-no-main-activity-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
-import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261104-handover-v1';
+import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261105-escalate-v1';
 import {createPresenceUI} from './staff-presence.mjs?v=20261103-idle-timeout-v1';
-import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261104-alerts-v1';
-import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261104-alerts-v1';
+import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-escalate-v1';
+import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261105-escalate-v1';
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261104-alerts-v1';
-import {createMessenger} from './staff-messenger.mjs?v=20261104-alerts-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261104-alerts-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261105-escalate-v1';
+import {createMessenger} from './staff-messenger.mjs?v=20261105-escalate-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261105-escalate-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-dependency-map-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261029-audit-start-flow-v1';
-import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261104-alerts-v1';
+import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261105-escalate-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
-import {renderAccessGuide} from './staff-access-guide.mjs?v=20261104-alerts-v1';
-import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261104-alerts-v1';
+import {renderAccessGuide} from './staff-access-guide.mjs?v=20261105-escalate-v1';
+import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261105-escalate-v1';
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v12';
 const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -132,7 +132,7 @@ function documents(){
 }
 function firms(){return `<div class="card"><div class="section-head"><h2>Handling firms</h2><button class="primary" data-new="firm">+ Add firm</button></div><p class="muted">Add the correct registered names. A client may work with several firms, while each project belongs to one firm.</p>${data.firms.map(f=>`<div class="task"><div><b>${esc(f.legal_name)}</b><small>${esc(f.firm_code)}</small></div></div>`).join('')||empty('No firms registered yet.')}</div>`;}
 async function paintMyReviews(){const box=$('#homeMyReviews');if(!box)return;let items=[];try{items=(await request({action:'v3_review_queue'})).items||[];}catch(e){box.querySelector('.compact-empty').textContent='The review list could not be loaded. Refresh to try again.';return;}
- const head=box.querySelector('.section-head').outerHTML,row=x=>`<div class="home-exception-row"><div><b>${esc(x.client_name)}</b><small>${esc(x.title)} · submitted ${esc(shortDate(x.submitted_at))}${x.sent_to_me?' · <strong>sent to you</strong>':''}</small></div><button data-my-review="${esc(x.kind)}" data-id="${esc(x.id)}" data-client="${esc(x.client_id)}" data-project="${esc(x.project_id||'')}" data-period="${esc(x.period_id||'')}">Open to review</button></div>`;
+ const head=box.querySelector('.section-head').outerHTML,row=x=>`<div class="home-exception-row"><div><b>${esc(x.client_name)}</b><small>${esc(x.title)} · submitted ${esc(shortDate(x.submitted_at))}${x.sent_to_me?' · <strong>sent to you</strong>':''}</small>${x.detail?`<span class="preserve-lines">${esc(x.detail)}</span>`:''}</div><button data-my-review="${esc(x.kind)}" data-id="${esc(x.id)}" data-client="${esc(x.client_id)}" data-project="${esc(x.project_id||'')}" data-period="${esc(x.period_id||'')}">${x.kind==='escalation'?'Answer':'Open to review'}</button></div>`;
  box.innerHTML=head.replace('</div></div>',`</div><span class="badge ${items.length?'warn':''}">${items.length}</span></div>`)+(items.map(row).join('')||'<p class="muted compact-empty">Nothing is waiting for your review.</p>');}
 const crumbLabels={clients:'Clients',projects:'Projects & tasks',time:'Time & HR',documents:'Documents',communications:'Communications',audit:'Audit & assurance',leads:'Leads',finance:'Billing & WIP',staff:'Staff & access',firms:'Settings'};
 // One breadcrumb for every top-level area. Task workspaces and audit files draw their own deeper trail, so the shared bar stops at the area name for those.
@@ -248,6 +248,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.dashboard==='account-catalog')await v6.openCatalog();
  if(b.dataset.drill)drillHome(b.dataset.drill);
  if(b.dataset.myReview==='setup')await improvements.client(b.dataset.client);
+ if(b.dataset.myReview==='escalation')await v6.answerEscalation(b.dataset.id);
  if(b.dataset.myReview==='chart')await improvements.chart(b.dataset.client);
  if(b.dataset.myReview==='journal')await v6.openJournal(b.dataset.project,b.dataset.period,b.dataset.id);
  if(b.dataset.myReview==='report'){notice('Opening the ledger: go to Reports, then choose Review beside the submitted report.');await v6.openLedger(b.dataset.project);}
