@@ -1,4 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
+import {readyForLedger} from './helpers/client-mappings.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {ledgerAction}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),C=id(),P=id(),actors={};
@@ -18,6 +19,7 @@ test('posting a depreciation journal confirms its submitted asset in the same in
  await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${P},${C},${F},'Fictional Gate B sources project','TAX-COMP',${actors.MANAGER.staff_id})`;
  for(const role of Object.keys(actors))await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors[role].staff_id},${F},${role})`;
  await tx`update erp_private.clients set legal_entity_type='Limited company',entity_evidence='Fictional verified incorporation',year_end_month=12,year_end_day=31 where client_id=${C}`;
+ await readyForLedger(tx,C);
  const period=await ledger('MANAGER',{action:'ledger_period_create',project_id:P,starts_on:'2026-01-01',ends_on:'2026-12-31'}),base={project_id:P,period_id:period.period_id};
  const computer=(await ledger('ASSISTANT',{action:'ledger_periods',project_id:P})).rates.find(x=>x.class_code==='COMPUTER');assert.ok(computer);
  const prepare=async(role,name)=>{const asset=await ledger(role,{...base,action:'ledger_asset_save',asset_name:name,asset_account:'15006',rate_id:computer.rate_id,first_use_date:'2026-01-01',cost:100000,business_percentage:100,noncommercial_vehicle:false,evidence:'Fictional invoice, ownership and first-use evidence'});

@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
-import {applyLegalStructure} from '../supabase/functions/staff-workspace-v12/legal-structure-actions.ts';
+import {applyLegalStructure,requireClassified,requireRightChart} from '../supabase/functions/staff-workspace-v12/legal-structure-actions.ts';
 import {familyFor,STRUCTURES} from '../supabase/functions/staff-workspace-v12/legal-structure.mjs';
 import {familyOf,familyHint,legalStructureFields} from '../staff-legal-structure.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
@@ -49,8 +49,10 @@ test('Legal structure: mandatory classification, accounting family, audit trail 
  await assert.rejects(()=>save('SUPERVISOR',{legal_structure:'Partnership',legal_subtype:'General Partnership',legal_structure_reason:'Fictional correction of the structure'}),/access to this action/);
  await assert.rejects(()=>save('MANAGER',{legal_structure:'Partnership',legal_subtype:'General Partnership'}),/Record why the legal structure is being changed/);
  await tx`update erp_private.clients set legal_entity_type='Limited company' where client_id=${C}`;
+ await tx`insert into erp_private.client_compliance(client_id,verified_by,verified_at) values(${C},${actors.PARTNER.staff_id},now())`;
  await save('MANAGER',{legal_structure:'Non-Profit Organisation',legal_subtype:'CBO',legal_structure_reason:'Fictional: registered as a CBO, not a company'});
  const afterCbo=await client(C);assert.equal(afterCbo.legal_entity_type,'Non-profit organisation','no accounting records yet, so the family follows');assert.equal(afterCbo.client_category,'Non-Profit');
+ const kyc=(await tx`select verified_by,notes from erp_private.client_compliance where client_id=${C}`)[0];assert.equal(kyc.verified_by,null,'a verified KYC file goes back for re-verification');assert.match(kyc.notes,/KYC needs re-verification/);
  const trail=await audit(C);assert.equal(trail.length,2);assert.equal(trail[1].after_values.accounting_family,'Non-profit organisation');assert.match(trail[1].after_values.reason,/registered as a CBO/);
  assert.equal((await tx`select legal_structure_changed_by from erp_private.clients where client_id=${C}`)[0].legal_structure_changed_by,actors.MANAGER.staff_id);
 
@@ -60,6 +62,24 @@ test('Legal structure: mandatory classification, accounting family, audit trail 
  assert.equal((await client(C)).legal_structure,'Non-Profit Organisation','a refused change leaves the record untouched');
  assert.equal((await save('PARTNER',{legal_structure:'Non-Profit Organisation',legal_subtype:'NGO',legal_structure_reason:'Fictional: confirmed NGO registration'})).changed,true,'a change inside the same family is allowed with history');
  assert.equal((await client(C)).legal_entity_type,'Non-profit organisation');
+
+ // The gates: classification first, then the approved chart for the family, before project, client year and opening TB.
+ const gate=(cid,fn=requireRightChart)=>as('MANAGER',()=>fn(tx,cid,'creating the client year'));
+ await assert.rejects(()=>gate(C3),/Legal structure and Subcategory/);
+ await assert.rejects(()=>gate(C3,requireClassified),/Legal structure and Subcategory/);
+ await tx`update erp_private.clients set legal_structure='Non-Profit Organisation' where client_id=${C3}`;
+ await assert.rejects(()=>gate(C3,requireClassified),/Legal structure and Subcategory/,'the subcategory is required too');
+ await tx`update erp_private.clients set legal_subtype='NGO' where client_id=${C3}`;
+ assert.equal((await gate(C3,requireClassified)).legal_subtype,'NGO','proposing a chart needs only the classification');
+ await assert.rejects(()=>gate(C3),/Confirm the client’s legal entity type/);
+ await tx`update erp_private.clients set legal_entity_type='Limited company' where client_id=${C3}`;
+ await assert.rejects(()=>gate(C3),/does not match its Legal structure \(Non-profit organisation\)/);
+ await tx`update erp_private.clients set legal_entity_type='Non-profit organisation' where client_id=${C3}`;
+ await assert.rejects(()=>gate(C3),/chart of accounts for this Non-profit organisation client is not approved yet/);
+ await tx`insert into erp_private.client_chart_versions(client_id,effective_from,entity_type,packs,accounts,status,prepared_by,reviewed_by,reviewed_at,review_note) values(${C3},'2027-01-01','Limited company','{Other}','{10000}','Approved',${actors.PARTNER.staff_id},${actors.MANAGER.staff_id},now(),'Fictional approval of the wrong family')`;
+ await assert.rejects(()=>gate(C3),/not approved yet/,'a chart approved for another family is not the right chart');
+ await tx`insert into erp_private.client_chart_versions(client_id,effective_from,entity_type,packs,accounts,status,prepared_by,reviewed_by,reviewed_at,review_note) values(${C3},'2027-01-01','Non-profit organisation','{Other}','{10000}','Approved',${actors.PARTNER.staff_id},${actors.MANAGER.staff_id},now(),'Fictional approval of the right family')`;
+ assert.equal((await gate(C3)).legal_entity_type,'Non-profit organisation');
 
  // Draft non-profit accounts wait for a Partner; nothing is active by default.
  const npo=await tx`select code,status,entity_types from erp_private.account_catalog where 'Non-profit organisation'=any(entity_types) order by code`;
