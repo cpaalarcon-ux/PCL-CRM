@@ -1,4 +1,4 @@
-# Migration history recorded on pcl-erp-staging (supabase_migrations.schema_migrations), verified 3 November 2026.
+# Migration history recorded on pcl-erp-staging (supabase_migrations.schema_migrations), verified 6 November 2026.
 # Update this file in the same pull request whenever a migration is applied to staging.
 20261022180244 erp_staging_foundation
 20261022183641 staff_pilot_access
@@ -83,3 +83,22 @@
 20261105085343 review_alerts
 20261105085654 leaders_see_all_work
 20261105091604 supervisor_sight_escalation
+20261105103543 legal_structure
+20261105121014 audit_tb_guard_generated_column
+20261105132459 admin_settings_and_additional_rights
+20261105143045 assistant_drafts_and_supervisor_check
+20261105210021 mapping_overlap_blank_code_by_name
+20261106054800 legal_structure_checklists_and_tax_defaults
+20261106060028 staff_right_restrictions
+20261106065920 other_entity_income_tax_suggestions
+20261106070009 non_profit_public_no_income_tax
+20261106080638 withdraw_from_review
+20261106081116 withdraw_guard_null_safe
+20261106085506 payroll_rounding_cap
+20261106101625 withholding_lines
+20261106105439 orphan_credit_notes
+20261106112437 invoice_pdf_period_branding
+20261106113940 auto_recurring_fee_drafts
+20261106120526 non_etims_bases
+20261106130417 legacy_sales_replacements
+20261106134538 discard_uploads

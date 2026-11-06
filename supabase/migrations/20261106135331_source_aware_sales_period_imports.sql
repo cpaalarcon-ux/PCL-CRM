@@ -41,7 +41,7 @@ BEGIN
   IF NEW.status<>'Draft' OR NEW.reviewed_by IS NOT NULL OR (current_user='erp_api' AND NEW.prepared_by<>a.staff_id) THEN RAISE EXCEPTION 'Import as a preparer draft';END IF;
  ELSE
   IF (NEW.project_id,NEW.client_id,NEW.document_id,NEW.kind,NEW.source_type,NEW.coverage_mode,NEW.starts_on,NEW.ends_on,NEW.payload,NEW.source_hash,NEW.source_members,NEW.replaces_ids,NEW.prepared_by,NEW.notes) IS DISTINCT FROM (OLD.project_id,OLD.client_id,OLD.document_id,OLD.kind,OLD.source_type,OLD.coverage_mode,OLD.starts_on,OLD.ends_on,OLD.payload,OLD.source_hash,OLD.source_members,OLD.replaces_ids,OLD.prepared_by,OLD.notes) THEN RAISE EXCEPTION 'Import snapshot is immutable. Create a replacement.';END IF;
-  IF OLD.status='Superseded' THEN RAISE EXCEPTION 'Superseded import history is immutable';END IF;
+  IF OLD.status IN ('Superseded','Discarded') THEN RAISE EXCEPTION 'Superseded import history is immutable';END IF;
   IF NEW.status='Submitted' AND OLD.status IN ('Draft','Returned') THEN
    IF current_user='erp_api' AND a.staff_id<>OLD.prepared_by THEN RAISE EXCEPTION 'Only the preparer may submit';END IF;
   ELSIF NEW.status IN ('Confirmed','Returned') AND OLD.status='Submitted' THEN
@@ -49,6 +49,8 @@ BEGIN
    IF length(btrim(coalesce(NEW.review_note,'')))<10 THEN RAISE EXCEPTION 'Record the independent review conclusion';END IF;
   ELSIF NEW.status='Draft' AND OLD.status='Submitted' THEN
    IF current_setting('erp.withdraw',true) IS DISTINCT FROM 'period_import' OR OLD.reviewed_by IS NOT NULL OR (current_user='erp_api' AND a.staff_id IS DISTINCT FROM OLD.prepared_by) THEN RAISE EXCEPTION 'Only the preparer can withdraw an import that has not been reviewed' USING ERRCODE='42501';END IF;
+  ELSIF NEW.status='Discarded' AND OLD.status IN ('Draft','Returned') THEN
+   IF current_user='erp_api' AND (a.staff_id IS NULL OR (a.staff_id IS DISTINCT FROM OLD.prepared_by AND a.category_code NOT IN ('PARTNER','MANAGER')) OR NEW.discarded_by IS DISTINCT FROM a.staff_id) THEN RAISE EXCEPTION 'Only the preparer, a Manager or a Partner can discard a draft summary' USING ERRCODE='42501';END IF;
   ELSIF NEW.status='Superseded' THEN
    IF current_user='erp_api' AND current_setting('erp.period_import_replacement',true) IS DISTINCT FROM 'confirmed' THEN RAISE EXCEPTION 'Confirm a replacement before retiring prior coverage';END IF;
   ELSE RAISE EXCEPTION 'Invalid import state transition';END IF;
@@ -60,7 +62,7 @@ END $$;
 CREATE OR REPLACE FUNCTION erp_private.reserve_import_days() RETURNS trigger
 LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
 BEGIN
- IF NEW.status='Superseded' THEN DELETE FROM erp_private.period_import_days WHERE import_id=NEW.import_id;
+ IF NEW.status IN ('Superseded','Discarded') THEN DELETE FROM erp_private.period_import_days WHERE import_id=NEW.import_id;
  ELSIF NEW.status='Confirmed' AND OLD.status<>'Confirmed' THEN
   INSERT INTO erp_private.period_import_days(client_id,kind,source_type,coverage_day,import_id,project_id)
   SELECT NEW.client_id,NEW.kind,NEW.source_type,d::date,NEW.import_id,NEW.project_id
