@@ -105,3 +105,4 @@
 20261106140311 source_aware_sales_period_imports
 20261106140320 discard_guard_repatch
 20261106141448 discard_reserve_days_parity
+20261106154611 sales_period_amendments

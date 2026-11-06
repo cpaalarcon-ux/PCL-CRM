@@ -190,6 +190,7 @@ export async function confirmPeriodImport(tx:any,a:any,project:any,r:any,note:an
  await tx`select set_config('erp.period_import_replacement','confirmed',true)`;
  if(r.replaces_ids.length)await tx`update erp_private.period_imports set status='Superseded' where import_id=any(${tx.array(r.replaces_ids)}::uuid[])`;
  await tx`update erp_private.period_imports set status='Confirmed',reviewed_by=${a.staff_id},review_note=${text(note,4000)} where import_id=${r.import_id}`;
+ await tx`update erp_private.import_amendments set status='Complete',completed_by=${a.staff_id},completed_at=now() where replacement_import_id=${r.import_id} and status='Replacement saved'`;
 }
 export async function periodImportAction(tx:any,a:any,p:any,storage:any){
  if(!String(p.action).startsWith('period_import_'))return undefined;
@@ -233,8 +234,14 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   if(x.overlaps.some((o:any)=>o.project_id!==pid||day(o.starts_on)<x.starts_on||day(o.ends_on)>x.ends_on))fail(409,'The new summary must fully cover the periods it replaces in this project. Partial overlaps are not added.');
   if(ids.length!==x.overlaps.length||x.overlaps.some((o:any)=>!ids.includes(o.import_id)))fail(409,'Explicitly confirm replacement of every overlapping summary.');
   await replacementSafe(tx,ids);
+  // A confirmed summary is only replaced through an approved amendment whose reversals are posted.
+  const confirmedIds=ids.length?(await tx`select import_id from erp_private.period_imports where import_id=any(${tx.array(ids)}::uuid[]) and status='Confirmed'`).map((r:any)=>r.import_id):[];
+  const amendments=confirmedIds.length?await tx`select amendment_id,import_id,status,outcome from erp_private.import_amendments where import_id=any(${tx.array(confirmedIds)}::uuid[]) and status in ('Ready','Replacement saved')`:[];
+  for(const cid of confirmedIds){const am=amendments.find((m:any)=>m.import_id===cid&&m.status==='Ready'&&m.outcome==='Replace');if(!am)fail(409,'A confirmed summary can only be replaced after an approved amendment. Open the confirmed summary and choose “Amend this period”.');}
   const activityId=await importActivity(tx,project.client_id,x.starts_on,x.ends_on,p.activity_id);
-  return one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,kind,source_type,coverage_mode,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,activity_id,notes) values(${pid},${project.client_id},${x.document_id},${x.kind},${x.source_type},${x.coverage_mode},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${activityId},${text(p.notes||'',4000,false)}) returning import_id`);
+  const saved=one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,kind,source_type,coverage_mode,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,activity_id,notes) values(${pid},${project.client_id},${x.document_id},${x.kind},${x.source_type},${x.coverage_mode},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${activityId},${text(p.notes||'',4000,false)}) returning import_id`);
+  for(const am of amendments.filter((m:any)=>m.status==='Ready'))await tx`update erp_private.import_amendments set status='Replacement saved',replacement_import_id=${saved.import_id} where amendment_id=${am.amendment_id} and status='Ready'`;
+  return saved;
  }
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':period-import'},0))`;
  const r=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid} for update`);
@@ -248,6 +255,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   if((await tx`select 1 from erp_private.ledger_sources where source_kind='Period import' and source_key=${r.import_id}::text limit 1`).length)fail(409,'An accounting entry was prepared from this summary. Return or reverse that entry first.');
   if((await tx`select 1 from erp_private.tax_cases where project_id=${pid} and inputs->>'period_import_id'=${r.import_id}::text limit 1`).length)fail(409,'A tax computation uses this summary. Remove it from the computation first.');
   await tx`update erp_private.period_imports set status='Discarded',discarded_at=now(),discarded_by=${a.staff_id},discard_reason=${why} where import_id=${r.import_id}`;
+  await tx`update erp_private.import_amendments set status='Ready',replacement_import_id=null where replacement_import_id=${r.import_id} and status='Replacement saved'`;
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,before_values,after_values) values(${a.auth_user_id},current_user,'period_imports','PERIOD_IMPORT_DISCARDED',${r.import_id},${tx.json({status:r.status,kind:r.kind,starts_on:r.starts_on,ends_on:r.ends_on,document_id:r.document_id})},${tx.json({status:'Discarded',reason:why})})`;
   return {ok:true,document_id:r.document_id};
  }

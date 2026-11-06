@@ -5,6 +5,7 @@ import {withholdingAction} from './withholding-actions.ts';
 import {orphanCreditAction} from './orphan-credit-actions.ts';
 import {nonEtimsAction} from './non-etims-actions.ts';
 import {legacySalesAction} from './legacy-sales-actions.ts';
+import {salesAmendAction} from './sales-amend-actions.ts';
 import {referenceAction} from './reference-actions.ts';
 import {staffRightsAction} from './staff-rights-actions.ts';
 import {discussionAction} from './discussion-actions.ts';
@@ -346,6 +347,7 @@ async function action(id:any,p:any){
   const withholding=await withholdingAction(tx,a,p);if(withholding!==undefined)return withholding;
   const orphanCredits=await orphanCreditAction(tx,a,p);if(orphanCredits!==undefined)return orphanCredits;
   const nonEtims=await nonEtimsAction(tx,a,p);if(nonEtims!==undefined)return nonEtims;
+  const salesAmend=await salesAmendAction(tx,a,p);if(salesAmend!==undefined)return salesAmend;
   const legacySales=await legacySalesAction(tx,a,p,admin.storage.from(BUCKET));if(legacySales!==undefined)return legacySales;
   const purchases=await purchaseLedgerAction(tx,a,p);if(purchases!==undefined)return purchases;
   const ledger=await ledgerAction(tx,a,p,admin.storage.from(BUCKET));if(ledger!==undefined)return ledger;
