@@ -133,6 +133,23 @@ test('Payroll imports: residence assumptions, rounding tolerance and reasons',as
   const rec=(await imp('ASSISTANT',{action:'period_import_read',import_id:out.import_id})).record;
   assert.equal(rec.payload.casual.document_id,pdf);assert.equal(rec.payload.totals.employer_ahl,600);assert.equal(rec.payload.totals.employee_nssf,0);
  });
+ await t.test('owners and partners are paid through Drawings, not payroll',async()=>{
+  const body=[row(1,'12345678'),row(2,'23456789'),row(3,'34567890')].join('\n');
+  const clean=await prev(body,{residents_confirmed:true});
+  assert.equal(clean.payload.issues.filter(i=>/Drawings/.test(i)).length,0,'a limited company may pay any employee');
+  await tx`update erp_private.clients set legal_entity_type='Partnership' where client_id=${C}`;
+  const grp=id();
+  await tx`insert into erp_private.partner_interests(client_id,partner_name,partner_pin,recipient_type,profit_percentage,effective_from,effective_to,agreement_reference,created_by,group_id) values(${C},'Fictional Partner One','A000000001A','Individual',50,'2026-01-01','2026-12-31','Fictional partnership deed',${actors.MANAGER.staff_id},${grp}),(${C},'Fictional Employee 3','A000000777Z','Individual',50,'2026-01-01','2026-12-31','Fictional partnership deed',${actors.MANAGER.staff_id},${grp})`;
+  const partner=await prev(body,{residents_confirmed:true});
+  assert.ok(partner.payload.issues.some(i=>startsRow(2)(i)&&/partner of this partnership/.test(i)&&/Owner and partner payments must be routed to Drawings, not payroll/.test(i)),'matched by PIN');
+  assert.ok(partner.payload.issues.some(i=>startsRow(4)(i)&&/Drawings/.test(i)),'matched by name');
+  assert.ok(!partner.payload.issues.some(i=>startsRow(3)(i)&&/Drawings/.test(i)),'other employees are not blocked');
+  await tx`update erp_private.clients set legal_entity_type='Sole proprietor',kra_pin='A000000003A' where client_id=${C}`;
+  const sole=await prev(body,{residents_confirmed:true});
+  assert.ok(sole.payload.issues.some(i=>startsRow(4)(i)&&/owner of this sole proprietorship/.test(i)));
+  assert.equal(sole.payload.issues.filter(i=>/Drawings/.test(i)).length,1);
+  await tx`update erp_private.clients set legal_entity_type=null,kra_pin=null where client_id=${C}`;
+ });
 });
 
 test('the payroll screen shows the residence choices, the rounding summary and a reason for each difference',()=>{
