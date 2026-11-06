@@ -1,6 +1,6 @@
-import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261107-rates-v1';
-import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261107-rates-v1';
-import {createNonEtimsUI} from './staff-non-etims.mjs?v=20261107-rates-v1';
+import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261107-payroll-v1';
+import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261107-payroll-v1';
+import {createNonEtimsUI} from './staff-non-etims.mjs?v=20261107-payroll-v1';
 import {mappingDates,inventoryMethod,inventoryAccountAllowed,stockChoices,mappingPeriod,mappingPeriods} from './staff-inventory-options.mjs?v=20261027-aligned';
 function stockCategorySuggestions(activity,use){
  const name=String(activity||'').toLowerCase();
