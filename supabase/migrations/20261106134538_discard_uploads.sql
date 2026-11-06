@@ -1,5 +1,9 @@
--- Already applied to pcl-erp-staging on 6 November 2026; kept at its applied version
--- so repository migration history matches staging. Do not apply this again there.
+-- Let staff discard a mistaken upload before anyone has confirmed work from it.
+-- 1. A saved sales or payroll summary can be Discarded by its preparer (or a Partner or Manager) while it is a Draft or Returned.
+--    The record, reason and person are kept; nothing is deleted. A discarded summary frees its source file and its period.
+-- 2. An upload is locked only by something a person decided: a mapping a person confirmed, a tax review, or a journal.
+--    Rows that were only mapped automatically at upload do not lock it.
+
 ALTER TABLE erp_private.period_imports
  ADD COLUMN discarded_at timestamptz,
  ADD COLUMN discarded_by uuid REFERENCES erp_private.staff_members ON DELETE RESTRICT,
@@ -13,6 +17,7 @@ ALTER TABLE erp_private.period_imports ADD CONSTRAINT period_imports_discard_sta
  (status='Discarded' AND discarded_at IS NOT NULL AND discarded_by IS NOT NULL AND length(btrim(coalesce(discard_reason,'')))>=5)
  OR (status<>'Discarded' AND discarded_at IS NULL AND discarded_by IS NULL AND discard_reason IS NULL));
 
+-- The same summary can be uploaded again after a discard.
 ALTER TABLE erp_private.period_imports DROP CONSTRAINT period_imports_project_id_source_hash_key;
 CREATE UNIQUE INDEX period_imports_live_source_hash_idx ON erp_private.period_imports(project_id,source_hash) WHERE status<>'Discarded';
 
@@ -32,6 +37,7 @@ BEGIN
 END
 $patch$;
 
+-- True when something a person decided, or a review or journal, depends on this imported row.
 CREATE FUNCTION erp_private.row_locks_upload(r erp_private.workbook_rows) RETURNS boolean
 LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
  SELECT ((r.route IS NOT NULL OR r.account_code IS NOT NULL)
@@ -90,4 +96,3 @@ ALTER POLICY documents_archive_update ON erp_private.documents
     )
   )
  );
-;

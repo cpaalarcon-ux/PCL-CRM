@@ -23,7 +23,7 @@ concurrency:
 
 env:
   PROJECT_REF: yfjiculexbzpkvtapudk   # pcl-erp-staging – hard-coded, never production
-  LAST_APPLIED_MIGRATION: '20261106134538'   # keep equal to the last line of supabase/staging-migration-history.txt
+  LAST_APPLIED_MIGRATION: '20261106141448'   # keep equal to the last line of supabase/staging-migration-history.txt
   SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
   SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 

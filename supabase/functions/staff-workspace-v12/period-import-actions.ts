@@ -26,7 +26,7 @@ export async function summarySalesRows(tx:any,pid:string,start:string,end:string
  return imports.flatMap((s:any)=>s.payload.groups.filter((g:any)=>{const ym=g.month||day(s.starts_on).slice(0,7);return `${ym}-01`<=end&&monthEnd(ym)>=start;}).map((g:any,i:number)=>{const ym=g.month||day(s.starts_on).slice(0,7),first=`${ym}-01`,last=monthEnd(ym);return {row_id:s.import_id+':'+ym+':'+g.vat_category,import_id:s.import_id,revision:s.revision,source_revision:s.revision,dataset:s.source_type==='Z_REPORT'?'POS':'Sales',source_type:s.source_type||'ETIMS',coverage_mode:s.coverage_mode||'LEGACY',source_row:i+1,normalized:{date:day(s.ends_on),invoice:`${s.source_type==='Z_REPORT'?'Z report':'eTIMS'} summary ${ym} ${g.vat_category}`,amount:g.net,vat:g.vat,vat_category:g.vat_category},decision:'Confirmed',review_details:{activity_id:s.activity_id||null},vat_rate_key:(rateKeys as any)[g.vat_category],reviewed_by:s.reviewed_by,uploaded_by:s.prepared_by,period_start:first,period_end:last,coverage_start:day(s.starts_on),coverage_end:day(s.ends_on),is_period_summary:true};}));
 }
 async function coverage(tx:any,cid:string,kind:string,sourceType:string,start:string,end:string){
- return await tx`select import_id,project_id,starts_on,ends_on,status,source_type,coverage_mode from erp_private.period_imports where client_id=${cid} and kind=${kind} and source_type=${sourceType} and status<>'Superseded' and starts_on<=${end} and ends_on>=${start} order by starts_on,import_id`;
+ return await tx`select import_id,project_id,starts_on,ends_on,status,source_type,coverage_mode from erp_private.period_imports where client_id=${cid} and kind=${kind} and source_type=${sourceType} and status not in ('Superseded','Discarded') and starts_on<=${end} and ends_on>=${start} order by starts_on,import_id`;
 }
 export async function salesSourceCoverage(tx:any,pid:string,start:string,end:string,sourceType:string){
  const dataset=sourceType==='Z_REPORT'?'POS':'Sales',expected=Math.round((Date.parse(end)-Date.parse(start))/86400000)+1;
@@ -213,7 +213,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   if(p.confirmed_client_id!==project.client_id)fail(400,'Confirm the legal client before importing.');
   await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':period-import'},0))`;
   const x=await prepare(tx,a,project,p,storage);
-  const existing=(await tx`select import_id from erp_private.period_imports where project_id=${pid} and source_hash=${x.source_hash}`)[0];if(existing)return {...existing,reused:true};
+  const existing=(await tx`select import_id from erp_private.period_imports where project_id=${pid} and source_hash=${x.source_hash} and status<>'Discarded'`)[0];if(existing)return {...existing,reused:true};
   if(x.source_hash!==p.preview_hash)fail(409,'The source or calculations changed. Preview and confirm again.');
   if(x.payload.issues.length)fail(400,'Resolve the displayed import exceptions before confirming.');
   if(x.kind==='Payroll'&&p.use_calculated!==true)fail(400,'Review the source and ERP calculations, then confirm the displayed ERP calculations before saving.');
@@ -239,6 +239,18 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':period-import'},0))`;
  const r=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid} for update`);
  if(String(r.revision)!==revision(p.revision))fail(409,'The import changed. Refresh first.');
+ if(p.action==='period_import_discard'){
+  // A mistaken summary can be dropped while nobody has relied on it. The record stays (status Discarded) with who, when and why.
+  const mayDiscard=r.prepared_by===a.staff_id||['PARTNER','MANAGER'].includes(a.category_code);
+  if(!mayDiscard)fail(403,'Only the person who prepared this summary, a Manager or a Partner can discard it.');
+  if(!['Draft','Returned'].includes(r.status))fail(409,r.status==='Discarded'?'This summary was already discarded.':r.status==='Submitted'?'Withdraw this summary from review first, then discard it.':'A confirmed summary cannot be discarded. A Partner or Manager corrects it with a replacement.');
+  const why=text(p.reason||'',1000,false).trim();if(why.length<5)fail(400,'Say why this summary is being discarded (at least 5 characters).');
+  if((await tx`select 1 from erp_private.ledger_sources where source_kind='Period import' and source_key=${r.import_id}::text limit 1`).length)fail(409,'An accounting entry was prepared from this summary. Return or reverse that entry first.');
+  if((await tx`select 1 from erp_private.tax_cases where project_id=${pid} and inputs->>'period_import_id'=${r.import_id}::text limit 1`).length)fail(409,'A tax computation uses this summary. Remove it from the computation first.');
+  await tx`update erp_private.period_imports set status='Discarded',discarded_at=now(),discarded_by=${a.staff_id},discard_reason=${why} where import_id=${r.import_id}`;
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,before_values,after_values) values(${a.auth_user_id},current_user,'period_imports','PERIOD_IMPORT_DISCARDED',${r.import_id},${tx.json({status:r.status,kind:r.kind,starts_on:r.starts_on,ends_on:r.ends_on,document_id:r.document_id})},${tx.json({status:'Discarded',reason:why})})`;
+  return {ok:true,document_id:r.document_id};
+ }
  if(p.action==='period_import_submit'){
   if(r.prepared_by!==a.staff_id||!['Draft','Returned'].includes(r.status))fail(403,'The preparer must submit this draft.');
   await tx`update erp_private.period_imports set status='Submitted' where import_id=${r.import_id}`;return {ok:true};

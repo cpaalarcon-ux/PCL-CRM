@@ -102,3 +102,6 @@
 20261106120526 non_etims_bases
 20261106130417 legacy_sales_replacements
 20261106134538 discard_uploads
+20261106140311 source_aware_sales_period_imports
+20261106140320 discard_guard_repatch
+20261106141448 discard_reserve_days_parity

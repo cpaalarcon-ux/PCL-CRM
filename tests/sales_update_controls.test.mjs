@@ -54,7 +54,7 @@ test('obsolete category-only files do not pass the versioned sales template prof
 });
 
 test('source-aware sales migration preserves staging import-discard controls',()=>{
- const migration=fs.readFileSync(new URL('../supabase/migrations/20261106135331_source_aware_sales_period_imports.sql',import.meta.url),'utf8');
+ const migration=fs.readFileSync(new URL('../supabase/migrations/20261106140311_source_aware_sales_period_imports.sql',import.meta.url),'utf8');
  assert.match(migration,/OLD\.status IN \('Superseded','Discarded'\)/);
  assert.match(migration,/NEW\.status='Discarded' AND OLD\.status IN \('Draft','Returned'\)/);
  assert.match(migration,/NEW\.status IN \('Superseded','Discarded'\) THEN DELETE FROM erp_private\.period_import_days/);
