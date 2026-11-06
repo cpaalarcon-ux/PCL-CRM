@@ -1,4 +1,4 @@
-import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261107-summary-v1';
+import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261107-cheques-v1';
 // Withholding schedule: tax withheld on payments for one month. Purchase rows marked on the purchases screen appear here automatically;
 // payments that are not purchases (dividends, interest, royalties, rent to non-residents and similar) are added here. The withholding
 // return and the monthly journal read this list only.
