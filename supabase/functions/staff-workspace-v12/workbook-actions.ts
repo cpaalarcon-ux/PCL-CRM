@@ -3,6 +3,7 @@ import {assertSupportedPeriod} from './supported-period.ts';
 import {autoMapRows} from './auto-map.ts';
 import {suggestionsFor,groupSuggestions} from './purchase-history.ts';
 import {chartCatalogue} from './client-chart.ts';
+import {statementBank,bankRegister} from './bank-accounts.ts';
 import {detectImportProfile,profilePurchase} from './import-profiles.mjs';
 import {purchaseUploadProfile,purchaseUploadRows,purchaseUploadMap,purchaseUploadHeaders,purchaseUploadRates,purchaseUploadValues,purchaseDisplayValues,purchasePendingMatch,purchaseUploadId,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from './purchase-upload.mjs';
 import {pendingPurchases} from './purchase-pending.ts';
@@ -72,7 +73,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  const values=(i:number)=>sheetValues(sheet,i);
  const previewTotal=standard?standardData.rows.length:Math.max(0,(block?.last_row||sheet.rowCount)-header),previewOffset=Math.max(0,Math.min(previewTotal,Math.trunc(Number(p.preview_offset)||0))),previewPageSize=standard?10:200;
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
- if(p.action==='workbook_preview')return {client_id:project.client_id,client_name:project.company_name,client_pin:project.kra_pin,document_id:d.document_id,project_id:d.project_id,sheets,sheet_name:sheet.name,header_row:header,headers:standard?purchaseUploadHeaders:block?.headers||(header===0?Array.from({length:sheet.columnCount},(_,i)=>'Column '+(i+1)):values(header)),import_profile:profile,source_inventory:sourceInfo.inventory||null,source_adapter:sourceInfo.adapter||'XLSX',template:template?{...template,selected:block}:null,
+ if(p.action==='workbook_preview')return {client_id:project.client_id,client_name:project.company_name,client_pin:project.kra_pin,bank_accounts:(await bankRegister(tx,project.client_id)).filter((b:any)=>b.status==='Active'),document_id:d.document_id,project_id:d.project_id,sheets,sheet_name:sheet.name,header_row:header,headers:standard?purchaseUploadHeaders:block?.headers||(header===0?Array.from({length:sheet.columnCount},(_,i)=>'Column '+(i+1)):values(header)),import_profile:profile,source_inventory:sourceInfo.inventory||null,source_adapter:sourceInfo.adapter||'XLSX',template:template?{...template,selected:block}:null,
   standard_purchase:standard?{id:purchaseUploadId,template_version:profile.version,rates:purchaseUploadRates,ignored_count:standardData.ignored,approved_client_account_count:new Set(purchaseClientMappings.map((m:any)=>m.erp_account_code)).size,summary:p.vat_category&&p.period_start&&p.period_end?purchaseUploadSummary(standardData.rows,choice(p.vat_category,purchaseUploadRates),date(p.period_start),date(p.period_end),purchaseAccounts,purchaseClientMappings):null}:null,
   preview_total:previewTotal,preview_offset:previewOffset,preview_page_size:previewPageSize,
   preview:standard?standardData.rows.slice(previewOffset,previewOffset+previewPageSize).map(r=>({row:r.source_row,values:r.values,display_values:purchaseDisplayValues(r.values)})):Array.from({length:Math.min(previewPageSize,previewTotal-previewOffset)},(_,i)=>({row:header+previewOffset+i+1,values:values(header+previewOffset+i+1).slice(0,block?.headers.length||sheet.columnCount)})),categories:allCategories};
@@ -82,6 +83,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  if(['Sales','POS','Payroll'].includes(dataset))fail(400,'Use the controlled eTIMS / Z-report sales update or Payroll import. Sales sources must not bypass period coverage and independent review.');
  if(profile&&!profile.recognised)fail(400,'Review the changed source format: '+(profile.errors||[]).join(' '));
  if(template&&p.dataset&&p.dataset!==dataset)fail(400,'The import type must match the recognised workbook.');
+ const bankAccountId=dataset==='Bank'?await statementBank(tx,project.client_id,p.bank_account_id):null;
  if(sourceInfo.section&&!profile?.recognised&&!p.section_contract_confirmed)fail(400,'Confirm the selected KRA CSV section column mapping. A section name alone is not a validated filing contract.');
  const start=date(p.period_start),end=date(p.period_end);
  if(!start||!end||end<start)fail(400,'Choose the import period.');await assertSupportedPeriod(tx,project.client_id,start);const map=block?block.column_map:profile?.recognised?profile.column_map:importMap(p.column_map,dataset),batch=crypto.randomUUID();
@@ -140,8 +142,8 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
    on conflict(batch_id,row_key) do nothing returning row_id`;
   added+=inserted.length;duplicates+=accepted.slice(i,i+500).length-inserted.length;
  }
- await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by)
- values(${batch},${d.project_id},${d.document_id},${sheet.name},${header},${dataset},${start},${end},${tx.json(map)},${source},${added},${duplicates},${rejected.length},${a.staff_id})`;
+ await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by,bank_account_id)
+ values(${batch},${d.project_id},${d.document_id},${sheet.name},${header},${dataset},${start},${end},${tx.json(map)},${source},${added},${duplicates},${rejected.length},${a.staff_id},${bankAccountId})`;
  await tx`insert into erp_private.workbook_import_requests(project_id,signature,batch_id,document_id) values(${project.project_id},${signature},${batch},${d.document_id})`;
  for(let i=0;i<rejected.length;i+=500)await tx`insert into erp_private.workbook_rejections(batch_id,source_row,reason,raw_values) select ${batch}::uuid,r.row,r.reason,r.raw from jsonb_to_recordset(${tx.json(rejected.slice(i,i+500))}::jsonb) as r(row integer,reason text,raw jsonb)`;
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;

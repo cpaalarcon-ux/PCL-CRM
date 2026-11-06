@@ -1,4 +1,4 @@
-import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261106-suppliers-v1';
+import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261107-banks-v2';
 // Purchase credit notes that have no original invoice yet: how long each has waited, by supplier, and a one-click request to the client.
 // They stay outside mapping, posting and VAT totals; nothing is recorded as a liability for them.
 export function createCreditAgeingUI(ctx){
