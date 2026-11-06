@@ -57,6 +57,14 @@ export async function taxSummary(tx:any,c:any){
  const pendingHistory=Number((await tx`select count(*)::int n from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${c.project_id} and b.archived_at is null and b.period_start<=${c.ends_on} and b.period_end>=${c.starts_on} and r.raw_values ? '_pending_purchase'`)[0].n);
  const rejected=batches.reduce((s:number,b:any)=>s+b.rejected_count,0)-pendingHistory;
  if(pending_information.total&&['VAT','Company','Individual','Partnership'].includes(c.kind)){const ag=ageingReport(pending_information.rows,new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date()));issues.push(`${pending_information.total} credit note(s) are Pending information and excluded from this working: net KES ${pending_information.net.toFixed(2)}, VAT KES ${pending_information.vat.toFixed(2)}, gross KES ${pending_information.gross.toFixed(2)}${ag.overdue.count?`; ${ag.overdue.count} older than ${ag.alert_days} days`:''}. Supply original invoice details and reupload before submitting this tax case; the totals are incomplete until then.`);}
+ if(['VAT','Company','Individual','Partnership'].includes(c.kind)){
+  const codes=[...new Set(rows.filter((r:any)=>r.dataset==='Non-eTIMS'&&r.review_details?.basis_code).map((r:any)=>String(r.review_details.basis_code)))];
+  if(codes.length){
+   const states=new Map((await tx`select basis_code,status from erp_private.non_etims_bases where basis_code=any(${tx.array(codes)}::text[])`).map((b:any)=>[b.basis_code,b.status]));
+   const unapproved=rows.filter((r:any)=>r.dataset==='Non-eTIMS'&&r.review_details?.basis_code&&states.get(String(r.review_details.basis_code))!=='Active');
+   if(unapproved.length){const net=unapproved.reduce((s:number,r:any)=>s+Number(r.normalized?.amount||0),0),vat=unapproved.reduce((s:number,r:any)=>s+Number(r.normalized?.vat||0),0);issues.push(`${unapproved.length} non-eTIMS row(s) rely on a legal basis a Partner has not approved (still in testing, or retired): net KES ${net.toFixed(2)}, VAT KES ${vat.toFixed(2)}. A Partner must approve the basis, or the rows must be mapped on an approved one.`);}
+  }
+ }
  if(rejected&&!c.inputs.rejection_resolution)issues.push(`${rejected} rejected source rows need a documented reconciliation.`);
  const findings=await tx`select * from erp_private.tax_findings where project_id=${c.project_id} and deleted_at is null and (case_id=${c.case_id} or case_id is null)`;
  if(findings.some((f:any)=>f.status==='Open'))issues.push('Open findings must be resolved.');
