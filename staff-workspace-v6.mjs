@@ -1,11 +1,11 @@
-import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261106-invoice-v1';
-import {createWithholdingUI} from './staff-withholding.mjs?v=20261106-invoice-v1';
-import {createCreditAgeingUI} from './staff-credit-ageing.mjs?v=20261106-invoice-v1';
+import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261106-autofee-v1';
+import {createWithholdingUI} from './staff-withholding.mjs?v=20261106-autofee-v1';
+import {createCreditAgeingUI} from './staff-credit-ageing.mjs?v=20261106-autofee-v1';
 import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261105-check-v1';
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
-import {createAccountingUI} from './staff-accounting.mjs?v=20261106-invoice-v1';
+import {createAccountingUI} from './staff-accounting.mjs?v=20261106-autofee-v1';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261106-invoice-v1';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261106-autofee-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 export function createWorkspaceUI(ctx){

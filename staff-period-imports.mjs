@@ -1,5 +1,5 @@
-import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261106-invoice-v1';
-import {guideBanner,tip,GUIDE,TIPS} from './staff-guide-text.mjs?v=20261106-invoice-v1';
+import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261106-autofee-v1';
+import {guideBanner,tip,GUIDE,TIPS} from './staff-guide-text.mjs?v=20261106-autofee-v1';
 export function createPeriodImportUI(ctx){
  const {$,esc,field,select,form,modal,request,notice,shortDate,today,projectName}=ctx,d=()=>ctx.data();
  const money=v=>v==null?'Missing':Number(v).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
