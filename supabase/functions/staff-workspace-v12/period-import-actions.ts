@@ -69,22 +69,36 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
   payload={...source,employees:[],calculated:[],differences:[],rules:[],totals:{}};
   for(const key of keys.PAYE){try{rules[key]=pickRate(preferredRates(availableRules,key,start,end),key,start,end);payload.rules.push(rules[key]);}catch(e){payload.issues.push((e as Error).message);}}
   for(const r of source.rows){
-   const resident=r.resident==null?p.residents_confirmed===true:r.resident;
-   if(r.resident==null&&p.residents_confirmed!==true)payload.issues.push(`Row ${r.source_row}: confirm employee residence before calculating relief.`);
+   // Residence: the file's own column wins; then the staff member's choice for the row; a Kenyan national ID (7 or 8 digits) is assumed Resident
+   // once the preparer confirms the assumption; anything else (passport, alien ID, no ID) has to be chosen by hand.
+   const chosen=p.residency_choices?.[String(r.source_row)],nationalId=/^\d{7,8}$/.test(String(r.employee_id||'').replace(/\s+/g,''));
+   let resident:boolean|null,basis:string;
+   if(r.resident!=null){resident=r.resident;basis='Stated in the file';}
+   else if(chosen==='Resident'||chosen==='Non-resident'){resident=chosen==='Resident';basis='Chosen by staff';}
+   else if(nationalId){resident=true;basis='Assumed Resident from national ID';if(p.residents_confirmed!==true)payload.issues.push(`Row ${r.source_row}: ${r.name} is assumed Resident from the national ID. Tick the residence confirmation to accept, or choose Non-resident for this employee.`);}
+   else{resident=null;basis='Needs choice';payload.issues.push(`Row ${r.source_row}: choose Resident or Non-resident for ${r.name}. The ID is not a Kenyan national ID (a passport, alien ID or blank), so the ERP does not assume.`);}
    if(r.insurance_relief>0)payload.issues.push(`Row ${r.source_row}: insurance relief needs a supported premium in the payroll tax computation.`);
-   const e={name:r.name,pin:r.pin,employee_id:r.employee_id,gross:r.gross,taxable_benefits:r.benefits||0,resident,other_pension:r.other_pension||0,postretirement_medical:r.postretirement_medical||0,mortgage_interest:r.mortgage_interest||0,source_paye:r.paye??0,evidence_reference:doc.file_name};
+   const e:any={name:r.name,pin:r.pin,employee_id:r.employee_id,gross:r.gross,taxable_benefits:r.benefits||0,resident:resident===true,residency_basis:basis,source_row:r.source_row,other_pension:r.other_pension||0,postretirement_medical:r.postretirement_medical||0,mortgage_interest:r.mortgage_interest||0,source_paye:r.paye??0,evidence_reference:doc.file_name};
    payload.employees.push(e);
-   if(r.issues.length||Object.keys(rules).length!==keys.PAYE.length)continue;
+   if(r.issues.length||resident===null||Object.keys(rules).length!==keys.PAYE.length)continue;
    try{const c:any=payrollFromRules({employees:[e]},rules).employees[0];c.net_pay=round(c.net_before_other_deductions-(r.other_deductions||0));c.other_deductions=r.other_deductions||0;c.source_row=r.source_row;payload.calculated.push(c);
     for(const [s,k] of [['gross','gross'],['taxable','taxable'],['gross_tax','gross_tax'],['personal_relief','personal_relief'],['paye','paye'],['employee_nssf','employee_nssf'],['employee_ahl','employee_ahl'],['shif','shif'],['net','net_pay']])if(r[s]==null)payload.differences.push({row:r.source_row,field:s,source:null,calculated:c[k],difference:null});else if(Math.abs(Number(r[s])-c[k])>.011)payload.differences.push({row:r.source_row,field:s,source:r[s],calculated:c[k],difference:round(c[k]-r[s])});
    }catch(e){payload.issues.push(`Row ${r.source_row}: ${(e as Error).message}`);}
   }
+  // Rounding: a tax or deduction amount within KES 1 of the file is a rounding difference, not a mistake, while the month's rounding on amounts
+  // payable to KRA, NSSF, SHA and the housing levy stays within the Partner-set cap. Gross pay is never tolerated.
+  const cap=Number((await tx`select monthly_cap_kes from erp_private.payroll_tolerance`)[0]?.monthly_cap_kes??50),perEmployee=1,payable=['paye','employee_nssf','employee_ahl','shif'];
+  const small=(d:any)=>d.source!=null&&d.field!=='gross'&&Math.abs(d.difference)<=perEmployee+.0001,rounding=payload.differences.filter(small);
+  const used=round(rounding.filter((d:any)=>payable.includes(d.field)).reduce((n:number,d:any)=>n+Math.abs(d.difference),0)),within=used<=cap+.0001;
+  payload.tolerance={per_employee:perEmployee,monthly_cap:cap,used,within,small:rounding.length,applied:within?rounding.length:0};
+  if(within&&rounding.length){payload.rounding=rounding;payload.differences=payload.differences.filter((d:any)=>!small(d));}else payload.rounding=[];
+  payload.residency={stated:payload.employees.filter((e:any)=>e.residency_basis==='Stated in the file').length,assumed:payload.employees.filter((e:any)=>e.residency_basis==='Assumed Resident from national ID').length,chosen:payload.employees.filter((e:any)=>e.residency_basis==='Chosen by staff').length,needs_choice:payload.employees.filter((e:any)=>e.residency_basis==='Needs choice').length};
   payload.testing=payload.rules.some((r:any)=>r.approval_scope==='Testing');
   for(const key of ['gross','taxable','gross_tax','paye','shif','employee_nssf','employee_ahl','employer_nssf','employer_ahl','nita','net_pay','other_deductions'])payload.totals[key]=round(payload.calculated.reduce((n:number,c:any)=>n+Number(c[key]||0),0));
   payload.totals.employee_pension=round(payload.employees.reduce((n:number,e:any)=>n+Number(e.other_pension||0),0));
   payload.source_count=source.rows.length;
  }
- const members=sheets.map(s=>({name:s.sheet.name,profile:s.profile.id})),hash=await digest({sha:doc.sha256,kind,start,end,members,credit_basis:p.credit_basis,credits:p.credits,residents_confirmed:p.residents_confirmed,payload});
+ const members=sheets.map(s=>({name:s.sheet.name,profile:s.profile.id})),hash=await digest({sha:doc.sha256,kind,start,end,members,credit_basis:p.credit_basis,credits:p.credits,residents_confirmed:p.residents_confirmed,residency_choices:p.residency_choices||null,payload});
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'DOWNLOAD')`;
  return {kind,starts_on:start,ends_on:end,document_id:doc.document_id,payload,source_hash:hash,source_members:members,available,overlaps:await coverage(tx,project.client_id,kind,start,end)};
 }
@@ -111,7 +125,17 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
  if(!String(p.action).startsWith('period_import_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Assigned accounting staff are required.');
  const pid=uuid(p.project_id),project=one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null`);
- if(p.action==='period_import_list')return {activities:await tx`select activity_id,activity_name,pack_code,effective_from,effective_to from erp_private.client_activities where client_id=${project.client_id} order by activity_name`,imports:await tx`select i.import_id,i.kind,i.starts_on,i.ends_on,i.status,i.prepared_by,i.reviewed_by,i.revision,i.created_at,i.activity_id,a.activity_name from erp_private.period_imports i left join erp_private.client_activities a using(activity_id) where i.project_id=${pid} order by i.created_at desc limit 500`,documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and archived_at is null and mime_type in ('text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') order by uploaded_at desc`,periods:await tx`select period_id,starts_on,ends_on from erp_private.ledger_periods where project_id=${pid} and status='Open'`};
+ if(p.action==='period_import_list')return {payroll_cap:Number((await tx`select monthly_cap_kes from erp_private.payroll_tolerance`)[0]?.monthly_cap_kes??50),activities:await tx`select activity_id,activity_name,pack_code,effective_from,effective_to from erp_private.client_activities where client_id=${project.client_id} order by activity_name`,imports:await tx`select i.import_id,i.kind,i.starts_on,i.ends_on,i.status,i.prepared_by,i.reviewed_by,i.revision,i.created_at,i.activity_id,a.activity_name from erp_private.period_imports i left join erp_private.client_activities a using(activity_id) where i.project_id=${pid} order by i.created_at desc limit 500`,documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and archived_at is null and mime_type in ('text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') order by uploaded_at desc`,periods:await tx`select period_id,starts_on,ends_on from erp_private.ledger_periods where project_id=${pid} and status='Open'`};
+ if(p.action==='period_import_tolerance'){
+  if(a.category_code!=='PARTNER')fail(403,'Only a Partner can change the payroll rounding cap.');
+  const cap=Number(p.monthly_cap_kes),why=text(p.reason||'',500,false).trim();
+  if(!Number.isFinite(cap)||cap<0||cap>1000)fail(400,'The cap must be between KES 0 and KES 1,000.');if(why.length<10)fail(400,'Give the reason for the change (at least 10 characters).');
+  const before=(await tx`select monthly_cap_kes from erp_private.payroll_tolerance`)[0];
+  const done=await tx`update erp_private.payroll_tolerance set monthly_cap_kes=${Math.round(cap*100)/100},reason=${why},updated_by=${a.staff_id},updated_at=now() where singleton returning monthly_cap_kes`;
+  if(!done.length)fail(403,'The cap could not be changed.');
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,before_values,after_values) values(${a.auth_user_id},current_user,'payroll_tolerance','PAYROLL_ROUNDING_CAP_CHANGED',${pid},${tx.json({monthly_cap_kes:before?.monthly_cap_kes})},${tx.json({monthly_cap_kes:cap,reason:why})})`;
+  return {ok:true,monthly_cap_kes:Number(done[0].monthly_cap_kes)};
+ }
  if(p.action==='period_import_read')return {record:one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid}`)};
  if(project.status==='Archived')fail(400,'Archived projects retain read-only accounting history.');
  if(p.action==='period_import_preview')return await prepare(tx,a,project,p,storage);
@@ -123,11 +147,18 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   if(x.source_hash!==p.preview_hash)fail(409,'The source or calculations changed. Preview and confirm again.');
   if(x.payload.issues.length)fail(400,'Resolve the displayed import exceptions before confirming.');
   if(x.kind==='Payroll'&&p.use_calculated!==true)fail(400,'Review the source and ERP calculations, then confirm the displayed ERP calculations before saving.');
-  if(x.kind==='Payroll'&&x.payload.differences.length&&cleanNote(p.notes).length<10)fail(400,'Add a short note explaining the payroll differences before saving.');
-  if(x.kind==='Payroll')x.payload.review_attestations={use_calculated_confirmed:true,source_comparison_reviewed:true};
+  const reasons:any={};
+  if(x.kind==='Payroll'){
+   for(const [k,v] of Object.entries(p.difference_reasons||{}))if(typeof v==='string'&&v.trim().length>=5)reasons[String(k).slice(0,40)]=v.trim().slice(0,500);
+   const uncovered=x.payload.differences.filter((d:any)=>d.source==null||!reasons[d.row+':'+d.field]);
+   if(uncovered.length&&cleanNote(p.notes).length<10)fail(400,uncovered.some((d:any)=>d.source==null)?'The file has missing amounts. Add a short note explaining them before saving.':'Give a reason for each payroll difference (at least 5 characters), or add a short note covering them, before saving.');
+   x.payload.review_attestations={use_calculated_confirmed:true,source_comparison_reviewed:true,difference_reasons:reasons,
+    ...(x.payload.residency.assumed?{residency_assumed:{confirmed:true,employees:x.payload.residency.assumed,confirmed_by:a.staff_id,confirmed_at:new Date().toISOString()}}:{})};
+  }
   if(!(await tx`select erp_private.tax_period_open(${pid}::uuid,${x.starts_on}::date,${x.ends_on}::date) open`)[0].open)fail(409,'Return submitted tax work before replacing its inputs. Locked tax periods require a controlled amendment.');
   if(x.kind==='Sales'&&(await tx`select r.row_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Sales' and b.archived_at is null and b.period_start<=${x.ends_on} and b.period_end>=${x.starts_on} limit 1`).length)fail(409,'This period has legacy invoice-based sales. Reconcile and migrate those sources before adding category totals.');
   const ids=Array.isArray(p.replaces_ids)?p.replaces_ids.map(uuid):[];
+  if(x.kind==='Payroll'&&x.payload.residency.assumed)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'period_imports','PAYROLL_RESIDENCY_ASSUMED',${pid},${tx.json({employees:x.payload.residency.assumed,period:x.starts_on})})`;
   if(x.overlaps.some((o:any)=>o.project_id!==pid||day(o.starts_on)<x.starts_on||day(o.ends_on)>x.ends_on))fail(409,'The new summary must fully cover the periods it replaces in this project. Partial overlaps are not added.');
   if(ids.length!==x.overlaps.length||x.overlaps.some((o:any)=>!ids.includes(o.import_id)))fail(409,'Explicitly confirm replacement of every overlapping summary.');
   await replacementSafe(tx,ids);
