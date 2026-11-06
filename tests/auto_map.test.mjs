@@ -41,7 +41,7 @@ test('exact routing + TB code pairs are mapped automatically; a Manager can remo
 
  const first=await auto('ASSISTANT',{action:'workbook_auto_map'});
  assert.equal(first.mapped,3,'expenditure, stock and manual-test rows map; PPE needs first-use details');
- assert.equal(first.left_for_staff,1);
+ assert.equal(first.left_for_staff,2,'PPE and the row without codes or history stay with staff');
  const exp=await get('EXPENSE');assert.equal(exp.account_code,'62500');assert.equal(exp.route,2);assert.equal(exp.review_details.mapping_confirmation.method,AUTO_METHOD);assert.equal(exp.review_details.mapping_confirmation.routing_code,'EXP08');
  const stock=await get('STOCK');assert.equal(stock.account_code,'50000');assert.equal(stock.review_details.activity_id,W);
  assert.equal((await get('PPE')).account_code,null,'PPE stays with staff');assert.equal((await get('PLAIN')).account_code,null);

@@ -1,19 +1,20 @@
 import {fail,text,uuid} from './validation.mjs';
 import {mapValue,inventoryDetails,isCost} from './accounting-rules.mjs';
 import {chartResolver} from './client-chart.ts';
+import {suggestionsFor,HISTORY_METHOD} from './purchase-history.ts';
 // Automatic account mapping. A purchase row whose routing code (column M) and TB item code (column N) exactly match one active,
 // non-legacy account of the central chart is mapped when it is imported, so staff only handle exceptions. The mapping classifies the
 // row; it never approves input VAT, deductibility or posting. A Manager or Partner can remove it with a reason; a removed row is
 // never mapped automatically again.
 export const AUTO_METHOD='Auto-mapped — chart verified';
-export const CODE_METHODS=['Uploaded routing and TB codes',AUTO_METHOD];
+export const CODE_METHODS=['Uploaded routing and TB codes',AUTO_METHOD,HISTORY_METHOD];
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v).slice(0,10);
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 
 export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:string,rowIds?:string[]}={}){
  const rows=await tx`select r.*,b.period_start from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id)
   where r.project_id=${project.project_id} and b.archived_at is null and r.account_code is null and r.parent_row_id is null and not r.is_split_parent
-  and r.dataset in ('Purchases','Expenditure','Non-eTIMS') and r.normalized->'mapping_suggestion' is not null
+  and r.dataset in ('Purchases','Expenditure','Non-eTIMS')
   and coalesce((r.review_details->>'auto_map_blocked')::boolean,false)=false
   and (${scope.batchId||null}::uuid is null or r.batch_id=${scope.batchId||null}::uuid)
   and (${scope.rowIds?tx.array(scope.rowIds):null}::uuid[] is null or r.row_id=any(${scope.rowIds?tx.array(scope.rowIds):null}::uuid[]))
@@ -25,10 +26,13 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
  const activities=await tx`select * from erp_private.client_activities where client_id=${project.client_id} order by effective_from`;
  const policies=activities.length?await tx`select * from erp_private.stock_policy_versions where activity_id=any(${tx.array(activities.map((x:any)=>x.activity_id))}::uuid[]) order by effective_from desc`:[];
  const soldVat=(await tx`select vat_categories_sold from erp_private.clients where client_id=${project.client_id}`)[0]?.vat_categories_sold||null;
- const stamp=new Date().toISOString(),updates:any[]=[];
+ const stamp=new Date().toISOString(),updates:any[]=[],history=await suggestionsFor(tx,project,rows);let viaHistory=0;
  for(const r of rows){
   try{
-   const hint=r.normalized.mapping_suggestion,at=String(r.normalized.date||day(r.period_start)),route=Number(hint.route);
+   // Without uploaded codes, a long and perfectly consistent expense history for the supplier maps the row; a shorter history is only suggested on screen.
+   let hint=r.normalized.mapping_suggestion,fromHistory=false;
+   if(!hint){const s=history.get(r.row_id);if(!s?.auto)continue;hint={route:s.route,category_code:s.category_code,account_code:s.account_code};fromHistory=true;}
+   const at=String(r.normalized.date||day(r.period_start)),route=Number(hint.route);
    const account=accounts.find((x:any)=>x.code===String(hint.account_code)&&x.status==='Active'&&!x.is_legacy&&Number(x.route)===route&&String(x.category_code).toUpperCase()===String(hint.category_code).toUpperCase());
    if(!account)continue;
    const chart=chartAt(at);if(chart&&!chart.codes.has(account.code))continue;
@@ -41,12 +45,13 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
    const own=policies.filter((v:any)=>v.activity_id===chosen?.activity_id),dated=own.find((v:any)=>day(v.effective_from)<=at);
    const v=mapValue(r,{route,account_code:account.code},accounts,own.length?dated:policy);
    const details=inventoryDetails(r,{route,account_code:account.code});if(chosen)details.activity_id=chosen.activity_id;
-   details.mapping_confirmation={method:AUTO_METHOD,routing_code:account.category_code,tb_item_code:account.code,chart_version:account.catalog_version??null,mapped_at:stamp,imported_by:a.staff_id};
+   details.mapping_confirmation={method:fromHistory?HISTORY_METHOD:AUTO_METHOD,routing_code:account.category_code,tb_item_code:account.code,chart_version:account.catalog_version??null,mapped_at:stamp,imported_by:a.staff_id};
+   if(fromHistory)viaHistory++;
    updates.push({row_id:r.row_id,route:v.route,category_code:v.category_code,account_code:v.account_code,narration:v.narration,asset_details:v.asset_details,first_use_status:v.first_use_status,first_use_date:v.first_use_date,review_details:details});
   }catch{ /* Anything the manual mapping would refuse stays unmapped for staff to resolve. */ }
  }
  for(let i=0;i<updates.length;i+=500)await tx`update erp_private.workbook_rows r set route=v.route,category_code=v.category_code,account_code=v.account_code,narration=v.narration,asset_details=v.asset_details,first_use_status=v.first_use_status,first_use_date=v.first_use_date,review_details=v.review_details from jsonb_to_recordset(${tx.json(updates.slice(i,i+500))}::jsonb) as v(row_id uuid,route integer,category_code text,account_code text,narration text,asset_details text,first_use_status text,first_use_date date,review_details jsonb) where r.row_id=v.row_id`;
- if(updates.length)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'workbook_rows','AUTO_MAPPING',${project.project_id},${tx.json({count:updates.length,method:AUTO_METHOD,row_ids:updates.map((x:any)=>x.row_id).slice(0,500)})})`;
+ if(updates.length)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'workbook_rows','AUTO_MAPPING',${project.project_id},${tx.json({count:updates.length,method:AUTO_METHOD,via_supplier_history:viaHistory,row_ids:updates.map((x:any)=>x.row_id).slice(0,500)})})`;
  return {mapped:updates.length,left_for_staff:rows.length-updates.length};
 }
 

@@ -1,6 +1,7 @@
 import {stockCategoryOptions} from './stock-category-options.ts';
 import {assertSupportedPeriod} from './supported-period.ts';
 import {autoMapRows} from './auto-map.ts';
+import {suggestionsFor,groupSuggestions} from './purchase-history.ts';
 import {chartCatalogue} from './client-chart.ts';
 import {detectImportProfile,profilePurchase} from './import-profiles.mjs';
 import {purchaseUploadProfile,purchaseUploadRows,purchaseUploadMap,purchaseUploadHeaders,purchaseUploadRates,purchaseUploadValues,purchaseDisplayValues,purchasePendingMatch,purchaseUploadId,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from './purchase-upload.mjs';
@@ -31,8 +32,11 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
    and concat_ws(' ',r.normalized->>'invoice',r.normalized->>'reference',r.normalized->>'party',r.normalized->>'party_pin',r.normalized->>'description') ilike ${search}
    order by r.created_at,r.source_row,r.row_id limit 101 offset ${offset}`;
   const hasMore=fetched.length>100,rows=fetched.slice(0,100),total=hasMore?null:offset+rows.length,clientId=project.client_id;
+  // Suggestions from this client's mapping history, for every unmapped cost row of the project (the groups) and for this page (the row labels).
+  const unmappedCost=await tx`select r.row_id,r.dataset,r.normalized,b.period_start from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${pid} and b.archived_at is null and not r.is_split_parent and r.parent_row_id is null and r.account_code is null and r.dataset in ('Purchases','Expenditure','Non-eTIMS') limit 10000`,
+   historyMap=await suggestionsFor(tx,project,unmappedCost);
   const clientAccountMappings=await tx`select erp_account_code,effective_from,effective_to,status from erp_private.client_account_mappings where client_id=${clientId} and status in ('Active','Draft') order by erp_account_code,effective_from`,accounts=await tx`select code,name,route,category_code,account_group,statement,tax_note,status,is_legacy from erp_private.account_catalog where status='Active' and not is_legacy order by code`;
-  return {stock_categories:await stockCategoryOptions(tx,clientId),policies:await tx`select * from erp_private.stock_policy_versions where client_id=${clientId} order by effective_from desc`,activities:await tx`select * from erp_private.client_activities where client_id=${clientId} order by activity_name`,accounts:await chartCatalogue(tx,accounts,clientId,new Date().toISOString().slice(0,10)),client_account_mappings:clientAccountMappings,policy:(await tx`select * from erp_private.accounting_policies where client_id=${clientId}`)[0]||null,rows:rows.map((r:any)=>({...r,warnings:rowWarnings(r)})),legal_categories:legalCategories,total,has_more:hasMore,offset,page_size:100,
+  return {stock_categories:await stockCategoryOptions(tx,clientId),policies:await tx`select * from erp_private.stock_policy_versions where client_id=${clientId} order by effective_from desc`,activities:await tx`select * from erp_private.client_activities where client_id=${clientId} order by activity_name`,accounts:await chartCatalogue(tx,accounts,clientId,new Date().toISOString().slice(0,10)),client_account_mappings:clientAccountMappings,policy:(await tx`select * from erp_private.accounting_policies where client_id=${clientId}`)[0]||null,rows:rows.map((r:any)=>({...r,warnings:rowWarnings(r)})),history_groups:groupSuggestions(unmappedCost,historyMap),history_suggestions:Object.fromEntries(rows.filter((r:any)=>historyMap.has(r.row_id)).map((r:any)=>[r.row_id,historyMap.get(r.row_id)])),legal_categories:legalCategories,total,has_more:hasMore,offset,page_size:100,
    categories:allCategories,pending_information:await pendingPurchases(tx,pid),
    rejections:await tx`select r.source_row,r.reason,b.sheet_name,b.dataset from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${pid} and b.archived_at is null and not r.raw_values ? '_pending_purchase' order by b.created_at desc limit 100`};
  }
