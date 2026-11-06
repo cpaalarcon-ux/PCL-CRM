@@ -336,7 +336,18 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  if(p.action==='ledger_journal_save'){
   const accounts=await catalogue(tx),kind=choice(p.kind,['Opening','Payroll','Adjustment','Stock']),items=normaliseLines(p.lines,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll',entityType:l.entity_type});
-  if(kind==='Opening')for(const code of [...new Set(items.filter((x:any)=>x.account_code).map((x:any)=>String(x.account_code)))]){const ok=await openingAccountApproved(tx,a,project.client_id,code,day(l.starts_on));if(!ok.ok)fail(400,openingAccountMessage(code,day(l.starts_on),ok));}
+  // Balances typed in the client T-structure use the ERP account itself as the source. Where the client has no account setup for an ERP account
+  // yet, a Draft setup (source = the ERP account name) is created from the opening date, and a different Manager or Partner activates it when
+  // they post the opening journal, exactly as for imported accounts. Only chart accounts qualify.
+  if(kind==='Opening')for(const code of [...new Set(items.filter((x:any)=>x.account_code).map((x:any)=>String(x.account_code)))]){
+   let ok:any=await openingAccountApproved(tx,a,project.client_id,code,day(l.starts_on));
+   if(!ok.ok&&ok.reason==='none'&&p.t_structure===true){
+    await requireChartAccount(tx,project.client_id,code,day(l.starts_on));
+    const acct=accounts.find((x:any)=>x.code===code);
+    if(acct){await tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,status,created_by) values(${project.client_id},null,${acct.name},${code},${day(l.starts_on)},'Draft',${a.staff_id})`;ok={ok:true};}
+   }
+   if(!ok.ok)fail(400,openingAccountMessage(code,day(l.starts_on),ok));
+  }
   if(p.journal_id){const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);if(j.generated||j.kind!==kind)fail(400,'Generated source entries must be refreshed or reversed, not manually overwritten.');
    await writeLines(tx,j,items);await tx`update erp_private.ledger_journals set journal_date=${date(p.journal_date)},reference=${text(p.reference,100)},description=${text(p.description||'',2000,false)},evidence=${text(p.evidence||'',5000,false)},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};
   }return await newJournal(tx,a,l,kind,p,items);

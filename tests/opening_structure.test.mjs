@@ -58,6 +58,21 @@ test('Opening T-structure: built from the approved chart and downloadable as the
  const ts=wb.getWorksheet('T-structure');let formulas=0;ts.eachRow(r=>r.eachCell(c=>{if(c.value&&c.value.formula)formulas++;}));
  assert.ok(formulas>=all.length*2+6,'T-structure recalculates from the Opening TB sheet');
  assert.match(JSON.stringify(wb.getWorksheet('Read first').getSheetValues()),/chart amendment/);
+ // balances typed in the T-structure: saved as a draft opening journal, Draft account setups created, activated by an independent poster
+ const save=(p)=>ledger('ASSISTANT',{...base,action:'ledger_journal_save',kind:'Opening',reference:'OPEN-TB-2026',journal_date:'2026-01-01',description:'Typed',evidence:'Approved 2025 closing TB',...p});
+ const line=(code,debit,credit)=>({account_code:code,source_name:'x',legacy_code:'',debit,credit,source_status:'Confirmed',source_reference:'Approved 2025 closing TB',description:''});
+ await assert.rejects(()=>save({lines:[line('10000',1000,0),line('36010',0,1000)]}),/not approved for this client’s opening balance date/);
+ await assert.rejects(()=>save({t_structure:true,lines:[line('30000',0,1000),line('10000',1000,0)]}),/approved chart of accounts/);
+ const typed=await save({t_structure:true,lines:[line('10000',1000,0),line('36010',0,1000)]});assert.ok(typed.journal_id);
+ const drafts=await tx`select erp_account_code,status,source_account_code from erp_private.client_account_mappings where client_id=${C} and erp_account_code in ('10000','36010') order by erp_account_code`;
+ assert.deepEqual(drafts.map(x=>[x.erp_account_code,x.status,x.source_account_code]),[['10000','Draft',null],['36010','Draft',null]]);
+ const again=await save({t_structure:true,journal_id:typed.journal_id,revision:(await ledger('ASSISTANT',{...base,action:'ledger_journal_read',journal_id:typed.journal_id})).journal.revision,lines:[line('10000',1000,0),line('36010',0,1000)]});assert.equal(again.journal_id,typed.journal_id);
+ assert.equal((await tx`select count(*)::int n from erp_private.client_account_mappings where client_id=${C} and erp_account_code in ('10000','36010')`)[0].n,2,'saving again does not duplicate the account setups');
+ let jr=(await ledger('ASSISTANT',{...base,action:'ledger_journal_read',journal_id:typed.journal_id})).journal;
+ await ledger('ASSISTANT',{...base,action:'ledger_journal_submit',journal_id:typed.journal_id,revision:jr.revision});await checkJournal(tx,typed.journal_id);
+ jr=(await ledger('ASSISTANT',{...base,action:'ledger_journal_read',journal_id:typed.journal_id})).journal;
+ await ledger('MANAGER',{...base,action:'ledger_journal_review',journal_id:typed.journal_id,revision:jr.revision,status:'Posted',review_note:'Fictional independent review of the typed opening balances',confirm_opening_review:true});
+ assert.deepEqual((await tx`select status from erp_private.client_account_mappings where client_id=${C} and erp_account_code in ('10000','36010') order by erp_account_code`).map(x=>x.status),['Active','Active'],'the independent poster activates the account setups');
  // without an approved chart nothing is offered
  await tx`update erp_private.client_chart_versions set status='Returned' where client_id=${C}`;
  await assert.rejects(getS,/Approve the client chart/);await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_opening_template'}),/Approve the client chart/);

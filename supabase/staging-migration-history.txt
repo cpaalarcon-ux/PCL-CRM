@@ -107,3 +107,4 @@
 20261106141448 discard_reserve_days_parity
 20261106154611 sales_period_amendments
 20261106155443 firm_mapping_suggestions
+20261106165529 statutory_chart_tags
