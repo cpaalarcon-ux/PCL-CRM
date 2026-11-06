@@ -92,7 +92,7 @@
     if (retryButton) retryButton.hidden = true;
     notice('Opening your secure workspace…');
     try {
-      await import('./staff-pilot.mjs?v=20261106-workspace-areas-v3');
+      await import('./staff-pilot.mjs?v=20261107-rates-v1');
     } catch {
       workspaceLoading = false;
       if (readSavedSession()) {
