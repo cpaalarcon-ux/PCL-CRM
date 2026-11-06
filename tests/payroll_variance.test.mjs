@@ -104,9 +104,38 @@ test('Payroll imports: residence assumptions, rounding tolerance and reasons',as
   assert.equal(att.residency_assumed.confirmed,true);assert.equal(att.residency_assumed.employees,2);assert.equal(att.residency_assumed.confirmed_by,actors.ASSISTANT.staff_id);
   assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='PAYROLL_RESIDENCY_ASSUMED'`)[0].n,1);
  });
+ await t.test('casuals: housing levy only, register details required, signed sheet linked',async()=>{
+  const head2='Employee name,KRA PIN,ID number,Employment type,Phone number,Date paid,Basic pay,Allowances,Deductions,Gross pay,NSSF,SHIF,AHL,NITA levy,Taxable pay,Income tax,P.M relief,PAYE deduction,Net amount\n';
+  const r2=(n,pin,idn,type,phone,date,gross=20000,ahl=0,net=0)=>`${n},${pin},${idn},${type},${phone},${date},${gross},0,0,${gross},0,0,${ahl},0,0,0,0,0,${net}`;
+  const pdf=id();await as('ASSISTANT',()=>tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${pdf},${C},${F},${P},${T},'Working Papers','Signed casual wage sheet October.pdf',${'qa/'+pdf},100,${'c'.repeat(64)},'application/pdf',${actors.ASSISTANT.staff_id})`);
+  const listed=await imp('ASSISTANT',{action:'period_import_list'});assert.ok(listed.signed_documents.some(x=>x.document_id===pdf),'the signed sheet can be chosen');
+  const run=async(rows,extra={})=>{const d=await doc('Casual-'+Math.random()+'.csv',head2+rows.join('\n'));return imp('ASSISTANT',{action:'period_import_preview',kind:'Payroll',document_id:d,starts_on:'2026-10-01',ends_on:'2026-10-31',residents_confirmed:true,...extra});};
+  const mixed=[r2('Fictional Permanent','A000000021A','11111111','Permanent','','',100000),r2('Fictional Casual One','','22222222','Casual','0712345678','2026-10-15'),r2('Fictional Casual Two','','33333333','Casual','+254712345679','2026-10-16')];
+  const a=await run(mixed);
+  assert.ok(a.payload.issues.some(i=>/casuals in this file\. Choose the signed casual wage sheet/.test(i)),'the signed sheet is required');
+  const b=await run(mixed,{signed_document_id:pdf});
+  assert.deepEqual(b.payload.issues.filter(i=>!/Resident|PIN/.test(i)),[],b.payload.issues.join(' | '));
+  assert.equal(b.payload.casual.count,2);assert.equal(b.payload.casual.file_name,'Signed casual wage sheet October.pdf');
+  const calc=Object.fromEntries(b.payload.calculated.map(c=>[c.source_row,c]));
+  assert.ok(calc[2].employee_nssf>0&&calc[2].shif>0&&calc[2].nita>0,'a permanent employee carries NSSF, SHIF and NITA');
+  for(const row of [3,4]){const c=calc[row];assert.equal(c.employment_type,'Casual');assert.equal(c.employee_nssf,0);assert.equal(c.employer_nssf,0);assert.equal(c.shif,0);assert.equal(c.nita,0);assert.equal(c.employee_ahl,300);assert.equal(c.employer_ahl,300);assert.equal(c.paye,0,'pay below the taxable threshold has no PAYE');assert.equal(c.net_pay,19700);}
+  assert.ok(!b.payload.differences.some(d=>[3,4].includes(d.row)&&['taxable','gross_tax','personal_relief','employee_nssf','shif'].includes(d.field)),'casuals are only compared on gross, housing levy, PAYE and net');
+  // Missing register details are exceptions; so are a bad type and a date outside the month.
+  const bad=await run([r2('Fictional Casual Three','','','Casual','','',20000),r2('Fictional Casual Four','','44444444','Casual','0712345680','2026-11-02'),r2('Fictional Other','','55555555','Seasonal','0712345681','2026-10-03')],{signed_document_id:pdf});
+  const text=bad.payload.issues.join(' | ');
+  assert.match(text,/Row 2: A casual needs an ID number/);assert.match(text,/Row 2: A casual needs a phone number/);assert.match(text,/Row 2: A casual needs the date paid/);
+  assert.match(text,/Row 3: the date paid 2026-11-02 is outside the payroll month/);assert.match(text,/Row 4: Employment type must be Permanent, Casual or Contract/);
+  // A casual-only file that agrees with the ERP saves, and records the signed sheet.
+  const clean=await run([r2('Fictional Casual Five','','66666666','Casual','0712345682','2026-10-20',20000,300,19700),r2('Fictional Casual Six','','77777777','Casual','0712345683','2026-10-21',20000,300,19700)],{signed_document_id:pdf});
+  assert.deepEqual(clean.payload.issues,[]);
+  assert.equal(clean.payload.differences.length,0,JSON.stringify(clean.payload.differences));
+  const out=await imp('ASSISTANT',{action:'period_import_save',kind:'Payroll',document_id:clean.document_id,starts_on:'2026-10-01',ends_on:'2026-10-31',residents_confirmed:true,signed_document_id:pdf,use_calculated:true,preview_hash:clean.source_hash,confirmed_client_id:C,replaces_ids:clean.overlaps.map(o=>o.import_id)});
+  const rec=(await imp('ASSISTANT',{action:'period_import_read',import_id:out.import_id})).record;
+  assert.equal(rec.payload.casual.document_id,pdf);assert.equal(rec.payload.totals.employer_ahl,600);assert.equal(rec.payload.totals.employee_nssf,0);
+ });
 });
 
 test('the payroll screen shows the residence choices, the rounding summary and a reason for each difference',()=>{
  const ui=fs.readFileSync(root+'/staff-period-imports.mjs','utf8'),guide=fs.readFileSync(root+'/staff-guide-text.mjs','utf8');
- assert.match(ui,/residency_choices/);assert.match(ui,/difference_reasons/);assert.match(ui,/Within KES \$\{t\.per_employee\}/);assert.match(ui,/period_import_tolerance/);assert.match(guide,/KES 1/);
+ assert.match(ui,/residency_choices/);assert.match(ui,/difference_reasons/);assert.match(ui,/Within KES \$\{t\.per_employee\}/);assert.match(ui,/period_import_tolerance/);assert.match(guide,/KES 1/);assert.match(ui,/signed_document_id/);assert.match(ui,/Housing levy only/);assert.match(guide,/Casuals:/);
 });

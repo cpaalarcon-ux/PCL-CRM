@@ -7,7 +7,7 @@ const clean=v=>String(v??'').trim();
 const norm=v=>clean(v).toLowerCase().replace(/[^a-z0-9]/g,'');
 export function rateCategory(v){const s=norm(v);return /exempt/.test(s)?'Exempt':['16','16percent','016','standard','standardrated'].includes(s)?'16%':['8','8percent','008'].includes(s)?'8%':['0','0percent','zero','zerorated'].includes(s)?'0%':null;}
 const aliases={date:['date','invoicedate','transactiondate'],invoice:['invoice','invoicenumber','invoiceno','invoiceref','creditnotenumber'],party:['supplier','suppliername','nameofsupplier','buyer','buyername'],party_pin:['supplierpin','pinofsupplier','buyerpin','krapin','pin'],description:['description','descriptionofgoodsservices','narration'],amount:['netamount','taxablevalue','taxablevalueksh','netvalue','purchasevalue','netsales','netsaleskes'],vat:['vat','vatamount','amountofvat','outputvat','vatkes','outputvatkes'],gross:['gross','grossamount','grosssales','grosssaleskes'],vat_category:['vatcategory','taxcategory','vatrate','salescategory','rate'],original_invoice:['originalinvoice','originalinvoicenumber','relevantinvoicenumber'],original_invoice_date:['originalinvoicedate','relevantinvoicedate'],document_type:['documenttype','type'],line_id:['lineid','linenumber']};
-const payrollAliases={name:['employeename','name'],pin:['krapin','employeepin','pin'],employee_id:['idnumber','employeeid','staffnumber'],basic:['basicpay','basicsalary'],allowances:['allowances','totalallowances'],gross:['grosspay','totalgrosspay','grosssalary'],other_deductions:['deductions','otherdeductions'],employee_nssf:['nssf','employeenssf'],shif:['shif'],employee_ahl:['ahl','housinglevy','affordablehousinglevy'],employer_nita:['nitalevy','nita'],taxable:['taxablepay','taxableamount'],gross_tax:['incometax','taxbeforerelief','grosstax'],personal_relief:['pmrelief','personalrelief','monthlypersonalrelief'],paye:['payededuction','payetax','paye'],net:['netamount','netpay','netsalary'],benefits:['noncashbenefits','taxablebenefits'],employer_nssf:['employernssf'],employer_ahl:['employerahl'],resident:['residentstatus']};
+const payrollAliases={name:['employeename','name'],pin:['krapin','employeepin','pin'],employee_id:['idnumber','employeeid','staffnumber'],basic:['basicpay','basicsalary'],allowances:['allowances','totalallowances'],gross:['grosspay','totalgrosspay','grosssalary'],other_deductions:['deductions','otherdeductions'],employee_nssf:['nssf','employeenssf'],shif:['shif'],employee_ahl:['ahl','housinglevy','affordablehousinglevy'],employer_nita:['nitalevy','nita'],taxable:['taxablepay','taxableamount'],gross_tax:['incometax','taxbeforerelief','grosstax'],personal_relief:['pmrelief','personalrelief','monthlypersonalrelief'],paye:['payededuction','payetax','paye'],net:['netamount','netpay','netsalary'],benefits:['noncashbenefits','taxablebenefits'],employer_nssf:['employernssf'],employer_ahl:['employerahl'],resident:['residentstatus'],employment_type:['employmenttype','employeetype','typeofemployment'],phone:['phonenumber','phone','mobile','mobilenumber','telephone','telephonenumber'],date_paid:['datepaid','paymentdate','datesigned','datereceived']};
 function headerMap(values,dict){const out={};for(const [key,names] of Object.entries(dict)){const matches=values.map((v,i)=>names.includes(norm(v))?i+1:0).filter(Boolean);if(matches.length===1)out[key]=matches[0];}return out;}
 // Versioned contracts from the supplied KRA CSV sections. An exact shape and all
 // nonblank transaction dates/amounts are checked; a filename alone is insufficient.
@@ -31,7 +31,7 @@ export function detectImportProfile(sheet){
  }
  for(let i=1;i<=Math.min(sheet.rowCount,30);i++){
   const values=sheetValues(sheet,i),pay=headerMap(values,payrollAliases),map=headerMap(values,aliases);
-  if(pay.name&&pay.pin&&pay.gross&&pay.paye)return {recognised:true,id:'PAYROLL-BREAKDOWN-v1',name:'Payroll breakdown',dataset:'Payroll',header_row:i,column_map:pay};
+  if(pay.name&&pay.gross&&((pay.pin&&pay.paye)||(pay.employment_type&&pay.employee_id)))return {recognised:true,id:'PAYROLL-BREAKDOWN-v1',name:'Payroll breakdown',dataset:'Payroll',header_row:i,column_map:pay};
   if(norm(values[0])==='krapin'&&norm(values[1])==='employeename'&&sheet.columnCount===25&&norm(values[6]).startsWith('totalcashpay'))return {recognised:true,id:'PAYE-25-v1',name:'PAYE 25-column template',dataset:'Payroll',header_row:i,column_map:{pin:1,name:2,resident:3,gross:7,shif:15,employee_nssf:16,other_pension:17,postretirement_medical:18,mortgage_interest:19,employee_ahl:20,taxable:21,personal_relief:22,insurance_relief:23,paye:24},benefit_columns:[8,9,10,12,13]};
   if(map.vat_category&&map.amount&&map.vat&&!map.invoice)return {recognised:true,id:'SALES-CATEGORIES-v1',name:'Sales category totals',dataset:'Sales',header_row:i,column_map:map,summary:true,amount_basis:'Net'};
   if(map.date&&map.invoice&&map.amount)return {recognised:true,id:'INVOICE-HEADERS-v1',name:'Invoice export with recognised headers',dataset:'Purchases',header_row:i,column_map:map,amount_basis:'Net'};
@@ -73,15 +73,20 @@ export function salesTotals(sheets,start,end){
  return {groups,issues,source_count:source,duplicate_count:duplicates,credit_basis:'After credit notes',amount_basis:'Net'};
 }
 export function payrollRows(sheet,profile){
- const rows=[],issues=[],pins=new Set();
+ const rows=[],issues=[],pins=new Set(),ids=new Set();
  for(let i=profile.header_row+1;i<=sheet.rowCount;i++){
   const values=sheetValues(sheet,i),get=k=>values[profile.column_map[k]-1],name=clean(get('name')),pin=clean(get('pin')).toUpperCase();
   if(!name&&!pin)continue;if(/^(grand\s*)?totals?$/i.test(name))continue;
   if(!name&&!/^[A-Z]\d{9}[A-Z]$/i.test(pin)&&money(get('gross'))==null&&!clean(get('employee_id')))continue;
   const errors=[],r={source_row:i,name,pin,employee_id:clean(get('employee_id')),resident:profile.column_map.resident?clean(get('resident'))==='Resident':null};
-  for(const key of Object.keys(profile.column_map))if(!['name','pin','employee_id','resident'].includes(key))r[key]=money(get(key));
+  const typeText=clean(get('employment_type')).toLowerCase(),types={'':'Permanent',permanent:'Permanent',casual:'Casual',contract:'Contract'};
+  r.employment_type=types[typeText]??'Unknown';r.phone=clean(get('phone')).replace(/[\s-]/g,'');r.date_paid=excelDate(get('date_paid'))||null;
+  for(const key of Object.keys(profile.column_map))if(!['name','pin','employee_id','resident','employment_type','phone','date_paid'].includes(key))r[key]=money(get(key));
   if(profile.benefit_columns)r.benefits=profile.benefit_columns.reduce((n,c)=>n+(money(values[c-1])||0),0);
-  if(!name)errors.push('Employee name is missing.');if(!/^[A-Z]\d{9}[A-Z]$/.test(pin))errors.push('Employee PIN is missing or invalid.');if(pin&&pins.has(pin))errors.push('Duplicate employee PIN.');pins.add(pin);
+  if(!name)errors.push('Employee name is missing.');if(r.employment_type==='Unknown')errors.push('Employment type must be Permanent, Casual or Contract.');
+  const casual=r.employment_type==='Casual';
+  if(!/^[A-Z]\d{9}[A-Z]$/.test(pin)&&!(casual&&!pin))errors.push('Employee PIN is missing or invalid.');if(pin&&pins.has(pin))errors.push('Duplicate employee PIN.');if(pin)pins.add(pin);
+  if(casual){if(!r.employee_id)errors.push('A casual needs an ID number.');else if(ids.has(r.employee_id))errors.push('Duplicate ID number.');ids.add(r.employee_id);if(!/^\+?\d{9,13}$/.test(r.phone))errors.push('A casual needs a phone number.');if(!r.date_paid)errors.push('A casual needs the date paid.');}
   if(r.gross==null||r.gross<0)errors.push('Cash gross pay is missing or invalid.');
   for(const [k,v] of Object.entries(r))if(typeof v==='number'&&v<0)errors.push(`${k} cannot be negative.`);
   r.issues=errors;rows.push(r);issues.push(...errors.map(x=>`Row ${i}: ${x}`));

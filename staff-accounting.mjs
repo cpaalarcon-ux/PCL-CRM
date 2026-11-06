@@ -1,5 +1,5 @@
-import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261106-payroll-v1';
-import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261106-payroll-v1';
+import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261106-casuals-v1';
+import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261106-casuals-v1';
 import {mappingDates,inventoryMethod,inventoryAccountAllowed,stockChoices,mappingPeriod,mappingPeriods} from './staff-inventory-options.mjs?v=20261027-aligned';
 function stockCategorySuggestions(activity,use){
  const name=String(activity||'').toLowerCase();
