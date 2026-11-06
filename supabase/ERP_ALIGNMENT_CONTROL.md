@@ -57,7 +57,7 @@ For each candidate, record this chain in `RELEASE0_STATUS_2026-11-03.md`:
 
 A green unit suite or a loaded sign-in page is not evidence of successful hosted login, role authorization, a posted accounting period or a completed audit pack.
 
-## Current alignment snapshot
+## Historical alignment snapshot — 3 November 2026 (superseded by the current launcher record below)
 
 | Area | Current state | Required evidence before marking aligned |
 |---|---|---|
@@ -76,6 +76,10 @@ A green unit suite or a loaded sign-in page is not evidence of successful hosted
 Nothing reaches production until Release 0 foundation, the five core workflows, the aligned KYC/approval/import paths, current tax rule approvals, role-based hosted UAT, backup/restore and the Partner's written release decision are recorded. The latest approval for staging does not authorize production.
 
 
-## Workspace-area launcher candidate — 2026-11-06.75
+## Current staging alignment — Workspace-area launcher (build 2026-11-06.75)
 
-The persistent left sidebar and old home area tiles are removed in this staging candidate. Home displays one responsive, permission-filtered grid of connected ERP areas. Tiles route into existing records and workflows; they are not separately installed or removable apps. The topbar preserves the firm selector, search, communication and account controls, plus an “All areas” route back Home. Build .74 evidence: hosted [#42298662384](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/42298662384), browser [#42298662291](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/42298662291), Pages [#128170587754](https://github.com/cpaalarcon-ux/PCL-CRM/runs/128170587754), Edge Function v123, and migration `20261106212515_unpaid_cheques_account` tracked in the branch. Build .75 U71/U77/U78 remain **Not checked** until its hosted tests and fictional-role browser UAT are recorded. Production remains held.
+The current branch head is `ae24e34220414f169ae38c10b38d8aa0f93eaf4e` on `backend/staging-foundation`. It removes the persistent left sidebar and old home tiles. Home shows one responsive, permission-filtered grid of connected ERP areas; tiles route into existing workflows over shared records and are not installable apps. The topbar keeps the firm selector, search, communications and account controls, plus “All areas” to return Home.
+
+For this exact head, Cloudflare Pages [128185669324](https://github.com/cpaalarcon-ux/PCL-CRM/runs/128185669324), hosted staging check [42303084254](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/42303084254), and browser UAT [42303084351](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/42303084351) passed. The automated suite passed **496/496** checks; Chromium sign-in and workflow checks passed. Staging `staff-workspace-v12` is active at v124 and reports build .75. The branch includes the bank unpaid-cheque migration `20261106212515_unpaid_cheques_account` and current tax rule review migration `20261106215418_rate_legal_review`; the launcher changes add no schema changes.
+
+Automated success does not establish staff-role authorization or visual acceptance at all target sizes. U71's release-identity portion is automated-pass; U77/U78 remain **Not checked** for separate fictional-role access, denied direct routes, manual desktop/tablet/mobile and keyboard testing. End-to-end workflows, rule-owner sign-offs, backup/restore evidence and Partner release approval also remain open. **Production remains held.**
