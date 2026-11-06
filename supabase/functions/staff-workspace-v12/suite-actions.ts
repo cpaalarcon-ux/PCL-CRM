@@ -1,7 +1,8 @@
 import {letterPdf,letterDetails} from './letter-pdf.mjs';
+import {invoicePdf,invoiceTotals} from './invoice-pdf.mjs';
 import {automaticBreakMinutes,lateClockIn} from './attendance-rules.mjs';
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
-import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,busySeason,weekdays,round,recurringFeePeriods} from './suite-rules.mjs';
+import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,busySeason,weekdays,round,recurringFeePeriods,servicePeriod,serviceNarration,formatDay} from './suite-rules.mjs';
 // pdf-lib is supplied by index.ts so modules loaded in tests do not need it.
 let PDFLib:any=null;export function setPdfLib(lib:any){PDFLib=lib;}
 const roleLabels:any={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Supervisor',ASSISTANT:'Assistant',INTERN:'Intern'};
@@ -22,12 +23,23 @@ async function issuedLetter(tx:any,c:any){
 export const one=(rows:any[])=>{if(!rows.length)fail(403,'This record is not available to your account.');return rows[0];};
 export const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must perform this action.');};
 const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Partner approval is required.');};
+// The database driver returns date columns as Date objects; the date rules want YYYY-MM-DD text.
+const dayOf=(v:any)=>day(v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10));
 export const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const current=(old:any,p:any)=>{if(String(old.revision)!==revision(p.revision))fail(409,'This record changed. Refresh it before saving.');};
 async function financial(tx:any,pid:string,write=false){one(await tx`select project_id from erp_private.projects where project_id=${pid} and erp_private.finance_allowed(project_id,${write})`);}
-export async function nextNumber(tx:any,firm:string,kind:string,date:string){const year=Number(date.slice(0,4));const f=one(await tx`select firm_code,invoice_prefix from erp_private.firms where firm_id=${firm}`);
- const n=one(await tx`insert into erp_private.number_sequences(firm_id,kind,year,last_value) values(${firm},${kind},${year},1) on conflict(firm_id,kind,year) do update set last_value=number_sequences.last_value+1 returning last_value`);
- return `${kind==='INV'&&f.invoice_prefix?f.invoice_prefix.replace(/\/+$/,''):kind+'/'+f.firm_code}/${year}/${String(n.last_value).padStart(5,'0')}`;
+export async function nextNumber(tx:any,firm:string,kind:string,date:string){const year=Number(date.slice(0,4));const f=one(await tx`select firm_code,invoice_prefix,invoice_numbering from erp_private.firms where firm_id=${firm}`);
+ // A firm numbered continuously (INV/ACL/00323) keeps one running sequence, stored under year 0; otherwise the count restarts each year.
+ const continuous=kind==='INV'&&f.invoice_numbering==='continuous',seq=continuous?0:year;
+ const n=one(await tx`insert into erp_private.number_sequences(firm_id,kind,year,last_value) values(${firm},${kind},${seq},1) on conflict(firm_id,kind,year) do update set last_value=number_sequences.last_value+1 returning last_value`);
+ const prefix=kind==='INV'&&f.invoice_prefix?f.invoice_prefix.replace(/\/+$/,''):kind+'/'+f.firm_code;
+ return continuous?`${prefix}/${String(n.last_value).padStart(5,'0')}`:`${prefix}/${year}/${String(n.last_value).padStart(5,'0')}`;
+}
+// Unpaid balance of the client's earlier posted invoices from the same firm: the "balance brought forward" on a new invoice.
+export async function broughtForward(tx:any,i:any){
+ const r=(await tx`select coalesce(sum(greatest(x.total_amount-coalesce((select sum(p.amount) from erp_private.payments p where p.invoice_id=x.invoice_id),0),0)),0) as bf
+  from erp_private.invoices x where x.client_id=${i.client_id} and x.firm_id=${i.firm_id} and x.status='Posted' and x.deleted_at is null and x.invoice_id<>${i.invoice_id}`)[0];
+ return round(Number(r?.bf||0));
 }
 export async function suiteRead(tx:any){const [r]=await tx`select jsonb_build_object(
  'leads',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.leads where deleted_at is null order by created_at desc)x),
@@ -66,7 +78,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const frequency=choice(p.frequency,['Monthly','Quarterly','Annually']),starts=day(p.starts_on),ends=p.ends_on?day(p.ends_on):null;
   if(ends&&ends<starts)fail(400,'The end date must be on or after the start date.');
   const net=amount(p.amount_ex_vat);if(net<=0)fail(400,'Enter a recurring fee greater than zero before VAT.');
-  const vat=Number(choice(String(p.vat_rate??''),['0','8','16'])),description=text(`${project.service_name} · ${project.project_name}`,300);
+  const vat=Number(choice(String(p.vat_rate??''),['0','8','16'])),description=text(String(p.description||'').trim()||project.service_name,250);
   const result=await tx`insert into erp_private.recurring_fee_schedules(project_id,frequency,amount_ex_vat,vat_rate,description,starts_on,ends_on,created_by,updated_by)
    values(${pid},${frequency},${net},${vat},${description},${starts},${ends},${a.staff_id},${a.staff_id}) returning fee_schedule_id`;
   return {...one(result),description};
@@ -86,19 +98,19 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   if(schedule.status!=='Active')fail(400,'Resume this recurring fee schedule before creating drafts.');
   const project=one(await tx`select * from erp_private.projects where project_id=${schedule.project_id} and deleted_at is null`);
   if(project.status!=='Active')fail(400,'Activate the verified project before creating recurring invoice drafts.');
-  const todayDate=today(),periods=recurringFeePeriods(day(schedule.starts_on),schedule.ends_on?day(schedule.ends_on):null,schedule.frequency,todayDate,12);
+  const todayDate=today(),periods=recurringFeePeriods(dayOf(schedule.starts_on),schedule.ends_on?dayOf(schedule.ends_on):null,schedule.frequency,todayDate,12);
   if(!periods.length)return {generated:0,already_created:0,more_due:false};
   const known=await tx`select recurring_period_start from erp_private.invoices where recurring_fee_schedule_id=${schedule.fee_schedule_id} and deleted_at is null`;
-  const have=new Set(known.map((x:any)=>day(x.recurring_period_start))),dueDate=new Date(Date.parse(todayDate+'T00:00:00Z')+14*86400000).toISOString().slice(0,10);let generated=0,already=0;
+  const have=new Set(known.map((x:any)=>dayOf(x.recurring_period_start)));let generated=0,already=0;
   for(const period of periods){if(have.has(period.period_start)){already++;continue;}
-   const periodLabel=`${period.period_start} to ${period.period_end}`,lineDescription=`${schedule.description} · ${periodLabel}`;
+   const lineDescription=serviceNarration(schedule.description,period.period_start,period.period_end),span=servicePeriod(period.period_start,period.period_end),monthStart=todayDate.slice(0,8)+'01',issueOn=period.period_start>=monthStart?period.period_start:todayDate,dueOn=new Date(Date.parse(issueOn+'T00:00:00Z')+14*86400000).toISOString().slice(0,10);
    const lines=invoiceLines([{description:lineDescription,quantity:1,unit_price:schedule.amount_ex_vat,vat_rate:schedule.vat_rate}]);
-   const inserted=await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,recurring_fee_schedule_id,recurring_period_start,created_by)
-    values(${crypto.randomUUID()},${schedule.project_id},${project.client_id},${project.handling_firm_id},${lineDescription},${todayDate},${dueDate},${tx.json(lines)},${lines[0].net},${lines[0].vat},${schedule.fee_schedule_id},${period.period_start},${a.staff_id})
+   const inserted=await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,recurring_fee_schedule_id,recurring_period_start,service_from,service_to,service_months,created_by)
+    values(${crypto.randomUUID()},${schedule.project_id},${project.client_id},${project.handling_firm_id},${lineDescription},${issueOn},${dueOn},${tx.json(lines)},${lines[0].net},${lines[0].vat},${schedule.fee_schedule_id},${period.period_start},${span.service_from},${span.service_to},${span.service_months},${a.staff_id})
     on conflict do nothing returning invoice_id`;
    if(inserted.length){generated++;have.add(period.period_start);}else already++;
   }
-  const moreDue=periods.length===12&&recurringFeePeriods(day(schedule.starts_on),schedule.ends_on?day(schedule.ends_on):null,schedule.frequency,todayDate,13).length>12;
+  const moreDue=periods.length===12&&recurringFeePeriods(dayOf(schedule.starts_on),schedule.ends_on?dayOf(schedule.ends_on):null,schedule.frequency,todayDate,13).length>12;
   return {generated,already_created:already,more_due:moreDue};
  }
  if(p.action==='staff_rate_add'){
@@ -117,12 +129,17 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   if(issued>today())fail(400,'Invoice date cannot be in the future.');
   const taskIds=[...new Set(lines.filter((l:any)=>l.task_id).map((l:any)=>l.task_id))];
   if(taskIds.length&&(await tx`select task_id from erp_private.tasks where project_id=${pid} and task_id=any(${tx.array(taskIds)}::uuid[])`).length!==taskIds.length)fail(400,'Each invoice line task must belong to the invoice project.');
-  return one(await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,external_reference,created_by)
-   values(${rid},${pid},${project.client_id},${project.handling_firm_id},${text(p.description,500)},${issued},${due},${tx.json(lines)},${round(lines.reduce((s,l)=>s+l.net,0))},${round(lines.reduce((s,l)=>s+l.vat,0))},${text(p.external_reference||'',100,false)||null},${a.staff_id}) returning invoice_id`);
+  const period=servicePeriod(p.service_from||null,p.service_to||null);
+  if(period.service_from&&p.confirm_not_duplicate!==true){
+   const clash=await tx`select invoice_number,service_from,service_to,status from erp_private.invoices where client_id=${project.client_id} and firm_id=${project.handling_firm_id} and project_id=${pid} and status<>'Void' and deleted_at is null and service_from is not null and service_from<=${period.service_to} and service_to>=${period.service_from} limit 1`;
+   if(clash.length)fail(409,`Another ${clash[0].status==='Draft'?'draft':'invoice '+clash[0].invoice_number} already covers ${formatDay(clash[0].service_from)} to ${formatDay(clash[0].service_to)} for this client and project. If this is a different charge, tick "Not a duplicate" and save again.`);
+  }
+  return one(await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,external_reference,service_from,service_to,service_months,created_by)
+   values(${rid},${pid},${project.client_id},${project.handling_firm_id},${text(p.description,500)},${issued},${due},${tx.json(lines)},${round(lines.reduce((s,l)=>s+l.net,0))},${round(lines.reduce((s,l)=>s+l.vat,0))},${text(p.external_reference||'',100,false)||null},${period.service_from},${period.service_to},${period.service_months},${a.staff_id}) returning invoice_id`);
  }
  if(p.action==='invoice_post'||p.action==='invoice_void'){
   const i=one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} for update`);await financial(tx,i.project_id,true);current(i,p);
-  if(p.action==='invoice_post'){if(i.status!=='Draft')fail(400,'Only draft invoices can be posted.');if(one(await tx`select status from erp_private.projects where project_id=${i.project_id}`).status!=='Active')fail(400,'Activate the verified engagement before posting its invoice.');const ref=await nextNumber(tx,i.firm_id,'INV',i.invoice_date.toISOString().slice(0,10));await tx`update erp_private.invoices set status='Posted',invoice_number=${ref},posted_by=${a.staff_id},posted_at=now() where invoice_id=${i.invoice_id}`;return {ok:true,invoice_number:ref};}
+  if(p.action==='invoice_post'){if(i.status!=='Draft')fail(400,'Only draft invoices can be posted.');if(one(await tx`select status from erp_private.projects where project_id=${i.project_id}`).status!=='Active')fail(400,'Activate the verified engagement before posting its invoice.');const ref=await nextNumber(tx,i.firm_id,'INV',i.invoice_date.toISOString().slice(0,10));const bf=await broughtForward(tx,i);await tx`update erp_private.invoices set status='Posted',invoice_number=${ref},brought_forward=${bf},posted_by=${a.staff_id},posted_at=now() where invoice_id=${i.invoice_id}`;return {ok:true,invoice_number:ref,brought_forward:bf};}
   if(i.status==='Void')fail(400,'This invoice is already void.');const total=one(await tx`select coalesce(sum(amount),0) paid from erp_private.payments where invoice_id=${i.invoice_id}`);if(Number(total.paid)!==0)fail(400,'Reverse allocated payments before voiding this invoice.');
   await tx`update erp_private.invoices set status='Void',void_reason=${text(p.reason,1000)} where invoice_id=${i.invoice_id}`;return {ok:true};
  }
@@ -162,6 +179,32 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const mv=one(await tx`insert into erp_private.advance_movements(request_id,advance_id,client_id,firm_id,kind,amount,movement_date,voucher_number,reference,reason,to_advance_id,created_by)
    values(${rid},${adv.advance_id},${adv.client_id},${adv.firm_id},'Transfer',${value},${when},${voucher},${reference},${reason},${next.advance_id},${a.staff_id}) returning movement_id,voucher_number`);
   return {...mv,to_advance_id:next.advance_id,to_receipt_number:next.receipt_number};
+ }
+ if(p.action==='invoice_pdf'){
+  const i=one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} and deleted_at is null`);await financial(tx,i.project_id,false);
+  if(i.status==='Void')fail(400,'A void invoice has no PDF.');
+  if(!PDFLib)fail(500,'Invoice PDF generation is not available.');
+  const firm=one(await tx`select legal_name,kra_pin,phone,email,physical_address,payment_instructions from erp_private.firms where firm_id=${i.firm_id}`),client=one(await tx`select company_name,kra_pin from erp_private.clients where client_id=${i.client_id}`);
+  const contact=(await tx`select full_name from erp_private.client_contacts where client_id=${i.client_id} and role_in_decision='Billing Contact' order by created_at limit 1`)[0],logoRow=(await tx`select mime_type,data_base64 from erp_private.firm_logos where firm_id=${i.firm_id}`)[0];
+  const etims=(await tx`select etims_invoice_no,qr_url,etims_issued_on from erp_private.invoice_etims where invoice_id=${i.invoice_id}`)[0]||null;
+  const paid=Number((await tx`select coalesce(sum(amount),0) paid from erp_private.payments where invoice_id=${i.invoice_id}`)[0].paid);
+  // An issued invoice shows the balance fixed when it was posted; a draft shows today's balance as a preview.
+  const bf=i.status==='Posted'&&i.brought_forward!=null?Number(i.brought_forward):await broughtForward(tx,i);
+  const bytes=await invoicePdf({firm,client:{name:client.company_name,pin:client.kra_pin,attention:contact?.full_name?'Attn: '+contact.full_name:''},etims,logo:logoRow?{mime_type:logoRow.mime_type,bytes:Uint8Array.from(atob(logoRow.data_base64),c=>c.charCodeAt(0))}:null,invoice:{...i,paid_amount:paid,brought_forward:bf}},PDFLib);
+  let b='';for(let k=0;k<bytes.length;k+=16384)b+=String.fromCharCode(...bytes.subarray(k,k+16384));
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'invoices','INVOICE_PDF',${i.invoice_id},${tx.json({status:i.status,invoice_number:i.invoice_number})})`;
+  return {file_name:(i.invoice_number?String(i.invoice_number).replace(/[^A-Za-z0-9]+/g,'_'):'Draft_invoice_'+String(i.invoice_id).slice(0,8))+'.pdf',mime_type:'application/pdf',base64:btoa(b),totals:invoiceTotals({...i,paid_amount:paid,brought_forward:bf})};
+ }
+ if(p.action==='firm_logo_set'){
+  partner(a);const fid=uuid(p.firm_id);one(await tx`select firm_id from erp_private.firms where firm_id=${fid} and deleted_at is null`);
+  const mime=choice(p.mime_type,['image/png','image/jpeg']),b64=String(p.data_base64||'').replace(/\s+/g,'');
+  if(!/^[A-Za-z0-9+/]+={0,2}$/.test(b64))fail(400,'The logo file could not be read.');
+  const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));if(bytes.length>250000)fail(400,'The logo must be 250 KB or smaller.');
+  const sig=mime==='image/png'?[0x89,0x50,0x4e,0x47]:[0xff,0xd8,0xff];if(!sig.every((x,k)=>bytes[k]===x))fail(400,'The file is not a real '+(mime==='image/png'?'PNG':'JPEG')+' image.');
+  if(p.remove===true){await tx`delete from erp_private.firm_logos where firm_id=${fid}`;}
+  else await tx`insert into erp_private.firm_logos(firm_id,mime_type,data_base64,updated_by) values(${fid},${mime},${b64},${a.staff_id}) on conflict(firm_id) do update set mime_type=excluded.mime_type,data_base64=excluded.data_base64,updated_by=excluded.updated_by,updated_at=now()`;
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'firm_logos',${p.remove===true?'FIRM_LOGO_REMOVED':'FIRM_LOGO_SET'},${fid},${tx.json({mime_type:mime,bytes:bytes.length})})`;
+  return {ok:true,bytes:bytes.length};
  }
  if(p.action==='invoice_etims_record'){
   const i=one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} for update`);await financial(tx,i.project_id,true);
@@ -272,7 +315,10 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
  }
  if(p.action==='firm_details'){
   partner(a);if(typeof p.vat_registered!=='boolean')fail(400,'Confirm whether this firm is VAT registered.');const pin=text(p.kra_pin||'',11,false);if(pin&&!/^[A-Z][0-9]{9}[A-Z]$/.test(pin))fail(400,'Check the firm KRA PIN.');const prefix=text(p.invoice_prefix||'',40,false);if(prefix&&!/^[A-Z0-9/-]+$/.test(prefix))fail(400,'Use a prefix such as INV/PCL.');
-  one(await tx`update erp_private.firms set vat_registered=${p.vat_registered===true},payment_instructions=${text(p.payment_instructions||'',2000,false)},legal_name=${text(p.legal_name,200)},kra_pin=${pin||null},email=${text(p.email||'',200,false)},phone=${text(p.phone||'',40,false)},physical_address=${text(p.physical_address||'',500,false)},invoice_prefix=${prefix||null} where firm_id=${uuid(p.firm_id)} returning firm_id`);return {ok:true};
+  one(await tx`update erp_private.firms set vat_registered=${p.vat_registered===true},payment_instructions=${text(p.payment_instructions||'',2000,false)},legal_name=${text(p.legal_name,200)},kra_pin=${pin||null},email=${text(p.email||'',200,false)},phone=${text(p.phone||'',40,false)},physical_address=${text(p.physical_address||'',500,false)},invoice_prefix=${prefix||null},invoice_numbering=${choice(p.invoice_numbering||'yearly',['yearly','continuous'])} where firm_id=${uuid(p.firm_id)} returning firm_id`);
+  // Continue from the old system: the last number already used (for example 322) so the next invoice is 323. It can only be raised.
+  if(p.invoice_last_number!==undefined&&p.invoice_last_number!==''&&p.invoice_last_number!==null){const last=Math.trunc(number(p.invoice_last_number,0,99999999));if(last>0){if(String(p.invoice_numbering)!=='continuous')fail(400,'Set the numbering to continuous to start from a given number.');await tx`insert into erp_private.number_sequences(firm_id,kind,year,last_value) values(${uuid(p.firm_id)},'INV',0,${last}) on conflict(firm_id,kind,year) do update set last_value=greatest(number_sequences.last_value,excluded.last_value)`;}}
+  return {ok:true};
  }
  if(p.action==='leave_request'){
   const [from,to]=range(p.starts_on,p.ends_on),days=weekdays(from,to);if(!days.length)fail(400,'The request contains no working days.');
