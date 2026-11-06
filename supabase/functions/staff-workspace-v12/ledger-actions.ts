@@ -14,6 +14,7 @@ import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,pro
 import {debtorsRead,receiptAction} from './debtors.ts';
 import {payablesReport,supplierAction} from './payables.ts';
 import {bankRegister,bankAccountAction} from './bank-accounts.ts';
+import {bankLineAction} from './bank-lines.ts';
 import {stockRollsRead,stockJournalPlan} from './stock-journal.ts';
 import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
@@ -284,6 +285,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(p.action==='ledger_payables_read')return await payablesReport(tx,l,p.as_of?date(p.as_of):day(l.ends_on));
  if(p.action==='ledger_supplier_save'||p.action==='ledger_supplier_build')return await supplierAction(tx,a,l,p);
  if(p.action==='ledger_bank_save')return await bankAccountAction(tx,a,l,p);
+ if(['ledger_bank_fixit_read','ledger_bank_lines_map','ledger_bank_apply_rules','ledger_bank_rule_save','ledger_bank_rule_review'].includes(p.action))return await bankLineAction(tx,a,l,p);
  if(p.action==='ledger_receipt_allocate'||p.action==='ledger_receipt_reverse')return await receiptAction(tx,a,l,p);
  if(p.action==='ledger_report_submit'){
   if(a.category_code==='INTERN')fail(403,'A staff preparer must submit financial reports.');

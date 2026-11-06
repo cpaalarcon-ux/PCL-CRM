@@ -112,3 +112,4 @@
 20261106181057 foreign_branch_entity
 20261106194904 supplier_register
 20261106201420 client_bank_accounts
+20261106203829 bank_mapping_rules

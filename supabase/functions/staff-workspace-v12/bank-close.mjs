@@ -37,6 +37,19 @@ function balanceCheck(rows){
  return ['STATEMENT_BALANCES',label,'Pass',`Running balances are continuous on ${summary.length} statement(s): ${summary.join('; ')}.`];
 }
 
+// Own-account transfers: a statement line mapped to another bank account must have the opposite line on a different statement,
+// for the exact opposite amount, within WINDOW_DAYS, each line used once. Shared with the Fix-It queue.
+export function pairTransfers(bankRows){
+ const transfers=bankRows.filter(r=>BANK_LEDGER_CODES.includes(String(r.account_code))).map(r=>({r,amount:lineAmount(r),day:dayNo(r.normalized?.date)})).sort((x,y)=>x.day-y.day||x.amount-y.amount);
+ const used=new Set(),unpaired=[];
+ for(const t of transfers){
+  if(used.has(t.r.row_id))continue;
+  const match=transfers.find(u=>u!==t&&!used.has(u.r.row_id)&&u.r.batch_id!==t.r.batch_id&&u.amount===-t.amount&&t.amount!==0&&Math.abs(u.day-t.day)<=WINDOW_DAYS);
+  if(match){used.add(t.r.row_id);used.add(match.r.row_id);}else unpaired.push(t.r);
+ }
+ return {transfers,unpaired};
+}
+
 export function bankCloseChecks({bankRows=[],tb=[],explanations=[],bankAccounts=[]}={}){
  const checks=[],add=(code,label,status,detail)=>checks.push({code,label,status,detail,blocking:['Blocked','Not ready'].includes(status)});
  const statementTb=tb.filter(a=>BANK_LEDGER_CODES.includes(String(a.code)));
@@ -48,13 +61,7 @@ export function bankCloseChecks({bankRows=[],tb=[],explanations=[],bankAccounts=
  const unexplained=bankRows.filter(r=>!r.account_code);
  if(bankRows.length)add('LINES_EXPLAINED','Every statement line matched or explained',unexplained.length?'Blocked':'Pass',unexplained.length?`${unexplained.length} line(s) are not mapped to an ERP account, for example ${unexplained.slice(0,3).map(ref).join('; ')}.`:'All lines are mapped to an ERP account.');
 
- const transfers=bankRows.filter(r=>BANK_LEDGER_CODES.includes(String(r.account_code))).map(r=>({r,amount:lineAmount(r),day:dayNo(r.normalized?.date)})).sort((x,y)=>x.day-y.day||x.amount-y.amount);
- const used=new Set(),unpaired=[];
- for(const t of transfers){
-  if(used.has(t.r.row_id))continue;
-  const match=transfers.find(u=>u!==t&&!used.has(u.r.row_id)&&u.r.batch_id!==t.r.batch_id&&u.amount===-t.amount&&t.amount!==0&&Math.abs(u.day-t.day)<=WINDOW_DAYS);
-  if(match){used.add(t.r.row_id);used.add(match.r.row_id);}else unpaired.push(t.r);
- }
+ const {transfers,unpaired}=pairTransfers(bankRows);
  if(transfers.length)add('TRANSFERS_PAIRED','Own-account transfers paired',unpaired.length?'Blocked':'Pass',unpaired.length?`${unpaired.length} transfer line(s) have no opposite line on another statement within ${WINDOW_DAYS} days, for example ${unpaired.slice(0,3).map(ref).join('; ')}.`:`${transfers.length/2} transfer pair(s) matched exactly.`);
 
  if(bankRows.length){
