@@ -53,10 +53,13 @@ test('the area grid uses six desktop, three tablet, and two mobile columns', () 
   assert.match(css, /\.workspace-area-card:focus-visible\{/);
 });
 
-test('release documents match the new launcher and keep hosted evidence unverified', () => {
-  assert.match(uat, /^\| U77 \| Workspace-area launcher and role access \|.*\| Not checked \|$/m);
-  assert.match(uat, /^\| U78 \| Visual launcher and navigation regression.*\| Not checked \|$/m);
+test('release documents separate automated launcher passes from pending manual role acceptance', () => {
+  assert.match(uat, /^\| U71 \| Release identity \|.*\| Automated pass: hosted run .*staff role evidence still pending \|$/m);
+  assert.match(uat, /^\| U77 \| Workspace-area launcher and role access \|.*\| Automated launcher flow passed .*direct-route checks remain Not checked \|$/m);
+  assert.match(uat, /^\| U78 \| Visual launcher and navigation regression.*\| Automated regression passed .*manual viewport, keyboard and staff-workflow checks remain Not checked \|$/m);
   assert.doesNotMatch(uat, /\| U77 \| Shared sidebar navigation/);
-  assert.match(alignment, /Candidate \.75 replaces it with a Home grid labelled/);
+  assert.match(alignment, /Current staging alignment — Workspace-area launcher \(build 2026-11-06\.75\)/);
+  assert.match(alignment, /The runtime candidate verified by the exact success runs below/);
+  assert.match(alignment, /U77\/U78 remain \*\*Not checked\*\*/);
   assert.match(alignment, /Production remains held/);
 });
