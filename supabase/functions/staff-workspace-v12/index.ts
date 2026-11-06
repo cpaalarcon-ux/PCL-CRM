@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import release from './release.json' with {type:'json'};
 import {periodImportAction} from './period-import-actions.ts';
+import {withholdingAction} from './withholding-actions.ts';
 import {referenceAction} from './reference-actions.ts';
 import {staffRightsAction} from './staff-rights-actions.ts';
 import {discussionAction} from './discussion-actions.ts';
@@ -342,6 +343,7 @@ async function action(id:any,p:any){
   const autoMap=await autoMapAction(tx,a,p);if(autoMap!==undefined)return autoMap;
   const withdrawn=await withdrawAction(tx,a,p);if(withdrawn!==undefined)return withdrawn;
   const importedPeriod=await periodImportAction(tx,a,p,admin.storage.from(BUCKET));if(importedPeriod!==undefined)return importedPeriod;
+  const withholding=await withholdingAction(tx,a,p);if(withholding!==undefined)return withholding;
   const purchases=await purchaseLedgerAction(tx,a,p);if(purchases!==undefined)return purchases;
   const ledger=await ledgerAction(tx,a,p,admin.storage.from(BUCKET));if(ledger!==undefined)return ledger;
   const accounting=await accountingAction(tx,a,p);if(accounting!==undefined)return accounting;
