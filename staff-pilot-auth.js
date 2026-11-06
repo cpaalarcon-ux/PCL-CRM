@@ -265,3 +265,5 @@
   if (hasSession) void openWorkspace();
   void checkRelease();
 })();
+
+

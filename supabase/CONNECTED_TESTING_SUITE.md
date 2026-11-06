@@ -106,7 +106,7 @@ The 24 October final-test update passed 83 automated Node checks, Deno type chec
 
 ## Clickable workspaces and procedural work — 24 October 2026
 
-Click a task title, its row or **Open task workspace**. Click a project name/card to open its tasks. Browser Back, direct task/project links and search results preserve the work context. Record links require staff login and current record access; an unavailable link reveals no hidden record. Main navigation wraps into visible rows rather than hiding Settings behind horizontal scrolling.
+Click a task title, its row or **Open task workspace**. Click a project name/card to open its tasks. Browser Back, direct task/project links and search results preserve the work context. Record links require staff login and current record access; an unavailable link reveals no hidden record. Home uses a role-filtered “Workspace areas” grid: six columns on desktop, three on tablet and two on mobile. Tiles route into the same integrated ERP and existing data; the topbar “All areas” control returns to Home. The grid is navigation only—server authorization still governs every direct route and record.
 
 Within a task:
 
