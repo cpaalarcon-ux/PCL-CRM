@@ -10,10 +10,10 @@ import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
 import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261105-check-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261105-check-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261106-checklists-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261106-othertax-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261105-check-v1';
-import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-dependency-map-v1';
+import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261029-audit-start-flow-v1';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261105-check-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';

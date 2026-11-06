@@ -5,12 +5,16 @@ export const taxKinds=['VAT','PAYE','Company','Partnership','Individual','TOT','
 // Client profile positions are broader than computable tax-case kinds. The extra
 // entries record agent appointments, certificates, and conditional tax positions;
 // they must not become calculation case types by accident.
-export const profileKinds=[...taxKinds,'Withholding VAT agent','Withholding VAT credits received','Withholding income tax credits received','Excise duty','Instalment tax','Advance tax'];
+// Income tax for bodies that earn taxable profit but are not companies, partnerships or individuals (co-operatives, trusts, associations).
+// Non-profits and public bodies pay payroll taxes only and have no income-tax position.
+// It records the filing position only: the ERP does not compute it until a separate rule is released, so it is not a case type.
+export const otherEntityIncomeKinds=['Other entity income tax'];
+export const profileKinds=[...taxKinds,'Withholding VAT agent','Withholding VAT credits received','Withholding income tax credits received','Excise duty','Instalment tax','Advance tax',...otherEntityIncomeKinds];
 export const taxTypes=['VAT','PAYE','Corporation tax','Individual income tax','Withholding tax','Levy','Turnover tax','Rental income tax','Capital gains tax','NSSF','Relief / deduction','Interest benchmark'];
 export const testRate=r=>r.is_test===true||/^QA/i.test(r.rate_key)||/FICTIONAL|SYNTHETIC TEST/i.test(r.label||'');
 export const obligationStatusOptions={registered:['YES','NO','UNKNOWN'],applicable:['YES','NO','TO_CONFIRM'],client_status:['ACTIVE','DORMANT','NIL_FILER','DEREGISTERED','NOT_REGISTERED','UNKNOWN']};
 const finalIncomeRegimes=['TOT','MRI'];
-const ordinaryIncomePositions=['Company','Partnership','Individual','Instalment tax','Advance tax'];
+const ordinaryIncomePositions=['Company','Partnership','Individual','Instalment tax','Advance tax','Other entity income tax'];
 export function normalizeObligationStatuses(obligations,raw,profileFrom,profileTo){
  if(raw!=null&&(typeof raw!=='object'||Array.isArray(raw)))fail(400,'Obligation status details must be an object keyed by the selected tax position.');
  const source=raw||{},selected=new Set(obligations),extra=Object.keys(source).filter(k=>!selected.has(k));
@@ -59,6 +63,7 @@ export function validateProfile(p){
  const entity_type=choice(p.entity_type,['Company','Partnership','Individual','Other']),residency=choice(p.residency,['Resident','Non-resident']),regime=choice(p.regime,['Standard','TOT','MRI','Special']);
  const obligations=[...new Set(p.obligations||[])].map(x=>choice(x,profileKinds));if(!obligations.length)fail(400,'Select at least one confirmed client tax position.');
  if(obligations.includes('Company')&&entity_type!=='Company'||obligations.includes('Individual')&&entity_type!=='Individual'||obligations.includes('Partnership')&&entity_type!=='Partnership')fail(400,'The income-tax obligation does not match the entity type.');
+ if(otherEntityIncomeKinds.some(x=>obligations.includes(x))&&entity_type!=='Other')fail(400,'Other entity income tax is for co-operatives, trusts, associations and similar bodies that earn taxable profit. Choose the Other taxpayer type, or use the Company, Partnership or Individual income-tax position. Non-profits and public bodies pay payroll taxes only.');
  if(regime==='TOT'&&(!obligations.includes('TOT')||residency!=='Resident'))fail(400,'The TOT profile requires a resident taxpayer and the TOT obligation.');
  if(regime==='MRI'&&(!obligations.includes('MRI')||residency!=='Resident'))fail(400,'The MRI profile requires a resident taxpayer and the MRI obligation.');
  if(obligations.includes('TOT')&&regime!=='TOT')fail(400,'Select the TOT income regime for a TOT position.');

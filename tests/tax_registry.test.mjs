@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
 import {pickRate,validateProfile,profileIssues,payrollFromRules,simpleTax,vatRuleCheck,testRate} from '../supabase/functions/staff-workspace-v12/tax-registry.mjs';
-import {validateProfile as validateProfileV12,profileIssues as profileIssuesV12} from '../supabase/functions/staff-workspace-v12/tax-registry.mjs';
+import {validateProfile as validateProfileV12,profileIssues as profileIssuesV12,taxKinds as taxKindsV12} from '../supabase/functions/staff-workspace-v12/tax-registry.mjs';
 import {graduatedTax} from '../supabase/functions/staff-workspace-v12/suite-rules.mjs';
 const catalog=JSON.parse(fs.readFileSync(new URL('../supabase/functions/staff-workspace-v6/kenya-tax-catalog.json',import.meta.url),'utf8'));
 const approved=catalog.map((r,i)=>({...r,status:'Approved',rate_id:'local-only-'+i}));
@@ -23,3 +23,12 @@ test('payroll blank optional bases use gross; overridden bases need an explanati
 test('pension deduction caps include NSSF; insurance cap and evidence enforced',()=>{const e={name:'Fictional employee',gross:200000,resident:true,other_pension:40000,insurance_premium:50000,evidence_reference:'Reviewed certificate'};const x=payrollFromRules({employees:[e]},rules).employees[0];assert.equal(x.allowed_deductions,38500);assert.equal(x.insurance_relief,5000);assert.throws(()=>payrollFromRules({employees:[{...e,evidence_reference:''}]},rules));});
 test('VAT classification is separate from expense classification and raw imported VAT',()=>{const row={normalized:{amount:1000,vat:160},decision:'Eligible',income_treatment:'Capital'};assert.equal(vatRuleCheck(row,rules.KE_VAT_STANDARD),null);assert.match(vatRuleCheck(row,rules.KE_VAT_EXEMPT),/cannot/);assert.match(vatRuleCheck({...row,normalized:{amount:1000,vat:150}},rules.KE_VAT_STANDARD),/differs/);assert.equal(vatRuleCheck({...row,normalized:{amount:-1000,vat:-160}},rules.KE_VAT_STANDARD),null);});
 test('gross-basis taxes, CGT and interest benchmarks use their separate bases',()=>{assert.equal(simpleTax('TOT',{gross_receipts:100000},rules).payable,1500);assert.equal(simpleTax('MRI',{gross_receipts:100000},rules).payable,7500);assert.equal(simpleTax('CGT',{proceeds:1000000,acquisition_cost:800000},rules).payable,30000);assert.equal(simpleTax('Fringe benefit',{loan_balance:1000000,evidence_reference:'Loan'},rules).payable,2250);assert.equal(simpleTax('Deemed interest',{loan_balance:1000000,evidence_reference:'Loan'},rules).payable,1125);assert.throws(()=>simpleTax('Deemed interest',{loan_balance:1,actual_interest_rate:1,evidence_reference:'Loan'},rules));assert.throws(()=>simpleTax('WHT',{payment_code:'KE_VAT_ZERO',eligibility_confirmed:true,evidence_reference:'No'},rules));});
+
+test('Other entity income tax is for taxpayer type Other only, and is not a calculation case type',()=>{
+ const base={entity_type:'Other',residency:'Resident',regime:'Standard',obligations:['Other entity income tax','PAYE'],effective_from:'2026-01-01',effective_to:'2026-12-31',notes:'Fictional co-operative'};
+ assert.deepEqual(validateProfileV12(base).obligations,['Other entity income tax','PAYE']);
+ assert.throws(()=>validateProfileV12({...base,entity_type:'Company'}),/Other entity income tax is for/);
+ assert.throws(()=>validateProfileV12({...base,obligations:['Exempt body return']}),/./);
+ assert.throws(()=>validateProfileV12({...base,regime:'TOT',annual_turnover:8000000,obligations:['TOT','Other entity income tax']}),/final on the covered income/i);
+ assert.ok(!taxKindsV12.includes('Other entity income tax'));
+});
