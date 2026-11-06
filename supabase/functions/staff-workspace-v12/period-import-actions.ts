@@ -5,6 +5,7 @@ import {detectImportProfile,salesTotals,payrollRows,rateKeys} from './import-pro
 import {recordedCreditBasis,creditBasisIssue} from './legacy-sales-lock.ts';
 import {bankDepositCheck} from './sales-bank-check.mjs';
 import {keys,pickRate,payrollFromRules} from './tax-registry.mjs';
+import {ownerPayrollIssues} from './owner-payments.mjs';
 import {preferredRates,stagingRates} from './testing-rates.mjs';
 import {digest} from './improvement-actions.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'This import is unavailable to your account.');return r[0];};
@@ -123,6 +124,9 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
  }else{
   const source:any=payrollRows(sheets[0].sheet,sheets[0].profile),availableRules=stagingRates(await tx`select * from erp_private.tax_rates where status in('Approved','Testing') and deleted_at is null`,typeof Deno==='undefined'?'https://yfjiculexbzpkvtapudk.supabase.co':Deno.env.get('SUPABASE_URL')||''),rules:any={};
   payload={...source,employees:[],calculated:[],differences:[],rules:[],totals:{}};
+  // Owners and partners are paid through Drawings, never payroll (sole proprietor and partnership clients).
+  const owner=(await tx`select legal_entity_type,kra_pin from erp_private.clients where client_id=${project.client_id}`)[0],partners=owner?.legal_entity_type==='Partnership'?await tx`select partner_name,partner_pin from erp_private.partner_interests where client_id=${project.client_id} and effective_from<=${end}::date and effective_to>=${start}::date`:[];
+  payload.issues.push(...ownerPayrollIssues({entityType:owner?.legal_entity_type||'',clientPin:owner?.kra_pin||'',partners,rows:source.rows}));
   for(const key of keys.PAYE){try{rules[key]=pickRate(preferredRates(availableRules,key,start,end),key,start,end);payload.rules.push(rules[key]);}catch(e){payload.issues.push((e as Error).message);}}
   for(const r of source.rows){
    // Residence: the file's own column wins; then the staff member's choice for the row; a Kenyan national ID (7 or 8 digits) is assumed Resident

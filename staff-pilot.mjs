@@ -8,7 +8,7 @@ import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261105-check-
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261106-packs-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261106-owner-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261105-check-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261106-othertax-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
