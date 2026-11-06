@@ -2,8 +2,10 @@ import {fail,text,uuid,choice,revision} from './validation.mjs';
 import {syncClientDependencyTasks} from './dependency-tasks.ts';
 import {range,safeUrl,rateParameters,amount} from './suite-rules.mjs';
 import {taxTypes,testRate,validateProfile,registryParameters,dateString,keys,validateCanonicalRate,rateApprovalIssue,legalReviewStates,legalConfirmIssue} from './tax-registry.mjs';
-import {one,leader} from './suite-actions.ts';
-import {taxTestingEnabled,testingAuthorizationIssue} from './testing-rates.mjs';
+import {one,leader,today} from './suite-actions.ts';
+import {taxTestingEnabled,testingAuthorizationIssue,stagingRates,preferredRates} from './testing-rates.mjs';
+import {turnoverWatch,trailingYear} from './turnover-watch.mjs';
+import {summarySalesRows} from './period-import-actions.ts';
 const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Partner approval is required.');};
 const current=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'Refresh this record before saving.');};
 async function linkedFirms(tx:any,cid:string,clean:any){
@@ -25,6 +27,23 @@ async function saveProfileObligations(tx:any,a:any,r:any){
    values(${r.client_id},'OBLIGATION',${row.obligation_id},${code},${rule.dependency_code},${versions[0].version_id},${row.effective_from},${row.effective_to},${a.staff_id})
    on conflict(source_type,source_id,dependency_code,version_id) do update set effective_from=excluded.effective_from,effective_to=excluded.effective_to`;
  }
+}
+
+// Rolling 12-month sales for one client from confirmed or submitted eTIMS summaries and invoice-level sales rows.
+async function clientTurnover(tx:any,clientId:string,start:string,end:string){
+ let total=0,exempt=0;const months=new Set<string>();
+ const projects=await tx`select project_id from erp_private.projects where client_id=${clientId} and deleted_at is null`;
+ for(const pr of projects){
+  const rows=await summarySalesRows(tx,pr.project_id,start,end,{includeSubmitted:true,sourceTypes:['ETIMS']});
+  for(const r of rows){if(r.dataset!=='Sales')continue;const amt=Number(r.normalized?.amount||0);total+=amt;if(r.normalized?.vat_category==='Exempt')exempt+=amt;months.add(String(r.period_start).slice(0,7));}
+ }
+ const wb=(await tx`select coalesce(sum(case when r.normalized->>'amount' ~ '^-?[0-9]+(\\.[0-9]+)?$' then (r.normalized->>'amount')::numeric else 0 end),0) total,
+   coalesce(sum(case when r.normalized->>'amount' ~ '^-?[0-9]+(\\.[0-9]+)?$' and coalesce(r.normalized->>'vat_category','')='Exempt' then (r.normalized->>'amount')::numeric else 0 end),0) exempt,
+   coalesce(array_agg(distinct substr(r.normalized->>'date',1,7)) filter (where r.normalized->>'date' ~ '^[0-9]{4}-[0-9]{2}'),'{}') months
+   from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id)
+   where r.client_id=${clientId} and r.dataset='Sales' and b.archived_at is null and not r.is_split_parent and r.normalized->>'date' between ${start} and ${end}`)[0];
+ total+=Number(wb.total||0);exempt+=Number(wb.exempt||0);for(const m of wb.months||[])months.add(m);
+ return {total:Math.round(total*100)/100,taxable:Math.round((total-exempt)*100)/100,months:Math.min(12,months.size)};
 }
 export async function taxConfigAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='rate_save'){
@@ -75,6 +94,22 @@ export async function taxConfigAction(tx:any,a:any,p:any):Promise<any>{
   leader(a);const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)}`);
   const kinds=Object.entries(keys).filter(([,v])=>(v as string[]).includes(r.rate_key)).map(([k])=>k);if(r.tax_type==='VAT')kinds.push('VAT');if(r.tax_type==='Withholding tax')kinds.push('WHT');
   return {rate:r,cases:await tx`select c.case_id,c.project_id,c.kind,c.starts_on,c.ends_on,c.status,p.project_name,cl.company_name from erp_private.tax_cases c join erp_private.projects p using(project_id) join erp_private.clients cl using(client_id) where c.deleted_at is null and (c.rate_id=${r.rate_id} or c.kind=any(${tx.array(kinds)}::text[])) and c.starts_on<=${r.effective_to} and c.ends_on>=${r.effective_from}`,notice:'Locked/filed cases retain their original snapshots. Open cases require a preparer preview and save; this action changes no calculations.'};
+ }
+ if(p.action==='tax_profile_turnover_watch'){
+  leader(a);const asOf=p.as_of?dateString(p.as_of):today(),{start,end}=trailingYear(asOf);
+  const rates=stagingRates(await tx`select * from erp_private.tax_rates where status in('Approved','Testing') and deleted_at is null and rate_key in('KE_TOT','KE_VAT_REG_THRESHOLD')`,Deno.env.get('SUPABASE_URL')||'');
+  const pick=(key:string)=>preferredRates(rates,key,asOf,asOf)[0]||null,totRule=pick('KE_TOT'),vatRule=pick('KE_VAT_REG_THRESHOLD');
+  const limit=(r:any)=>r?{threshold:r.parameters?.threshold??null,minimum:r.parameters?.minimum_turnover_exclusive??null,maximum:r.parameters?.maximum_turnover??null,basis:r.legal_review_status==='Pending'?'Provisional':'Held in the register'}:null;
+  const one1=async(c:any)=>{
+   const profiles=await tx`select * from erp_private.client_tax_profiles where client_id=${c.client_id} and status='Verified' and deleted_at is null and effective_from<=${asOf} and effective_to>=${asOf}`,profile=profiles.length===1?profiles[0]:null;
+   const t=await clientTurnover(tx,c.client_id,start,end);
+   return {client_id:c.client_id,company_name:c.company_name,regime:profile?.regime||null,...turnoverWatch({turnover:t.months?t.total:null,taxableSupplies:t.months?t.taxable:null,monthsCovered:t.months,profile,totRule,vatRule})};
+  };
+  const limits={vat_registration:limit(vatRule),tot_band:limit(totRule)};
+  if(p.client_id){const c=one(await tx`select client_id,company_name from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null`);return {as_of:asOf,window:{start,end},limits,clients:[await one1(c)]};}
+  const list=await tx`select client_id,company_name from erp_private.clients where deleted_at is null order by company_name limit 100`,out=[];
+  for(const c of list)out.push(await one1(c));
+  return {as_of:asOf,window:{start,end},limits,clients:out,truncated:list.length===100};
  }
  if(p.action==='tax_profile_save'){
   leader(a);const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);const clean=validateProfile(p),[from,to]=range(p.effective_from,p.effective_to);await linkedFirms(tx,cid,clean);
