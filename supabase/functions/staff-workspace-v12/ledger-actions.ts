@@ -3,6 +3,7 @@ import {requireRightChart} from './legal-structure-actions.ts';
 import {pendingPurchases} from './purchase-pending.ts';
 import {chartCatalogue,approvedChart,chartMessage,requireChartAccount} from './client-chart.ts';
 import {suggestAccount,normaliseName} from './opening-tb-suggest.mjs';
+import {openingStructure,SECTIONS} from './opening-structure.mjs';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
 import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,notifyOutcome} from './review-queue.ts';
@@ -476,6 +477,45 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
    if(s)suggestions[r.key]={...s,name:accounts.find((x:any)=>x.code===s.code)?.name||''};
   }
   return {suggestions,entity_type:l.entity_type,counted:Object.keys(suggestions).length,of:rows.length};
+ }
+ // The client's T-structure for the opening trial balance, from the approved chart in force on the opening date. The workbook uses the
+ // standard six-column Opening TB layout with the ERP routing and TB item codes already filled, so the upload maps each line by exact pair.
+ if(['ledger_opening_structure','ledger_opening_template'].includes(p.action)){
+  const chart=await approvedChart(tx,project.client_id,day(l.starts_on));
+  if(!chart)fail(409,'Approve the client chart of accounts before opening the T-structure. Open Client setup → Chart of accounts.');
+  const t=openingStructure(await catalogue(tx),chart.codes);
+  if(p.action==='ledger_opening_structure')return {...t,entity_type:l.entity_type,chart_effective_from:chart.effective_from,opening_date:day(l.starts_on)};
+  const client=one(await tx`select company_name from erp_private.clients where client_id=${project.client_id}`);
+  const wb=new ExcelJS.Workbook(),ws=wb.addWorksheet('Opening TB'),ts=wb.addWorksheet('T-structure'),rf=wb.addWorksheet('Read first');
+  const heads=['Source account code','Source account name','ERP routing code','ERP TB item code','Debit (KES)','Credit (KES)'];
+  ws.addRow(heads).font={bold:true};ws.columns=[{width:22},{width:44},{width:18},{width:18},{width:18},{width:18}];
+  const flat=t.sections.flatMap((s:any)=>s.accounts);
+  for(const x of flat){const r=ws.addRow([x.code,x.name,x.routing_code,x.code,null,null]);r.getCell(4).numFmt='@';r.getCell(1).numFmt='@';r.getCell(5).numFmt='#,##0.00';r.getCell(6).numFmt='#,##0.00';}
+  ws.views=[{state:'frozen',ySplit:1}];
+  const last=Math.max(flat.length+1,2);
+  ts.columns=[{width:14},{width:46},{width:16},{width:18},{width:18}];
+  ts.addRow([`${client.company_name} · opening T-structure at ${day(l.starts_on)}`]).font={bold:true,size:13};
+  ts.addRow(['Read-only summary. Enter amounts on the Opening TB sheet; these totals recalculate.']);ts.addRow([]);
+  ts.addRow(['Code','Account','Normal side','Debit (KES)','Credit (KES)']).font={bold:true};
+  for(const [i,sec] of t.sections.entries()){
+   const lead=SECTIONS[i][0];
+   const h=ts.addRow([sec.title.toUpperCase(),null,null,{formula:`SUMIF('Opening TB'!$D$2:$D$${last},"${lead}*",'Opening TB'!$E$2:$E$${last})`},{formula:`SUMIF('Opening TB'!$D$2:$D$${last},"${lead}*",'Opening TB'!$F$2:$F$${last})`}]);h.font={bold:true};
+   for(const x of sec.accounts){const n=flat.findIndex((y:any)=>y.code===x.code)+2;ts.addRow([x.code,x.name,x.normal_side,{formula:`'Opening TB'!E${n}`},{formula:`'Opening TB'!F${n}`}]);}
+  }
+  ts.addRow([]);
+  const tot=ts.addRow(['TOTALS',null,null,{formula:`SUM('Opening TB'!$E$2:$E$${last})`},{formula:`SUM('Opening TB'!$F$2:$F$${last})`}]);tot.font={bold:true};
+  const dif=ts.addRow(['DIFFERENCE',null,null,{formula:`ROUND(D${tot.number}-E${tot.number},2)`},{formula:`IF(D${tot.number+1}=0,"Balanced","Debits and credits differ")`}]);dif.font={bold:true};
+  for(const r of ts.getRows(5,ts.rowCount)||[]){r.getCell(4).numFmt='#,##0.00';r.getCell(5).numFmt=r.getCell(5).numFmt||'#,##0.00';}
+  const lines=[['Opening TB · how to use this client-specific template'],[`Client: ${client.company_name}`],[`Opening balance date: ${day(l.starts_on)} · Legal entity type: ${l.entity_type}`],[`Accounts: ${flat.length}, from the approved chart effective ${chart.effective_from}. Only these accounts can be used for this client.`],[''],
+   ['Enter the immediately preceding year’s final approved closing balances in the Debit or Credit column of each account that applies. Leave other rows blank.'],
+   ['Assets normally carry debit balances; liabilities and equity normally carry credit balances. Contra accounts (such as accumulated depreciation) carry credits.'],
+   ['If the client’s own trial balance has several accounts for one ERP account, add one row per source account: keep the ERP TB item code and routing code, and put the client’s code and name in the first two columns.'],
+   ['If an account you need is not listed, do not use another one. Ask a Manager or Partner for a chart amendment (a new chart version with a reason).'],
+   ['Do not add totals and do not add a balancing amount. Debits must equal credits; the T-structure sheet shows the difference.'],
+   ['Upload this workbook as the Opening TB source in the ERP, then confirm it is the final approved prior-year trial balance.']];
+  for(const x of lines)rf.addRow(x);rf.getColumn(1).width=140;rf.getRow(1).font={bold:true,size:13};
+  const buffer=await wb.xlsx.writeBuffer(),bytes=new Uint8Array(buffer as ArrayBuffer);let bin='';for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
+  return {name:'Opening_TB_T-structure_'+String(client.company_name).replace(/[^A-Za-z0-9]+/g,'_').slice(0,40)+'.xlsx',mime:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',base64:btoa(bin),accounts:flat.length};
  }
  if(['ledger_import_preview','ledger_import_commit'].includes(p.action)){
   const requestedKind=String(p.kind||''),documentId=uuid(p.document_id);

@@ -28,7 +28,7 @@ test('firstAction returns only the first button of a group',()=>{
  assert.equal(firstAction(''),'');
 });
 
-test('the checklist shows the next step above the six stages and styles are shipped',()=>{
+test('the checklist shows the next step above the setup stages and styles are shipped',()=>{
  const src=fs.readFileSync(new URL('../staff-setup-guide.mjs',import.meta.url),'utf8'),css=fs.readFileSync(new URL('../staff-pilot.css',import.meta.url),'utf8');
  assert.match(src,/\$content\.innerHTML=`\$\{nextBox\}/);
  assert.match(src,/Next step · /);

@@ -8,7 +8,7 @@ import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261105-check-
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261106-suggest-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261106-chart-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261105-check-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261106-othertax-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
@@ -323,7 +323,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
 watchStaffActivity(session);
 for(const button of document.querySelectorAll('[data-continue-session]'))button.onclick=()=>{if(session.activity())void session.pulse();};
 const improvements=createImprovementUI({$,esc,field,select,form,modal,request,notice,shortDate,today,projectName,data:()=>data});
-const v6=createWorkspaceUI({$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openProject:id=>navigateWorkspace('projects',id),openClientSettings:improvements.client,openClientAccounts:(id,options)=>clientAccountSetup(id,options)});
+const v6=createWorkspaceUI({$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openProject:id=>navigateWorkspace('projects',id),openClientSettings:improvements.client,openClientChart:improvements.chart,openClientAccounts:(id,options)=>clientAccountSetup(id,options)});
 const leads=createLeadsUI({esc,field,select,form,modal,request,notice,badge,shortDate,firmName,clientName,today,data:()=>data,firm:()=>firm,render});
 const messenger=createMessenger({esc,request,notice,data:()=>data});
 const suite=createSuiteUI({upload,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openTask:id=>navigateWorkspace('task',id)});
