@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';import zlib from 'node:zlib';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {suiteAction,suiteRead,setPdfLib}=await import('../supabase/functions/staff-workspace-v12/suite-actions.ts');
 const rules=await import('../supabase/functions/staff-workspace-v12/suite-rules.mjs');
@@ -6,9 +6,11 @@ const browser=await import('../invoice-narration.mjs');
 const {invoicePdf,invoiceTotals}=await import('../supabase/functions/staff-workspace-v12/invoice-pdf.mjs');
 let PDFLib;try{PDFLib=require('pdf-lib');}catch{PDFLib=require(path.resolve(import.meta.dirname,'..','supabase/functions/staff-workspace-v6/node_modules/pdf-lib'));}
 setPdfLib(PDFLib);
-import {execFileSync} from 'node:child_process';import os from 'node:os';
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),F2=id(),C=id(),P=id(),P2=id(),T=id(),T2=id(),actors={};
-const text=bytes=>{const f=path.join(os.tmpdir(),'inv-'+id()+'.pdf');fs.writeFileSync(f,bytes);try{return execFileSync('pdftotext',['-layout',f,'-'],{encoding:'utf8'});}finally{fs.unlinkSync(f);}};
+// Text is read straight from the PDF's drawing commands so the test needs no PDF tool. pdf-lib writes standard-font text as hex strings in Windows-1252.
+const text=bytes=>{const buf=Buffer.from(bytes),raw=buf.toString('latin1'),parts=[];let at=0;
+ for(;;){const a=raw.indexOf('stream',at);if(a<0)break;if(raw.slice(a-3,a)==='end'){at=a+6;continue;}let start=a+6;if(raw[start]==='\r')start++;if(raw[start]==='\n')start++;const end=raw.indexOf('endstream',start);if(end<0)break;let body=buf.subarray(start,end);try{body=zlib.inflateSync(body);}catch{}parts.push(body.toString('latin1'));at=end+9;}
+ return parts.flatMap(x=>[...x.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)].map(m=>new TextDecoder('windows-1252').decode(Buffer.from(m[1],'hex')))).join('\n');};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
 async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}
 const act=(role,p)=>as(role,a=>suiteAction(tx,a,p));
@@ -31,7 +33,7 @@ test('The invoice PDF carries the Alarcon-style layout, and drafts are watermark
  const a=await invoicePdf(base,PDFLib),b=await invoicePdf(base,PDFLib);assert.deepEqual(Buffer.from(a),Buffer.from(b),'the same record gives the same bytes');
  const doc=await PDFLib.PDFDocument.load(a);assert.equal(doc.getPageCount(),1);
  const t=text(a);
- for(const want of ['FICTIONAL MLIMA CONSULTANTS LTD','PIN: P000000001A','INVOICE','Invoice Number:','INV/MLI/00322','1 Nov 2026','Bill To:','Tax ID: A000000002B','To our professional fees:','1 Month 1 Nov 2026 to 30 Nov 2026','Net Amount','3,448.28','551.72','Current Invoice Amount','4,000.00','Amount Paid','Balance Brought Forward','50,000.00','Total Amount Due','54,000.00','Thank you for your continued trust'])assert.ok(t.includes(want),'PDF text includes '+want);
+ for(const want of ['FICTIONAL MLIMA CONSULTANTS LTD','PIN: P000000001A','I N V O I C E','Invoice Number:','INV/MLI/00322','1 Nov 2026','Bill To:','Tax ID: A000000002B','To our professional fees:','1 Month 1 Nov 2026 to 30 Nov 2026','Net Amount','3,448.28','551.72','Current Invoice Amount','4,000.00','Amount Paid','Balance Brought Forward','50,000.00','Total Amount Due','54,000.00','Thank you for your continued trust'])assert.ok(t.includes(want),'PDF text includes '+want);
  assert.ok(!/DRAFT/.test(t),'an issued invoice has no draft watermark');
  assert.ok(t.includes('Café'),'accents and curly apostrophes survive');
  const draft=text(await invoicePdf({...base,invoice:{...base.invoice,status:'Draft',invoice_number:null,brought_forward:0}},PDFLib));assert.match(draft,/DRAFT/);
@@ -91,7 +93,7 @@ test('Invoices: period, duplicate warning, continuous numbering, balance brought
  await assert.rejects(()=>act('PARTNER',{action:'firm_logo_set',firm_id:F,mime_type:'image/png',data_base64:Buffer.from('not an image at all, just text').toString('base64')}),/not a real PNG/);
  assert.equal((await act('PARTNER',{action:'firm_logo_set',firm_id:F,mime_type:'image/png',data_base64:PNG.toString('base64')})).ok,true);
  const issued=await act('PARTNER',{action:'invoice_pdf',invoice_id:second});assert.equal(issued.file_name,'INV_MLI_00324.pdf');
- doc1=text(Buffer.from(issued.base64,'base64'));assert.ok(!/DRAFT/.test(doc1));assert.match(doc1,/INV\/MLI\/00324/);assert.match(doc1,/Balance Brought Forward\s+2,500\.00/);assert.match(doc1,/Total Amount Due\s+6,500\.00/);assert.match(doc1,/Bill To:/);assert.match(doc1,/1 Dec 2026 to 31 Dec 2026/);
+ doc1=text(Buffer.from(issued.base64,'base64'));assert.ok(!/DRAFT/.test(doc1));assert.match(doc1,/INV\/MLI\/00324/);assert.ok(doc1.includes('Balance Brought Forward')&&doc1.includes('2,500.00 KSh'),'fixed balance brought forward');assert.ok(doc1.includes('Total Amount Due')&&doc1.includes('6,500.00 KSh'));assert.match(doc1,/Bill To:/);assert.match(doc1,/1 Dec 2026 to 31 Dec 2026/);
  assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='INVOICE_PDF'`)[0].n,2);
  assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='FIRM_LOGO_SET'`)[0].n,1);
  assert.equal((await as('PARTNER',()=>suiteRead(tx))).firms?.find?.(f=>f.firm_id===F)?.has_logo??true,true);

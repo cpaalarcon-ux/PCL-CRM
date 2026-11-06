@@ -17,7 +17,7 @@ export async function invoicePdf(d,{PDFDocument,StandardFonts,rgb}){
  let page=doc.addPage([W,H]),y=H-M,pageNo=1;
  const centre=(txt,size,f,yy,color=ink)=>{const s=safe(txt);page.drawText(s,{x:(W-f.widthOfTextAtSize(s,size))/2,y:yy,size,font:f,color});};
  const right=(txt,size,f,xr,yy,color=ink)=>{const s=safe(txt);page.drawText(s,{x:xr-f.widthOfTextAtSize(s,size),y:yy,size,font:f,color});};
- const watermark=()=>{if(!draft)return;const s='DRAFT — NOT ISSUED';page.drawText(safe(s),{x:110,y:300,size:52,font:bold,color:rgb(.88,.88,.88),rotate:{type:'degrees',angle:35}});};
+ const watermark=()=>{if(!draft)return;const s='DRAFT — NOT ISSUED';page.drawText(safe(s),{x:95,y:290,size:44,font:bold,color:rgb(.88,.88,.88),rotate:{type:'degrees',angle:35}});};
  const header=first=>{
   if(!first){page.drawText(safe(`${d.firm.legal_name} · Invoice ${i.invoice_number||'DRAFT'} (continued)`),{x:M,y:H-M,size:9,font:bold,color:grey});y=H-M-24;return;}
   if(logo){const sc=Math.min(170/logo.width,56/logo.height,1),w=logo.width*sc,h=logo.height*sc;page.drawImage(logo,{x:(W-w)/2,y:y-h,width:w,height:h});y-=h+6;}
@@ -37,7 +37,7 @@ export async function invoicePdf(d,{PDFDocument,StandardFonts,rgb}){
  right('Due: '+formatDay(i.due_date),9,font,W-M-8,y-28,grey);
  y-=46;
  // Bill to
- const bill=[d.client.name,d.client.address,d.client.country||'Kenya',d.client.pin?'Tax ID: '+d.client.pin:''].filter(Boolean),bh=12+bill.length*10.5;
+ const bill=[d.client.name,d.client.attention,d.client.address,d.client.country||'Kenya',d.client.pin?'Tax ID: '+d.client.pin:''].filter(Boolean),bh=12+bill.length*10.5;
  page.drawRectangle({x:M,y:y-bh,width:CW,height:bh,borderColor:light,borderWidth:.8});
  page.drawText('Bill To:',{x:M+8,y:y-11,size:8.5,font:bold});
  bill.forEach((l,n)=>page.drawText(safe(l),{x:M+8,y:y-22-n*10.5,size:n===0?9.5:8.5,font:n===0?bold:font}));
