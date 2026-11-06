@@ -22,7 +22,7 @@ export function chartLayer(account:any){
 
 // Accounts the ERP proposes for an entity type, set of packs and statutory position (pure, used by the server and tests).
 export function proposeAccounts(accounts:any[],entityType:string,packs:string[],statutory:Record<string,string>={}){
- return accounts.filter((x:any)=>x.status==='Active'&&!x.is_legacy
+ return accounts.filter((x:any)=>x.status==='Active'&&!x.is_legacy&&x.proposed!==false
   &&(!x.entity_types?.length||x.entity_types.includes(entityType))
   &&(!x.industry_packs?.length||x.industry_packs.some((p:string)=>packs.includes(p)))
   &&(!x.statutory_tags?.length||x.statutory_tags.some((t:string)=>statutory[t]!=='no')));
@@ -85,7 +85,7 @@ export async function requireChartAccount(tx:any,clientId:string,code:string,at:
 async function proposal(tx:any,clientId:string,from:string){
  const c=one(await tx`select client_id,company_name,legal_entity_type from erp_private.clients where client_id=${clientId} and deleted_at is null`);
  const packs=await clientPacks(tx,clientId,from);
- const catalog=await tx`select code,name,account_group,category_code,status,is_legacy,entity_types,industry_packs,statutory_tags from erp_private.account_catalog order by code`;
+ const catalog=await tx`select code,name,account_group,category_code,status,is_legacy,proposed,entity_types,industry_packs,statutory_tags from erp_private.account_catalog order by code`;
  const statutory=await clientStatutory(tx,clientId,from);
  const proposed=proposeAccounts(catalog,c.legal_entity_type||'',packs,statutory);
  const codes=new Set(proposed.map((x:any)=>x.code)),used=await usedAccounts(tx,clientId,from);

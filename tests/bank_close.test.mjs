@@ -52,3 +52,34 @@ test('an accepted explanation clears only the exact current difference',()=>{
  const pending=bankCloseChecks({bankRows:rows,tb:tb(900),explanations:[{...accepted[0],status:'Submitted'}]});
  assert.equal(status(pending,'STATEMENT_TO_LEDGER'),'Blocked');assert.match(pending.checks.find(c=>c.code==='STATEMENT_TO_LEDGER').detail,/waiting for a different Manager or Partner/);
 });
+
+// Per-bank checks (slice 20): a client that has registered its banks gets each statement compared with its own ledger account.
+const tbOf=(...a)=>a.map(([code,net])=>({code,name:'Bank '+code,movement_debit:Math.max(net,0),movement_credit:Math.max(-net,0),opening:0,net}));
+const bank=(id,code,extra={})=>({bank_account_id:id,bank_name:'Fictional Bank '+id,account_label:'',account_last4:'1234',kind:'Bank current',gl_code:code,status:'Active',...extra});
+const withBank=(r,id,batch='S1')=>({...r,bank_account_id:id,batch_id:batch});
+test('registered banks: each bank agrees with its own ledger account',()=>{
+ const rows=[withBank(row('a','S1','40000','2026-09-02',1000),'B1','S1'),withBank(row('b','S2','40000','2026-09-03',400),'B2','S2')];
+ const r=bankCloseChecks({bankRows:rows,tb:tbOf(['10020',1000],['10030',400]),bankAccounts:[bank('B1','10020'),bank('B2','10030')]});
+ assert.equal(status(r,'BANK_EACH_AGREES'),'Pass');assert.equal(status(r,'BANK_STATEMENTS'),'Pass');assert.equal(status(r,'BANK_UNREGISTERED'),'Pass');
+ assert.deepEqual(r.banks.map(b=>b.state),['Agrees','Agrees']);
+});
+test('registered banks: offsetting errors between banks are caught even when the combined totals agree',()=>{
+ const rows=[withBank(row('a','S1','40000','2026-09-02',1000),'B1','S1'),withBank(row('b','S2','40000','2026-09-03',400),'B2','S2')];
+ const r=bankCloseChecks({bankRows:rows,tb:tbOf(['10020',400],['10030',1000]),bankAccounts:[bank('B1','10020'),bank('B2','10030')]});
+ assert.equal(status(r,'STATEMENT_TO_LEDGER'),'Pass','the combined totals agree');
+ assert.equal(status(r,'BANK_EACH_AGREES'),'Blocked');assert.ok(r.blocking.some(x=>/individual banks do not/.test(x)));
+});
+test('registered banks: a bank with posted movement and no statement is Not ready; unregistered bank accounts block',()=>{
+ const rows=[withBank(row('a','S1','40000','2026-09-02',1000),'B1','S1')];
+ const r=bankCloseChecks({bankRows:rows,tb:tbOf(['10020',1000],['10030',250]),bankAccounts:[bank('B1','10020'),bank('B2','10030')]});
+ assert.equal(status(r,'BANK_STATEMENTS'),'Not ready');assert.match(r.checks.find(c=>c.code==='BANK_STATEMENTS').detail,/Fictional Bank B2/);
+ const u=bankCloseChecks({bankRows:rows,tb:tbOf(['10020',1000],['10023',90]),bankAccounts:[bank('B1','10020')]});
+ assert.equal(status(u,'BANK_UNREGISTERED'),'Blocked');assert.match(u.checks.find(c=>c.code==='BANK_UNREGISTERED').detail,/10023/);
+});
+test('registered banks: statements imported before registration are a review item, not a block; no register keeps the combined checks',()=>{
+ const rows=[row('a','S1','40000','2026-09-02',1000)];
+ const r=bankCloseChecks({bankRows:rows,tb:tbOf(['10020',1000]),bankAccounts:[bank('B1','10020')]});
+ assert.equal(status(r,'BANK_LINKED'),'Review');assert.equal(r.checks.find(c=>c.code==='BANK_LINKED').blocking,false);assert.equal(status(r,'BANK_EACH_AGREES'),undefined);
+ const none=bankCloseChecks({bankRows:rows,tb:tbOf(['10020',1000])});
+ assert.equal(none.banks.length,0);assert.equal(status(none,'BANK_UNREGISTERED'),undefined);
+});

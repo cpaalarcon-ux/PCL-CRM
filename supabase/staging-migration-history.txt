@@ -111,3 +111,4 @@
 20261106175412 industry_packs_v2
 20261106181057 foreign_branch_entity
 20261106194904 supplier_register
+20261106201420 client_bank_accounts
