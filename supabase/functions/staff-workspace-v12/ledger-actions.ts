@@ -334,6 +334,23 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   const result=await newJournal(tx,a,l,source.kind,{journal_date:day(source.ends_on),reference:source.kind.toUpperCase()+'-'+day(source.starts_on)+'-'+source.import_id.slice(0,8),evidence:'Confirmed import '+source.import_id+'; '+source.review_note,description:'Reviewed '+source.kind.toLowerCase()+' category/control totals'},items,{kind:'Period import',import_id:source.import_id,source_hash:source.source_hash},true);
   await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id,source_revision) values('Period import',${source.import_id},${result.journal_id},${pid},${source.revision})`;return result;
  }
+ if(p.action==='ledger_withholding_create'){
+  // Tax withheld on payments for one month becomes one journal: debit what was owed to the payee, credit withholding income tax payable.
+  const month=date(p.month);if(!month)fail(400,'Choose the month.');
+  const start=month.slice(0,8)+'01',end=new Date(Date.UTC(Number(start.slice(0,4)),Number(start.slice(5,7)),0)).toISOString().slice(0,10);
+  if(start<day(l.starts_on)||end>day(l.ends_on))fail(400,'Choose a month within this financial year.');
+  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':withholding'},0))`;
+  const lines=await tx`select * from erp_private.withholding_lines where project_id=${pid} and status='Active' and journal_id is null and tax_withheld>0 and payment_date between ${start} and ${end} order by payment_date,line_id for update`;
+  if(!lines.length)fail(400,'There is no withholding for this month that is not already in a journal.');
+  const noAccount=lines.filter((x:any)=>!x.counter_account);if(noAccount.length)fail(400,`Choose the account to debit for ${noAccount.length} line${noAccount.length===1?'':'s'} (${noAccount.slice(0,3).map((x:any)=>x.payee_name).join(', ')}).`);
+  const debits=new Map<string,number>();let total=0;
+  for(const x of lines){const cents=Math.round(Number(x.tax_withheld)*100);total+=cents;debits.set(x.counter_account,(debits.get(x.counter_account)||0)+cents);}
+  const ref='WHT-'+start.slice(0,7),items=[...debits.entries()].map(([code,cents])=>({account_code:code,debit:cents/100,credit:0,source_status:'Confirmed',source_reference:ref,description:'Tax withheld from payees'})).concat([{account_code:'21606',debit:0,credit:total/100,source_status:'Confirmed',source_reference:ref,description:`Withholding income tax payable ${start.slice(0,7)}`}]);
+  const result=await newJournal(tx,a,l,'Adjustment',{journal_date:end,reference:ref+'-'+lines[0].line_id.slice(0,4),evidence:`Withholding schedule ${start.slice(0,7)}: ${lines.length} line${lines.length===1?'':'s'}`,description:'Tax withheld on payments, from the reviewed withholding schedule'},items,{kind:'Withholding schedule',month:start,line_ids:lines.map((x:any)=>x.line_id)},true);
+  await tx`update erp_private.withholding_lines set journal_id=${result.journal_id} where line_id=any(${tx.array(lines.map((x:any)=>x.line_id))}::uuid[])`;
+  await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id) values('Withholding schedule',${result.journal_id},${result.journal_id},${pid})`;
+  return {...result,lines:lines.length,tax_withheld:total/100};
+ }
  if(p.action==='ledger_generate_sources')return await generateSource(tx,a,l,p);
  if(p.action==='ledger_payroll_create'){
   const items=payrollJournal(p),snapshot={kind:'Payroll control',inputs:{...p,action:undefined}};

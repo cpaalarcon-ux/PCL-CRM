@@ -1,13 +1,14 @@
-import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261106-casuals-v1';
+import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261106-wht-v1';
+import {createWithholdingUI} from './staff-withholding.mjs?v=20261106-wht-v1';
 import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261105-check-v1';
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
-import {createAccountingUI} from './staff-accounting.mjs?v=20261106-casuals-v1';
+import {createAccountingUI} from './staff-accounting.mjs?v=20261106-wht-v1';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261106-casuals-v1';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261106-wht-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 export function createWorkspaceUI(ctx){
- const purchaseLedgers=createPurchaseLedgerUI(ctx);const periodImports=createPeriodImportUI(ctx);const standardPurchaseImport=createStandardPurchaseImportUI(ctx);
+ const purchaseLedgers=createPurchaseLedgerUI(ctx);const periodImports=createPeriodImportUI(ctx);const withholding=createWithholdingUI(ctx);const standardPurchaseImport=createStandardPurchaseImportUI(ctx);
  const accounting=createAccountingUI(ctx);
  const ledger=createLedgerUI(ctx,{onPayrollImport:projectId=>periodImports.newImport(projectId,{kind:'Payroll'})});
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty}=ctx;
