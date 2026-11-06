@@ -1,6 +1,6 @@
 // Pending credits remain immutable source exceptions until a corrected upload
 // supplies the original reference/date. They never become posting sources here.
-export async function pendingPurchases(tx:any,projectId:string,start:string|null=null,end:string|null=null,batchId:string|null=null){
+export async function pendingPurchases(tx:any,projectId:string,start:string|null=null,end:string|null=null,batchId:string|null=null,limit=200){
  const rows=await tx`with outstanding as (
   select distinct on (r.raw_values->'_pending_purchase'->>'key',r.raw_values->'_pending_purchase'->'match')
    r.rejection_id,r.source_row,r.reason,b.document_id,b.sheet_name,b.period_start,b.period_end,d.file_name,
@@ -17,6 +17,6 @@ export async function pendingPurchases(tx:any,projectId:string,start:string|null
   order by r.raw_values->'_pending_purchase'->>'key',r.raw_values->'_pending_purchase'->'match',b.created_at desc
  ) select *,count(*) over()::int total,
   sum((normalized->>'amount')::numeric) over() net,sum((normalized->>'vat')::numeric) over() vat,sum((normalized->>'gross')::numeric) over() gross
- from outstanding order by period_start,source_row,rejection_id limit 200`;
+ from outstanding order by period_start,source_row,rejection_id limit ${limit}`;
  return {total:rows[0]?.total||0,net:Number(rows[0]?.net||0),vat:Number(rows[0]?.vat||0),gross:Number(rows[0]?.gross||0),rows};
 }
