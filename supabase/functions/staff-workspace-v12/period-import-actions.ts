@@ -10,22 +10,54 @@ import {digest} from './improvement-actions.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'This import is unavailable to your account.');return r[0];};
 const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
 const round=(n:number)=>Math.round((n+Number.EPSILON)*100)/100;
+const monthEnd=(ym:string)=>new Date(Date.UTC(Number(ym.slice(0,4)),Number(ym.slice(5,7)),0)).toISOString().slice(0,10);
+const nairobiToday=()=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).map(x=>[x.type,x.value]));return `${p.year}-${p.month}-${p.day}`;};
 const reviewer=(a:any)=>['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code);
 // Option A: a tax case may use a submitted sales/payroll summary; approving the case confirms it.
 // A submitted replacement hides the confirmed import it replaces so nothing is counted twice.
 export function effectiveImports(rows:any[]){const replaced=new Set(rows.filter((r:any)=>r.status==='Submitted').flatMap((r:any)=>r.replaces_ids||[]));return rows.filter((r:any)=>!replaced.has(r.import_id));}
-export async function summarySalesRows(tx:any,pid:string,start:string,end:string,{includeSubmitted=false}:{includeSubmitted?:boolean}={}){
- const statuses=includeSubmitted?['Confirmed','Submitted']:['Confirmed'];
- const imports=effectiveImports(await tx`select * from erp_private.period_imports where project_id=${pid} and kind='Sales' and status=any(${tx.array(statuses)}::text[]) and starts_on>=${start} and ends_on<=${end} order by starts_on,import_id`);
- return imports.flatMap((s:any)=>s.payload.groups.map((g:any,i:number)=>({row_id:s.import_id+':'+g.vat_category,import_id:s.import_id,revision:s.revision,source_revision:s.revision,dataset:'Sales',source_row:i+1,normalized:{date:day(s.ends_on),invoice:'Sales summary '+day(s.starts_on)+' '+g.vat_category,amount:g.net,vat:g.vat,vat_category:g.vat_category},decision:'Confirmed',review_details:{activity_id:s.activity_id||null},vat_rate_key:(rateKeys as any)[g.vat_category],reviewed_by:s.reviewed_by,uploaded_by:s.prepared_by,period_start:day(s.starts_on),period_end:day(s.ends_on),is_period_summary:true})));
+export async function summarySalesRows(tx:any,pid:string,start:string,end:string,{includeSubmitted=false,sourceTypes=['ETIMS','Z_REPORT'],reviewType='Monthly'}:{includeSubmitted?:boolean;sourceTypes?:string[];reviewType?:string}={}){
+ // Include submitted replacements while resolving supersession so the older
+ // confirmed figures disappear as soon as a replacement is in review. A
+ // pending replacement is returned only to a caller that explicitly accepts
+ // submitted sources; monthly reconciliation otherwise sees a source gap.
+ const resolved=effectiveImports(await tx`select * from erp_private.period_imports where project_id=${pid} and kind='Sales' and status in ('Confirmed','Submitted') and starts_on<=${end} and ends_on>=${start} order by starts_on,import_id`);
+ const imports=resolved.filter((s:any)=>(includeSubmitted||s.status==='Confirmed')&&sourceTypes.includes(s.source_type||'ETIMS')&&(reviewType!=='Weekly'||s.coverage_mode==='WEEKLY'&&day(s.starts_on)>=start&&day(s.ends_on)<=end));
+ return imports.flatMap((s:any)=>s.payload.groups.filter((g:any)=>{const ym=g.month||day(s.starts_on).slice(0,7);return `${ym}-01`<=end&&monthEnd(ym)>=start;}).map((g:any,i:number)=>{const ym=g.month||day(s.starts_on).slice(0,7),first=`${ym}-01`,last=monthEnd(ym);return {row_id:s.import_id+':'+ym+':'+g.vat_category,import_id:s.import_id,revision:s.revision,source_revision:s.revision,dataset:s.source_type==='Z_REPORT'?'POS':'Sales',source_type:s.source_type||'ETIMS',coverage_mode:s.coverage_mode||'LEGACY',source_row:i+1,normalized:{date:day(s.ends_on),invoice:`${s.source_type==='Z_REPORT'?'Z report':'eTIMS'} summary ${ym} ${g.vat_category}`,amount:g.net,vat:g.vat,vat_category:g.vat_category},decision:'Confirmed',review_details:{activity_id:s.activity_id||null},vat_rate_key:(rateKeys as any)[g.vat_category],reviewed_by:s.reviewed_by,uploaded_by:s.prepared_by,period_start:first,period_end:last,coverage_start:day(s.starts_on),coverage_end:day(s.ends_on),is_period_summary:true};}));
 }
-async function coverage(tx:any,cid:string,kind:string,start:string,end:string){
- return await tx`select import_id,project_id,starts_on,ends_on,status from erp_private.period_imports where client_id=${cid} and kind=${kind} and status<>'Superseded' and starts_on<=${end} and ends_on>=${start} order by starts_on,import_id`;
+async function coverage(tx:any,cid:string,kind:string,sourceType:string,start:string,end:string){
+ return await tx`select import_id,project_id,starts_on,ends_on,status,source_type,coverage_mode from erp_private.period_imports where client_id=${cid} and kind=${kind} and source_type=${sourceType} and status<>'Superseded' and starts_on<=${end} and ends_on>=${start} order by starts_on,import_id`;
+}
+export async function salesSourceCoverage(tx:any,pid:string,start:string,end:string,sourceType:string){
+ const dataset=sourceType==='Z_REPORT'?'POS':'Sales',expected=Math.round((Date.parse(end)-Date.parse(start))/86400000)+1;
+ const days=Number((await tx`select count(distinct d.day)::int n from erp_private.period_imports i cross join lateral pg_catalog.generate_series(i.starts_on::timestamp,i.ends_on::timestamp,'1 day'::interval) d(day) where i.project_id=${pid} and i.kind='Sales' and i.source_type=${sourceType} and i.status in ('Confirmed','Submitted') and d.day::date between ${start} and ${end} and not exists(select 1 from erp_private.period_imports x where x.status='Submitted' and x.import_id<>i.import_id and x.replaces_ids @> array[i.import_id])`)[0]?.n||0);
+ const batch=(await tx`select 1 from erp_private.workbook_batches where project_id=${pid} and dataset=${dataset} and archived_at is null and period_start<=${start} and period_end>=${end} limit 1`).length>0;
+ return {complete:days===expected||batch,covered_days:days,required_days:expected,detailed_source:batch};
 }
 async function replacementSafe(tx:any,ids:string[]){
  if(!ids.length)return;
- const linked=await tx`select j.journal_id,j.status from erp_private.ledger_sources s join erp_private.ledger_journals j using(journal_id) where s.source_kind='Period import' and s.source_key=any(${tx.array(ids)}::text[]) and not exists(select 1 from erp_private.ledger_journals v where v.reversal_of=j.journal_id and v.status='Posted')`;
+ const linked=await tx`select j.journal_id,j.status from erp_private.ledger_sources s join erp_private.ledger_journals j using(journal_id) where s.source_kind='Period import' and exists(select 1 from unnest(${tx.array(ids)}::text[]) x(id) where s.source_key=x.id or s.source_key like x.id||':%') and not exists(select 1 from erp_private.ledger_journals v where v.reversal_of=j.journal_id and v.status='Posted')`;
  if(linked.length)fail(409,'A covered summary already has an accounting entry. Complete its reviewed reversal before replacing it; open drafts must be resolved first.');
+}
+export function classifySalesCoverage(start:string,end:string,today:string,financialPeriods:string[]=[]){
+ if(!start||!end||end<start)fail(400,'Choose the reporting period.');
+ if(end>today)fail(400,'Sales imports cannot include future dates.');
+ const currentMonth=today.slice(0,7),monthStart=`${currentMonth}-01`;
+ if(start.slice(0,7)===currentMonth&&end.slice(0,7)===currentMonth){
+  if(start===monthStart)return end===monthEnd(currentMonth)?'MONTH_FINAL':'MONTH_TO_DATE';
+  const days=Math.round((Date.parse(end)-Date.parse(start))/86400000)+1;
+  if(days<=7)return 'WEEKLY';
+  fail(400,'For the current month, upload one week at a time or a month-to-date update starting on day 1.');
+ }
+ if(end<monthStart){
+  const fullMonths=start.slice(8,10)==='01'&&end===monthEnd(end.slice(0,7));
+  if(fullMonths||financialPeriods.includes(`${start}|${end}`))return 'HISTORICAL';
+ }
+ fail(400,'Prior-period sales must fully cover complete calendar month(s) or exactly match a client financial year.');
+}
+async function salesCoverageMode(tx:any,project:any,start:string,end:string){
+ const periods=await tx`select starts_on,ends_on from erp_private.ledger_periods where project_id=${project.project_id}`;
+ return classifySalesCoverage(start,end,nairobiToday(),periods.map((x:any)=>`${day(x.starts_on)}|${day(x.ends_on)}`));
 }
 // One import belongs to one business activity. When exactly one activity covers the period it is
 // used automatically; with several, the preparer chooses, or leaves it blank (Unallocated).
@@ -39,6 +71,8 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
  if(!start||!end||end<start||Date.parse(end)-Date.parse(start)>366*86400000)fail(400,'Choose the reporting period.');
  await assertSupportedPeriod(tx,project.client_id,start);
  if(kind==='Payroll'&&(start.slice(8)!=='01'||new Date(Date.parse(end)+86400000).toISOString().slice(8,10)!=='01'||start.slice(0,7)!==end.slice(0,7)))fail(400,'Payroll must cover one complete calendar month.');
+ const sourceType=kind==='Sales'?choice(p.source_type||'ETIMS',['ETIMS','Z_REPORT']):'PAYROLL';
+ const coverageMode=kind==='Sales'?await salesCoverageMode(tx,project,start,end):'PAYROLL_MONTHLY';
  const doc=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and project_id=${project.project_id} and deleted_at is null and archived_at is null for share`);
  if(!['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip'].includes(doc.mime_type))fail(400,'Choose CSV, Excel or ZIP import data.');
  const downloaded=await storage.download(doc.object_key);if(downloaded.error||!downloaded.data)fail(404,'The import source is unavailable.');
@@ -50,7 +84,7 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
   if(profile?.id==='INVOICE-HEADERS-v1'&&kind==='Sales')profile.dataset='Sales';
   available.push({name:out.sheet.name,profile:profile?.name||'Review format',kind:profile?.dataset||null,recognised:!!profile?.recognised});
   if(selection&&!selection.includes(out.sheet.name))continue;
-  if(profile?.recognised&&profile.dataset===kind)sheets.push({sheet:out.sheet,profile});
+  if(profile?.recognised&&profile.dataset===kind&&!(kind==='Sales'&&sourceType==='Z_REPORT'&&!profile.summary))sheets.push({sheet:out.sheet,profile});
   else if(selection?.includes(out.sheet.name)||kind==='Sales'&&/SEC_(B|C|D|D1|E)_/i.test(out.sheet.name))fail(400,'Review the source layout for '+out.sheet.name+'. It cannot be recognised safely.');
  }
  if(!sheets.length){const candidates=available.filter(x=>x.kind===kind&&x.recognised).map(x=>x.name);fail(400,candidates.length?`No ${kind.toLowerCase()} worksheet was selected. Choose: ${candidates.join(', ')}.`:`No recognised ${kind.toLowerCase()} worksheet was found. Check that the approved template and employee worksheet were uploaded.`);}
@@ -63,12 +97,29 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
   if(sheets.some(s=>s.profile.summary)&&!p.credit_basis&&recordedBasis)payload.issues.push('Answer the credit-note question first. It was recorded as “'+recordedBasis+'” when the old sales were replaced.');
   if(sheets.some(s=>s.profile.summary)){
    if(!['After credit notes','Before credit notes'].includes(p.credit_basis))payload.issues.push('Confirm whether the sales totals already include credit notes.');
-   if(p.credit_basis==='Before credit notes'){
-    const credits=p.credits||{};
-    for(const g of payload.groups){const entry=credits[g.vat_category];if(!entry||entry.net===''||entry.vat===''||![entry.net,entry.vat].every(v=>Number.isFinite(Number(v))&&Number(v)>=0)) {payload.issues.push('Enter the credit-note net and VAT reductions for '+g.vat_category+'. Use zero where none.');continue;}g.credit_net=round(Number(entry.net));g.credit_vat=round(Number(entry.vat));if(['0%','Exempt'].includes(g.vat_category)&&g.credit_vat)payload.issues.push('Zero-rated / exempt credits cannot reduce VAT.');g.net=round(g.net-g.credit_net);g.vat=round(g.vat-g.credit_vat);g.gross=round(g.net+g.vat);}
+   const fileNet=sheets.some(s=>s.profile.column_map.credit_net),fileVat=sheets.some(s=>s.profile.column_map.credit_vat),explicitCredits=fileNet||fileVat;
+   if(explicitCredits&&(!fileNet||!fileVat))payload.issues.push('Provide both Credit notes net and Credit notes VAT columns, or use the separate credit reductions.');
+   const multipleMonths=new Set(payload.groups.map((g:any)=>g.month)).size>1;
+   if(p.credit_basis==='Before credit notes'&&multipleMonths&&!explicitCredits)payload.issues.push('For multiple months, put Credit notes net and Credit notes VAT on each month/category row. A single manual reduction cannot be allocated across months.');
+   for(const g of payload.groups){
+    const monthStart=`${g.month}-01`,monthLast=monthEnd(g.month);
+    if(coverageMode==='HISTORICAL'&&(monthStart<start||monthLast>end))payload.issues.push(`Category totals for ${g.month} cover a partial month. Use detailed dated eTIMS lines for a partial financial year.`);
+    if(g.generic_credits&&Math.abs(g.generic_credits-g.file_credit_net-g.file_credit_vat)>.01)payload.issues.push(`Credits do not equal Credit notes net plus Credit notes VAT for ${g.month} / ${g.vat_category}.`);
+    if(p.credit_basis==='Before credit notes'){
+     if(multipleMonths&&!explicitCredits)continue;
+     const entry=(p.credits||{})[g.vat_category],net=fileNet?g.file_credit_net:entry?.net,vat=fileVat?g.file_credit_vat:entry?.vat;
+     if(net==null||vat==null||![net,vat].every(v=>Number.isFinite(Number(v))&&Number(v)>=0)){payload.issues.push(`Enter credit-note net and VAT for ${g.month} / ${g.vat_category}.`);continue;}
+     if(fileNet&&Number(entry?.net||0)!==0||fileVat&&Number(entry?.vat||0)!==0)payload.issues.push('Do not enter a second manual reduction when credit notes are supplied in the template.');
+     g.credit_net=round(Number(net));g.credit_vat=round(Number(vat));
+     if(['0%','Exempt'].includes(g.vat_category)&&g.credit_vat)payload.issues.push('Zero-rated / exempt credits cannot reduce VAT.');
+     if(g.credit_net>g.net||g.credit_vat>g.vat){payload.issues.push(`Credit-note reductions exceed the sales totals for ${g.month} / ${g.vat_category}.`);continue;}
+     g.net=round(g.net-g.credit_net);g.vat=round(g.vat-g.credit_vat);g.gross=round(g.net+g.vat);
+   }
    }
    payload.original_credit_basis=p.credit_basis;
   }
+  if(sourceType==='Z_REPORT'&&sheets.some(s=>!s.profile.summary))payload.issues.push('Z report imports must use the sales category totals template, not invoice detail.');
+  payload.source_type=sourceType;payload.coverage_mode=coverageMode;
  }else{
   const source:any=payrollRows(sheets[0].sheet,sheets[0].profile),availableRules=stagingRates(await tx`select * from erp_private.tax_rates where status in('Approved','Testing') and deleted_at is null`,typeof Deno==='undefined'?'https://yfjiculexbzpkvtapudk.supabase.co':Deno.env.get('SUPABASE_URL')||''),rules:any={};
   payload={...source,employees:[],calculated:[],differences:[],rules:[],totals:{}};
@@ -111,16 +162,15 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
   payload.totals.employee_pension=round(payload.employees.reduce((n:number,e:any)=>n+Number(e.other_pension||0),0));
   payload.source_count=source.rows.length;
  }
- const members=sheets.map(s=>({name:s.sheet.name,profile:s.profile.id})),hash=await digest({sha:doc.sha256,kind,start,end,members,credit_basis:p.credit_basis,credits:p.credits,residents_confirmed:p.residents_confirmed,residency_choices:p.residency_choices||null,signed_document_id:p.signed_document_id||null,payload});
+ const members=sheets.map(s=>({name:s.sheet.name,profile:s.profile.id})),hash=await digest({sha:doc.sha256,kind,sourceType,coverageMode,start,end,members,credit_basis:p.credit_basis,credits:p.credits,residents_confirmed:p.residents_confirmed,residency_choices:p.residency_choices||null,signed_document_id:p.signed_document_id||null,payload});
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'DOWNLOAD')`;
- // Sales only: a yellow prompt comparing the sales gross with the bank deposits for the same dates. It never blocks and is not part of the saved hash.
  let bank_check:any=null;
  if(kind==='Sales'){
   const gross=payload.groups.reduce((n:number,g:any)=>n+(Number(g.net)||0)+(Number(g.vat)||0),0);
-  const dep=(await tx`select count(*)::int n,coalesce(sum(case when r.normalized->>'credit' ~ '^-?[0-9]+(\.[0-9]+)?$' then (r.normalized->>'credit')::numeric else 0 end),0) total from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Bank' and b.archived_at is null and not r.is_split_parent and r.normalized->>'date'>=${start} and r.normalized->>'date'<=${end}`)[0];
+  const dep=(await tx`select count(*)::int n,coalesce(sum(case when r.normalized->>'credit' ~ '^-?[0-9]+(\\.[0-9]+)?$' then (r.normalized->>'credit')::numeric else 0 end),0) total from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Bank' and b.archived_at is null and not r.is_split_parent and r.normalized->>'date'>=${start} and r.normalized->>'date'<=${end}`)[0];
   bank_check=bankDepositCheck({salesGross:gross,deposits:Number(dep.total),depositRows:dep.n>0});
  }
- return {kind,starts_on:start,ends_on:end,document_id:doc.document_id,payload,source_hash:hash,source_members:members,available,bank_check,overlaps:await coverage(tx,project.client_id,kind,start,end)};
+ return {kind,source_type:sourceType,coverage_mode:coverageMode,starts_on:start,ends_on:end,document_id:doc.document_id,payload,source_hash:hash,source_members:members,available,bank_check,overlaps:await coverage(tx,project.client_id,kind,sourceType,start,end)};
 }
 function cleanNote(v:any){return String(v||'').trim();}
 // Confirms a submitted period import. Used by the stand-alone review (tax-only use) and by
@@ -134,7 +184,7 @@ export async function confirmPeriodImport(tx:any,a:any,project:any,r:any,note:an
   ?!(await tx`select 1 from erp_private.tax_cases c where c.project_id=${pid} and c.case_id<>${exceptCaseId} and c.status in ('Submitted','Locked','Filed') and c.starts_on<=${r.ends_on} and c.ends_on>=${r.starts_on} union all select 1 from erp_private.sales_reconciliations x where x.project_id=${pid} and x.review_type='Monthly' and x.status in ('Submitted','Locked') and x.starts_on<=${r.ends_on} and x.ends_on>=${r.starts_on} limit 1`).length
   :(await tx`select erp_private.tax_period_open(${pid}::uuid,${r.starts_on}::date,${r.ends_on}::date) open`)[0].open;
  if(!open)fail(409,'The tax period is submitted or locked.');
- const overlaps=(await coverage(tx,project.client_id,r.kind,day(r.starts_on),day(r.ends_on))).filter((o:any)=>o.import_id!==r.import_id);
+ const overlaps=(await coverage(tx,project.client_id,r.kind,r.source_type||'PAYROLL',day(r.starts_on),day(r.ends_on))).filter((o:any)=>o.import_id!==r.import_id);
  if(overlaps.length!==r.replaces_ids.length||overlaps.some((o:any)=>!r.replaces_ids.includes(o.import_id)))fail(409,'Period coverage changed. Create a fresh replacement.');
  await replacementSafe(tx,r.replaces_ids);
  await tx`select set_config('erp.period_import_replacement','confirmed',true)`;
@@ -145,7 +195,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
  if(!String(p.action).startsWith('period_import_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Assigned accounting staff are required.');
  const pid=uuid(p.project_id),project=one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null`);
- if(p.action==='period_import_list')return {payroll_cap:Number((await tx`select monthly_cap_kes from erp_private.payroll_tolerance`)[0]?.monthly_cap_kes??50),activities:await tx`select activity_id,activity_name,pack_code,effective_from,effective_to from erp_private.client_activities where client_id=${project.client_id} order by activity_name`,imports:await tx`select i.import_id,i.kind,i.starts_on,i.ends_on,i.status,i.prepared_by,i.reviewed_by,i.revision,i.created_at,i.activity_id,a.activity_name from erp_private.period_imports i left join erp_private.client_activities a using(activity_id) where i.project_id=${pid} order by i.created_at desc limit 500`,signed_documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and archived_at is null and mime_type in ('application/pdf','image/jpeg','image/png') order by uploaded_at desc limit 200`,documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and archived_at is null and mime_type in ('text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') order by uploaded_at desc`,periods:await tx`select period_id,starts_on,ends_on from erp_private.ledger_periods where project_id=${pid} and status='Open'`};
+ if(p.action==='period_import_list')return {payroll_cap:Number((await tx`select monthly_cap_kes from erp_private.payroll_tolerance`)[0]?.monthly_cap_kes??50),activities:await tx`select activity_id,activity_name,pack_code,effective_from,effective_to from erp_private.client_activities where client_id=${project.client_id} order by activity_name`,imports:await tx`select i.import_id,i.kind,i.source_type,i.coverage_mode,i.starts_on,i.ends_on,i.status,i.prepared_by,i.reviewed_by,i.revision,i.created_at,i.activity_id,a.activity_name from erp_private.period_imports i left join erp_private.client_activities a using(activity_id) where i.project_id=${pid} order by i.created_at desc limit 500`,signed_documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and archived_at is null and mime_type in ('application/pdf','image/jpeg','image/png') order by uploaded_at desc limit 200`,documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and archived_at is null and mime_type in ('text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') order by uploaded_at desc`,periods:await tx`select period_id,starts_on,ends_on from erp_private.ledger_periods where project_id=${pid} and status='Open'`};
  if(p.action==='period_import_tolerance'){
   if(a.category_code!=='PARTNER')fail(403,'Only a Partner can change the payroll rounding cap.');
   const cap=Number(p.monthly_cap_kes),why=text(p.reason||'',500,false).trim();
@@ -176,14 +226,15 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
     ...(x.payload.residency.assumed?{residency_assumed:{confirmed:true,employees:x.payload.residency.assumed,confirmed_by:a.staff_id,confirmed_at:new Date().toISOString()}}:{})};
   }
   if(!(await tx`select erp_private.tax_period_open(${pid}::uuid,${x.starts_on}::date,${x.ends_on}::date) open`)[0].open)fail(409,'Return submitted tax work before replacing its inputs. Locked tax periods require a controlled amendment.');
-  if(x.kind==='Sales'&&(await tx`select r.row_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Sales' and b.archived_at is null and b.period_start<=${x.ends_on} and b.period_end>=${x.starts_on} limit 1`).length)fail(409,'This period has old invoice-based sales. Use “Replace old sales” on the sales import screen to reverse and archive them first, then add the category totals.');
+  const sourceDataset=x.source_type==='Z_REPORT'?'POS':'Sales';
+  if(x.kind==='Sales'&&(await tx`select r.row_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset=${sourceDataset} and b.archived_at is null and b.period_start<=${x.ends_on} and b.period_end>=${x.starts_on} limit 1`).length)fail(409,'This period already has old invoice-based sales from the same source. Use “Replace old sales” on the sales import screen to reverse and archive them first, then add the category totals.');
   const ids=Array.isArray(p.replaces_ids)?p.replaces_ids.map(uuid):[];
   if(x.kind==='Payroll'&&x.payload.residency.assumed)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'period_imports','PAYROLL_RESIDENCY_ASSUMED',${pid},${tx.json({employees:x.payload.residency.assumed,period:x.starts_on})})`;
   if(x.overlaps.some((o:any)=>o.project_id!==pid||day(o.starts_on)<x.starts_on||day(o.ends_on)>x.ends_on))fail(409,'The new summary must fully cover the periods it replaces in this project. Partial overlaps are not added.');
   if(ids.length!==x.overlaps.length||x.overlaps.some((o:any)=>!ids.includes(o.import_id)))fail(409,'Explicitly confirm replacement of every overlapping summary.');
   await replacementSafe(tx,ids);
   const activityId=await importActivity(tx,project.client_id,x.starts_on,x.ends_on,p.activity_id);
-  return one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,kind,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,activity_id,notes) values(${pid},${project.client_id},${x.document_id},${x.kind},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${activityId},${text(p.notes||'',4000,false)}) returning import_id`);
+  return one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,kind,source_type,coverage_mode,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,activity_id,notes) values(${pid},${project.client_id},${x.document_id},${x.kind},${x.source_type},${x.coverage_mode},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${activityId},${text(p.notes||'',4000,false)}) returning import_id`);
  }
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':period-import'},0))`;
  const r=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid} for update`);

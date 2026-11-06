@@ -109,7 +109,9 @@ test('Sales slice: replace old sales (counts, draft reversal, archive), credit-n
  await t.test('new totals: the credit-note answer must match, the legacy gate has cleared, and the bank prompt is shown without blocking',async()=>{
   assert.equal(await as('ASSISTANT',()=>recordedCreditBasis(tx,P,'2026-01-01','2026-03-31')),'After credit notes');
   assert.equal(await as('ASSISTANT',()=>recordedCreditBasis(tx,P,'2027-01-01','2027-03-31')),null);
-  const src=await doc('Sales-totals.csv','Sales category,Net sales,Output VAT\n16%,3000,480\n8%,0,0\n0%,0,0\nExempt,500,0');
+  const months=['2026-01','2026-02','2026-03'],categories=['16%','8%','0%','Exempt'];
+  const rows=[['Month','Sales category','Net sales','Output VAT','Gross amount','Credits','Credit notes net','Credit notes VAT'],...months.flatMap((month,mi)=>categories.map(category=>{const net=mi===0&&category==='16%'?3000:mi===0&&category==='Exempt'?500:0,vat=mi===0&&category==='16%'?480:0;return [month,category,net,vat,net+vat,0,0,0];}))];
+  const src=await doc('Sales-totals.csv',rows.map(r=>r.join(',')).join('\n'));
   const base={action:'period_import_preview',kind:'Sales',document_id:src,starts_on:'2026-01-01',ends_on:'2026-03-31',notes:'Fictional totals'};
   const wrong=await imp('ASSISTANT',{...base,credit_basis:'Before credit notes',credits:{'16%':{net:0,vat:0},'8%':{net:0,vat:0},'0%':{net:0,vat:0},Exempt:{net:0,vat:0}}});
   assert.ok(wrong.payload.issues.some(x=>/same answer/.test(x)),'a different answer is refused');

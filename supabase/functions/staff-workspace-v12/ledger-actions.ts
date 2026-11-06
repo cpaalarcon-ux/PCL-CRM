@@ -321,13 +321,33 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':period-import'},0))`;
   const source=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid}`);
   if(!['Submitted','Confirmed'].includes(source.status)||day(source.starts_on)<day(l.starts_on)||day(source.ends_on)>day(l.ends_on))fail(400,'Choose a submitted or confirmed import within this financial year. The import is reviewed when its journal is approved and posted.');
-  const used=(await tx`select journal_id from erp_private.ledger_sources where source_kind='Period import' and source_key=${source.import_id}`)[0];if(used)return {...used,reused:true};
+  const used=await tx`select journal_id,source_key from erp_private.ledger_sources where source_kind='Period import' and (source_key=${source.import_id} or source_key like ${source.import_id+':%'}) order by source_key`;
+  if(used.length)return {journal_id:used[0].journal_id,journal_ids:used.map((x:any)=>x.journal_id),reused:true};
   let items:any[]=[];
   if(source.kind==='Sales'){
-   const cross=await loadCrosswalk(tx),codes:any=Object.fromEntries(['16%','8%','0%','Exempt'].map(k=>[k,revenueAccount(cross,{vat_category:k},day(source.ends_on))]));
-   if(source.payload.groups.some((g:any)=>(cashAmount(g.net)||cashAmount(g.vat))&&!codes[g.vat_category]))fail(400,'No approved revenue account is set for this sales category and date.');
-   const signed=(code:string,value:number,description:string)=>({account_code:code,debit:Math.max(value,0)/100,credit:Math.max(-value,0)/100,source_status:'Confirmed',source_reference:source.import_id,description});
-   for(const g of source.payload.groups){const net=cashAmount(g.net),vat=cashAmount(g.vat);if(net||vat)items.push(signed('10060',net+vat,'Sales summary '+g.vat_category),signed(codes[g.vat_category],-net,'Net sales '+g.vat_category),...(vat?[signed('21020',-vat,'Output VAT '+g.vat_category)]:[]));}
+   if(source.source_type!=='ETIMS')fail(400,'Z / POS reports are used for bank comparison and cannot post to the ledger.');
+   if(['WEEKLY','MONTH_TO_DATE'].includes(source.coverage_mode))fail(400,'Weekly and month-to-date sales updates cannot post. Submit a complete month or historical period.');
+   if(source.coverage_mode==='LEGACY'){
+    const fullMonth=day(source.starts_on).slice(8)==='01'&&day(source.ends_on)===new Date(Date.UTC(Number(day(source.ends_on).slice(0,4)),Number(day(source.ends_on).slice(5,7)),0)).toISOString().slice(0,10);
+    const exactYear=(await tx`select period_id from erp_private.ledger_periods where project_id=${pid} and starts_on=${source.starts_on} and ends_on=${source.ends_on} limit 1`).length>0;
+    if(!fullMonth&&!exactYear)fail(400,'Legacy sales coverage must be a full month or exact financial year before posting.');
+   }
+   const grouped=new Map<string,any[]>();for(const g of source.payload.groups){const ym=g.month||day(source.starts_on).slice(0,7);if(!/^\d{4}-\d{2}$/.test(ym))fail(400,'Sales summary rows need a valid month.');grouped.set(ym,[...(grouped.get(ym)||[]),g]);}
+   const cross=await loadCrosswalk(tx),signed=(code:string,value:number,description:string,month:string)=>({account_code:code,debit:Math.max(value,0)/100,credit:Math.max(-value,0)/100,source_status:'Confirmed',source_reference:source.import_id+':'+month,description});
+   const journalIds:string[]=[];
+   for(const [ym,groups] of [...grouped.entries()].sort(([a],[b])=>a.localeCompare(b))){
+    const periodMonthEnd=new Date(Date.UTC(Number(ym.slice(0,4)),Number(ym.slice(5,7)),0)).toISOString().slice(0,10),journalDate=periodMonthEnd>day(l.ends_on)?day(l.ends_on):periodMonthEnd;
+    const codes:any=Object.fromEntries(['16%','8%','0%','Exempt'].map(k=>[k,revenueAccount(cross,{vat_category:k},journalDate)]));
+    if(groups.some((g:any)=>(cashAmount(g.net)||cashAmount(g.vat))&&!codes[g.vat_category]))fail(400,'No approved revenue account is set for this sales category and date.');
+    const monthItems:any[]=[];
+    for(const g of groups){const net=cashAmount(g.net),vat=cashAmount(g.vat);if(net||vat)monthItems.push(signed('10060',net+vat,'Sales summary '+g.vat_category,ym),signed(codes[g.vat_category],-net,'Net sales '+g.vat_category,ym),...(vat?[signed('21020',-vat,'Output VAT '+g.vat_category,ym)]:[]));}
+    if(!monthItems.length)continue;
+    const key=source.import_id+':'+ym,result=await newJournal(tx,a,l,'Sales',{journal_date:journalDate,reference:'SALES-'+ym+'-'+source.import_id.slice(0,8),evidence:'Confirmed eTIMS import '+source.import_id+'; '+source.review_note,description:'Reviewed eTIMS sales summary '+ym},monthItems,{kind:'Period import',import_id:source.import_id,month:ym,source_hash:source.source_hash},true);
+    await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id,source_revision) values('Period import',${key},${result.journal_id},${pid},${source.revision})`;
+    journalIds.push(result.journal_id);
+   }
+   if(!journalIds.length)fail(400,'A zero summary needs no accounting entry.');
+   return {journal_id:journalIds[0],journal_ids:journalIds};
   }else{const t=source.payload.totals;items=payrollJournal({gross_pay:t.gross,paye:t.paye,shif:t.shif,employee_ahl:t.employee_ahl,employee_nssf:t.employee_nssf,employee_pension:t.employee_pension,other_deductions:t.other_deductions,employer_ahl:t.employer_ahl,employer_nssf:t.employer_nssf,employer_nita:t.nita,evidence:source.import_id});}
   if(!items.length)fail(400,'A zero summary needs no accounting entry.');
   if(source.activity_id)items=items.map((x:any)=>String(x.account_code||'')>='40000'?{...x,activity_id:source.activity_id}:x);

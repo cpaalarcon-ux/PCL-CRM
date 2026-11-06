@@ -1,6 +1,6 @@
 import {stockCategoryOptions} from './stock-category-options.ts';
 import {chartResolver,chartMessage,chartCatalogue} from './client-chart.ts';
-import {summarySalesRows} from './period-import-actions.ts';
+import {summarySalesRows,salesSourceCoverage} from './period-import-actions.ts';
 import {digest} from './improvement-actions.ts';
 import {VAT_CATEGORIES} from './improvement-rules.mjs';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
@@ -21,6 +21,11 @@ export async function reconSource(tx:any,project:string,start:string,end:string)
 }
 async function calculate(tx:any,c:any,inputs:any){const source=await reconSource(tx,c.project_id,day(c.starts_on),day(c.ends_on)),deferral=c.review_type==='Monthly'?(await tx`select * from erp_private.bank_deferrals where reconciliation_id=${c.reconciliation_id}`)[0]:null,result=reconciliation(source.rows,inputs,{bankPendingApproved:!!deferral});
  if(c.review_type==='Monthly'&&source.crossing)result.issues.push('An import batch crosses this review period. Use matching import periods.');
+ if(c.review_type==='Monthly'){
+  const etims=await salesSourceCoverage(tx,c.project_id,day(c.starts_on),day(c.ends_on),'ETIMS'),pos=await salesSourceCoverage(tx,c.project_id,day(c.starts_on),day(c.ends_on),'Z_REPORT');
+  if(!etims.complete)result.issues.push(`Complete eTIMS coverage is required to close the month: ${etims.covered_days} of ${etims.required_days} days are covered.`);
+  if(!pos.complete&&!String(inputs.pos_not_applicable_reason||'').trim())result.issues.push(`Complete Z/POS coverage is required to close the month: ${pos.covered_days} of ${pos.required_days} days are covered, or record why POS is not applicable.`);
+ }
  if(source.rows.some((r:any)=>['Sales','Bank'].includes(r.dataset)&&(r.decision!=='Confirmed'||r.source_revision!==r.revision)))result.issues.push('Another reviewer must confirm the sales and bank source rows.');
  for(const x of result.allocations){if(!x.evidence_id)result.issues.push('Every adjustment needs a project evidence document.');else one(await tx`select document_id from erp_private.documents where document_id=${uuid(x.evidence_id)} and project_id=${c.project_id} and deleted_at is null`);}
  return {...source,result,deferral};
@@ -126,9 +131,10 @@ export async function accountingAction(tx:any,a:any,p:any){
   return {lines,issues,debit:money(lines.reduce((s,l)=>s+l.debit,0)),credit:money(lines.reduce((s,l)=>s+l.credit,0)),label:'DRAFT accounting preview only. No journal or client ledger has been posted.'};
  }
  if(p.action==='sales_recon_create'){
-  const type=choice(p.review_type,['Weekly','Monthly']),start=date(p.starts_on),end=date(p.ends_on);if(!start||!end||end<start||start.slice(0,7)!==end.slice(0,7)||!start.endsWith('-01'))fail(400,'Choose a month-to-date period starting on the first.');
+  const type=choice(p.review_type,['Weekly','Monthly']),start=date(p.starts_on),end=date(p.ends_on);if(!start||!end||end<start||start.slice(0,7)!==end.slice(0,7))fail(400,'Choose a valid review period within one calendar month.');
   const now=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date());if(end>now)fail(400,'Do not create a future review.');
-  if(type==='Monthly'&&end!==new Date(Date.UTC(Number(start.slice(0,4)),Number(start.slice(5,7)),0)).toISOString().slice(0,10))fail(400,'Monthly reviews must cover the full month.');
+  if(type==='Weekly'){const days=Math.round((Date.parse(end)-Date.parse(start))/86400000)+1;if(start.slice(0,7)!==now.slice(0,7)||days>7)fail(400,'Weekly reviews are limited to up to seven days in the current month.');}
+  if(type==='Monthly'&&(!start.endsWith('-01')||end!==new Date(Date.UTC(Number(start.slice(0,4)),Number(start.slice(5,7)),0)).toISOString().slice(0,10)))fail(400,'Monthly reviews must cover the full calendar month.');
   const existing=await tx`select reconciliation_id from erp_private.sales_reconciliations where project_id=${pid} and review_type=${type} and starts_on=${start} and ends_on=${end}`;if(existing.length)return existing[0];
   return one(await tx`insert into erp_private.sales_reconciliations(project_id,review_type,starts_on,ends_on,prepared_by) values(${pid},${type},${start},${end},${a.staff_id}) returning reconciliation_id`);
  }

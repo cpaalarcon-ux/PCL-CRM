@@ -79,7 +79,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  if((standard||['text/csv','application/zip'].includes(d.mime_type))&&p.confirmed_client_id!==project.client_id)fail(400,'Confirm the legal client before committing this source.');
  await tx`select pg_advisory_xact_lock(hashtextextended(${project.project_id+':tax'},0))`;
  const dataset=template?template.dataset:profile?.recognised?profile.dataset:choice(p.dataset,['Sales','POS','Purchases','Bank','General']);
- if(['Sales','Payroll'].includes(dataset))fail(400,'Use Sales totals / Payroll imports to confirm this source without creating invoice records.');
+ if(['Sales','POS','Payroll'].includes(dataset))fail(400,'Use the controlled eTIMS / Z-report sales update or Payroll import. Sales sources must not bypass period coverage and independent review.');
  if(profile&&!profile.recognised)fail(400,'Review the changed source format: '+(profile.errors||[]).join(' '));
  if(template&&p.dataset&&p.dataset!==dataset)fail(400,'The import type must match the recognised workbook.');
  if(sourceInfo.section&&!profile?.recognised&&!p.section_contract_confirmed)fail(400,'Confirm the selected KRA CSV section column mapping. A section name alone is not a validated filing contract.');

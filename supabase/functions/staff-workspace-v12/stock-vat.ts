@@ -4,7 +4,9 @@ import {money} from './accounting-rules.mjs';
 export async function salesNetByCategory(tx:any,projectId:string,starts:any,ends:any){
  const rows=await tx`select payload from erp_private.period_imports where project_id=${projectId} and kind='Sales' and status='Confirmed' and starts_on>=${asDay(starts)} and ends_on<=${asDay(ends)}`;
  const out:Record<string,number>={};
- for(const r of rows)for(const g of r.payload?.groups||[])out[g.vat_category]=money((out[g.vat_category]||0)+Number(g.net||0)-Number(g.credit_net||0));
+ // Sales groups are already net of signed credit-note rows. The separate
+ // credit_net field is a disclosure total and must not be subtracted twice.
+ for(const r of rows)for(const g of r.payload?.groups||[])out[g.vat_category]=money((out[g.vat_category]||0)+Number(g.net||0));
  return out;
 }
 export async function stockGateIssues(tx:any,projectId:string,starts:any,ends:any){

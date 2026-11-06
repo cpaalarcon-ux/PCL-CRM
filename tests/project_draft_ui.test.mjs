@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const projectUi=fs.readFileSync(new URL('../staff-workspace-v6.mjs',import.meta.url),'utf8');
 const appHtml=fs.readFileSync(new URL('../staff-pilot.html',import.meta.url),'utf8');
+const release=JSON.parse(fs.readFileSync(new URL('../supabase/functions/staff-workspace-v12/release.json',import.meta.url),'utf8'));
 
 test('draft project explains that retained UAT tasks do not mean the project is active',()=>{
  assert.match(projectUi,/Held until activation/,'the status steps show that tasks are held while Draft');
@@ -14,7 +15,7 @@ test('draft project explains that retained UAT tasks do not mean the project is 
 });
 
 test('staging build cache key changes with the release-identity check',()=>{
- assert.match(appHtml,/2026-11-04\.56/);
+ assert.ok(appHtml.includes(release.build),'the page label must match the server release identity');
  assert.match(appHtml,/20261103-release-check-v1/);
 });
 

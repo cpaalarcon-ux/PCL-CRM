@@ -28,7 +28,7 @@ test('the tax computation review confirms the submitted sales summary it uses',a
  await tx`update erp_private.period_imports set status='Confirmed',reviewed_by=${actors.MANAGER.staff_id},review_note='Fictional earlier confirmation' where import_id=${original}`;
  const replacement=(await summary(2000,320,[original]))[0].import_id;
  await tx`update erp_private.period_imports set status='Submitted' where import_id=${replacement}`;
- assert.equal((await summarySalesRows(tx,P,'2026-09-01','2026-09-30'))[0].normalized.amount,1000,'ledger and reconciliation reads still use confirmed summaries only');
+ assert.equal((await summarySalesRows(tx,P,'2026-09-01','2026-09-30')).length,0,'a submitted replacement hides the superseded confirmed source until the replacement is independently confirmed');
  const taxRows=await summarySalesRows(tx,P,'2026-09-01','2026-09-30',{includeSubmitted:true});
  assert.equal(taxRows.length,1);assert.equal(taxRows[0].normalized.amount,2000,'the tax computation uses the submitted replacement, not both');
  const taxCase=(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by,status) values(${P},'VAT','2026-09-01','2026-09-30',${actors.ASSISTANT.staff_id},'Submitted') returning case_id`)[0].case_id;

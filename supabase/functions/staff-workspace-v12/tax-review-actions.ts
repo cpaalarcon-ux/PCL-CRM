@@ -1,6 +1,6 @@
 import {pendingPurchases} from './purchase-pending.ts';
 import {ageingReport} from './credit-ageing.mjs';
-import {summarySalesRows,effectiveImports,confirmPeriodImport} from './period-import-actions.ts';
+import {summarySalesRows,effectiveImports,confirmPeriodImport,salesSourceCoverage} from './period-import-actions.ts';
 import {stagingRates,preferredRates} from './testing-rates.mjs';
 import {taxKinds,pickRate,profileIssues,keys,testRate,payrollFromRules,simpleTax,vatRuleCheck} from './tax-registry.mjs';
 import {fail,text,uuid,choice,revision,date} from './validation.mjs';
@@ -30,11 +30,17 @@ export async function taxSummary(tx:any,c:any){
  const rows=await tx`select r.*,v.decision,v.deductible_percentage,v.source_revision,v.reviewed_by,v.vat_rate_key,v.vat_difference_reason,v.income_treatment,b.period_start,b.period_end,b.uploaded_by
   from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) left join erp_private.tax_row_reviews v on v.row_id=r.row_id
   where r.project_id=${c.project_id} and b.archived_at is null and not r.is_split_parent and r.dataset<>'POS' and b.period_start>=${c.starts_on} and b.period_end<=${c.ends_on} order by r.source_row limit 10001`;
- const summaryRows=await summarySalesRows(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on),{includeSubmitted:true});rows.push(...summaryRows);
- const summaryImports=effectiveImports(await tx`select * from erp_private.period_imports where project_id=${c.project_id} and kind='Sales' and status in ('Confirmed','Submitted') and starts_on<=${c.ends_on} and ends_on>=${c.starts_on}`);
- for(const s of summaryImports)batches.push({batch_id:s.import_id,dataset:'Sales',period_start:s.starts_on,period_end:s.ends_on,source_count:4,new_count:4,rejected_count:0});
+ // VAT uses eTIMS evidence only. Z/POS imports remain in the bank comparison.
+ const summaryRows=await summarySalesRows(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on),{includeSubmitted:true,sourceTypes:['ETIMS']});rows.push(...summaryRows);
+ const summaryImports=effectiveImports(await tx`select * from erp_private.period_imports where project_id=${c.project_id} and kind='Sales' and source_type='ETIMS' and status in ('Confirmed','Submitted') and starts_on<=${c.ends_on} and ends_on>=${c.starts_on}`);
+ for(const s of summaryImports)batches.push({batch_id:s.import_id,dataset:'Sales',period_start:s.starts_on,period_end:s.ends_on,source_count:Number(s.payload?.source_count||s.payload?.groups?.length||0),new_count:Number(s.payload?.groups?.length||0),rejected_count:0});
  if(rows.length>10000)fail(400,'Split the tax review into smaller periods (maximum 10,000 rows per case).');
  const issues:string[]=profileIssues(profile,{...c,starts_on:dateText(c.starts_on),ends_on:dateText(c.ends_on)});if(batches.some((b:any)=>dateText(b.period_start)<dateText(c.starts_on)||dateText(b.period_end)>dateText(c.ends_on)))issues.push('An imported batch crosses this case period. Use matching period boundaries.');
+ if(c.kind==='VAT'){
+  const coverage=await salesSourceCoverage(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on),'ETIMS');
+  const detailed=batches.some((b:any)=>b.dataset==='Sales'&&dateText(b.period_start)<=dateText(c.starts_on)&&dateText(b.period_end)>=dateText(c.ends_on));
+  if(!coverage.complete&&!detailed)issues.push(`Complete eTIMS coverage is required for this VAT period: ${coverage.covered_days} of ${coverage.required_days} days are covered. Z/POS cannot satisfy the VAT sales-source check.`);
+ }
  if(c.kind==='TOT'){
   const dailySales=rows.filter((r:any)=>r.dataset==='Sales'&&!r.is_period_summary),dailyPurchases=rows.filter((r:any)=>['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset)&&!r.is_period_summary);
   if(c.inputs.gross_receipts==null||c.inputs.gross_receipts==='')issues.push('Enter the covered gross-sales base from the daily sales register; a missing amount is not zero.');
