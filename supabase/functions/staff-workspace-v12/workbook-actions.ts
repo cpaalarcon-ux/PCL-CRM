@@ -4,6 +4,7 @@ import {autoMapRows} from './auto-map.ts';
 import {suggestionsFor,groupSuggestions} from './purchase-history.ts';
 import {chartCatalogue} from './client-chart.ts';
 import {statementBank,bankRegister} from './bank-accounts.ts';
+import {applyBankRules} from './bank-lines.ts';
 import {detectImportProfile,profilePurchase} from './import-profiles.mjs';
 import {purchaseUploadProfile,purchaseUploadRows,purchaseUploadMap,purchaseUploadHeaders,purchaseUploadRates,purchaseUploadValues,purchaseDisplayValues,purchasePendingMatch,purchaseUploadId,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from './purchase-upload.mjs';
 import {pendingPurchases} from './purchase-pending.ts';
@@ -145,6 +146,8 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by,bank_account_id)
  values(${batch},${d.project_id},${d.document_id},${sheet.name},${header},${dataset},${start},${end},${tx.json(map)},${source},${added},${duplicates},${rejected.length},${a.staff_id},${bankAccountId})`;
  await tx`insert into erp_private.workbook_import_requests(project_id,signature,batch_id,document_id) values(${project.project_id},${signature},${batch},${d.document_id})`;
+ // Approved narration rules map the new statement lines straight away; whatever is left goes to the Fix-It queue.
+ if(dataset==='Bank'&&added)try{await applyBankRules(tx,a,{project_id:project.project_id,client_id:project.client_id,starts_on:start,ends_on:end},end);}catch(e:any){if(!e?.status)throw e;}
  for(let i=0;i<rejected.length;i+=500)await tx`insert into erp_private.workbook_rejections(batch_id,source_row,reason,raw_values) select ${batch}::uuid,r.row,r.reason,r.raw from jsonb_to_recordset(${tx.json(rejected.slice(i,i+500))}::jsonb) as r(row integer,reason text,raw jsonb)`;
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
  const outstanding=pendingCount?(await pendingPurchases(tx,project.project_id,null,null,batch)).total:0;

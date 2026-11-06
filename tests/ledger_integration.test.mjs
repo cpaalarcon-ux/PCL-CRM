@@ -88,6 +88,30 @@ test('Client ledger: source integrity, maker/checker, entity profit and shared P
  const closed=await ledger('MANAGER',{...base,action:'ledger_bank_save',bank_account_id:kcb.bank_account_id,revision:kcb.revision,bank_name:'Fictional Bank',kind:'Bank current',gl_code:'10020',status:'Closed',closed_on:'2026-12-31'});assert.equal(closed.revision,2);
  await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_bank_save',bank_account_id:kcb.bank_account_id,revision:closed.revision,bank_name:'Fictional Bank',kind:'Bank current',gl_code:'10020'}),/closed bank account cannot be changed/);
  await assert.rejects(()=>as('ASSISTANT',()=>tx`delete from erp_private.client_bank_accounts where bank_account_id=${kcb.bank_account_id}`),/delet|permission denied/i);
+ // Narration rules and the Fix-It queue: rules need a different Manager or Partner, and statement lines can be mapped to ledger accounts.
+ const lineRow=(n,ref,credit,debit)=>tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${stmt},${P},${C},'Bank',${n},${'BANK-'+n},'{}',${tx.json({date:'2026-09-0'+n,reference:ref,credit,debit})}) returning row_id,revision`;
+ const l1=(await lineRow(1,'LOAN FROM DIRECTOR JOHN',5000,0))[0],l2=(await lineRow(2,'KRA REFUND 123',800,0))[0],l3=(await lineRow(3,'BANK TO MOBILE 998',0,2000))[0];
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_rule_save',keyword:'ab',account_code:'62570'}),/three/);
+ await assert.rejects(()=>ledger('INTERN',{...base,action:'ledger_bank_rule_save',keyword:'director loan',account_code:'62570'}),/Interns|available|permission/i);
+ const rl=await ledger('ASSISTANT',{...base,action:'ledger_bank_rule_save',keyword:'Loan From Director',match_mode:'Contains',direction:'Money in',account_code:'62570',note:'Fictional lender'});assert.equal(rl.status,'Proposed');
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_rule_save',keyword:'loan from director',match_mode:'Contains',direction:'Money in',account_code:'62570'}),/already exists/);
+ assert.equal((await ledger('ASSISTANT',{...base,action:'ledger_bank_apply_rules'})).mapped,0,'a proposed rule is never applied');
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_rule_review',rule_id:rl.rule_id,status:'Active'}),/Manager or Partner/);
+ const mrule=await ledger('MANAGER',{...base,action:'ledger_bank_rule_save',keyword:'kra refund',account_code:'62570'});
+ await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_bank_rule_review',rule_id:mrule.rule_id,status:'Active'}),/different Manager or Partner/);
+ await ledger('PARTNER',{...base,action:'ledger_bank_rule_review',rule_id:mrule.rule_id,status:'Retired',review_note:'Fictional: too broad'});
+ await assert.rejects(()=>as('PARTNER',()=>tx`update erp_private.bank_mapping_rules set keyword='other loan' where rule_id=${rl.rule_id}`),/cannot be edited/);
+ await ledger('MANAGER',{...base,action:'ledger_bank_rule_review',rule_id:rl.rule_id,status:'Active'});
+ const applied=await ledger('ASSISTANT',{...base,action:'ledger_bank_apply_rules'});assert.equal(applied.mapped,1);assert.equal(applied.left,2);
+ assert.equal((await tx`select account_code from erp_private.workbook_rows where row_id=${l1.row_id}`)[0].account_code,'62570');
+ let fix=await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'});assert.equal(fix.not_mapped,2);assert.equal(fix.lines>=3,true);assert.ok(fix.accounts.some(x=>x.code==='62570'));assert.ok(!fix.accounts.some(x=>x.code==='50000'),'stock accounts are not offered for bank lines');
+ const rev2=fix.items.find(i=>i.row_id===l2.row_id).revision;
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_lines_map',items:[{row_id:l2.row_id,revision:rev2}],account_code:'10020'}),/own bank/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_lines_map',items:[{row_id:l2.row_id,revision:rev2}],account_code:'50000'}),/stock or fixed assets/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_lines_map',items:[{row_id:l2.row_id,revision:99}],account_code:'62570'}),/changed/);
+ assert.equal((await ledger('ASSISTANT',{...base,action:'ledger_bank_lines_map',items:[{row_id:l2.row_id,revision:rev2}],account_code:'62570'})).mapped,1);
+ fix=await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'});assert.equal(fix.not_mapped,1,'only the Bank to Mobile line is left');
+ assert.equal((await tx`select review_details->'mapping_confirmation'->>'method' m from erp_private.workbook_rows where row_id=${l1.row_id}`)[0].m,'Bank rule');
  const reversal=await ledger('MANAGER',{...base,action:'ledger_reverse',journal_id:a.journal_id,reference:'REV-LICENCE',journal_date:'2026-10-01',evidence:'Fictional correction; original remains immutable'});
  // A Manager who prepares a reversal must have a different Partner approve it.
  let rv=await ledger('MANAGER',{...base,action:'ledger_journal_read',journal_id:reversal.journal_id});await ledger('MANAGER',{...base,action:'ledger_journal_submit',journal_id:reversal.journal_id,revision:rv.journal.revision});rv=await jr(reversal.journal_id);
