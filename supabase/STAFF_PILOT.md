@@ -69,7 +69,7 @@ The anonymous setup_status action requires possession of the full random token, 
 
 ## Remaining release gates
 
-The navigation explicitly labels Finance and Communications as not yet connected. Financial WIP, tax approvals, production engagement activation, full HR/attendance, the client portal, and staff/client bulk imports are not enabled by this release. Do not treat the preview modules as shared operational records.
+The Workspace areas grid is a navigation surface, not evidence that every area is production-ready. Financial WIP, tax approvals, production engagement activation, full HR/attendance, the client portal, and staff/client bulk imports remain release gates. Do not treat preview sections as accepted operational records.
 
 The security advisor reports leaked-password protection disabled. Address it before production; local password-length checks are not compromised-password screening. See https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection. MFA, restore testing, malware scanning, retention controls, load testing and staff acceptance remain production gates. Closed private session/token/rate-limit tables intentionally have no application-role policies; see https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy.
 

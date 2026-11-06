@@ -92,7 +92,7 @@
     if (retryButton) retryButton.hidden = true;
     notice('Opening your secure workspace…');
     try {
-      await import('./staff-pilot.mjs?v=20261107-cheques-v1');
+      await import('./staff-pilot.mjs?v=20261106-workspace-areas-v3');
     } catch {
       workspaceLoading = false;
       if (readSavedSession()) {
@@ -265,3 +265,5 @@
   if (hasSession) void openWorkspace();
   void checkRelease();
 })();
+
+
