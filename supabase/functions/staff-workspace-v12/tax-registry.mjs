@@ -10,7 +10,7 @@ export const taxKinds=['VAT','PAYE','Company','Partnership','Individual','TOT','
 // It records the filing position only: the ERP does not compute it until a separate rule is released, so it is not a case type.
 export const otherEntityIncomeKinds=['Other entity income tax'];
 export const profileKinds=[...taxKinds,'Withholding VAT agent','Withholding VAT credits received','Withholding income tax credits received','Excise duty','Instalment tax','Advance tax','NCA levy','Tourism levy','Catering levy','SEPT',...otherEntityIncomeKinds];
-export const taxTypes=['VAT','PAYE','Corporation tax','Individual income tax','Withholding tax','Levy','Turnover tax','Rental income tax','Capital gains tax','NSSF','Relief / deduction','Interest benchmark'];
+export const taxTypes=['VAT','PAYE','Corporation tax','Individual income tax','Withholding tax','Levy','Turnover tax','Rental income tax','Capital gains tax','NSSF','Relief / deduction','Interest benchmark','Significant economic presence tax'];
 export const testRate=r=>r.is_test===true||/^QA/i.test(r.rate_key)||/FICTIONAL|SYNTHETIC TEST/i.test(r.label||'');
 export const obligationStatusOptions={registered:['YES','NO','UNKNOWN'],applicable:['YES','NO','TO_CONFIRM'],client_status:['ACTIVE','DORMANT','NIL_FILER','DEREGISTERED','NOT_REGISTERED','UNKNOWN']};
 const finalIncomeRegimes=['TOT','MRI'];
@@ -48,7 +48,28 @@ export function taxSourceIssue(sourceUrl,sourceNote){
   return 'Add the applicable Act, section, Legal Notice, regulation, Schedule or Gazette citation to the source note.';
  return null;
 }
+export const legalReviewStates=['Not required','Pending','Confirmed'];
+// A rate flagged Pending was supplied without the Tax Lead's written confirmation. It may be exercised on staging,
+// but it can never be approved and no return that relies on it may be submitted.
+export const legalPendingRates=rates=>(rates||[]).filter(r=>r&&r.legal_review_status==='Pending');
+export function legalReviewIssues(rates){
+ const seen=new Set();
+ return legalPendingRates(rates).filter(r=>!seen.has(r.rate_key)&&seen.add(r.rate_key)).map(r=>`${r.rate_key}: pending Tax Lead legal confirmation. This working is a test and cannot be submitted until the rate is confirmed in writing and approved.`);
+}
+export function legalConfirmIssue(rate,input,actor){
+ if(!rate)return 'Rate not found.';
+ if(actor?.category_code!=='PARTNER')return 'Only an Engagement Partner may record the Tax Lead confirmation.';
+ if(rate.legal_review_status!=='Pending')return 'Only a rate flagged Pending legal review can be confirmed.';
+ if(!['Draft','Testing'].includes(rate.status))return 'Choose a draft or testing rate.';
+ if(String(input?.lead_name||'').trim().length<3)return 'Enter the Tax Lead who gave the written confirmation.';
+ if(String(input?.reference||'').trim().length<10)return 'Enter the reference of the written confirmation (for example the email date and subject, or the memo number).';
+ if(String(input?.citation||rate.legal_citation||'').trim().length<10)return 'Record the legal citation (Act, section or Legal Notice) the Tax Lead confirmed.';
+ if(rate.parameters==null||typeof rate.parameters!=='object'||!Object.keys(rate.parameters).length)return 'The rate has no figures yet. Enter and save the confirmed rate first.';
+ if(input?.confirmed!==true)return 'Confirm that the figures on this rate match the Tax Lead\'s written confirmation.';
+ return null;
+}
 export function rateApprovalIssue(rate,approverId){
+ if(rate?.legal_review_status==='Pending')return 'This rate is pending legal review. Record the Tax Lead written confirmation before approval.';
  if(rate?.created_by&&String(rate.created_by)===String(approverId))return 'The person who prepared this tax rule cannot approve it.';
  return taxSourceIssue(rate?.source_url,rate?.source_note);
 }
@@ -152,7 +173,7 @@ export function simpleTax(kind,p,rules){
 }
 
 export function validateCanonicalRate(key,type,p){
- const expected=key.startsWith('KE_VAT_')?'VAT':key.startsWith('KE_WHT_')?'Withholding tax':({KE_CIT_RES:'Corporation tax',KE_IIT_ANNUAL:'Individual income tax',KE_TOT:'Turnover tax',KE_MRI:'Rental income tax',KE_CGT:'Capital gains tax',KE_PAYE_MONTHLY:'PAYE',KE_AHL_EMPLOYEE:'Levy',KE_AHL_EMPLOYER:'Levy',KE_SHIF:'Levy',KE_NSSF:'NSSF',KE_NITA:'Levy',KE_PAYROLL_LIMITS:'Relief / deduction',KE_FBT_BENCHMARK:'Interest benchmark',KE_DEEMED_BENCHMARK:'Interest benchmark'})[key];
+ const expected=key.startsWith('KE_VAT_')?'VAT':key.startsWith('KE_WHT_')?'Withholding tax':({KE_CIT_RES:'Corporation tax',KE_IIT_ANNUAL:'Individual income tax',KE_TOT:'Turnover tax',KE_MRI:'Rental income tax',KE_CGT:'Capital gains tax',KE_PAYE_MONTHLY:'PAYE',KE_AHL_EMPLOYEE:'Levy',KE_AHL_EMPLOYER:'Levy',KE_SHIF:'Levy',KE_NSSF:'NSSF',KE_NITA:'Levy',KE_PAYROLL_LIMITS:'Relief / deduction',KE_FBT_BENCHMARK:'Interest benchmark',KE_DEEMED_BENCHMARK:'Interest benchmark',KE_SEPT:'Significant economic presence tax'})[key];
  if(expected&&type!==expected)fail(400,`${key} requires the ${expected} rule type.`);
  if(key==='KE_NITA'&&(p.method!=='fixed'||p.fixed_amount==null))fail(400,'NITA uses a fixed amount per employee.');
  if(key==='KE_SHIF'&&p.minimum==null)fail(400,'The SHIF per-person minimum is required.');

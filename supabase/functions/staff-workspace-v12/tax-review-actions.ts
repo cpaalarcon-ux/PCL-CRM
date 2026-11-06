@@ -2,7 +2,7 @@ import {pendingPurchases} from './purchase-pending.ts';
 import {ageingReport} from './credit-ageing.mjs';
 import {summarySalesRows,effectiveImports,confirmPeriodImport,salesSourceCoverage} from './period-import-actions.ts';
 import {stagingRates,preferredRates} from './testing-rates.mjs';
-import {taxKinds,pickRate,profileIssues,keys,testRate,payrollFromRules,simpleTax,vatRuleCheck} from './tax-registry.mjs';
+import {taxKinds,pickRate,profileIssues,keys,testRate,payrollFromRules,simpleTax,vatRuleCheck,legalReviewIssues} from './tax-registry.mjs';
 import {fail,text,uuid,choice,revision,date} from './validation.mjs';
 import {range,day,number,amount,round,filingKinds,vatCalculation,incomeCalculation,payrollCalculation} from './suite-rules.mjs';
 import {one,leader,today} from './suite-actions.ts';
@@ -156,6 +156,7 @@ export async function taxSummary(tx:any,c:any){
  if(c.kind!=='VAT'&&!c.source_document_id)issues.push('Link the supporting working-paper document.');
  if(!c.inputs.return_tied)issues.push('Confirm that the draft return agrees to the reviewed computation.');
  if(applied.some(r=>r.approval_scope==='Testing'))result.testing_only=true;
+ issues.push(...legalReviewIssues(applied));
  return {result,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
 }
 export async function taxAction(tx:any,a:any,p:any):Promise<any>{

@@ -115,3 +115,4 @@
 20261106203829 bank_mapping_rules
 20261106205646 bank_summary_and_balances
 20261106212515 unpaid_cheques_account
+20261106215418 rate_legal_review
