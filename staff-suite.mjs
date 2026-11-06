@@ -1,4 +1,4 @@
-import {serviceNarration,formatDay} from './invoice-narration.mjs?v=20261106-chart-v1';
+import {serviceNarration,formatDay} from './invoice-narration.mjs?v=20261106-statutory-v1';
 import {createDiscussionUI} from './staff-discussion.mjs?v=20261026-v4';
 import {communicationQr,letterDetails,letterDetailsQr} from './staff-communication-qr.mjs?v=20261104-letter-details';
 import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261106-othertax-v1';

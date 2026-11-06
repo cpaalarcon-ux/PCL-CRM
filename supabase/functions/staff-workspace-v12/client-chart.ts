@@ -14,16 +14,25 @@ const checker=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.catego
 const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 
 export function chartLayer(account:any){
+ if(account.statutory_tags?.length)return 'Statutory';
  if(account.entity_types?.length)return 'Entity';
  if(account.industry_packs?.length)return 'Industry';
  return 'Core';
 }
 
-// Accounts the ERP proposes for an entity type and set of packs (pure, used by the server and tests).
-export function proposeAccounts(accounts:any[],entityType:string,packs:string[]){
+// Accounts the ERP proposes for an entity type, set of packs and statutory position (pure, used by the server and tests).
+export function proposeAccounts(accounts:any[],entityType:string,packs:string[],statutory:Record<string,string>={}){
  return accounts.filter((x:any)=>x.status==='Active'&&!x.is_legacy
   &&(!x.entity_types?.length||x.entity_types.includes(entityType))
-  &&(!x.industry_packs?.length||x.industry_packs.some((p:string)=>packs.includes(p))));
+  &&(!x.industry_packs?.length||x.industry_packs.some((p:string)=>packs.includes(p)))
+  &&(!x.statutory_tags?.length||x.statutory_tags.some((t:string)=>statutory[t]!=='no')));
+}
+
+// 'yes' / 'unconfirmed' / 'no' per statutory tag (VAT, PAYE), decided in the database because obligation rows are visible to leaders only.
+// Only 'no' removes accounts from the proposal; an unconfirmed obligation keeps them.
+async function clientStatutory(tx:any,clientId:string,from:string){
+ const rows=await tx`select tag,status from erp_private.client_statutory_status(${clientId}::uuid,${from}::date)`;
+ return Object.fromEntries(rows.map((r:any)=>[r.tag,r.status])) as Record<string,string>;
 }
 
 async function clientPacks(tx:any,clientId:string,from:string){
@@ -76,12 +85,13 @@ export async function requireChartAccount(tx:any,clientId:string,code:string,at:
 async function proposal(tx:any,clientId:string,from:string){
  const c=one(await tx`select client_id,company_name,legal_entity_type from erp_private.clients where client_id=${clientId} and deleted_at is null`);
  const packs=await clientPacks(tx,clientId,from);
- const catalog=await tx`select code,name,account_group,category_code,status,is_legacy,entity_types,industry_packs from erp_private.account_catalog order by code`;
- const proposed=proposeAccounts(catalog,c.legal_entity_type||'',packs);
+ const catalog=await tx`select code,name,account_group,category_code,status,is_legacy,entity_types,industry_packs,statutory_tags from erp_private.account_catalog order by code`;
+ const statutory=await clientStatutory(tx,clientId,from);
+ const proposed=proposeAccounts(catalog,c.legal_entity_type||'',packs,statutory);
  const codes=new Set(proposed.map((x:any)=>x.code)),used=await usedAccounts(tx,clientId,from);
- const exceptions=[...used.entries()].filter(([code])=>!codes.has(code)).map(([code,sources])=>{const x=catalog.find((y:any)=>y.code===code);return {code,name:x?.name||'Unknown account',sources,reason:x?(x.entity_types?.length&&!x.entity_types.includes(c.legal_entity_type)?`For ${x.entity_types.join(', ')} only`:x.industry_packs?.length?`Industry pack ${x.industry_packs.join(', ')} not among the client's activities`:x.status!=='Active'?'Account is not active':'Outside the proposal'):'Not in the master chart'};});
+ const exceptions=[...used.entries()].filter(([code])=>!codes.has(code)).map(([code,sources])=>{const x=catalog.find((y:any)=>y.code===code);return {code,name:x?.name||'Unknown account',sources,reason:x?(x.entity_types?.length&&!x.entity_types.includes(c.legal_entity_type)?`For ${x.entity_types.join(', ')} only`:x.statutory_tags?.length&&x.statutory_tags.every((t:string)=>statutory[t]==='no')?`Needs the client's ${x.statutory_tags.join(' / ')} obligation, which is not on its verified tax profile`:x.industry_packs?.length?`Industry pack ${x.industry_packs.join(', ')} not among the client's activities`:x.status!=='Active'?'Account is not active':'Outside the proposal'):'Not in the master chart'};});
  const draftsForPacks=catalog.filter((x:any)=>x.status==='Draft'&&x.industry_packs?.some((p:string)=>packs.includes(p))).map((x:any)=>({code:x.code,name:x.name}));
- return {client:c,packs,accounts:proposed.map((x:any)=>({code:x.code,name:x.name,account_group:x.account_group,layer:chartLayer(x),entity_types:x.entity_types,industry_packs:x.industry_packs})),exceptions,awaiting_partner_approval:draftsForPacks,catalog};
+ return {client:c,packs,statutory,accounts:proposed.map((x:any)=>({code:x.code,name:x.name,account_group:x.account_group,layer:chartLayer(x),entity_types:x.entity_types,industry_packs:x.industry_packs,statutory_tags:x.statutory_tags||[]})),exceptions,awaiting_partner_approval:draftsForPacks,catalog};
 }
 
 export async function clientChartAction(tx:any,a:any,p:any){
@@ -93,9 +103,11 @@ export async function clientChartAction(tx:any,a:any,p:any){
   const {catalog,...prop}=await proposal(tx,cid,from);
   const current=versions.find((v:any)=>v.status==='Approved');
   const stale=current?prop.packs.filter((x:string)=>!(current.packs||[]).includes(x)):[];
+  const currentCodes=current?new Set<string>((await tx`select accounts from erp_private.client_chart_versions where version_id=${current.version_id}`)[0]?.accounts||[]):new Set<string>();
+  const staleStatutory=current?prop.accounts.filter((x:any)=>x.statutory_tags?.length&&!currentCodes.has(x.code)).map((x:any)=>({code:x.code,name:x.name,tags:x.statutory_tags})):[];
   return {...prop,reviewers:await reviewCandidates(tx,cid),effective_from:from,versions,draft:versions.find((v:any)=>v.status==='Draft')||null,current:current||null,
-   status:current?(stale.length?'Out of date':'Approved'):versions.some((v:any)=>v.status==='Draft')?'Pending review':'Not approved',
-   stale_packs:stale,extra_choices:catalog.filter((x:any)=>x.status==='Active'&&!x.is_legacy&&!prop.accounts.some((y:any)=>y.code===x.code)).map((x:any)=>({code:x.code,name:x.name}))};
+   status:current?(stale.length||staleStatutory.length?'Out of date':'Approved'):versions.some((v:any)=>v.status==='Draft')?'Pending review':'Not approved',
+   stale_packs:stale,stale_statutory:staleStatutory,extra_choices:catalog.filter((x:any)=>x.status==='Active'&&!x.is_legacy&&!prop.accounts.some((y:any)=>y.code===x.code)).map((x:any)=>({code:x.code,name:x.name}))};
  }
  if(p.action==='v3_client_chart_propose'){
   preparer(a);const cid=uuid(p.client_id),from=date(p.effective_from);if(!from)fail(400,'Choose the date the client chart applies from.');
