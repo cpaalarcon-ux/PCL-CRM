@@ -27,8 +27,8 @@ export function payrollCalculation(p,rate){if(!Array.isArray(p.employees)||!p.em
 }
 export function busySeason(start,end){[start,end]=range(start,end);for(let y=Number(start.slice(0,4));y<=Number(end.slice(0,4));y++)if(start<=`${y}-04-30`&&end>=`${y}-01-15`)return true;return false;}
 export function weekdays(start,end){[start,end]=range(start,end);if((Date.parse(end)-Date.parse(start))/86400000>366)fail(400,'Request at most one year at a time.');const days=[];for(let t=Date.parse(start+'T00:00:00Z');t<=Date.parse(end+'T00:00:00Z');t+=86400000){const d=new Date(t);if(d.getUTCDay()>0&&d.getUTCDay()<6)days.push(d.toISOString().slice(0,10));}return days;}
-export function invoiceLines(lines){if(!Array.isArray(lines)||!lines.length||lines.length>50)fail(400,'Add between 1 and 50 invoice lines.');return lines.map(l=>{const quantity=number(l.quantity,.01,1e6),unit_price=amount(l.unit_price),vat_rate=number(l.vat_rate??0,0,100),net=round(quantity*unit_price),vat=round(net*vat_rate/100);const link=l.task_id?{task_id:uuid(l.task_id)}:{},milestone=text(l.milestone||'',120,false);return {description:text(l.description,300),quantity,unit_price,vat_rate,net,vat,total:round(net+vat),...link,...(milestone?{milestone}:{})};});}
-const addMonthsAnchored=(iso,months)=>{const [y,m,d]=iso.split('-').map(Number),monthIndex=y*12+(m-1)+months,year=Math.floor(monthIndex/12),month=((monthIndex%12)+12)%12,day=Math.min(d,new Date(Date.UTC(year,month+1,0)).getUTCDate());return new Date(Date.UTC(year,month,day)).toISOString().slice(0,10);};
+export function invoiceLines(lines){if(!Array.isArray(lines)||!lines.length||lines.length>50)fail(400,'Add between 1 and 50 invoice lines.');return lines.map(l=>{const quantity=number(l.quantity,.01,1e6),unit_price=amount(l.unit_price),vat_rate=number(l.vat_rate??0,0,100),includes_vat=l.includes_vat===true||l.includes_vat==='true'||l.includes_vat==='on'||l.includes_vat==='1',entered=round(quantity*unit_price),net=includes_vat?round(entered/(1+vat_rate/100)):entered,vat=includes_vat?round(entered-net):round(net*vat_rate/100);const link=l.task_id?{task_id:uuid(l.task_id)}:{},milestone=text(l.milestone||'',120,false);return {description:text(l.description,300),quantity,unit_price,vat_rate,...(includes_vat?{includes_vat:true}:{}),net,vat,total:round(net+vat),...link,...(milestone?{milestone}:{})};});}
+export const addMonthsAnchored=(iso,months)=>{const [y,m,d]=iso.split('-').map(Number),monthIndex=y*12+(m-1)+months,year=Math.floor(monthIndex/12),month=((monthIndex%12)+12)%12,day=Math.min(d,new Date(Date.UTC(year,month+1,0)).getUTCDate());return new Date(Date.UTC(year,month,day)).toISOString().slice(0,10);};
 export function recurringFeePeriods(startsOn,endsOn,frequency,through,limit=120){
  const start=day(startsOn),end=endsOn?day(endsOn):null,cutoff=day(through),step=({Monthly:1,Quarterly:3,Annually:12})[frequency];
  if(!step)fail(400,'Choose Monthly, Quarterly or Annually for a recurring fee.');
@@ -42,3 +42,22 @@ export function recurringFeePeriods(startsOn,endsOn,frequency,through,limit=120)
 }
 export const filingKinds=['VAT','PAYE','Company','Partnership','Individual'];
 export const cleanCell=v=>{if(v&&typeof v==='object'&&'formula'in v)fail(400,'Import plain values for staff and client master data.');return String(v??'').trim();};
+
+// Service period and narration. The period is its own pair of dates; the narration is built from the service name and the period,
+// for example "Tax Compilation And Compliance 1 Month 1 Nov 2026 to 30 Nov 2026". Staff may edit the words, not the dates.
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+export const formatDay=v=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v instanceof Date?v.toISOString():v||''));return m?`${Number(m[3])} ${MONTHS[Number(m[2])-1]} ${m[1]}`:'';};
+export function monthsInPeriod(from,to){
+ const a=day(from),b=day(to);if(b<a)fail(400,'The service period must end on or after its start.');
+ for(let n=1;n<=60;n++){const end=new Date(Date.parse(addMonthsAnchored(a,n)+'T00:00:00Z')-86400000).toISOString().slice(0,10);if(end===b)return n;if(end>b)break;}
+ return null;
+}
+export function servicePeriod(from,to){
+ if(!from&&!to)return {service_from:null,service_to:null,service_months:null};
+ if(!from||!to)fail(400,'Give both the start and the end of the service period, or neither.');
+ const a=day(from),b=day(to);return {service_from:a,service_to:b,service_months:monthsInPeriod(a,b)};
+}
+export function serviceNarration(service,from,to){
+ const base=String(service||'').trim();if(!from||!to)return base;
+ const months=monthsInPeriod(from,to);return `${base}${base?' ':''}${months?`${months} Month${months===1?'':'s'} `:''}${formatDay(from)} to ${formatDay(to)}`.trim();
+}

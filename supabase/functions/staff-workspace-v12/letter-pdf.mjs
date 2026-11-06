@@ -17,9 +17,9 @@ const utf8=v=>Array.from(new TextEncoder().encode(v),b=>String.fromCharCode(b)).
 export function qrMatrix(text){const qr=qrcode(0,'M');qr.addData(utf8(text),'Byte');qr.make();const n=qr.getModuleCount();return Array.from({length:n},(_,r)=>Array.from({length:n},(_,c)=>qr.isDark(r,c)));}
 // Standard PDF fonts cover Windows-1252 only; anything else is replaced rather than failing the letter.
 const WIN=new Set([...'€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ']);
-const safe=v=>String(v??'').replace(/\t/g,'  ').split('').map(ch=>{const c=ch.charCodeAt(0);return c===10||c>=32&&c<=126||c>=160&&c<=255||WIN.has(ch)?ch:'?';}).join('');
+export const safe=v=>String(v??'').replace(/\t/g,'  ').split('').map(ch=>{const c=ch.charCodeAt(0);return c===10||c>=32&&c<=126||c>=160&&c<=255||WIN.has(ch)?ch:'?';}).join('');
 
-function wrap(font,size,text,width){
+export function wrap(font,size,text,width){
  const out=[];for(const para of safe(text).split('\n')){let cur='';for(const word of para.split(' ')){const next=cur?cur+' '+word:word;if(font.widthOfTextAtSize(next,size)<=width){cur=next;continue;}if(cur)out.push(cur);let w=word;while(font.widthOfTextAtSize(w,size)>width){let i=w.length;while(i>1&&font.widthOfTextAtSize(w.slice(0,i),size)>width)i--;out.push(w.slice(0,i));w=w.slice(i);}cur=w;}out.push(cur);}
  return out;
 }
