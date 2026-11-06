@@ -40,7 +40,18 @@ test('money-in summary: transfers, the client\'s categories and unclassified lin
  assert.equal(by.transfers.amount,700);assert.equal(by['cat:c1'].amount,500);assert.equal(by.unclassified.amount,90);
  assert.equal(by.trade.amount,3300,'sales plus the refund, because the Old category is retired');assert.equal(s.trade_bankings,3300);
  assert.equal(s.sections.reduce((n,x)=>n+(x.is_total?0:x.amount),0)+s.trade_bankings,s.money_in,'the sections add back to total money in');
- assert.deepEqual(s.money_out,{total:500,own_transfers:100,not_classified:0,other_mapped:400});
+ assert.deepEqual(s.money_out,{total:500,own_transfers:100,unpaid_cheques:0,not_classified:0,other_mapped:400});
  assert.equal(by['cat:c1'].lines[0].reference,'loan');
  assert.equal(bankSummary({rows,categories:cats,bankAccounts:[],bankAccountId:'B2'}).money_in,0);
+});
+
+test('unpaid cheques are deducted for every client, and a cheque that clears again is ordinary money in',()=>{
+ const rows=[line('dep',1000,'40000'),line('ret',0,'10065','B1',1000),line('again',1000,'40000'),line('cyl',600,'20030')];
+ const s=bankSummary({rows,categories:[{category_id:'cy',name:'Cylinder deposits',account_codes:['20030'],status:'Active'}],bankAccounts:[]});
+ const by=Object.fromEntries(s.sections.map(x=>[x.key,x]));
+ assert.equal(s.money_in,2600);assert.equal(by.cheques.amount,1000);assert.equal(by['cat:cy'].amount,600);
+ assert.equal(s.trade_bankings,1000,'deposit 1000 returned, then the same cheque cleared: 1000 net');
+ assert.equal(s.sections.reduce((n,x)=>n+(x.is_total?0:x.amount),0)+s.trade_bankings,s.money_in);
+ assert.equal(s.money_out.unpaid_cheques,1000);assert.equal(s.money_out.other_mapped,0);
+ assert.equal(by.cheques.lines[0].amount,1000);
 });
