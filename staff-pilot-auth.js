@@ -92,7 +92,7 @@
     if (retryButton) retryButton.hidden = true;
     notice('Opening your secure workspace…');
     try {
-      await import('./staff-pilot.mjs?v=20261106-branch-v1');
+      await import('./staff-pilot.mjs?v=20261106-suppliers-v1');
     } catch {
       workspaceLoading = false;
       if (readSavedSession()) {

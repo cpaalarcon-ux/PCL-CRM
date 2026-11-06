@@ -58,6 +58,20 @@ test('Client ledger: source integrity, maker/checker, entity profit and shared P
  const charge=await ledger('ASSISTANT',{...base,action:'ledger_depreciation_create',asset_id:asset.asset_id,starts_on:'2026-01-01',ends_on:'2026-12-31',reference:'DEP-2026',evidence:'Fictional approved annual class-rate calculation'});await post(charge.journal_id);
  await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_depreciation_create',asset_id:asset.asset_id,starts_on:'2026-09-01',ends_on:'2026-10-31',reference:'DUP-DEP',evidence:'Fictional overlap attempt'}),/already covers/);
  let report=await ledger('ASSISTANT',{...base,action:'ledger_read'});assert.equal(report.profit.payroll,103000);assert.equal(report.profit.depreciation,25000);assert.equal(report.profit.operating_expenses,1000);assert.equal(report.profit.profit_before_tax,-129000);assert.equal(report.tb.reduce((n,x)=>n+x.net,0),0);assert.equal(report.ready_to_close,false);
+ // Supplier register and creditors ageing: the ledger is rebuilt from posted Trade payables lines, so it always agrees with the control account.
+ const pay0=await ledger('ASSISTANT',{...base,action:'ledger_payables_read'});assert.equal(pay0.register_in_use,false);assert.equal(pay0.totals.difference,0);assert.ok(pay0.unassigned.count>0,'posted payables lines exist before any supplier is registered');
+ assert.equal(report.close_checks.find(x=>x.code==='PAYABLES_REGISTER').status,'Not started');assert.ok(!report.issues.some(x=>/^Supplier ledger/.test(x)),'a client with no register is not blocked');
+ await assert.rejects(()=>ledger('INTERN',{...base,action:'ledger_supplier_save',name:'Fictional Supplier Ltd'}),/Interns|available|permission/i);
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_supplier_save',name:'Fictional Supplier Ltd',kra_pin:'BAD'}),/KRA PIN/);
+ const sup=await ledger('ASSISTANT',{...base,action:'ledger_supplier_save',name:'Fictional Supplier Ltd',kra_pin:'p051234567z',aliases:'Fictional Supplies; FSL'});assert.equal(sup.revision,1);
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_supplier_save',name:'fictional supplier ltd'}),/already in the supplier register/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_supplier_save',name:'Another',kra_pin:'P051234567Z'}),/already in the supplier register/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_supplier_save',supplier_id:sup.supplier_id,revision:99,name:'Fictional Supplier Ltd'}),/changed since/);
+ const upd=await ledger('MANAGER',{...base,action:'ledger_supplier_save',supplier_id:sup.supplier_id,revision:sup.revision,name:'Fictional Supplier Ltd',kra_pin:'P051234567Z',note:'Fictional note'});assert.equal(upd.revision,2);
+ await assert.rejects(()=>as('ASSISTANT',()=>tx`delete from erp_private.suppliers where supplier_id=${sup.supplier_id}`),/delet|permission denied/i,'suppliers are never hard deleted');
+ const pay1=await ledger('ASSISTANT',{...base,action:'ledger_payables_read'});assert.equal(pay1.register_in_use,true);assert.equal(pay1.totals.difference,0);assert.equal(pay1.register.length,1);
+ report=await ledger('ASSISTANT',{...base,action:'ledger_read'});assert.equal(report.close_checks.find(x=>x.code==='PAYABLES_CONTROL').status,'Pass');
+ assert.equal(report.close_checks.find(x=>x.code==='PAYABLES_ASSIGNED').status,'Blocked');assert.ok(report.issues.some(x=>/^Supplier ledger/.test(x)),'unassigned payables block approval once the register is in use');
  const reversal=await ledger('MANAGER',{...base,action:'ledger_reverse',journal_id:a.journal_id,reference:'REV-LICENCE',journal_date:'2026-10-01',evidence:'Fictional correction; original remains immutable'});
  // A Manager who prepares a reversal must have a different Partner approve it.
  let rv=await ledger('MANAGER',{...base,action:'ledger_journal_read',journal_id:reversal.journal_id});await ledger('MANAGER',{...base,action:'ledger_journal_submit',journal_id:reversal.journal_id,revision:rv.journal.revision});rv=await jr(reversal.journal_id);
