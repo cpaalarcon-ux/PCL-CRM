@@ -2,6 +2,8 @@ import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {assertSupportedPeriod} from './supported-period.ts';
 import {readSourceSheet} from './source-reader.mjs';
 import {detectImportProfile,salesTotals,payrollRows,rateKeys} from './import-profiles.mjs';
+import {recordedCreditBasis,creditBasisIssue} from './legacy-sales-lock.ts';
+import {bankDepositCheck} from './sales-bank-check.mjs';
 import {keys,pickRate,payrollFromRules} from './tax-registry.mjs';
 import {preferredRates,stagingRates} from './testing-rates.mjs';
 import {digest} from './improvement-actions.ts';
@@ -56,6 +58,9 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
  let payload:any;
  if(kind==='Sales'){
   payload=salesTotals(sheets,start,end);
+  const recordedBasis=await recordedCreditBasis(tx,project.project_id,start,end),basisIssue=creditBasisIssue(recordedBasis,p.credit_basis);
+  if(basisIssue)payload.issues.push(basisIssue);
+  if(sheets.some(s=>s.profile.summary)&&!p.credit_basis&&recordedBasis)payload.issues.push('Answer the credit-note question first. It was recorded as “'+recordedBasis+'” when the old sales were replaced.');
   if(sheets.some(s=>s.profile.summary)){
    if(!['After credit notes','Before credit notes'].includes(p.credit_basis))payload.issues.push('Confirm whether the sales totals already include credit notes.');
    if(p.credit_basis==='Before credit notes'){
@@ -108,7 +113,14 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
  }
  const members=sheets.map(s=>({name:s.sheet.name,profile:s.profile.id})),hash=await digest({sha:doc.sha256,kind,start,end,members,credit_basis:p.credit_basis,credits:p.credits,residents_confirmed:p.residents_confirmed,residency_choices:p.residency_choices||null,signed_document_id:p.signed_document_id||null,payload});
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'DOWNLOAD')`;
- return {kind,starts_on:start,ends_on:end,document_id:doc.document_id,payload,source_hash:hash,source_members:members,available,overlaps:await coverage(tx,project.client_id,kind,start,end)};
+ // Sales only: a yellow prompt comparing the sales gross with the bank deposits for the same dates. It never blocks and is not part of the saved hash.
+ let bank_check:any=null;
+ if(kind==='Sales'){
+  const gross=payload.groups.reduce((n:number,g:any)=>n+(Number(g.net)||0)+(Number(g.vat)||0),0);
+  const dep=(await tx`select count(*)::int n,coalesce(sum(case when r.normalized->>'credit' ~ '^-?[0-9]+(\.[0-9]+)?$' then (r.normalized->>'credit')::numeric else 0 end),0) total from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Bank' and b.archived_at is null and not r.is_split_parent and r.normalized->>'date'>=${start} and r.normalized->>'date'<=${end}`)[0];
+  bank_check=bankDepositCheck({salesGross:gross,deposits:Number(dep.total),depositRows:dep.n>0});
+ }
+ return {kind,starts_on:start,ends_on:end,document_id:doc.document_id,payload,source_hash:hash,source_members:members,available,bank_check,overlaps:await coverage(tx,project.client_id,kind,start,end)};
 }
 function cleanNote(v:any){return String(v||'').trim();}
 // Confirms a submitted period import. Used by the stand-alone review (tax-only use) and by
@@ -164,7 +176,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
     ...(x.payload.residency.assumed?{residency_assumed:{confirmed:true,employees:x.payload.residency.assumed,confirmed_by:a.staff_id,confirmed_at:new Date().toISOString()}}:{})};
   }
   if(!(await tx`select erp_private.tax_period_open(${pid}::uuid,${x.starts_on}::date,${x.ends_on}::date) open`)[0].open)fail(409,'Return submitted tax work before replacing its inputs. Locked tax periods require a controlled amendment.');
-  if(x.kind==='Sales'&&(await tx`select r.row_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Sales' and b.archived_at is null and b.period_start<=${x.ends_on} and b.period_end>=${x.starts_on} limit 1`).length)fail(409,'This period has legacy invoice-based sales. Reconcile and migrate those sources before adding category totals.');
+  if(x.kind==='Sales'&&(await tx`select r.row_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Sales' and b.archived_at is null and b.period_start<=${x.ends_on} and b.period_end>=${x.starts_on} limit 1`).length)fail(409,'This period has old invoice-based sales. Use “Replace old sales” on the sales import screen to reverse and archive them first, then add the category totals.');
   const ids=Array.isArray(p.replaces_ids)?p.replaces_ids.map(uuid):[];
   if(x.kind==='Payroll'&&x.payload.residency.assumed)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'period_imports','PAYROLL_RESIDENCY_ASSUMED',${pid},${tx.json({employees:x.payload.residency.assumed,period:x.starts_on})})`;
   if(x.overlaps.some((o:any)=>o.project_id!==pid||day(o.starts_on)<x.starts_on||day(o.ends_on)>x.ends_on))fail(409,'The new summary must fully cover the periods it replaces in this project. Partial overlaps are not added.');
