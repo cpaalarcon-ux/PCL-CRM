@@ -342,6 +342,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(p.action==='ledger_period_import_create'){
   await tx`select pg_advisory_xact_lock(hashtextextended(${project.client_id+':period-import'},0))`;
   const source=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid}`);
+  if((await tx`select amendment_id from erp_private.import_amendments where import_id=${source.import_id} and status in ('Approved','Reversing','Ready','Replacement saved')`).length)fail(409,'This summary is being amended. Finish or cancel the amendment before preparing another entry from it.');
   if(!['Submitted','Confirmed'].includes(source.status)||day(source.starts_on)<day(l.starts_on)||day(source.ends_on)>day(l.ends_on))fail(400,'Choose a submitted or confirmed import within this financial year. The import is reviewed when its journal is approved and posted.');
   const used=await tx`select journal_id,source_key from erp_private.ledger_sources where source_kind='Period import' and (source_key=${source.import_id} or source_key like ${source.import_id+':%'}) order by source_key`;
   if(used.length)return {journal_id:used[0].journal_id,journal_ids:used.map((x:any)=>x.journal_id),reused:true};
