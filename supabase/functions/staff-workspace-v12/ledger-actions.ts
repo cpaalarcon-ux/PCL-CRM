@@ -29,6 +29,28 @@ async function catalogue(tx:any){return await tx`select * from erp_private.accou
 async function clientAccountAllowed(tx:any,clientId:string,code:string,at:string){
  return (await tx`select mapping_id from erp_private.client_account_mappings where client_id=${clientId} and erp_account_code=${code} and status in ('Active','Draft') and effective_from<=${at} and (effective_to is null or effective_to>=${at}) limit 1`).length>0;
 }
+// Opening balances need an approved client account setup that covers the opening date. When the only setup for an account starts later
+// (for example it was added today), the system fixes the date itself: a Draft setup you created is moved back to the opening date; any other
+// setup gets a Draft dated correction for the gap. Both are reviewed and activated when a different Manager or Partner posts the opening journal.
+async function openingAccountApproved(tx:any,a:any,clientId:string,code:string,at:string):Promise<{ok:boolean;reason?:string;from?:string;fixed?:string}>{
+ if(await clientAccountAllowed(tx,clientId,code,at))return {ok:true};
+ const later=(await tx`select mapping_id,source_account_code,source_account_name,effective_from,status,created_by from erp_private.client_account_mappings where client_id=${clientId} and erp_account_code=${code} and status in ('Active','Draft') and effective_from>${at} order by effective_from limit 1`)[0];
+ if(!later)return {ok:false,reason:'none'};
+ const from=day(later.effective_from),key=String(later.source_account_code||'').trim()||('name:'+String(later.source_account_name||'').trim().toLowerCase());
+ const clash=await tx`select mapping_id from erp_private.client_account_mappings where client_id=${clientId} and mapping_id<>${later.mapping_id} and coalesce(nullif(btrim(source_account_code),''),'name:'||lower(btrim(source_account_name)))=${key} and status in ('Draft','Active') and effective_from<${from} and coalesce(effective_to,'infinity'::date)>=${at} limit 1`;
+ if(clash.length)return {ok:false,reason:'overlap',from};
+ await requireChartAccount(tx,clientId,code,at);
+ if(later.status==='Draft'&&later.created_by===a.staff_id){
+  await tx`update erp_private.client_account_mappings set effective_from=${at} where mapping_id=${later.mapping_id} and status='Draft'`;
+  return {ok:true,fixed:'moved'};
+ }
+ await tx`insert into erp_private.client_account_mappings(client_id,source_account_code,source_account_name,erp_account_code,effective_from,effective_to,status,created_by) values(${clientId},${later.source_account_code||null},${later.source_account_name},${code},${at},(${from}::date-1),'Draft',${a.staff_id})`;
+ return {ok:true,fixed:'correction'};
+}
+function openingAccountMessage(code:string,at:string,r:{reason?:string;from?:string}){
+ if(r.reason==='overlap')return `ERP account ${code} is not approved for this client’s opening balance date (${at}): it is set up from ${r.from}, and another setup for the same source already covers part of that gap. Ask a Manager to end the overlapping setup under Clients → Client accounts.`;
+ return `ERP account ${code} is not approved for this client’s opening balance date (${at}): it has no client account setup covering that date. Under Clients → Client accounts add it with "Effective from" on or before ${at}, or choose it again in the opening import so it is set up from that date.`;
+}
 async function activateJournalMappings(tx:any,a:any,clientId:string,j:any,l:any,journalLines:any[]){
  const codes=[...new Set(journalLines.map((x:any)=>x.account_code).filter(Boolean).map(String))];
  const ids=[...new Set(((j.source_snapshot||{}).source_rows||[]).map((x:any)=>x.client_mapping_id).filter(Boolean))];
@@ -311,8 +333,8 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   return await newJournal(tx,a,l,'Stock',{reference:plan.reference,journal_date:plan.journal_date,description:plan.description,evidence:plan.evidence},items,plan.snapshot);
  }
  if(p.action==='ledger_journal_save'){
-  const accounts=await catalogue(tx),kind=choice(p.kind,['Opening','Payroll','Adjustment','Stock']),items=normaliseLines(p.lines,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll'});
-  if(kind==='Opening')for(const line of items.filter((x:any)=>x.account_code))if(!await clientAccountAllowed(tx,project.client_id,line.account_code,day(l.starts_on)))fail(400,`ERP account ${line.account_code} is not approved for this client’s opening balance date. Add it under Clients → Client accounts; it is reviewed when this journal is approved and posted.`);
+  const accounts=await catalogue(tx),kind=choice(p.kind,['Opening','Payroll','Adjustment','Stock']),items=normaliseLines(p.lines,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll',entityType:l.entity_type});
+  if(kind==='Opening')for(const code of [...new Set(items.filter((x:any)=>x.account_code).map((x:any)=>String(x.account_code)))]){const ok=await openingAccountApproved(tx,a,project.client_id,code,day(l.starts_on));if(!ok.ok)fail(400,openingAccountMessage(code,day(l.starts_on),ok));}
   if(p.journal_id){const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);if(j.generated||j.kind!==kind)fail(400,'Generated source entries must be refreshed or reversed, not manually overwritten.');
    await writeLines(tx,j,items);await tx`update erp_private.ledger_journals set journal_date=${date(p.journal_date)},reference=${text(p.reference,100)},description=${text(p.description||'',2000,false)},evidence=${text(p.evidence||'',5000,false)},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};
   }return await newJournal(tx,a,l,kind,p,items);
@@ -402,7 +424,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  if(['ledger_journal_submit','ledger_journal_review'].includes(p.action)){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);
-  if(p.action==='ledger_journal_submit'){edit(j,a);const currentLines=await lines(tx,j.journal_id),issues=journalIssues(currentLines,await chartCatalogue(tx,await catalogue(tx),l.client_id,day(j.journal_date||l.starts_on)),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(j.kind==='Opening')for(const line of currentLines.filter((x:any)=>x.account_code))if(!await clientAccountAllowed(tx,project.client_id,line.account_code,day(l.starts_on)))issues.push(`Line ${line.line_no}: ERP account ${line.account_code} is not approved for this client’s opening balance date.`);if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id},updated_at=now() where journal_id=${j.journal_id}`;await notifyReviewers(tx,l.client_id,`${j.kind==='Opening'?'opening balances':j.kind.toLowerCase()+' journal'} ${j.reference}`,'review:journal:'+j.journal_id+':'+Date.now());}
+  if(p.action==='ledger_journal_submit'){edit(j,a);const currentLines=await lines(tx,j.journal_id),issues=journalIssues(currentLines,await chartCatalogue(tx,await catalogue(tx),l.client_id,day(j.journal_date||l.starts_on)),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(j.kind==='Opening')for(const line of currentLines.filter((x:any)=>x.account_code)){const ok=await openingAccountApproved(tx,a,project.client_id,String(line.account_code),day(l.starts_on));if(!ok.ok)issues.push(`Line ${line.line_no}: ${openingAccountMessage(String(line.account_code),day(l.starts_on),ok)}`);}if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id},updated_at=now() where journal_id=${j.journal_id}`;await notifyReviewers(tx,l.client_id,`${j.kind==='Opening'?'opening balances':j.kind.toLowerCase()+' journal'} ${j.reference}`,'review:journal:'+j.journal_id+':'+Date.now());}
   else{leader(a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);let activated:string[]=[];if(status==='Posted'){const jr=(await tx`select erp_private.is_junior_preparer(${j.prepared_by}) a,erp_private.is_junior_preparer(${j.last_prepared_by}) b`)[0];if(jr.a||jr.b){if(!j.checked_by)fail(409,'This entry was prepared by an Assistant. A Supervisor, Manager or Partner must check it before it can be approved and posted.');if(j.checked_by===a.staff_id)fail(403,'You checked this entry. A different Manager or Partner must approve and post it.');}}if(status==='Posted'){const chart=await approvedChart(tx,l.client_id,day(j.journal_date||l.starts_on)),outside=chart?(await lines(tx,j.journal_id)).filter((x:any)=>x.account_code&&(Number(x.debit)||Number(x.credit))&&!chart.codes.has(x.account_code)):[];if(outside.length)fail(400,`Return this journal: ${[...new Set(outside.map((x:any)=>x.account_code))].map((c:any)=>chartMessage(c)).join(' ')}`);await sourceCheck(tx,j);await confirmJournalSources(tx,a,project,j,l,p.review_note);activated=await activateJournalMappings(tx,a,project.client_id,j,l,await lines(tx,j.journal_id));}await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;await notifyOutcome(tx,j.last_prepared_by||j.prepared_by,l.client_id,`${j.kind==='Opening'?'opening balances':j.kind.toLowerCase()+' journal'} ${j.reference}`,status,text(p.review_note,5000),'outcome:journal:'+j.journal_id+':'+Date.now());return {ok:true,journal_id:j.journal_id,activated_mapping_count:activated.length};}
   return {ok:true,journal_id:j.journal_id};
  }
@@ -509,7 +531,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
    }
    for(const row of sourceRows)delete row.group_key;
   }
-  if(!items.length)fail(400,'No nonzero account rows were found. Check that you selected the prior-year closing columns, not a comparison or total column.');const parsed=normaliseLines(items,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll'});
+  if(!items.length)fail(400,'No nonzero account rows were found. Check that you selected the prior-year closing columns, not a comparison or total column.');const parsed=normaliseLines(items,accounts,{allowUnmapped:true,opening:kind==='Opening',payroll:kind==='Payroll',entityType:l.entity_type});
   const totals=parsed.reduce((t:any,line:any)=>({debit:t.debit+cashAmount(line.debit),credit:t.credit+cashAmount(line.credit)}),{debit:0,credit:0});
   const snapshot={kind:'Excel',document_id:doc.document_id,document_sha256:doc.sha256,sheet_name:sheet.name,header_row:header,column_map:map,source_rows:sourceRows,source_controls:sourceControls,import_totals:{debit_kes:totals.debit/100,credit_kes:totals.credit/100,difference_kes:(totals.debit-totals.credit)/100},...(kind==='Opening'?{source_confirmation:{confirmed:true,confirmed_by:a.staff_id,evidence_reference:sourceEvidence,source_closing_date:new Date(new Date(day(l.starts_on)+'T00:00:00Z').getTime()-86400000).toISOString().slice(0,10),currency:'KES'}}:{})};
   let j:any;

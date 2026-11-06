@@ -10,11 +10,19 @@ export const specificExpense=code=>expenseBelowGrossProfit(code)&&!(Number(code)
 export const cashAmount=v=>{if(v instanceof Date||typeof v==='boolean'||typeof v==='object')fail(400,'Use a numeric amount, not a date or formula object.');return cents(v);};
 const finite=(v,label,min=0,max=1e12)=>{if(v===''||v==null||typeof v==='boolean'||!Number.isFinite(Number(v))||Number(v)<min||Number(v)>max)fail(400,'Enter a valid '+label+'.');return Number(v);};
 
-export function normaliseLines(input,accounts,{allowUnmapped=false,opening=false,payroll=false}={}){
+// Where last year's income and expenses go when the source TB has not been closed. Shown in the error so the preparer knows the fix.
+export function closingAccountHint(entityType){
+ const t=String(entityType||'').toLowerCase();
+ if(/limited|company|ltd|plc/.test(t))return {code:'31000',name:'Retained earnings - companies'};
+ if(/partner/.test(t))return {code:'36010',name:'Partner current accounts'};
+ if(/sole|proprietor/.test(t))return {code:'35000',name:'Proprietor capital - sole proprietorship'};
+ return {code:'32000',name:'Current year retained result'};
+}
+export function normaliseLines(input,accounts,{allowUnmapped=false,opening=false,payroll=false,entityType=''}={}){
  if(!Array.isArray(input)||!input.length||input.length>2000)fail(400,'Enter 1–2,000 journal lines.');
  if(opening){
   const bad=input.map((r,i)=>({i,code:String(r.account_code||'').trim(),r})).filter(x=>x.code&&accounts.some(a=>a.code===x.code)&&Number(x.code)>=40000&&(Number(x.r.debit)||Number(x.r.credit)));
-  if(bad.length){const shown=bad.slice(0,6).map(x=>`line ${x.i+1} (${x.r.legacy_code?x.r.legacy_code+' ':''}${String(x.r.source_name||'').slice(0,40)} → ERP ${x.code})`).join('; ');fail(400,`Opening year-start balances must use balance-sheet and equity accounts. ${bad.length} line(s) use an income or expense account: ${shown}${bad.length>6?' and more':''}. Close prior-year income and expenses to retained earnings (or proprietor/partner capital) in the source TB, or map these lines to the correct equity account.`);}
+  if(bad.length){const shown=bad.slice(0,6).map(x=>`line ${x.i+1} (${x.r.legacy_code?x.r.legacy_code+' ':''}${String(x.r.source_name||'').slice(0,40)} → ERP ${x.code})`).join('; ');fail(400,`Opening year-start balances must use balance-sheet and equity accounts. ${bad.length} line(s) use an income or expense account: ${shown}${bad.length>6?' and more':''}. Close last year's income and expenses into ${closingAccountHint(entityType).code} ${closingAccountHint(entityType).name} for this client: change each of these lines to that account, or close them in the source TB before uploading.`);}
  }
  return input.map((r,i)=>{
   const code=String(r.account_code||'').trim(),account=accounts.find(a=>a.code===code),debit=cashAmount(r.debit===''||r.debit==null?0:r.debit),credit=cashAmount(r.credit===''||r.credit==null?0:r.credit);
