@@ -12,6 +12,7 @@ import {checkWorkbookZip} from './workspace-rules.mjs';
 import {loadCrosswalk,revenueAccount} from './sales-crosswalk.ts';
 import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal,profitByActivity,isoWeek,DATA_CUTOFF} from './ledger-rules.mjs';
 import {debtorsRead,receiptAction} from './debtors.ts';
+import {payablesReport,supplierAction} from './payables.ts';
 import {stockRollsRead,stockJournalPlan} from './stock-journal.ts';
 import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
@@ -232,8 +233,9 @@ async function report(tx:any,l:any,to:string){
  const bankRows=await tx`select r.row_id,r.batch_id,r.source_row,r.account_code,r.normalized from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${l.project_id} and b.archived_at is null and not r.is_split_parent and r.dataset='Bank' and coalesce(nullif(r.normalized->>'date',''),b.period_start::text)>=${day(l.starts_on)} and coalesce(nullif(r.normalized->>'date',''),b.period_end::text)<=${to} order by r.source_row limit 20000`;
  const closeExplanations=await tx`select explanation_id,check_code,as_of,difference_cents,explanation,evidence_reference,status,prepared_by,reviewed_by,reviewed_at,review_note,revision from erp_private.bank_close_explanations where period_id=${l.period_id} and status in ('Submitted','Accepted') order by created_at desc`;
  const bankClose=bankCloseChecks({bankRows,tb,explanations:closeExplanations});
+ const payables=await payablesReport(tx,l,to);
  const unmappedRow=(await tx`select count(*)::int n,coalesce(sum(case when r.normalized->>'amount' ~ '^-?[0-9]+([.][0-9]+)?$' then (r.normalized->>'amount')::numeric else 0 end),0) value from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.project_id=${l.project_id} and b.archived_at is null and not r.is_split_parent and r.dataset in ('Purchases','Expenditure','Non-eTIMS') and (r.route is null or r.category_code is null or r.account_code is null) and coalesce(nullif(r.normalized->>'date',''),b.period_start::text)>=${day(l.starts_on)} and coalesce(nullif(r.normalized->>'date',''),b.period_end::text)<=${to}`)[0],unmapped={count:Number(unmappedRow.n),value:money(Number(unmappedRow.value))};
- const issues:string[]=bankClose.blocking.map((x:string)=>'Bank close – '+x);if(pending_information.total)issues.push(pending_information.total+' credit note(s) are Pending information and excluded from posted figures. Complete original invoice details before relying on final totals.');if(pendingImports.length)issues.push(pendingImports.length+' sales/payroll summary import(s) still await independent posting.');if(!journals.some((j:any)=>j.kind==='Opening'&&j.status==='Posted'))issues.push('Opening balances are not yet independently posted.');
+ const issues:string[]=bankClose.blocking.map((x:string)=>'Bank close – '+x);for(const c of payables.checks.filter((x:any)=>x.blocking))issues.push('Supplier ledger – '+c.label+': '+c.detail);if(pending_information.total)issues.push(pending_information.total+' credit note(s) are Pending information and excluded from posted figures. Complete original invoice details before relying on final totals.');if(pendingImports.length)issues.push(pendingImports.length+' sales/payroll summary import(s) still await independent posting.');if(!journals.some((j:any)=>j.kind==='Opening'&&j.status==='Posted'))issues.push('Opening balances are not yet independently posted.');
  if(unmapped.count)issues.push(unmapped.count+' purchase/expenditure row(s) worth KES '+unmapped.value.toLocaleString('en-KE',{minimumFractionDigits:2})+' are not mapped to an account. Map them before the report is submitted.');
  const drafts=journals.filter((j:any)=>j.status!=='Posted');if(drafts.length)issues.push(drafts.length+' journal(s) await preparation or review.');
  if(pending.length)issues.push((pending.length>2000?'More than 2,000':pending.length)+' imported row(s) are not posted.');
@@ -241,7 +243,7 @@ async function report(tx:any,l:any,to:string){
  if(ppe_sources.length)issues.push(ppe_sources.length+' PPE source(s) still need an asset and shared-rate record.');
  if(!journals.some((j:any)=>j.kind==='Stock'&&j.status==='Posted'))issues.push('Confirm stock / cost-of-sales completeness separately before relying on gross profit.');
  const balance=money(tb.reduce((sum:any,r:any)=>sum+r.net,0));if(balance!==0)issues.push('The trial balance is not balanced.');
- return {period:l,pending_information,unmapped,as_of:to,accounts,tb,profit,profit_by_activity,activities,current_week,prior_year,report_reviews,reviewers:await reviewCandidates(tx,(await tx`select client_id from erp_private.projects where project_id=${l.project_id}`)[0].client_id),data_cutoff:DATA_CUTOFF,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,close_checks:bankClose.checks,close_explanations:closeExplanations,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
+ return {period:l,pending_information,unmapped,as_of:to,accounts,tb,profit,profit_by_activity,activities,current_week,prior_year,report_reviews,reviewers:await reviewCandidates(tx,(await tx`select client_id from erp_private.projects where project_id=${l.project_id}`)[0].client_id),data_cutoff:DATA_CUTOFF,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,close_checks:[...bankClose.checks,...payables.checks],payables_summary:{register_in_use:payables.register_in_use,totals:payables.totals,unassigned:payables.unassigned},close_explanations:closeExplanations,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
 }
 
 export async function annualTaxLedgerControl(tx:any,projectId:string,start:string,end:string){
@@ -277,6 +279,8 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  const l=await period(tx,uuid(p.period_id),pid);
  if(p.action==='ledger_read')return {...await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)),rates};
  if(p.action==='ledger_debtors_read')return await debtorsRead(tx,l,p.as_of?date(p.as_of):day(l.ends_on));
+ if(p.action==='ledger_payables_read')return await payablesReport(tx,l,p.as_of?date(p.as_of):day(l.ends_on));
+ if(p.action==='ledger_supplier_save'||p.action==='ledger_supplier_build')return await supplierAction(tx,a,l,p);
  if(p.action==='ledger_receipt_allocate'||p.action==='ledger_receipt_reverse')return await receiptAction(tx,a,l,p);
  if(p.action==='ledger_report_submit'){
   if(a.category_code==='INTERN')fail(403,'A staff preparer must submit financial reports.');
