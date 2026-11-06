@@ -1,4 +1,5 @@
 import {pendingPurchases} from './purchase-pending.ts';
+import {ageingReport} from './credit-ageing.mjs';
 import {summarySalesRows,effectiveImports,confirmPeriodImport} from './period-import-actions.ts';
 import {stagingRates,preferredRates} from './testing-rates.mjs';
 import {taxKinds,pickRate,profileIssues,keys,testRate,payrollFromRules,simpleTax,vatRuleCheck} from './tax-registry.mjs';
@@ -55,7 +56,7 @@ export async function taxSummary(tx:any,c:any){
  const pending_information=await pendingPurchases(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on));
  const pendingHistory=Number((await tx`select count(*)::int n from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${c.project_id} and b.archived_at is null and b.period_start<=${c.ends_on} and b.period_end>=${c.starts_on} and r.raw_values ? '_pending_purchase'`)[0].n);
  const rejected=batches.reduce((s:number,b:any)=>s+b.rejected_count,0)-pendingHistory;
- if(pending_information.total&&['VAT','Company','Individual','Partnership'].includes(c.kind))issues.push(`${pending_information.total} credit note(s) are Pending information. Supply original invoice details and reupload before submitting this tax case.`);
+ if(pending_information.total&&['VAT','Company','Individual','Partnership'].includes(c.kind)){const ag=ageingReport(pending_information.rows,new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date()));issues.push(`${pending_information.total} credit note(s) are Pending information and excluded from this working: net KES ${pending_information.net.toFixed(2)}, VAT KES ${pending_information.vat.toFixed(2)}, gross KES ${pending_information.gross.toFixed(2)}${ag.overdue.count?`; ${ag.overdue.count} older than ${ag.alert_days} days`:''}. Supply original invoice details and reupload before submitting this tax case; the totals are incomplete until then.`);}
  if(rejected&&!c.inputs.rejection_resolution)issues.push(`${rejected} rejected source rows need a documented reconciliation.`);
  const findings=await tx`select * from erp_private.tax_findings where project_id=${c.project_id} and deleted_at is null and (case_id=${c.case_id} or case_id is null)`;
  if(findings.some((f:any)=>f.status==='Open'))issues.push('Open findings must be resolved.');
