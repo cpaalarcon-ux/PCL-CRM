@@ -6,9 +6,9 @@ const rows=async(sql,v=[])=>(await db.query(sql,v)).rows;
 
 
 // The master combination matrix: the legal entity decides the equity accounts, the activities decide the industry accounts.
-const ENTITIES=['Limited company','Partnership','Sole proprietor','Non-profit organisation','Other legal entity'];
+const ENTITIES=['Limited company','Partnership','Sole proprietor','Non-profit organisation','Foreign branch','Other legal entity'];
 const PACKS=['Wholesale','Retail','Hospitality','Consultancy','Construction','Agriculture','Transport','Technology','Manufacturing'];
-const EQUITY={'Limited company':['30000','31000'],'Partnership':['36000','36010','36020'],'Sole proprietor':['35000','35010'],'Non-profit organisation':['34300','34310'],'Other legal entity':[]};
+const EQUITY={'Limited company':['30000','31000'],'Partnership':['36000','36010','36020'],'Sole proprietor':['35000','35010'],'Non-profit organisation':['34300','34310'],'Foreign branch':['34320'],'Other legal entity':[]};
 
 test('every entity and industry pair produces the right equity and industry accounts, and nothing from another entity',async t=>{
  t.after(()=>db.close());

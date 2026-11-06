@@ -109,3 +109,4 @@
 20261106155443 firm_mapping_suggestions
 20261106165529 statutory_chart_tags
 20261106175412 industry_packs_v2
+20261106181057 foreign_branch_entity
