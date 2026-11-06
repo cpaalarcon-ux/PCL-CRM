@@ -37,8 +37,15 @@ function kycCurrent(e:any,rule:any,on:string){
  if(rule.renewal_days&&new Date(new Date(isoDay(e.evidence_date)+'T00:00:00Z').getTime()+rule.renewal_days*864e5).toISOString().slice(0,10)<on)return false;
  return true;
 }
-export function kycGaps(entityType:string,rules:any[],evidence:any[],on:string){
- return rules.filter((r:any)=>r.required_for_entities.includes(entityType||'Company')).filter((r:any)=>!evidence.some((e:any)=>(e.covered_items||[]).includes(r.rule_code)&&kycCurrent(e,r,on))).map((r:any)=>r.label);
+// Build 2: a client with a Legal structure + Subcategory is checked against that pair's own "Required" list; a client without one
+// (or a pair with no rows) falls back to the older entity-type list. "If applicable" and "Permanent file" items never block.
+export async function kycRequiredCodes(tx:any,structure:string|null,subtype:string|null):Promise<string[]|null>{
+ if(!structure||!subtype)return null;
+ const rows=await tx`select rule_code,requirement from erp_private.legal_structure_requirements where structure=${structure} and subtype=${subtype}`;
+ return rows.length?rows.filter((r:any)=>r.requirement==='Required').map((r:any)=>r.rule_code):null;
+}
+export function kycGaps(entityType:string,rules:any[],evidence:any[],on:string,requiredCodes:string[]|null=null){
+ return rules.filter((r:any)=>requiredCodes?requiredCodes.includes(r.rule_code):r.required_for_entities.includes(entityType||'Company')).filter((r:any)=>!evidence.some((e:any)=>(e.covered_items||[]).includes(r.rule_code)&&kycCurrent(e,r,on))).map((r:any)=>r.label);
 }
 async function addEvidence(tx:any,a:any,cid:string,p:any,rules:any[]){
  const type=choice(p.document_type,rules.map((r:any)=>r.rule_code)),rule=rules.find((r:any)=>r.rule_code===type),form=choice(p.evidence_form,['upload','physical','online']);
@@ -97,9 +104,9 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   const pending=await tx`select version_id,recorded_by from erp_private.client_kyc_change_versions where client_id=${c.client_id} and status='Pending review' for update`;
   if(pending.some((v:any)=>v.recorded_by===a.staff_id))fail(403,'You recorded a pending KYC change. A different Manager or Partner must verify this file.');
   if(c.missing_fields.length||!c.legal_structure||!c.legal_subtype||!c.conflict_checked||!c.sanctions_date||!c.sanctions_result||!c.review_due)fail(400,'Complete client fields, conflict review, screening and next review date.');
-  const evidence=await tx`select * from erp_private.client_kyc_evidence where client_id=${c.client_id} and deleted_at is null`,gaps=kycGaps(c.entity_type,await kycRules(tx),evidence,today());
+  const evidence=await tx`select * from erp_private.client_kyc_evidence where client_id=${c.client_id} and deleted_at is null`,required=await kycRequiredCodes(tx,c.legal_structure,c.legal_subtype),gaps=kycGaps(c.entity_type,await kycRules(tx),evidence,today(),required);
   if(gaps.length)fail(400,'Current KYC evidence is missing or expired for: '+gaps.join(', ')+'.');
-  if(c.entity_type==='Company'&&!(await tx`select owner_id from erp_private.beneficial_owners where client_id=${c.client_id} and deleted_at is null`).length)fail(400,'Company KYC requires at least one beneficial owner or controller record.');
+  if((required?required.includes('BENEFICIAL_OWNERSHIP'):c.entity_type==='Company')&&!(await tx`select owner_id from erp_private.beneficial_owners where client_id=${c.client_id} and deleted_at is null`).length)fail(400,'This client’s KYC requires at least one beneficial owner or controller record.');
   await tx`update erp_private.client_kyc_change_versions set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${text(p.review_note||'',2000,false)||'Verified with the KYC file'} where client_id=${c.client_id} and status='Pending review'`;
   await tx`update erp_private.client_compliance set verified_by=${a.staff_id},verified_at=now() where client_id=${c.client_id}`;return {ok:true};
  }
