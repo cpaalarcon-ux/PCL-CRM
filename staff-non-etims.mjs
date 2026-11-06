@@ -1,4 +1,4 @@
-import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261106-suggest-v1';
+import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261106-chart-v1';
 // Non-eTIMS exceptions: mapping a purchase that has no eTIMS invoice needs a named legal basis from an approved list, evidence, and a
 // check against other purchases and the bank. A Partner approves each basis; a Manager or Partner can add one for approval.
 export function createNonEtimsUI(ctx){

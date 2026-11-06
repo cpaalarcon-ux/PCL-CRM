@@ -59,7 +59,7 @@ export async function chartResolver(tx:any,clientId:string){
  const versions=(await tx`select effective_from,accounts from erp_private.client_chart_versions where client_id=${clientId} and status='Approved' order by effective_from desc,reviewed_at desc`).map((r:any)=>({from:day(r.effective_from),codes:new Set<string>(r.accounts)}));
  return (at:string)=>versions.find((v:any)=>v.from<=at)||null;
 }
-export const chartMessage=(code:string)=>`ERP account ${code} is not in this client's approved chart of accounts. Choose a chart account, or a Manager adds it in a new chart version.`;
+export const chartMessage=(code:string)=>`ERP account ${code} is not in this client's approved chart of accounts. Choose a chart account, or request a chart amendment: any preparer proposes a new chart version with the extra account and a reason (Client setup → Chart of accounts), and a different Manager or Partner approves it.`;
 
 // Mark catalogue rows for one client and date. in_client_chart is left undefined when no chart applies.
 export async function chartCatalogue(tx:any,accounts:any[],clientId:string|null,at:string){
