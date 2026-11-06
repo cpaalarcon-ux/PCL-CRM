@@ -10,6 +10,7 @@ import {reviewQueueAction} from './review-queue.ts';
 import {handoverAction} from './handover-actions.ts';
 import {escalationAction} from './escalation-actions.ts';
 import {autoMapAction} from './auto-map.ts';
+import {withdrawAction} from './withdraw-actions.ts';
 import {procedureAction} from './procedure-actions.ts';
 import {presenceAction} from './presence-actions.ts';
 import {accountingAction} from './accounting-actions.ts';
@@ -339,6 +340,7 @@ async function action(id:any,p:any){
   const handover=await handoverAction(tx,a,p);if(handover!==undefined)return handover;
   const escalation=await escalationAction(tx,a,p);if(escalation!==undefined)return escalation;
   const autoMap=await autoMapAction(tx,a,p);if(autoMap!==undefined)return autoMap;
+  const withdrawn=await withdrawAction(tx,a,p);if(withdrawn!==undefined)return withdrawn;
   const importedPeriod=await periodImportAction(tx,a,p,admin.storage.from(BUCKET));if(importedPeriod!==undefined)return importedPeriod;
   const purchases=await purchaseLedgerAction(tx,a,p);if(purchases!==undefined)return purchases;
   const ledger=await ledgerAction(tx,a,p,admin.storage.from(BUCKET));if(ledger!==undefined)return ledger;
