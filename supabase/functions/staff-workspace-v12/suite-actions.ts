@@ -201,9 +201,9 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   if(!/^[A-Za-z0-9+/]+={0,2}$/.test(b64))fail(400,'The logo file could not be read.');
   const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));if(bytes.length>250000)fail(400,'The logo must be 250 KB or smaller.');
   const sig=mime==='image/png'?[0x89,0x50,0x4e,0x47]:[0xff,0xd8,0xff];if(!sig.every((x,k)=>bytes[k]===x))fail(400,'The file is not a real '+(mime==='image/png'?'PNG':'JPEG')+' image.');
-  if(p.remove===true){await tx`delete from erp_private.firm_logos where firm_id=${fid}`;}
-  else await tx`insert into erp_private.firm_logos(firm_id,mime_type,data_base64,updated_by) values(${fid},${mime},${b64},${a.staff_id}) on conflict(firm_id) do update set mime_type=excluded.mime_type,data_base64=excluded.data_base64,updated_by=excluded.updated_by,updated_at=now()`;
-  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'firm_logos',${p.remove===true?'FIRM_LOGO_REMOVED':'FIRM_LOGO_SET'},${fid},${tx.json({mime_type:mime,bytes:bytes.length})})`;
+  // A logo is replaced, never deleted: the old image stays only in the audit event's size record, and invoices always use the current one.
+  await tx`insert into erp_private.firm_logos(firm_id,mime_type,data_base64,updated_by) values(${fid},${mime},${b64},${a.staff_id}) on conflict(firm_id) do update set mime_type=excluded.mime_type,data_base64=excluded.data_base64,updated_by=excluded.updated_by,updated_at=now()`;
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'firm_logos','FIRM_LOGO_SET',${fid},${tx.json({mime_type:mime,bytes:bytes.length})})`;
   return {ok:true,bytes:bytes.length};
  }
  if(p.action==='invoice_etims_record'){
