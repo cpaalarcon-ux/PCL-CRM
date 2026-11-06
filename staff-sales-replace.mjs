@@ -1,4 +1,4 @@
-import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261107-banks-v1';
+import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261107-banks-v2';
 // Replace old invoice-by-invoice sales with category totals. A Manager or Partner sees the counts, prepares a draft reversal of any posted
 // entry (a different Manager or Partner reviews and posts it in the ledger journals), then archives the old rows. Nothing is deleted.
 export function createSalesReplaceUI(ctx){
