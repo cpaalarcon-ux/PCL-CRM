@@ -1,6 +1,6 @@
 import {fail,text,choice,date} from './validation.mjs';
 import {cents,money} from './accounting-rules.mjs';
-export const entityTypes=['Limited company','Partnership','Sole proprietor','Non-profit organisation','Other legal entity'];
+export const entityTypes=['Limited company','Partnership','Sole proprietor','Non-profit organisation','Foreign branch','Other legal entity'];
 export const packs=['Wholesale','Retail','Hospitality','Consultancy','Construction','Agriculture','Transport','Technology','Manufacturing','Other'];
 export const streams=['Business','Farming','Rental','Interest','Other'];
 export const asDay=v=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);

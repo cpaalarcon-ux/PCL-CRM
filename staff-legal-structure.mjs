@@ -1,6 +1,6 @@
 // Edit client: Legal structure + Subcategory (dependent dropdowns), the accounting-family hint and the client-list filter.
 // The rows come from the workspace data (erp_private.legal_structure_types); nothing is hard-coded except the family wording.
-const ACCOUNTING=['Limited company','Partnership','Sole proprietor','Non-profit organisation'];
+const ACCOUNTING=['Limited company','Partnership','Sole proprietor','Non-profit organisation','Foreign branch'];
 export const structureRows=data=>data?.legal_structure_types||[];
 export const structuresOf=rows=>[...new Set(rows.map(r=>r.structure))];
 export const subtypesOf=(rows,structure)=>rows.filter(r=>r.structure===structure).map(r=>r.subtype);

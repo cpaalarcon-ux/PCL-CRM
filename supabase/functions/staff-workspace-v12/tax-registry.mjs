@@ -9,7 +9,7 @@ export const taxKinds=['VAT','PAYE','Company','Partnership','Individual','TOT','
 // Non-profits and public bodies pay payroll taxes only and have no income-tax position.
 // It records the filing position only: the ERP does not compute it until a separate rule is released, so it is not a case type.
 export const otherEntityIncomeKinds=['Other entity income tax'];
-export const profileKinds=[...taxKinds,'Withholding VAT agent','Withholding VAT credits received','Withholding income tax credits received','Excise duty','Instalment tax','Advance tax',...otherEntityIncomeKinds];
+export const profileKinds=[...taxKinds,'Withholding VAT agent','Withholding VAT credits received','Withholding income tax credits received','Excise duty','Instalment tax','Advance tax','NCA levy','Tourism levy','Catering levy','SEPT',...otherEntityIncomeKinds];
 export const taxTypes=['VAT','PAYE','Corporation tax','Individual income tax','Withholding tax','Levy','Turnover tax','Rental income tax','Capital gains tax','NSSF','Relief / deduction','Interest benchmark'];
 export const testRate=r=>r.is_test===true||/^QA/i.test(r.rate_key)||/FICTIONAL|SYNTHETIC TEST/i.test(r.label||'');
 export const obligationStatusOptions={registered:['YES','NO','UNKNOWN'],applicable:['YES','NO','TO_CONFIRM'],client_status:['ACTIVE','DORMANT','NIL_FILER','DEREGISTERED','NOT_REGISTERED','UNKNOWN']};

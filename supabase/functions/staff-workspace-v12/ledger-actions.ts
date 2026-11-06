@@ -269,7 +269,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':client-ledger'},0))`;
  if(p.action==='ledger_period_create'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${project.client_id}`);
-  if(!['Limited company','Sole proprietor','Partnership','Non-profit organisation'].includes(c.legal_entity_type)||String(c.entity_evidence||'').trim().length<10||!c.year_end_month||!c.year_end_day)fail(400,'Confirm the client legal entity, supporting evidence and year-end in the profile first.');
+  if(!['Limited company','Sole proprietor','Partnership','Non-profit organisation','Foreign branch'].includes(c.legal_entity_type)||String(c.entity_evidence||'').trim().length<10||!c.year_end_month||!c.year_end_day)fail(400,'Confirm the client legal entity, supporting evidence and year-end in the profile first.');
   await requireRightChart(tx,project.client_id,'creating the client year');
   const start=date(p.starts_on),end=date(p.ends_on);if(end&&end<DATA_CUTOFF)fail(400,'The ERP holds data for periods ending 31 December 2025 onwards. Keep earlier periods in the client\u2019s previous records.');if(!start||!end||end<start||end.slice(5)!==String(c.year_end_month).padStart(2,'0')+'-'+String(c.year_end_day).padStart(2,'0'))fail(400,'Use the verified client year-end.');
   return one(await tx`insert into erp_private.ledger_periods(project_id,client_id,handling_firm_id,starts_on,ends_on,entity_type,entity_evidence,created_by) values(${pid},${project.client_id},${project.handling_firm_id},${start},${end},${c.legal_entity_type},${c.entity_evidence},${a.staff_id}) returning period_id`);

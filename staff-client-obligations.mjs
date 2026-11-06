@@ -11,7 +11,7 @@ export const clientObligationGroups=[
   ['PAYE','PAYE'],['Housing levy','Affordable Housing Levy'],['SHIF','Social Health Insurance (SHIF)'],['NSSF','NSSF'],['NITA','NITA employer levy'],['Fringe benefit','Fringe benefit tax'],['Deemed interest','Deemed interest tax']
  ]},
  {title:'Other and transaction-triggered taxes',help:'These depend on a licence, transaction or tax position. Keep them on the profile; create a one-off task when the relevant filing period or transaction is confirmed.',items:[
-  ['Excise duty','Excise duty'],['CGT','Capital Gains Tax (CGT)'],['Instalment tax','Instalment tax'],['Advance tax','Advance tax']
+  ['Excise duty','Excise duty'],['CGT','Capital Gains Tax (CGT)'],['Instalment tax','Instalment tax'],['Advance tax','Advance tax'],['NCA levy','NCA levy (rate pending Tax Lead approval)'],['Tourism levy','Tourism levy (rate pending Tax Lead approval)'],['Catering levy','Catering levy (rate pending Tax Lead approval)'],['SEPT','Significant Economic Presence Tax (rate pending Tax Lead approval)']
  ]}
 ];
 
@@ -35,7 +35,7 @@ const recurringServiceGroups=[
 
 export const profileOnlyPositions=[
  'Withholding VAT agent','Withholding VAT credits received','WHT','Withholding income tax credits received',
- 'Excise duty','CGT','Instalment tax','Advance tax'
+ 'Excise duty','CGT','Instalment tax','Advance tax','NCA levy','Tourism levy','Catering levy','SEPT'
 ];
 export const legacyScheduleObligations=['VAT','PAYE','TOT','Payroll'];
 
