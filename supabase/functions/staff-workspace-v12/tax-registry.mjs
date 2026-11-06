@@ -10,7 +10,7 @@ export const taxKinds=['VAT','PAYE','Company','Partnership','Individual','TOT','
 // It records the filing position only: the ERP does not compute it until a separate rule is released, so it is not a case type.
 export const otherEntityIncomeKinds=['Other entity income tax'];
 export const profileKinds=[...taxKinds,'Withholding VAT agent','Withholding VAT credits received','Withholding income tax credits received','Excise duty','Instalment tax','Advance tax','NCA levy','Tourism levy','Catering levy','SEPT',...otherEntityIncomeKinds];
-export const taxTypes=['VAT','PAYE','Corporation tax','Individual income tax','Withholding tax','Levy','Turnover tax','Rental income tax','Capital gains tax','NSSF','Relief / deduction','Interest benchmark','Significant economic presence tax'];
+export const taxTypes=['VAT','PAYE','Corporation tax','Individual income tax','Withholding tax','Levy','Turnover tax','Rental income tax','Capital gains tax','NSSF','Relief / deduction','Interest benchmark','Significant economic presence tax','Registration threshold'];
 export const testRate=r=>r.is_test===true||/^QA/i.test(r.rate_key)||/FICTIONAL|SYNTHETIC TEST/i.test(r.label||'');
 export const obligationStatusOptions={registered:['YES','NO','UNKNOWN'],applicable:['YES','NO','TO_CONFIRM'],client_status:['ACTIVE','DORMANT','NIL_FILER','DEREGISTERED','NOT_REGISTERED','UNKNOWN']};
 const finalIncomeRegimes=['TOT','MRI'];
@@ -125,10 +125,11 @@ export function profileIssues(profile,c){
  return issues;
 }
 export function registryParameters(type,p){
- const allowed=['rate','method','fixed_amount','minimum','basis','treatment','period','bands','personal_relief','employee_rate','employer_rate','lower_limit','upper_limit','pension_monthly_cap','mortgage_monthly_cap','medical_monthly_cap','insurance_rate','insurance_monthly_cap','minimum_turnover_exclusive','maximum_turnover','minimum_annual_rent','maximum_annual_rent'];const out=Object.fromEntries(Object.entries(p||{}).filter(([k])=>allowed.includes(k)));
+ const allowed=['rate','method','fixed_amount','minimum','basis','treatment','period','bands','personal_relief','employee_rate','employer_rate','lower_limit','upper_limit','pension_monthly_cap','mortgage_monthly_cap','medical_monthly_cap','insurance_rate','insurance_monthly_cap','minimum_turnover_exclusive','maximum_turnover','minimum_annual_rent','maximum_annual_rent','threshold'];const out=Object.fromEntries(Object.entries(p||{}).filter(([k])=>allowed.includes(k)));
  if(type==='NSSF'){out.employee_rate=number(p.employee_rate,0,100);out.employer_rate=number(p.employer_rate,0,100);out.lower_limit=amount(p.lower_limit);out.upper_limit=amount(p.upper_limit);if(out.upper_limit<out.lower_limit)fail(400,'NSSF upper limit must exceed lower limit.');}
  else if(type==='Relief / deduction')for(const k of ['pension_monthly_cap','mortgage_monthly_cap','medical_monthly_cap','insurance_rate','insurance_monthly_cap'])out[k]=number(p[k],0,k==='insurance_rate'?100:1e9);
  else if(type==='PAYE'||type==='Individual income tax'){if(!Array.isArray(p.bands))fail(400,'Graduated bands are required.');}
+ else if(type==='Registration threshold')out.threshold=amount(p.threshold);
  else if(type==='Levy'&&p.method==='fixed')out.fixed_amount=amount(p.fixed_amount);
  else out.rate=number(p.rate,0,100);
  if(out.minimum!=null)out.minimum=amount(out.minimum);
@@ -173,9 +174,10 @@ export function simpleTax(kind,p,rules){
 }
 
 export function validateCanonicalRate(key,type,p){
- const expected=key.startsWith('KE_VAT_')?'VAT':key.startsWith('KE_WHT_')?'Withholding tax':({KE_CIT_RES:'Corporation tax',KE_IIT_ANNUAL:'Individual income tax',KE_TOT:'Turnover tax',KE_MRI:'Rental income tax',KE_CGT:'Capital gains tax',KE_PAYE_MONTHLY:'PAYE',KE_AHL_EMPLOYEE:'Levy',KE_AHL_EMPLOYER:'Levy',KE_SHIF:'Levy',KE_NSSF:'NSSF',KE_NITA:'Levy',KE_PAYROLL_LIMITS:'Relief / deduction',KE_FBT_BENCHMARK:'Interest benchmark',KE_DEEMED_BENCHMARK:'Interest benchmark',KE_SEPT:'Significant economic presence tax'})[key];
+ const expected=key==='KE_VAT_REG_THRESHOLD'?'Registration threshold':key.startsWith('KE_VAT_')?'VAT':key.startsWith('KE_WHT_')?'Withholding tax':({KE_CIT_RES:'Corporation tax',KE_IIT_ANNUAL:'Individual income tax',KE_TOT:'Turnover tax',KE_MRI:'Rental income tax',KE_CGT:'Capital gains tax',KE_PAYE_MONTHLY:'PAYE',KE_AHL_EMPLOYEE:'Levy',KE_AHL_EMPLOYER:'Levy',KE_SHIF:'Levy',KE_NSSF:'NSSF',KE_NITA:'Levy',KE_PAYROLL_LIMITS:'Relief / deduction',KE_FBT_BENCHMARK:'Interest benchmark',KE_DEEMED_BENCHMARK:'Interest benchmark',KE_SEPT:'Significant economic presence tax'})[key];
  if(expected&&type!==expected)fail(400,`${key} requires the ${expected} rule type.`);
  if(key==='KE_NITA'&&(p.method!=='fixed'||p.fixed_amount==null))fail(400,'NITA uses a fixed amount per employee.');
  if(key==='KE_SHIF'&&p.minimum==null)fail(400,'The SHIF per-person minimum is required.');
- if(key.startsWith('KE_VAT_')&&!p.treatment)fail(400,'VAT treatment is required.');
+ if(key==='KE_VAT_REG_THRESHOLD'){if(!(Number(p.threshold)>0))fail(400,'Enter the VAT registration threshold in KES.');}
+ else if(key.startsWith('KE_VAT_')&&!p.treatment)fail(400,'VAT treatment is required.');
 }
