@@ -6,6 +6,7 @@ import {recordedCreditBasis,creditBasisIssue} from './legacy-sales-lock.ts';
 import {bankDepositCheck} from './sales-bank-check.mjs';
 import {keys,pickRate,payrollFromRules} from './tax-registry.mjs';
 import {ownerPayrollIssues} from './owner-payments.mjs';
+import {manualPayrollRows,relationshipIssues,MANUAL_BASIS_MIN} from './payroll-lines.mjs';
 import {preferredRates,stagingRates} from './testing-rates.mjs';
 import {digest} from './improvement-actions.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'This import is unavailable to your account.');return r[0];};
@@ -72,13 +73,17 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
  if(!start||!end||end<start||Date.parse(end)-Date.parse(start)>366*86400000)fail(400,'Choose the reporting period.');
  await assertSupportedPeriod(tx,project.client_id,start);
  if(kind==='Payroll'&&(start.slice(8)!=='01'||new Date(Date.parse(end)+86400000).toISOString().slice(8,10)!=='01'||start.slice(0,7)!==end.slice(0,7)))fail(400,'Payroll must cover one complete calendar month.');
+ const manual=kind==='Payroll'&&p.entry_mode==='Manual';
  const sourceType=kind==='Sales'?choice(p.source_type||'ETIMS',['ETIMS','Z_REPORT']):'PAYROLL';
  const coverageMode=kind==='Sales'?await salesCoverageMode(tx,project,start,end):'PAYROLL_MONTHLY';
- const doc=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and project_id=${project.project_id} and deleted_at is null and archived_at is null for share`);
+ let doc:any=null;const sheets:any[]=[];const available:any[]=[];
+ if(manual){doc={document_id:null,sha256:'manual',file_name:'Manual payroll lines'};sheets.push({sheet:{name:'Manual payroll lines'},profile:{id:'MANUAL-v1'}});}
+ else{
+ doc=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and project_id=${project.project_id} and deleted_at is null and archived_at is null for share`);
  if(!['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip'].includes(doc.mime_type))fail(400,'Choose CSV, Excel or ZIP import data.');
  const downloaded=await storage.download(doc.object_key);if(downloaded.error||!downloaded.data)fail(404,'The import source is unavailable.');
- const bytes=new Uint8Array(await downloaded.data.arrayBuffer()),first=await readSourceSheet(bytes,doc.file_name,p.sheet_name||null),sheets:any[]=[];
- const available:any[]=[];const selection=Array.isArray(p.members)?p.members:p.sheet_name?[p.sheet_name]:null;
+ const bytes=new Uint8Array(await downloaded.data.arrayBuffer()),first=await readSourceSheet(bytes,doc.file_name,p.sheet_name||null) ;
+ const selection=Array.isArray(p.members)?p.members:p.sheet_name?[p.sheet_name]:null;
  for(const item of first.sheets.filter((s:any)=>!s.unsupported)){
   // Read each selected sheet once. The bounded reader rejects macros and unsafe archives.
   const out=item.name===first.sheet.name?first:await readSourceSheet(bytes,doc.file_name,item.name),profile:any=detectImportProfile(out.sheet);
@@ -90,6 +95,7 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
  }
  if(!sheets.length){const candidates=available.filter(x=>x.kind===kind&&x.recognised).map(x=>x.name);fail(400,candidates.length?`No ${kind.toLowerCase()} worksheet was selected. Choose: ${candidates.join(', ')}.`:`No recognised ${kind.toLowerCase()} worksheet was found. Check that the approved template and employee worksheet were uploaded.`);}
  if(kind==='Payroll'&&sheets.length!==1)fail(400,`More than one payroll worksheet was recognised (${sheets.map(s=>s.sheet.name).join(', ')}). Choose one worksheet and preview again.`);
+ }
  let payload:any;
  if(kind==='Sales'){
   payload=salesTotals(sheets,start,end);
@@ -122,11 +128,17 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
   if(sourceType==='Z_REPORT'&&sheets.some(s=>!s.profile.summary))payload.issues.push('Z report imports must use the sales category totals template, not invoice detail.');
   payload.source_type=sourceType;payload.coverage_mode=coverageMode;
  }else{
-  const source:any=payrollRows(sheets[0].sheet,sheets[0].profile),availableRules=stagingRates(await tx`select * from erp_private.tax_rates where status in('Approved','Testing') and deleted_at is null`,typeof Deno==='undefined'?'https://yfjiculexbzpkvtapudk.supabase.co':Deno.env.get('SUPABASE_URL')||''),rules:any={};
+  const source:any=manual?manualPayrollRows(p.manual_lines):payrollRows(sheets[0].sheet,sheets[0].profile),availableRules=stagingRates(await tx`select * from erp_private.tax_rates where status in('Approved','Testing') and deleted_at is null`,typeof Deno==='undefined'?'https://yfjiculexbzpkvtapudk.supabase.co':Deno.env.get('SUPABASE_URL')||''),rules:any={};
   payload={...source,employees:[],calculated:[],differences:[],rules:[],totals:{}};
   // Owners and partners are paid through Drawings, never payroll (sole proprietor and partnership clients).
   const owner=(await tx`select legal_entity_type,kra_pin from erp_private.clients where client_id=${project.client_id}`)[0],partners=owner?.legal_entity_type==='Partnership'?await tx`select partner_name,partner_pin from erp_private.partner_interests where client_id=${project.client_id} and effective_from<=${end}::date and effective_to>=${start}::date`:[];
   payload.issues.push(...ownerPayrollIssues({entityType:owner?.legal_entity_type||'',clientPin:owner?.kra_pin||'',partners,rows:source.rows}));
+  if(manual){
+   const basis=String(p.manual_basis||'').trim();
+   if(basis.length<MANUAL_BASIS_MIN)payload.issues.push('Say why the payroll is typed in instead of imported from a file (at least 10 characters).');
+   payload.issues.push(...relationshipIssues({entityType:owner?.legal_entity_type||'',lines:source.rows}));
+   payload.manual={basis:basis.slice(0,1000),line_count:source.rows.length};
+  }
   for(const key of keys.PAYE){try{rules[key]=pickRate(preferredRates(availableRules,key,start,end),key,start,end);payload.rules.push(rules[key]);}catch(e){payload.issues.push((e as Error).message);}}
   for(const r of source.rows){
    // Residence: the file's own column wins; then the staff member's choice for the row; a Kenyan national ID (7 or 8 digits) is assumed Resident
@@ -138,11 +150,11 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
    else if(nationalId){resident=true;basis='Assumed Resident from national ID';if(p.residents_confirmed!==true)payload.issues.push(`Row ${r.source_row}: ${r.name} is assumed Resident from the national ID. Tick the residence confirmation to accept, or choose Non-resident for this employee.`);}
    else{resident=null;basis='Needs choice';payload.issues.push(`Row ${r.source_row}: choose Resident or Non-resident for ${r.name}. The ID is not a Kenyan national ID (a passport, alien ID or blank), so the ERP does not assume.`);}
    if(r.insurance_relief>0)payload.issues.push(`Row ${r.source_row}: insurance relief needs a supported premium in the payroll tax computation.`);
-   const e:any={name:r.name,pin:r.pin,employee_id:r.employee_id,gross:r.gross,taxable_benefits:r.benefits||0,resident:resident===true,residency_basis:basis,source_row:r.source_row,employment_type:r.employment_type,phone:r.phone,date_paid:r.date_paid,other_pension:r.other_pension||0,postretirement_medical:r.postretirement_medical||0,mortgage_interest:r.mortgage_interest||0,source_paye:r.paye??0,evidence_reference:doc.file_name};
+   const e:any={name:r.name,pin:r.pin,employee_id:r.employee_id,gross:r.gross,taxable_benefits:r.benefits||0,resident:resident===true,residency_basis:basis,source_row:r.source_row,employment_type:r.employment_type,phone:r.phone,date_paid:r.date_paid,other_pension:r.other_pension||0,postretirement_medical:r.postretirement_medical||0,mortgage_interest:r.mortgage_interest||0,source_paye:r.paye??0,evidence_reference:r.manual?r.evidence_reference:doc.file_name,...(r.manual?{relationship:r.relationship,approval_reference:r.approval_reference,related_basis:r.related_basis,manual:true}:{})};
    payload.employees.push(e);
    if(r.issues.length||resident===null||Object.keys(rules).length!==keys.PAYE.length)continue;
    try{const c:any=payrollFromRules({employees:[e]},rules).employees[0];c.net_pay=round(c.net_before_other_deductions-(r.other_deductions||0));c.other_deductions=r.other_deductions||0;c.source_row=r.source_row;payload.calculated.push(c);
-    for(const [s,k] of [['gross','gross'],['taxable','taxable'],['gross_tax','gross_tax'],['personal_relief','personal_relief'],['paye','paye'],['employee_nssf','employee_nssf'],['employee_ahl','employee_ahl'],['shif','shif'],['net','net_pay']].filter(([s])=>r.employment_type!=='Casual'||['gross','employee_ahl','paye','net'].includes(s)))if(r[s]==null){if(r.employment_type!=='Casual'||['gross','employee_ahl'].includes(s))payload.differences.push({row:r.source_row,field:s,source:null,calculated:c[k],difference:null});}else if(Math.abs(Number(r[s])-c[k])>.011)payload.differences.push({row:r.source_row,field:s,source:r[s],calculated:c[k],difference:round(c[k]-r[s])});
+    if(!r.manual)for(const [s,k] of [['gross','gross'],['taxable','taxable'],['gross_tax','gross_tax'],['personal_relief','personal_relief'],['paye','paye'],['employee_nssf','employee_nssf'],['employee_ahl','employee_ahl'],['shif','shif'],['net','net_pay']].filter(([s])=>r.employment_type!=='Casual'||['gross','employee_ahl','paye','net'].includes(s)))if(r[s]==null){if(r.employment_type!=='Casual'||['gross','employee_ahl'].includes(s))payload.differences.push({row:r.source_row,field:s,source:null,calculated:c[k],difference:null});}else if(Math.abs(Number(r[s])-c[k])>.011)payload.differences.push({row:r.source_row,field:s,source:r[s],calculated:c[k],difference:round(c[k]-r[s])});
    }catch(e){payload.issues.push(`Row ${r.source_row}: ${(e as Error).message}`);}
   }
   // Casuals: the signed sheets are already signed, so the ERP links the scanned document and checks the register details are present.
@@ -166,15 +178,15 @@ async function prepare(tx:any,a:any,project:any,p:any,storage:any){
   payload.totals.employee_pension=round(payload.employees.reduce((n:number,e:any)=>n+Number(e.other_pension||0),0));
   payload.source_count=source.rows.length;
  }
- const members=sheets.map(s=>({name:s.sheet.name,profile:s.profile.id})),hash=await digest({sha:doc.sha256,kind,sourceType,coverageMode,start,end,members,credit_basis:p.credit_basis,credits:p.credits,residents_confirmed:p.residents_confirmed,residency_choices:p.residency_choices||null,signed_document_id:p.signed_document_id||null,payload});
- await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'DOWNLOAD')`;
+ const members=sheets.map(s=>({name:s.sheet.name,profile:s.profile.id})),hash=await digest({sha:doc.sha256,entry:manual?'Manual':'File',manual_basis:manual?String(p.manual_basis||'').trim():null,kind,sourceType,coverageMode,start,end,members,credit_basis:p.credit_basis,credits:p.credits,residents_confirmed:p.residents_confirmed,residency_choices:p.residency_choices||null,signed_document_id:p.signed_document_id||null,payload});
+ if(doc.document_id)await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${doc.document_id},${a.auth_user_id},'DOWNLOAD')`;
  let bank_check:any=null;
  if(kind==='Sales'){
   const gross=payload.groups.reduce((n:number,g:any)=>n+(Number(g.net)||0)+(Number(g.vat)||0),0);
   const dep=(await tx`select count(*)::int n,coalesce(sum(case when r.normalized->>'credit' ~ '^-?[0-9]+(\\.[0-9]+)?$' then (r.normalized->>'credit')::numeric else 0 end),0) total from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${project.client_id} and r.dataset='Bank' and b.archived_at is null and not r.is_split_parent and r.normalized->>'date'>=${start} and r.normalized->>'date'<=${end}`)[0];
   bank_check=bankDepositCheck({salesGross:gross,deposits:Number(dep.total),depositRows:dep.n>0});
  }
- return {kind,source_type:sourceType,coverage_mode:coverageMode,starts_on:start,ends_on:end,document_id:doc.document_id,payload,source_hash:hash,source_members:members,available,bank_check,overlaps:await coverage(tx,project.client_id,kind,sourceType,start,end)};
+ return {kind,entry_mode:manual?'Manual':'File',source_type:sourceType,coverage_mode:coverageMode,starts_on:start,ends_on:end,document_id:doc.document_id,payload,source_hash:hash,source_members:members,available,bank_check,overlaps:await coverage(tx,project.client_id,kind,sourceType,start,end)};
 }
 function cleanNote(v:any){return String(v||'').trim();}
 // Confirms a submitted period import. Used by the stand-alone review (tax-only use) and by
@@ -243,7 +255,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   const amendments=confirmedIds.length?await tx`select amendment_id,import_id,status,outcome from erp_private.import_amendments where import_id=any(${tx.array(confirmedIds)}::uuid[]) and status in ('Ready','Replacement saved')`:[];
   for(const cid of confirmedIds){const am=amendments.find((m:any)=>m.import_id===cid&&m.status==='Ready'&&m.outcome==='Replace');if(!am)fail(409,'A confirmed summary can only be replaced after an approved amendment. Open the confirmed summary and choose “Amend this period”.');}
   const activityId=await importActivity(tx,project.client_id,x.starts_on,x.ends_on,p.activity_id);
-  const saved=one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,kind,source_type,coverage_mode,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,activity_id,notes) values(${pid},${project.client_id},${x.document_id},${x.kind},${x.source_type},${x.coverage_mode},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${activityId},${text(p.notes||'',4000,false)}) returning import_id`);
+  const saved=one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,entry_mode,kind,source_type,coverage_mode,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,activity_id,notes) values(${pid},${project.client_id},${x.document_id},${x.entry_mode},${x.kind},${x.source_type},${x.coverage_mode},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${activityId},${text(p.notes||'',4000,false)}) returning import_id`);
   for(const am of amendments.filter((m:any)=>m.status==='Ready'))await tx`update erp_private.import_amendments set status='Replacement saved',replacement_import_id=${saved.import_id} where amendment_id=${am.amendment_id} and status='Ready'`;
   return saved;
  }
