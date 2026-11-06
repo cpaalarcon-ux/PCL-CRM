@@ -12,6 +12,15 @@ export function openingProgress({openingStatus,sourceStaged=false,journal=null,l
  return {notApplicable:false,staged,imported,balanced,awaitingReview,posted,label,blocker,debit,credit,journalStatus:journal.status,journalBalanced};
 }
 
+// Where a client stands across the six setup stages. A stage counts as done once it is ready; the first stage that is not ready is the next step.
+// Pure so it can be tested without the page.
+export function setupProgress(stages){
+ const done=stages.filter(x=>x.ready).length,current=stages.find(x=>!x.ready)||null;
+ return {done,total:stages.length,current,allDone:!current,segments:stages.map(x=>({n:x.n,title:x.title,state:x.ready?'done':x===current?'current':'todo'}))};
+}
+// The first button of a button group, shown as the single call to action.
+export function firstAction(html){return (String(html||'').match(/<button[\s\S]*?<\/button>/)||[''])[0];}
+
 export function createSetupGuideUI(ctx){
  const {modal,request,esc,shortDate}=ctx,$=ctx.$,d=ctx.data;
  const money=n=>new Intl.NumberFormat('en-KE',{style:'currency',currency:'KES'}).format(Number(n||0));
@@ -96,7 +105,16 @@ export function createSetupGuideUI(ctx){
    const taxButton=action('tax-periods','Open tax periods');
    const currentYearStart=periods[0]?.starts_on||project?.schedule_starts_on||'',currentYearEnd=periods[0]?.ends_on||project?.schedule_ends_on||'',currentYearLabel=currentYearStart&&currentYearEnd?`${shortDate(currentYearStart)} – ${shortDate(currentYearEnd)}`:periods.length?'Year dates unavailable':'Not set';
    const salesImportText=periodImports.filter(x=>x.kind==='Sales').map(x=>`Sales ${shortDate(x.starts_on)}–${shortDate(x.ends_on)} · ${x.status} · ${Number(x.source_rows||0)} source row(s)`),payrollImportText=projectReport?.accounting_available===false?['Payroll details are restricted for this access role']:payrollImports.map(x=>`Payroll ${shortDate(x.starts_on)}–${shortDate(x.ends_on)} · ${x.status} · ${Number(x.source_rows||0)} source row(s)`),savedImports=[...salesImportText,...payrollImportText].join('; ')||'No saved sales / payroll summary imports.';
-   $content.innerHTML=`<p class="info"><b>Current client year:</b> ${esc(currentYearLabel)} · <b>Handling project:</b> ${project?esc(project.project_name)+' · '+esc(project.status):'Not created'}</p>
+   const stageList=[
+    {n:1,title:'Profile',ready:profileState.ready,blocker:profileState.blocker||profileState.label,button:action('profile','Open client setup',clientId)},
+    {n:2,title:'Mappings',ready:mappingState.ready||covered.length>0,blocker:mappingState.blocker||mappingState.label,button:action('accounts','Review general account mappings',clientId)},
+    {n:3,title:'Opening TB',ready:openingState.ready,blocker:openingState.blocker||openingState.label,button:firstAction(openingButtons)},
+    {n:4,title:'Source data',ready:sourceState.ready,blocker:sourceState.blocker||sourceState.label,button:firstAction(sourceButtons)},
+    {n:5,title:'Tax & reports',ready:reportState.ready,blocker:reportState.blocker||reportState.label,button:taxButton},
+    {n:6,title:'Release',ready:projectState.ready,blocker:projectState.blocker||projectState.label,button:firstAction(projectButtons)}],
+    progress=setupProgress(stageList),next=progress.current,
+    nextBox=`<section class="card setup-next" aria-live="polite"><div class="section-head"><h3>${next?`Next step · ${next.n} · ${esc(next.title)}`:'All setup stages complete'}</h3>${status(progress.allDone,`${progress.done} of ${progress.total} complete`)}</div><ol class="setup-progress" aria-label="Client setup progress">${progress.segments.map(x=>`<li class="setup-seg ${x.state}"><b>${x.n}</b><span>${esc(x.title)}</span></li>`).join('')}</ol>${next?`<p>${esc(next.blocker)}</p><div class="actions">${next.button.replace('<button ','<button class="setup-next-action" ')}</div>`:'<p>Every setup stage is complete. Review the latest reports before handover.</p>'}</section>`;
+   $content.innerHTML=`${nextBox}<p class="info"><b>Current client year:</b> ${esc(currentYearLabel)} · <b>Handling project:</b> ${project?esc(project.project_name)+' · '+esc(project.status):'Not created'}</p>
     ${step('1 · Client profile & financial year',profileState,(profileReady?'Client identity and reporting year are saved.':`Complete ${identityIssues.length} profile item(s) before creating ledger work.`)+' The draft project, client year and opening TB stay locked until the Legal structure and Subcategory are set and the matching client chart of accounts is approved (Client accounts → Chart of accounts).',action('profile','Open client setup',clientId)+projectButtons)}
     ${step('2 · General account mappings',mappingState,accountRead?`${mappings.length} total mappings · ${covered.length} general mappings active for the client year · ${drafts.length} drafts${rentSummary}. Purchase mappings keep their dated independent review. Opening TB accounts are mapped during import and activate when the reviewer posts the opening journal.`:'Mapping status could not be confirmed.',(pendingSetup.length?action('setup-change','Review pending activity change',clientId):'')+action('accounts','Review general account mappings',clientId))}
     ${step('3 · Opening trial balance',openingState,opening.notApplicable?'The client is recorded as having no opening balances.':`Client year: ${yearState.label}. Current state: ${opening.label}. ${opening.debit!=null?`Debits ${money(opening.debit)} · Credits ${money(opening.credit)}.`:''}`,openingButtons,openingTimeline(opening))}
