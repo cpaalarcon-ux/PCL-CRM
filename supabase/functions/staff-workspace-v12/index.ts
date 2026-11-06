@@ -286,16 +286,13 @@ async function action(id:any,p:any){
   if(doc.category!=='Import Sources')fail(400,'Only an import source can be archived from this list.');
   const batches=await tx`select batch_id from erp_private.workbook_batches where document_id=${documentId} and archived_at is null for update`;
   const counts=one(await tx`select count(distinct b.batch_id)::int as batch_count,count(r.row_id)::int as row_count,
-   count(r.row_id) filter(where r.route is not null or r.account_code is not null
-    or exists(select 1 from erp_private.tax_row_reviews v where v.row_id=r.row_id)
-    or exists(select 1 from erp_private.mapping_history h where h.row_id=r.row_id)
-    or exists(select 1 from erp_private.ledger_sources s where s.source_kind='Workbook row' and s.source_key=r.row_id::text))::int as protected_rows
+   count(r.row_id) filter(where r.row_id is not null and erp_private.row_locks_upload(r))::int as protected_rows
    from erp_private.workbook_batches b left join erp_private.workbook_rows r using(batch_id) where b.document_id=${documentId} and b.archived_at is null`);
-  const protectedImports=Number((await tx`select count(*)::int n from erp_private.period_imports where document_id=${documentId}`)[0].n),openingJournals=await tx`select status from erp_private.ledger_journals where source_snapshot->>'document_id'=${documentId}::text`,protectedOpeningEntries=openingJournals.filter((x:any)=>['Submitted','Posted'].includes(x.status)).length;
+  const protectedImports=Number((await tx`select count(*)::int n from erp_private.period_imports where document_id=${documentId} and status<>'Discarded'`)[0].n),openingJournals=await tx`select status from erp_private.ledger_journals where source_snapshot->>'document_id'=${documentId}::text`,protectedOpeningEntries=openingJournals.filter((x:any)=>['Submitted','Posted'].includes(x.status)).length;
   // An opening draft (Draft or Returned) does not lock its source: the corrected upload replaces it. Once submitted, the reviewer returns it first.
   if(openingJournals.some((x:any)=>x.status==='Submitted'))fail(409,'This opening TB is waiting for independent review. Ask the reviewer to return it, then remove the upload and upload the corrected TB.');
   const manager=['PARTNER','MANAGER'].includes(a.category_code);
-  if((counts.protected_rows||protectedImports||protectedOpeningEntries)&&!manager)fail(403,'This upload has mapped, reviewed or used records. Ask a Partner or Manager to archive it as a controlled correction.');
+  if((counts.protected_rows||protectedImports||protectedOpeningEntries)&&!manager)fail(403,protectedOpeningEntries&&!counts.protected_rows&&!protectedImports?'An accounting entry was prepared from this upload. Ask a Partner or Manager to archive it as a controlled correction.':protectedImports&&!counts.protected_rows?'A summary was saved from this upload. Discard the saved summary first, or ask a Partner or Manager to archive the upload as a controlled correction.':'A person has mapped or confirmed rows from this upload, or a review or journal uses them. Ask a Partner or Manager to archive it as a controlled correction.');
   if(!manager&&doc.uploaded_by!==a.staff_id)fail(403,'Only the uploader or a Partner or Manager can remove this unused import source.');
   if(batches.length)await tx`update erp_private.workbook_batches set archived_at=now(),archived_by=${a.staff_id},archive_reason=${reason}
    where document_id=${documentId} and archived_at is null`;
