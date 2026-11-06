@@ -113,3 +113,4 @@
 20261106194904 supplier_register
 20261106201420 client_bank_accounts
 20261106203829 bank_mapping_rules
+20261106205646 bank_summary_and_balances

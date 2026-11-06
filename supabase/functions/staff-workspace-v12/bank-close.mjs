@@ -6,6 +6,7 @@
 //   amount, dated within 3 days, each line used once;
 // - statement movement must agree with the posted movement on the bank and mobile-money accounts.
 // Each check names its blocker so staff see exactly what stops the close.
+import {statementContinuity} from './bank-statement.mjs';
 export const STATEMENT_ACCOUNTS=['10020','10030','10040','20080'];
 // Ledger accounts that can carry a registered bank, savings or mobile-money account (10021-10028 are the additional bank accounts).
 export const BANK_LEDGER_CODES=[...STATEMENT_ACCOUNTS,...Array.from({length:8},(_,i)=>String(10021+i))];
@@ -50,7 +51,7 @@ export function pairTransfers(bankRows){
  return {transfers,unpaired};
 }
 
-export function bankCloseChecks({bankRows=[],tb=[],explanations=[],bankAccounts=[]}={}){
+export function bankCloseChecks({bankRows=[],tb=[],explanations=[],bankAccounts=[],statements=[]}={}){
  const checks=[],add=(code,label,status,detail)=>checks.push({code,label,status,detail,blocking:['Blocked','Not ready'].includes(status)});
  const statementTb=tb.filter(a=>BANK_LEDGER_CODES.includes(String(a.code)));
  const activity=statementTb.some(a=>Number(a.opening)||Number(a.net)||Number(a.movement_debit)||Number(a.movement_credit));
@@ -75,6 +76,11 @@ export function bankCloseChecks({bankRows=[],tb=[],explanations=[],bankAccounts=
   checks[checks.length-1].difference_cents=diff;checks[checks.length-1].explanation=accepted||pendingExplanation||null;
   add(...balanceCheck(bankRows));
  }
+ // Statements of one bank must join up, and any statement imported with a balance override stays visible until the close.
+ const cont=statementContinuity(statements);
+ if(cont.compared)add('BANK_CONTINUITY','Each statement opens where the previous one closed',cont.gaps.length?'Blocked':'Pass',cont.gaps.length?`${cont.gaps.length} gap(s): ${cont.gaps.slice(0,3).map(g=>`the statement ending ${g.from} closed at KES ${kes(cents(g.previous_closing))} but the next one (from ${g.to}) opens at KES ${kes(cents(g.next_opening))}`).join('; ')}. A statement may be missing or imported twice.`:`${cont.compared} statement join(s) agree.`);
+ const overridden=statements.filter(s=>s.balance_status==='Overridden');
+ if(overridden.length)add('BANK_BALANCE_OVERRIDE','Statements imported with a balance override','Review',`${overridden.length} statement(s) were imported although opening + money in - money out did not equal the closing balance. A Manager or Partner recorded a reason for each; check them before closing.`);
  const banks=bankAccountChecks({bankRows,tb,statementTb,bankAccounts,add,overallDiff:bankRows.length?bankRows.reduce((n,r)=>n+lineAmount(r),0)-statementTb.reduce((n,a)=>n+cents(a.movement_debit)-cents(a.movement_credit),0):0});
  return {checks,banks,blocking:checks.filter(c=>c.blocking).map(c=>`${c.label}: ${c.detail}`)};
 }

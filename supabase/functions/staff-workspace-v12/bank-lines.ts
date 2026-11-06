@@ -2,6 +2,8 @@ import {fail,text,uuid,choice} from './validation.mjs';
 import {chartCatalogue,requireChartAccount} from './client-chart.ts';
 import {bankRegister} from './bank-accounts.ts';
 import {fixItQueue,matchRule,ruleProblem,MATCH_MODES,DIRECTIONS} from './bank-rules.mjs';
+import {BANK_LEDGER_CODES} from './bank-close.mjs';
+import {bankSummary} from './bank-statement.mjs';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const dayOf=(r:any)=>String(r.normalized?.date||day(r.period_start));
 
@@ -97,6 +99,30 @@ export async function bankLineAction(tx:any,a:any,l:any,p:any){
   if(rule.status==='Retired')fail(400,'This rule is already retired.');
   if(status==='Retired'&&note.length<5)fail(400,'Give a short reason for retiring the rule.');
   return (await tx`update erp_private.bank_mapping_rules set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note||null} where rule_id=${rule.rule_id} returning rule_id,status,revision`)[0];
+ }
+ if(p.action==='ledger_bank_summary_read'){
+  const [banks,rows]=await Promise.all([bankRegister(tx,cid),periodRows(tx,l,to)]);
+  const categories=await tx`select category_id,name,account_codes,note,status,revision,(select array_agg(c.code||' '||c.name order by c.code) from erp_private.account_catalog c where c.code=any(account_codes)) accounts from erp_private.bank_summary_categories where client_id=${cid} order by status,name`;
+  const filter=p.bank_account_id?uuid(p.bank_account_id):null;
+  return {...bankSummary({rows,categories,bankAccounts:banks,bankAccountId:filter}),categories,banks:banks.map((b:any)=>({bank_account_id:b.bank_account_id,label:b.bank_name+(b.account_label?' '+b.account_label:'')+(b.account_last4?' ····'+b.account_last4:'')})),bank_account_id:filter,as_of:to};
+ }
+ if(p.action==='ledger_bank_category_save'){
+  if(!leader)fail(403,'A Manager or Partner must define a non-trade category.');
+  const name=text(p.name,80).replace(/\s+/g,' ').trim(),note=text(p.note||'',300,false);if(name.length<3)fail(400,'Give the category a name of at least three characters.');
+  const codes=[...new Set(String(Array.isArray(p.account_codes)?p.account_codes.join(','):p.account_codes||'').split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean))];
+  if(!codes.length||codes.length>30)fail(400,'Enter between 1 and 30 ledger account codes.');
+  const found=await tx`select code,status,is_legacy,route from erp_private.account_catalog where code=any(${tx.array(codes)}::text[])`;
+  for(const c of codes){const x=found.find((y:any)=>y.code===c);if(!x||x.status!=='Active'||x.is_legacy)fail(400,`${c} is not an active ledger account.`);if([1,3].includes(x.route))fail(400,`${c} is a stock or fixed-asset account.`);if(BANK_LEDGER_CODES.includes(c))fail(400,`${c} is a bank account. Own-account transfers are shown separately.`);}
+  if((await tx`select 1 from erp_private.bank_summary_categories where client_id=${cid} and status='Active' and lower(btrim(name))=lower(${name})`).length)fail(409,'A category with this name already exists.');
+  const taken=await tx`select name from erp_private.bank_summary_categories where client_id=${cid} and status='Active' and account_codes && ${tx.array(codes)}::text[] limit 1`;if(taken.length)fail(409,`An account in this list already belongs to the category ${taken[0].name}. An account can be in one category.`);
+  return (await tx`insert into erp_private.bank_summary_categories(client_id,name,account_codes,note,created_by) values(${cid},${name},${tx.array(codes)}::text[],${note},${a.staff_id}) returning category_id`)[0];
+ }
+ if(p.action==='ledger_bank_category_retire'){
+  if(!leader)fail(403,'A Manager or Partner must retire a non-trade category.');
+  const c=(await tx`select category_id,revision,status from erp_private.bank_summary_categories where category_id=${uuid(p.category_id)} and client_id=${cid} for update`)[0];if(!c)fail(403,'This record is not available to your account.');
+  if(p.revision!=null&&Number(p.revision)!==Number(c.revision))fail(409,'This category changed. Reload and try again.');
+  if(c.status==='Retired')fail(400,'This category is already retired.');
+  return (await tx`update erp_private.bank_summary_categories set status='Retired',retired_by=${a.staff_id},retired_at=now() where category_id=${c.category_id} returning category_id,status`)[0];
  }
  fail(400,'Unknown bank action.');
 }

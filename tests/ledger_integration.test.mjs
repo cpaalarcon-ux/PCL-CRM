@@ -112,6 +112,22 @@ test('Client ledger: source integrity, maker/checker, entity profit and shared P
  assert.equal((await ledger('ASSISTANT',{...base,action:'ledger_bank_lines_map',items:[{row_id:l2.row_id,revision:rev2}],account_code:'62570'})).mapped,1);
  fix=await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'});assert.equal(fix.not_mapped,1,'only the Bank to Mobile line is left');
  assert.equal((await tx`select review_details->'mapping_confirmation'->>'method' m from erp_private.workbook_rows where row_id=${l1.row_id}`)[0].m,'Bank rule');
+ // Bank reconciliation summary: the client's own non-trade categories, with drill-down.
+ await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_category_save',name:'Director loans',account_codes:'62570'}),/Manager or Partner/);
+ await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_bank_category_save',name:'Director loans',account_codes:'10040'}),/bank account/);
+ await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_bank_category_save',name:'Director loans',account_codes:'50000'}),/stock or fixed-asset/);
+ await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_bank_category_save',name:'Director loans',account_codes:'99999'}),/not an active ledger account/);
+ const sum0=await ledger('ASSISTANT',{...base,action:'ledger_bank_summary_read'});const sec0=Object.fromEntries(sum0.sections.map(x=>[x.key,x]));
+ assert.equal(sum0.money_in,5800);assert.equal(sec0.unclassified.amount,0);assert.equal(sec0.trade.amount,5800,'before any category, mapped money in counts as trade');assert.equal(sum0.money_out.not_classified,2000);
+ const cat=await ledger('MANAGER',{...base,action:'ledger_bank_category_save',name:'Director loans',account_codes:'62570',note:'Fictional'});
+ await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_bank_category_save',name:'Other',account_codes:'62570'}),/already belongs/);
+ const sum1=await ledger('ASSISTANT',{...base,action:'ledger_bank_summary_read'});const sec1=Object.fromEntries(sum1.sections.map(x=>[x.key,x]));
+ assert.equal(sec1['cat:'+cat.category_id].amount,5800);assert.equal(sum1.trade_bankings,0);assert.equal(sec1['cat:'+cat.category_id].lines.length,2);
+ await assert.rejects(()=>as('MANAGER',()=>tx`update erp_private.bank_summary_categories set name='Renamed category' where category_id=${cat.category_id}`),/cannot be edited/);
+ await ledger('MANAGER',{...base,action:'ledger_bank_category_retire',category_id:cat.category_id});
+ assert.equal((await ledger('ASSISTANT',{...base,action:'ledger_bank_summary_read'})).trade_bankings,5800);
+ // Statement balance fields are stored on the batch and read by the close checks.
+ await tx`update erp_private.workbook_batches set statement_opening=100,statement_closing=900,balance_status='Overridden',balance_override_reason='Fictional approved override reason',balance_override_by=${actors.MANAGER.staff_id} where batch_id=${stmt}`.catch(e=>assert.match(String(e.message),/cannot be edited/));
  const reversal=await ledger('MANAGER',{...base,action:'ledger_reverse',journal_id:a.journal_id,reference:'REV-LICENCE',journal_date:'2026-10-01',evidence:'Fictional correction; original remains immutable'});
  // A Manager who prepares a reversal must have a different Partner approve it.
  let rv=await ledger('MANAGER',{...base,action:'ledger_journal_read',journal_id:reversal.journal_id});await ledger('MANAGER',{...base,action:'ledger_journal_submit',journal_id:reversal.journal_id,revision:rv.journal.revision});rv=await jr(reversal.journal_id);

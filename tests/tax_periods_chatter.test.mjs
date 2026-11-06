@@ -46,6 +46,21 @@ test('Monthly tax work, archive integrity and private chatter',async(t)=>{
  await assert.rejects(()=>as('ASSISTANT',a=>workbookAction(tx,a,{...imp,confirmed_client_id:H,action:'workbook_commit'},storage)),/Confirm the legal client/);
  const imported=await as('ASSISTANT',a=>workbookAction(tx,a,{...imp,action:'workbook_commit'},storage));assert.equal(imported.new_count,2);assert.equal(imported.source_count,2);
  const retry=await as('ASSISTANT',a=>workbookAction(tx,a,{...imp,action:'workbook_commit'},storage));assert.equal(retry.batch_id,imported.batch_id);assert.equal(retry.new_count,0);assert.equal(retry.duplicate_count,2);
+ // A bank statement must balance before it is staged: opening + money in - money out = closing. Only a Manager or Partner can override, with a reason.
+ const bankDoc=async(csv)=>{const d=id();await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${d},${C},${F},${P},${task.task_id},'Working Papers','Statement.csv',${'fictional/'+d},100,${d.replace(/-/g,'').repeat(2)},'text/csv',${actors.ASSISTANT.staff_id})`;return {d,storage:{download:async()=>({data:new Blob([csv])})}};};
+ const bankImp=d=>({document_id:d,header_row:0,first_row:1,last_row:2,dataset:'Bank',period_start:'2026-09-01',period_end:'2026-09-30',column_map:{date:1,reference:2,debit:3,credit:4,balance:5},confirmed_client_id:C,action:'workbook_commit'});
+ const good=await bankDoc('2026-09-01,DEP-1,0,1000,3000\n2026-09-02,CHQ-2,300,0,2700\n');
+ await assert.rejects(()=>as('ASSISTANT',a=>workbookAction(tx,a,{...bankImp(good.d),statement_opening:2000,statement_closing:2000},good.storage)),/does not balance/);
+ await assert.rejects(()=>as('ASSISTANT',a=>workbookAction(tx,a,{...bankImp(good.d),statement_opening:2000,statement_closing:2000,balance_override_reason:'Fictional reason that is long enough'},good.storage)),/does not balance/,'an Assistant cannot override');
+ const ok=await as('ASSISTANT',a=>workbookAction(tx,a,{...bankImp(good.d),statement_opening:2000,statement_closing:2700},good.storage));assert.equal(ok.new_count,2);
+ let batch=(await tx`select statement_opening::float o,statement_closing::float c,balance_status from erp_private.workbook_batches where batch_id=${ok.batch_id}`)[0];assert.deepEqual(batch,{o:2000,c:2700,balance_status:'Pass'});
+ const broken=await bankDoc('2026-09-03,DEP-9,0,500,5000\n2026-09-04,CHQ-8,100,0,3000\n');
+ await assert.rejects(()=>as('MANAGER',a=>workbookAction(tx,a,bankImp(broken.d),broken.storage)),/not continuous/);
+ const forced=await as('MANAGER',a=>workbookAction(tx,a,{...bankImp(broken.d),balance_override_reason:'Fictional: statement balance column printed wrongly by the bank'},broken.storage));
+ batch=(await tx`select balance_status,balance_override_by from erp_private.workbook_batches where batch_id=${forced.batch_id}`)[0];assert.equal(batch.balance_status,'Overridden');assert.equal(batch.balance_override_by,actors.MANAGER.staff_id);
+ const plain=await bankDoc('2026-09-05,DEP-3,0,10,\n2026-09-06,CHQ-4,5,0,\n');
+ const unchecked=await as('ASSISTANT',a=>workbookAction(tx,a,{...bankImp(plain.d),column_map:{date:1,reference:2,debit:3,credit:4}},plain.storage));
+ assert.equal((await tx`select balance_status from erp_private.workbook_batches where batch_id=${unchecked.batch_id}`)[0].balance_status,'Not checked');
  const channel=(await chat('ASSISTANT',{action:'discussion_open',task_id:task.task_id})).channel;
  const request_id=id(),sent=await chat('ASSISTANT',{action:'discussion_send',channel_id:channel.channel_id,request_id,body:'Please review the supplier mapping.'});assert(sent.message_id);assert.equal((await chat('ASSISTANT',{action:'discussion_send',channel_id:channel.channel_id,request_id,body:'Please review the supplier mapping.'})).duplicate,true);
  await assert.rejects(()=>chat('ASSISTANT',{action:'discussion_send',channel_id:channel.channel_id,request_id,body:'Different retry payload'}),/different content/);

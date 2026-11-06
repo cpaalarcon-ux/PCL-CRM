@@ -30,6 +30,7 @@ test('controls changed on 3–4 November are tracked as separate Not checked cas
  for(let n=65;n<=75;n++){
   const line=uat.split('\n').find(x=>new RegExp(`^\\| U${n} \\|`).test(x));
   assert.ok(line,`U${n} must be in the UAT register`);
-  assert.match(line,/\| Not checked \|$/,`U${n} cannot be marked passed without staging evidence`);
+  // A case may leave Not checked only when the row cites the hosted GitHub Actions run that produced the evidence.
+  if(!/actions\/runs\/\d+/.test(line))assert.match(line,/\| Not checked \|$/,`U${n} cannot be marked passed without staging evidence`);
  }
 });
