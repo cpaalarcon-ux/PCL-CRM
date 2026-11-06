@@ -34,12 +34,17 @@ test('Legal structure Builds 2 and 3: every pair has a KYC checklist and a sugge
  assert.equal(newRules.length,6);for(const r of newRules){assert.equal(r.rule_status,'Testing');assert.deepEqual(r.required_for_entities,[],'the older entity-type path never asks for it');}
  assert.deepEqual((await tx`select rule_code from erp_private.kyc_evidence_rules where 'Company'=any(required_for_entities) order by 1`).map(r=>r.rule_code),['BENEFICIAL_OWNERSHIP','DIRECTORS_CR12','KRA_PIN','REGISTER_MEMBERS','REGISTRATION_IDENTITY']);
  // Taxpayer classification: Company only for companies; Partnership for partnerships; Individual for individuals; obligations are valid profile kinds.
- const defs=await tx`select structure,subtype,profile_entity_type,suggested_obligations from erp_private.legal_structure_tax_defaults`;
+ const defs=await tx`select structure,subtype,profile_entity_type,suggested_obligations,note from erp_private.legal_structure_tax_defaults`;
  for(const d of defs){
   const want={'Limited Company':'Company','Partnership':'Partnership'}[d.structure]||(d.structure==='Individual'?'Individual':'Other');assert.equal(d.profile_entity_type,want,d.subtype);
   assert.equal(d.suggested_obligations.includes('Company'),want==='Company',d.subtype);assert.equal(d.suggested_obligations.includes('Partnership'),want==='Partnership',d.subtype);assert.equal(d.suggested_obligations.includes('Individual'),want==='Individual',d.subtype);
  }
  assert.deepEqual(defs.find(d=>d.subtype==='Estate').suggested_obligations,[]);
+ // Income tax is charged on profit: non-profits and public bodies pay payroll taxes only; co-operatives, trusts and similar bodies carry the income-tax position.
+ const incomeTax=['Company','Partnership','Individual','Instalment tax','Advance tax','Other entity income tax','Exempt body return'];
+ for(const d of defs.filter(d=>['Non-Profit Organisation','Public Entity'].includes(d.structure))){assert.ok(!d.suggested_obligations.some(x=>incomeTax.includes(x)),d.subtype+' has no income-tax obligation');assert.ok(d.suggested_obligations.includes('PAYE'),d.subtype);assert.match(d.note,/payroll taxes/i,d.subtype);}
+ for(const d of defs.filter(d=>d.structure==='Co-operative Society'||['Trust','Association','Chama or Investment Group','Other registered entity'].includes(d.subtype)))assert.ok(d.suggested_obligations.includes('Other entity income tax'),d.subtype);
+ assert.ok(!defs.some(d=>d.suggested_obligations.includes('Exempt body return')));
  assert.ok(defs.find(d=>d.subtype==='Government Ministry').suggested_obligations.includes('Withholding VAT agent'));
  // The two sign-offs exist for the Compliance Lead and the Tax Lead.
  assert.deepEqual((await tx`select check_code,owner_position from erp_private.release_checks where check_code in('LSCHECKLISTS','LSTAXCLASS') order by 1`).map(r=>[r.check_code,r.owner_position]),[['LSCHECKLISTS','Compliance Lead'],['LSTAXCLASS','Tax Lead']]);

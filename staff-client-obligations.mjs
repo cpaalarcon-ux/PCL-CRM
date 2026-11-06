@@ -2,7 +2,7 @@
 // that may be scheduled from a verified, dated tax profile.
 export const clientObligationGroups=[
  {title:'Income tax and tax regimes',help:'Choose only the income-tax position that applies to the covered income. TOT and MRI are final for income within their regimes; do not add ordinary, instalment or advance income tax to the same regime. Refer income outside the regime to the Tax Lead before scheduling; the ERP must not assume it is covered.',items:[
-  ['Company','Company income tax'],['Partnership','Partnership income tax'],['Individual','Individual income tax'],['TOT','Turnover Tax (TOT)'],['MRI','Residential rental income tax (MRI)']
+  ['Company','Company income tax'],['Partnership','Partnership income tax'],['Individual','Individual income tax'],['Other entity income tax','Other entity income tax (co-operative, trust or association on its profit; taxpayer type Other)'],['TOT','Turnover Tax (TOT)'],['MRI','Residential rental income tax (MRI)']
  ]},
  {title:'VAT and withholding positions',help:'Record VAT registration, appointment as a withholding agent, and withholding tax credits received as separate positions.',items:[
   ['VAT','VAT registered'],['Withholding VAT agent','Appointed withholding VAT agent'],['Withholding VAT credits received','Withholding VAT credits received'],['WHT','Withholding income tax agent / payer'],['Withholding income tax credits received','Withholding income tax credits received']

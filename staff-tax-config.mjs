@@ -1,5 +1,5 @@
 // Tax rules and release checks use the same authenticated, scoped API as the workspace.
-import {profileObligationChecks} from './staff-client-obligations.mjs?v=20261103-dependency-map-v1';
+import {profileObligationChecks} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
 export function createTaxConfigUI(ctx){
  const {$,esc,field,select,form,modal,request,shortDate,badge,today,table,button,area,check}=ctx,d=ctx.data,s=()=>d().suite;
  const partner=()=>d().me.category_code==='PARTNER',leader=()=>['PARTNER','MANAGER'].includes(d().me.category_code),date=v=>v?.slice(0,10)||'',test=r=>r.is_test||/^QA/i.test(r.rate_key)||/FICTIONAL|SYNTHETIC TEST/i.test(r.label||'');
