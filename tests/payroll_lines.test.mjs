@@ -10,6 +10,16 @@ test('relationship lists match between the screen and the server',()=>{
  for(const r of RELATIONSHIPS)assert.ok(RELATIONSHIP_HELP[r],'help text for '+r);
 });
 
+test('the payroll screen offers typed lines and keeps the server and screen on one cache tag',()=>{
+ const ui=fs.readFileSync(path.join(root,'staff-period-imports.mjs'),'utf8');
+ assert.match(ui,/button\('manual-payroll','Type payroll lines'\)/);
+ assert.match(ui,/entry_mode:'Manual'/);
+ assert.match(ui,/manual_lines:lines/);
+ assert.match(ui,/staff-payroll-lines\.mjs\?v=/);
+ const api=fs.readFileSync(path.join(root,'supabase/functions/staff-workspace-v12/period-import-actions.ts'),'utf8');
+ assert.match(api,/i\.entry_mode/);
+});
+
 const line=(o={})=>({name:'Fictional Person',pin:'A123456789B',employee_id:'12345678',relationship:'Employee',employment_type:'Permanent',resident:'Resident',gross:'60000',evidence_reference:'Payslip 001',...o});
 
 test('manual lines: row shape, validation and duplicates',()=>{
