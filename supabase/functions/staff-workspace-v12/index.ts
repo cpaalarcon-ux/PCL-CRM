@@ -34,6 +34,7 @@ import { createClient } from 'supabase';
 import postgres from 'postgres';
 import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
 import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,scopeWorkspaceRecords,staffAreaCanUse} from './staff-access-control.mjs';
+import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode} from './staff-rights-catalog.mjs';
 
 const url=Deno.env.get('SUPABASE_URL')!;
 const secret=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')||'{}').default;
@@ -99,6 +100,14 @@ async function logAdmin(tx:any,authId:string|null,action:string,key:string,detai
 }
 async function restrictedAreas(tx:any,staffId:string){
  return (await tx`select area_code from erp_private.staff_area_restrictions where staff_id=${staffId} order by area_code`).map((r:any)=>r.area_code);
+}
+async function restrictedRights(tx:any,staffId:string){
+ return (await tx`select right_code from erp_private.staff_right_restrictions where staff_id=${staffId} order by right_code`).map((r:any)=>r.right_code);
+}
+// A function switched off for this person is refused before the handler runs. The handler still applies the role, scope and review rules.
+async function requireStaffRight(tx:any,a:any,action:string){
+ const need=rightForAction(action);if(!need)return;
+ if((await restrictedRights(tx,a.staff_id)).includes(need))fail(403,`Your access to “${rightLabel(need)}” has been switched off. Ask a Manager or Partner to restore it.`);
 }
 async function requireStaffArea(tx:any,a:any,area:string){
  const denied=await restrictedAreas(tx,a.staff_id);
@@ -303,12 +312,14 @@ async function action(id:any,p:any){
    if(staffIds.length){
     const rows=await tx`select staff_id,area_code from erp_private.staff_area_restrictions where staff_id=any(${staffIds}::uuid[])`;
     const byStaff=new Map<string,string[]>();for(const row of rows){const list=byStaff.get(row.staff_id)||[];list.push(row.area_code);byStaff.set(row.staff_id,list);}
-    w.staff=visibleStaff.map((s:any)=>({...s,restricted_areas:byStaff.get(s.staff_id)||[]}));
+    const rightRows=await tx`select staff_id,right_code from erp_private.staff_right_restrictions where staff_id=any(${staffIds}::uuid[])`,rightsByStaff=new Map<string,string[]>();for(const row of rightRows){const list=rightsByStaff.get(row.staff_id)||[];list.push(row.right_code);rightsByStaff.set(row.staff_id,list);}
+    w.staff=visibleStaff.map((s:any)=>({...s,restricted_areas:byStaff.get(s.staff_id)||[],restricted_rights:rightsByStaff.get(s.staff_id)||[]}));
    }
    w.suite=await suiteRead(tx);
+   w.me={...w.me,restricted_rights:await restrictedRights(tx,a.staff_id)};
    return {...scopeWorkspaceRecords(filterWorkspaceAccess(w,areas),a.category_code,a.staff_id),release:'v12-uat-individual-area-access-v2'};
   }
-  const requestArea=areaForStaffAction(String(p.action||''));if(!requestArea)deny();await requireStaffArea(tx,a,requestArea);
+  const requestArea=areaForStaffAction(String(p.action||''));if(!requestArea)deny();await requireStaffArea(tx,a,requestArea);await requireStaffRight(tx,a,String(p.action||''));
   const rights=await staffRightsAction(tx,a,p);if(rights!==undefined)return rights;
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
   const discussion=await discussionAction(tx,a,p);if(discussion!==undefined)return discussion;
@@ -353,7 +364,7 @@ async function action(id:any,p:any){
    const target=one(await tx`select staff_id,full_name,category_code,revision from erp_private.staff_members where staff_id=${uuid(p.staff_id)} and deleted_at is null`);
    await canManageStaffRecord(tx,a,target);
    const denied=await restrictedAreas(tx,target.staff_id),baseline=defaultStaffAreas(target.category_code);
-   return {staff:{staff_id:target.staff_id,full_name:target.full_name,category_code:target.category_code,revision:target.revision},default_areas:baseline,restricted_areas:denied,allowed_areas:effectiveStaffAreas(target.category_code,denied)};
+   return {staff:{staff_id:target.staff_id,full_name:target.full_name,category_code:target.category_code,revision:target.revision},default_areas:baseline,restricted_areas:denied,allowed_areas:effectiveStaffAreas(target.category_code,denied),default_rights:defaultStaffRights(target.category_code),restricted_rights:await restrictedRights(tx,target.staff_id)};
   }
   if(p.action==='staff_access_save'){
    const target=one(await tx`select staff_id,full_name,category_code,revision from erp_private.staff_members where staff_id=${uuid(p.staff_id)} and deleted_at is null for update`);
@@ -363,13 +374,30 @@ async function action(id:any,p:any){
    const baseline=defaultStaffAreas(target.category_code),chosen=[...new Set(p.allowed_areas)];
    if(chosen.length!==p.allowed_areas.length||chosen.some((x:string)=>!baseline.includes(x)))fail(400,'Individual access can only narrow this role’s default areas. Change the staff role to add role-level access.');
    const reason=text(p.reason,1000),current=await restrictedAreas(tx,target.staff_id),currentInRole=current.filter((x:string)=>baseline.includes(x)).sort(),desired=baseline.filter((x:string)=>!chosen.includes(x)).sort();
-   if(currentInRole.join('|')===desired.join('|'))return {ok:true,changed:false,allowed_areas:effectiveStaffAreas(target.category_code,current)};
+   // Function rights (checkboxes under each area). Only the role's own rights can be switched off; nothing is ever added.
+   const rightsBaseline=defaultStaffRights(target.category_code),currentRights=await restrictedRights(tx,target.staff_id),currentRightsInRole=currentRights.filter((x:string)=>rightsBaseline.includes(x)).sort();
+   let desiredRights=currentRightsInRole;
+   if(p.allowed_rights!==undefined){
+    if(!Array.isArray(p.allowed_rights)||p.allowed_rights.length>100||p.allowed_rights.some((x:any)=>typeof x!=='string'||!isRightCode(x)))fail(400,'Choose the functions available to this staff member from the list.');
+    const chosenRights=[...new Set<string>(p.allowed_rights)];
+    if(chosenRights.some((x:string)=>!rightsBaseline.includes(x)))fail(400,'Individual access can only narrow this role’s functions. Change the staff role to add role-level access.');
+    desiredRights=rightsBaseline.filter((x:string)=>!chosenRights.includes(x)).sort();
+   }
+   const rightsChanged=currentRightsInRole.join('|')!==desiredRights.join('|'),areasChanged=currentInRole.join('|')!==desired.join('|');
+   if(!areasChanged&&!rightsChanged)return {ok:true,changed:false,allowed_areas:effectiveStaffAreas(target.category_code,current),restricted_rights:currentRights};
    if(reason.length<3)fail(400,'Explain why these staff access rights are changing.');
+   if(rightsChanged){
+    if(rightsBaseline.length)await tx`delete from erp_private.staff_right_restrictions where staff_id=${target.staff_id} and right_code=any(${rightsBaseline}::text[])`;
+    for(const code of desiredRights)await tx`insert into erp_private.staff_right_restrictions(staff_id,right_code,reason,created_by) values(${target.staff_id},${code},${reason},${a.staff_id})`;
+    const afterRights=[...currentRights.filter((x:string)=>!rightsBaseline.includes(x)),...desiredRights].sort();
+    await logAdmin(tx,id.claims.sub,'STAFF_RIGHT_ACCESS_CHANGED',target.staff_id,{staff_name:target.full_name,staff_role:target.category_code,restricted_rights:afterRights,switched_off:desiredRights.filter((x:string)=>!currentRightsInRole.includes(x)),restored:currentRightsInRole.filter((x:string)=>!desiredRights.includes(x)),reason},{staff_name:target.full_name,staff_role:target.category_code,restricted_rights:[...currentRights].sort()});
+    if(!areasChanged)return {ok:true,changed:true,allowed_areas:effectiveStaffAreas(target.category_code,current),restricted_rights:afterRights};
+   }
    if(baseline.length)await tx`delete from erp_private.staff_area_restrictions where staff_id=${target.staff_id} and area_code=any(${baseline}::text[])`;
    for(const area of desired)await tx`insert into erp_private.staff_area_restrictions(staff_id,area_code,reason,created_by) values(${target.staff_id},${area},${reason},${a.staff_id})`;
    const after=[...current.filter((x:string)=>!baseline.includes(x)),...desired].sort();
    await logAdmin(tx,id.claims.sub,'STAFF_AREA_ACCESS_CHANGED',target.staff_id,{staff_name:target.full_name,staff_role:target.category_code,restricted_areas:after,allowed_areas:effectiveStaffAreas(target.category_code,after),restored_areas:currentInRole.filter((x:string)=>!desired.includes(x)),reason},{staff_name:target.full_name,staff_role:target.category_code,restricted_areas:[...current].sort(),allowed_areas:effectiveStaffAreas(target.category_code,current)});
-   return {ok:true,changed:true,allowed_areas:effectiveStaffAreas(target.category_code,after),restricted_areas:after};
+   return {ok:true,changed:true,allowed_areas:effectiveStaffAreas(target.category_code,after),restricted_areas:after,restricted_rights:await restrictedRights(tx,target.staff_id)};
   }
   if(p.action==='firm_save'){
    if(a.category_code!=='PARTNER')deny();

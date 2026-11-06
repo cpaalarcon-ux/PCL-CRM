@@ -1,0 +1,41 @@
+// Function-level rights, grouped by ERP area. Each right names the roles that hold it by default (taken from the rights matrix)
+// and the server actions it covers. A Manager or Partner can switch a right off for one person; the server then refuses those actions
+// for that person. A right can only be narrowed here: it never adds access beyond the role, the firm/project scope, the maker-checker
+// rules or the approval chain, which each handler still enforces on its own.
+// This file is copied unchanged to the staff screen (see tests/function_rights.test.mjs); keep both copies identical.
+export const STAFF_RIGHTS=Object.freeze([
+ {code:'client.details',area:'clients',group:'Client records',label:'Change client details (name, PIN, sector, legal structure)',roles:['PARTNER','MANAGER'],actions:['client_save','client_classify_save','v3_identity_save']},
+ {code:'client.contacts',area:'clients',group:'Client records',label:'Add or change client contacts',roles:['PARTNER','MANAGER'],actions:['contact_save']},
+ {code:'client.owners',area:'clients',group:'Client records',label:'Record owners, beneficial owners and partners',roles:['PARTNER','MANAGER'],actions:['owner_add','v3_partners_add']},
+ {code:'client.setup',area:'clients',group:'Client records',label:'Client set-up: activities, VAT categories and the draft tax profile',roles:['PARTNER','MANAGER'],actions:['tax_profile_save','tax_profile_dependency_preview','v3_activity_add','v3_activities_preview','v3_activities_submit','v3_vat_categories_save']},
+ {code:'client.tax_verify',area:'clients',group:'Client records',label:'Verify the client tax profile',roles:['PARTNER','MANAGER'],actions:['tax_profile_verify']},
+ {code:'kyc.file',area:'clients',group:'KYC',label:'Edit the KYC file and record evidence',roles:['PARTNER','MANAGER'],actions:['compliance_save','compliance_evidence_save','compliance_evidence_remove']},
+ {code:'kyc.verify',area:'clients',group:'KYC',label:'Verify KYC',roles:['PARTNER','MANAGER'],actions:['compliance_verify']},
+ {code:'kyc.edd',area:'clients',group:'KYC',label:'Approve enhanced due diligence',roles:['PARTNER'],actions:['edd_approve']},
+ {code:'chart.propose',area:'clients',group:'Chart of accounts and mappings',label:'Propose the client chart of accounts',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['v3_client_chart_propose']},
+ {code:'chart.check',area:'clients',group:'Chart of accounts and mappings',label:'Check the client chart of accounts',roles:['PARTNER','MANAGER','SUPERVISOR'],actions:['v3_client_chart_check']},
+ {code:'chart.approve',area:'clients',group:'Chart of accounts and mappings',label:'Approve the client chart of accounts',roles:['PARTNER','MANAGER'],actions:['v3_client_chart_review']},
+ {code:'mapping.edit',area:'clients',group:'Chart of accounts and mappings',label:'Set up or end client account mappings',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['v3_client_account_mapping_add','v3_client_account_mapping_end','v3_client_account_mapping_tb_preview','v3_client_account_mapping_tb_save']},
+ {code:'mapping.approve',area:'clients',group:'Chart of accounts and mappings',label:'Approve client account mappings',roles:['PARTNER','MANAGER'],actions:['v3_client_account_mapping_approve','v3_client_account_mapping_approve_batch']},
+ {code:'stock.setup',area:'clients',group:'Stock',label:'Set the stock policy for a client',roles:['PARTNER','MANAGER'],actions:['v3_stock_policy_add']},
+ {code:'stock.prepare',area:'clients',group:'Stock',label:'Prepare and submit stock counts and valuations',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['v3_stock_create','v3_stock_create_vat','v3_stock_save','v3_stock_submit']},
+ {code:'stock.review',area:'clients',group:'Stock',label:'Review stock counts and valuations',roles:['PARTNER','MANAGER','SUPERVISOR'],actions:['v3_stock_review']},
+ {code:'acct.setup',area:'projects',group:'Accounting work',label:'Accounting set-up: inventory method, stock categories and accounts',roles:['PARTNER','MANAGER'],actions:['accounting_policy_save','accounting_stock_category_add','accounting_account_add']},
+ {code:'acct.prepare',area:'projects',group:'Accounting work',label:'Prepare sales, payroll and purchase imports and map the rows',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['period_import_preview','period_import_save','period_import_submit','period_import_payroll_tax','workbook_preview','workbook_commit','workbook_map','workbook_map_bulk','workbook_mapping_undo','workbook_split','sales_recon_create','sales_recon_save','sales_recon_submit','ledger_period_import_create','ledger_import_preview','ledger_import_commit','ledger_payroll_create','ledger_generate_sources','v3_mapping_select']},
+ {code:'acct.review',area:'projects',group:'Accounting work',label:'Review and confirm imports, reconciliations and reports',roles:['PARTNER','MANAGER','SUPERVISOR'],actions:['period_import_review','sales_recon_review','ledger_report_review','ledger_close_explanation_review']},
+ {code:'acct.journal_prepare',area:'projects',group:'Accounting work',label:'Prepare and submit journals, assets and stock',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['ledger_journal_save','ledger_journal_metadata','ledger_journal_refresh','ledger_journal_submit','ledger_asset_save','ledger_asset_submit','ledger_depreciation_create','ledger_stock_propose','ledger_report_submit','ledger_close_explanation_save']},
+ {code:'acct.journal_check',area:'projects',group:'Accounting work',label:'Check journals and opening balances',roles:['PARTNER','MANAGER','SUPERVISOR'],actions:['ledger_journal_check']},
+ {code:'acct.journal_approve',area:'projects',group:'Accounting work',label:'Approve and post journals, and reverse entries',roles:['PARTNER','MANAGER'],actions:['ledger_journal_review','ledger_asset_review','ledger_reverse']},
+]);
+const RIGHT_CODES=STAFF_RIGHTS.map(r=>r.code);
+const BY_ACTION=new Map(STAFF_RIGHTS.flatMap(r=>r.actions.map(a=>[a,r.code])));
+export const rightForAction=action=>BY_ACTION.get(String(action||''))||null;
+export const rightLabel=code=>STAFF_RIGHTS.find(r=>r.code===code)?.label||code;
+// The rights a role holds by default.
+export const defaultStaffRights=role=>STAFF_RIGHTS.filter(r=>r.roles.includes(role)).map(r=>r.code);
+// What a person can use: the role's rights, less those switched off for them, and none at all when the whole area is off.
+export function effectiveStaffRights(role,deniedRights=[],areas=null){
+ const denied=new Set(Array.isArray(deniedRights)?deniedRights:[]);
+ return STAFF_RIGHTS.filter(r=>r.roles.includes(role)&&!denied.has(r.code)&&(!areas||areas.includes(r.area))).map(r=>r.code);
+}
+export const isRightCode=code=>RIGHT_CODES.includes(code);
