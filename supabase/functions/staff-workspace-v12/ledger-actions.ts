@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import {requireRightChart} from './legal-structure-actions.ts';
 import {pendingPurchases} from './purchase-pending.ts';
 import {chartCatalogue,approvedChart,chartMessage,requireChartAccount} from './client-chart.ts';
+import {suggestAccount,normaliseName} from './opening-tb-suggest.mjs';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
 import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,notifyOutcome} from './review-queue.ts';
@@ -460,6 +461,21 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   const remaining=money(Number(result.book_annual)-posted.reduce((sum:number,x:any)=>sum+Number(x.book_charge),0)),charge=money(Math.min(result.book_period,remaining));if(charge<=0)fail(400,'The annual book charge has already been allocated.');
   const j=await newJournal(tx,a,l,'Depreciation',{...p,journal_date:end},[{account_code:asset.rate_snapshot.expense_account,debit:charge,credit:0,source_status:'Confirmed',source_reference:asset.asset_id},{account_code:asset.rate_snapshot.contra_account,debit:0,credit:charge,source_status:'Confirmed',source_reference:asset.asset_id}],{kind:'Depreciation',asset,calculation:result},true);
   await tx`insert into erp_private.ledger_asset_charges(asset_id,journal_id,project_id,starts_on,ends_on,snapshot,book_charge,tax_projection) values(${asset.asset_id},${j.journal_id},${pid},${start},${end},${tx.json({asset,rate:asset.rate_snapshot,result})},${charge},${result.tax_period_projection})`;return j;
+ }
+ // Suggested ERP accounts for the lines of an opening trial balance: what other clients of the firm mapped the same source to, and what the
+ // account name means for this client's legal structure. Suggestions are never applied; the preparer still confirms each account.
+ if(p.action==='ledger_opening_suggest'){
+  const rows=(Array.isArray(p.rows)?p.rows:[]).slice(0,600).map((r:any)=>({key:String(r.key||'').slice(0,300),source_code:String(r.source_code||'').trim().slice(0,100),source_name:String(r.source_name||'').trim().slice(0,200)})).filter((r:any)=>r.key&&(r.source_code||r.source_name));
+  if(!rows.length)return {suggestions:{},entity_type:l.entity_type};
+  const accounts=await catalogue(tx),chart=await approvedChart(tx,project.client_id,day(l.starts_on));
+  const codes=[...new Set(rows.map((r:any)=>r.source_code).filter(Boolean))],names=[...new Set(rows.map((r:any)=>normaliseName(r.source_name)).filter(Boolean))];
+  const learned=await tx`select source_code,source_name,erp_account_code,clients from erp_private.firm_mapping_suggestions(${pid}::uuid,${tx.array(codes)}::text[],${tx.array(names)}::text[])`;
+  const suggestions:any={};
+  for(const r of rows){
+   const s=suggestAccount({sourceCode:r.source_code,sourceName:r.source_name,entityType:l.entity_type,accounts,chart:chart?chart.codes:null,learned});
+   if(s)suggestions[r.key]={...s,name:accounts.find((x:any)=>x.code===s.code)?.name||''};
+  }
+  return {suggestions,entity_type:l.entity_type,counted:Object.keys(suggestions).length,of:rows.length};
  }
  if(['ledger_import_preview','ledger_import_commit'].includes(p.action)){
   const requestedKind=String(p.kind||''),documentId=uuid(p.document_id);
