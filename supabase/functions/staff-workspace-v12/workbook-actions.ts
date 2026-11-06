@@ -5,6 +5,7 @@ import {suggestionsFor,groupSuggestions} from './purchase-history.ts';
 import {chartCatalogue} from './client-chart.ts';
 import {statementBank,bankRegister} from './bank-accounts.ts';
 import {applyBankRules} from './bank-lines.ts';
+import {reconcileStatement} from './bank-statement.mjs';
 import {detectImportProfile,profilePurchase} from './import-profiles.mjs';
 import {purchaseUploadProfile,purchaseUploadRows,purchaseUploadMap,purchaseUploadHeaders,purchaseUploadRates,purchaseUploadValues,purchaseDisplayValues,purchasePendingMatch,purchaseUploadId,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from './purchase-upload.mjs';
 import {pendingPurchases} from './purchase-pending.ts';
@@ -136,6 +137,19 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
   if(existing!==undefined){if(existing===fingerprint)duplicates++;else rejected.push({row:n.source_row,raw:n.raw,reason:'An existing reference has different values. Review the original entry; imports never overwrite it.'});continue;}
   known.set(n.row_key,fingerprint);accepted.push({source_row:n.source_row,row_key:n.row_key,raw_values:n.raw,normalized:n.row,route:n.route||null,category_code:n.category_code||null,narration:n.narration||null});
  }
+ // A bank statement must prove itself: opening + money in - money out = closing. A Manager or Partner can import a statement that
+ // does not, with a recorded reason; the override stays visible on the close checks.
+ let balanceProof:any={status:null,opening:null,closing:null,reason:null,by:null};
+ if(dataset==='Bank'){
+  const num=(v:any,label:string)=>{if(v===''||v==null)return null;const x=Number(v);if(!Number.isFinite(x))fail(400,`${label} must be a number.`);return Math.round(x*100)/100;};
+  const rec:any=reconcileStatement({rows:parsed.map((n:any)=>({source_row:n.source_row,credit:n.row.credit,debit:n.row.debit,balance:n.row.balance})),declaredOpening:num(p.statement_opening,'The opening balance'),declaredClosing:num(p.statement_closing,'The closing balance')});
+  if(rejected.length&&!rec.issues.length&&rec.status!=='Not checked')rec.issues.push(`${rejected.length} statement row(s) were rejected, so the totals cannot be proved. Correct them and import again.`);
+  const reason=text(p.balance_override_reason||'',500,false);
+  if(rec.issues.length){
+   if(!(reason.length>=10&&['PARTNER','MANAGER'].includes(a.category_code)))fail(400,`This statement does not balance. ${rec.issues.join(' ')} Correct the file or the balances you entered. A Manager or Partner can import it anyway by recording a reason of at least 10 characters.`);
+   balanceProof={status:'Overridden',opening:rec.opening,closing:rec.closing,reason,by:a.staff_id};
+  }else balanceProof={status:rec.status,opening:rec.opening,closing:rec.closing,reason:null,by:null};
+ }
  for(let i=0;i<accepted.length;i+=500){
   const inserted=await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized,route,category_code,narration)
    select ${batch}::uuid,${d.project_id}::uuid,${project.client_id}::uuid,${dataset},r.source_row,r.row_key,r.raw_values,r.normalized,r.route,r.category_code,r.narration
@@ -143,8 +157,8 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
    on conflict(batch_id,row_key) do nothing returning row_id`;
   added+=inserted.length;duplicates+=accepted.slice(i,i+500).length-inserted.length;
  }
- await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by,bank_account_id)
- values(${batch},${d.project_id},${d.document_id},${sheet.name},${header},${dataset},${start},${end},${tx.json(map)},${source},${added},${duplicates},${rejected.length},${a.staff_id},${bankAccountId})`;
+ await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by,bank_account_id,statement_opening,statement_closing,balance_status,balance_override_reason,balance_override_by)
+ values(${batch},${d.project_id},${d.document_id},${sheet.name},${header},${dataset},${start},${end},${tx.json(map)},${source},${added},${duplicates},${rejected.length},${a.staff_id},${bankAccountId},${balanceProof.opening},${balanceProof.closing},${balanceProof.status},${balanceProof.reason},${balanceProof.by})`;
  await tx`insert into erp_private.workbook_import_requests(project_id,signature,batch_id,document_id) values(${project.project_id},${signature},${batch},${d.document_id})`;
  // Approved narration rules map the new statement lines straight away; whatever is left goes to the Fix-It queue.
  if(dataset==='Bank'&&added)try{await applyBankRules(tx,a,{project_id:project.project_id,client_id:project.client_id,starts_on:start,ends_on:end},end);}catch(e:any){if(!e?.status)throw e;}

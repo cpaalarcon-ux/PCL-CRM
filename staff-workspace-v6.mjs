@@ -1,11 +1,11 @@
-import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261107-fixit-v1';
-import {createWithholdingUI} from './staff-withholding.mjs?v=20261107-fixit-v1';
-import {createCreditAgeingUI} from './staff-credit-ageing.mjs?v=20261107-fixit-v1';
+import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261107-summary-v1';
+import {createWithholdingUI} from './staff-withholding.mjs?v=20261107-summary-v1';
+import {createCreditAgeingUI} from './staff-credit-ageing.mjs?v=20261107-summary-v1';
 import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261105-check-v1';
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
-import {createAccountingUI} from './staff-accounting.mjs?v=20261107-fixit-v1';
+import {createAccountingUI} from './staff-accounting.mjs?v=20261107-summary-v1';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261107-fixit-v1';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261107-summary-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 export function createWorkspaceUI(ctx){
@@ -238,6 +238,7 @@ export function createWorkspaceUI(ctx){
    `<p id="sourcePreviewCount" class="full" role="status">${r.preview.length} of ${r.preview_total??r.preview.length} source rows loaded. Scroll down to see more.</p><button type="button" id="sourcePreviewMore" class="full" ${r.preview.length>=(r.preview_total??r.preview.length)?'hidden':''}>Load more source rows</button>`+
    (t||profile?`<input type="hidden" name="dataset" value="${esc(t?.dataset||profile.dataset)}">`:select('dataset','Import type',['Sales','POS','Purchases','Bank','General'],settings.default_dataset||'Purchases'))+
    (r.bank_accounts?.length?select('bank_account_id','Bank (required for bank statements)',r.bank_accounts.map(b=>[b.bank_account_id,b.bank_name+(b.account_label?' '+b.account_label:'')+(b.account_last4?' ····'+b.account_last4:'')+' · '+b.gl_code]),'','Not a bank statement'):'')+
+   `<details class="full"><summary>Bank statement balances (required to prove a bank statement)</summary><p class="muted">Type the opening and closing balance printed on the statement. The ERP checks that opening + money in − money out = closing. If the file has a running-balance column that is checked too. A statement that does not balance is refused; a Manager or Partner can import it with a recorded reason.</p>${field('statement_opening','Statement opening balance','','number','step="0.01"')}${field('statement_closing','Statement closing balance','','number','step="0.01"')}${['PARTNER','MANAGER'].includes(d().me.category_code)?field('balance_override_reason','Reason to import a statement that does not balance (Manager or Partner)',''):''}</details>`+
    (r.source_inventory?`<details class="full"><summary>Archive contents and physical row counts</summary>${r.source_inventory.map(e=>`<p>${esc(e.name)} · ${esc(e.format)} · ${e.rows??'Workbook'} rows${e.reason?' · '+esc(e.reason):''}</p>`).join('')}</details>`:'')+(!profile&&r.source_adapter?.includes('KRA CSV')?'<label class="full"><input type="checkbox" name="section_contract_confirmed" required>I have checked the selected KRA section and the column mapping below. Source rows are not proof of unique invoices.</label>':'')+field('first_row','First data row',b?.first_row||r.header_row+1,'number','required min="1"')+field('last_row','Last data row',b?.last_row||r.sheets.find(s=>s.name===r.sheet_name).rows,'number','required min="1"')+field('period_start','Return / incurred period start *',b?.period_start||settings.default_start||today().slice(0,8)+'01','date','required')+field('period_end','Return / incurred period end *',b?.period_end||settings.default_end||today(),'date','required')+
    (profile?`<p class="info full">Recognised format: ${esc(profile.name)}. Column recognition is automatic. Check the source amounts and confirm. ${profile.derived_vat?'Blank VAT is calculated from the VAT-exclusive section value and displayed separately.':''}</p>`:t?'<p class="muted full">Column mapping is fixed to the recognised template. Formula outputs are retained as source references only; they do not approve or post tax.</p>':manualColumnMapping)+
    `<p class="info full">Blank template rows, linked formulas and totals are excluded from template row counts. Exact duplicates are skipped; changed references are held for review. Uploading does not confirm KRA validation or tax eligibility.</p>`,profile?'Confirm recognised import':'Import rows for review'),async f=>{
