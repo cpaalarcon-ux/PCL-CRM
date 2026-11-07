@@ -136,7 +136,7 @@ export function createSetupGuideUI(ctx){
    if(b.dataset.setupGuideRetry){await open(id);return;}
    $('#editor').close();
    if(a==='profile')await ctx.openClientSettings(id);
-   if(a==='accounts')await ctx.openClientAccounts(id);
+   if(a==='accounts')await ctx.openClientAccounts(id,{onReturn:()=>open(id),returnLabel:'Back to setup and reporting'});
    if(a==='chart')await ctx.openClientChart(id);
    if(a==='setup-change')await ctx.openClientSettings(id);
    if(a==='stage-opening')await ctx.stageOpening(id);
