@@ -1,4 +1,4 @@
-import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261107-chartwhy-v1';
+import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261107-annualpack-v1';
 // Client working papers. All reads and mutations are authorised again by the API.
 export function createLedgerUI(ctx,{onPayrollImport}={}){
  const {$,esc,field,select,form,modal,request,notice,shortDate,projectName}=ctx,reviewerPick=list=>`<label class="full">Send to reviewer<select name="requested_reviewer_id"><option value="">Any Manager or Partner</option>${(list||[]).map(x=>`<option value="${esc(x.staff_id)}">${esc(x.full_name)} · ${esc(x.category_code==='PARTNER'?'Partner':'Manager')}</option>`).join('')}</select></label><p class="info full">Choose the Manager or Partner who knows this client or has time to review it. Leave it as "Any" and the first available one takes it. A Partner can always step in.</p>`,d=()=>ctx.data(),leader=()=>['PARTNER','MANAGER'].includes(d().me.category_code),partner=()=>d().me.category_code==='PARTNER';
