@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 import {mapAllAccounts} from './helpers/client-mappings.mjs';
+import {approveChart,postRows} from './helpers/chart-and-posting.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {improvementAction}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
 const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
@@ -23,6 +24,7 @@ test('purchase mapping suggestions come from the client\'s own supplier history'
  await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${P},${C},${F},'Fictional Mlima project','TAX-COMP',${actors.MANAGER.staff_id})`;
  for(const role of Object.keys(actors))await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors[role].staff_id},${F},${role})`;
  await mapAllAccounts(tx,as,C);
+ await approveChart(tx,{C,prepared:actors.MANAGER.staff_id,reviewed:actors.PARTNER.staff_id});
  await tx`update erp_private.clients set legal_entity_type='Limited company',entity_evidence='Fictional verified incorporation',year_end_month=12,year_end_day=31 where client_id=${C}`;
  const W=id();await tx`insert into erp_private.client_activities(activity_id,client_id,activity_code,is_primary,pack_code,activity_name,income_stream,effective_from,evidence,created_by) values(${W},${C},'wholesale',true,'Wholesale','Wholesale trade','Business','2026-01-01','Fictional evidence',${actors.MANAGER.staff_id})`;
  await tx`insert into erp_private.tasks(task_id,project_id,assigned_to,task_name) values(${T},${P},${actors.ASSISTANT.staff_id},'Fictional document task')`;
@@ -38,6 +40,8 @@ test('purchase mapping suggestions come from the client\'s own supplier history'
  const exp={route:2,category:'EXP08',code:A},exp2={route:2,category:other.category_code,code:other.code},stockMap={route:1,category:'STOCK',code:'50000'};
  // Earlier mapped history (within 12 months of today, 6 Nov 2026).
  for(const i of [1,2,3])await put('A'+i,'P000000011A','Monthly security guarding',`2026-0${i+3}-10`,exp);          // consistent 3 → automatic
+ const ctx={P,C,F,preparer:actors.MANAGER.staff_id,reviewer:actors.PARTNER.staff_id};
+ await postRows(tx,ctx,(await tx`select row_id from erp_private.workbook_rows where row_key like 'PH-A%'`).map(r=>r.row_id),{account:A});
  for(const i of [1,2])await put('B'+i,'P000000012B','Office stationery supplies',`2026-0${i+3}-10`,exp);            // consistent 2 → suggestion only
  for(const i of [1,2])await put('C'+i,'P000000013C','Mixed services',`2026-0${i+3}-10`,exp);await put('C3','P000000013C','Mixed services','2026-07-10',exp2);await put('C4','P000000013C','Mixed services','2026-08-10',exp2); // mixed → nothing
  for(const i of [1,2,3])await put('D'+i,'P000000014D','Hardware for resale',`2026-0${i+3}-10`,stockMap);          // stock → suggested, never automatic
@@ -97,9 +101,26 @@ test('purchase mapping suggestions come from the client\'s own supplier history'
   await assert.rejects(()=>call('ASSISTANT',{...filters,history_hint:{route:2,category_code:'EXP01',account_code:other.code}}),/no longer available/);
  });
 
+ await t.test('history that was never posted, or was reversed, only suggests; a dated supplier rule stops even the suggestion',async()=>{
+  const G='P000000017G',H='P000000018H',ids=async like=>(await tx`select row_id from erp_private.workbook_rows where row_key like ${like} order by row_key`).map(r=>r.row_id);
+  for(const i of [1,2,3])await put('G'+i,G,'Weekly cleaning',`2026-0${i+3}-10`,exp);   // mapped by staff, never posted
+  for(const i of [1,2,3])await put('H'+i,H,'Weekly repairs',`2026-0${i+3}-10`,exp);
+  const h=await ids('PH-H%');await postRows(tx,ctx,h.slice(0,2),{account:A,date:'2026-05-10'});await postRows(tx,ctx,h.slice(2),{account:A,date:'2026-06-10',reverse:true});
+  await put('NG',G,'Something else','2026-09-10',null);await put('NH',H,'Something else','2026-09-10',null);
+  const s=await sug(),g=s.get((await get('NG')).row_id),hh=s.get((await get('NH')).row_id);
+  assert.equal(g.account_code,A);assert.equal(g.count,3);assert.equal(g.posted,0);assert.equal(g.auto,false,'three mapped but unposted invoices only suggest');
+  assert.equal(hh.count,3);assert.equal(hh.posted,2);assert.equal(hh.auto,false,'a reversed posting does not count towards learning');
+  // The Manager records a dated supplier rule for supplier 11A and account A: invoices on or after the date are neither mapped nor suggested for it.
+  await put('NA2','P000000011A','Something else','2026-09-12',null);
+  assert.equal((await sug()).get((await get('NA2')).row_id).auto,true,'before the rule');
+  await as('MANAGER',a=>tx`insert into erp_private.supplier_mapping_blocks(client_id,party_pin,account_code,effective_from,reason,created_by) values(${C},'P000000011A',${A},'2026-09-01','Fictional: guarding is really a stock purchase',${a.staff_id})`);
+  assert.equal((await sug()).get((await get('NA2')).row_id),undefined,'after the rule');
+  const early=await put('NA3','P000000011A','Something else','2026-08-12',null);assert.equal((await sug()).get((await get('NA3')).row_id).auto,true,'an invoice dated before the rule date is unaffected');
+ });
+
  await t.test('pure helpers',()=>{
   assert.equal(descKey('Fuel 2026-09 #123 Shell'),'fuel shell');
-  const h={byPin:new Map(),byDesc:new Map([['monthly rent',[{account_code:'1',route:2,category_code:'EXP01',n:1}]]])};
+  const h={byPin:new Map(),byDesc:new Map([['monthly rent',[{account_code:'1',route:2,category_code:'EXP01',n:1,posted:0}]]])};
   assert.equal(pickFromHistory(h,{normalized:{description:'Monthly rent'}}),null,'one earlier row by description is not enough');
  });
 });
