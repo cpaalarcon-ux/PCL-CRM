@@ -1,11 +1,12 @@
-import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261107-sidebar-v1';
-import {createWithholdingUI} from './staff-withholding.mjs?v=20261107-sidebar-v1';
-import {createCreditAgeingUI} from './staff-credit-ageing.mjs?v=20261107-sidebar-v1';
+import {modeSwitch,loadMode,saveMode,normalizeMode,groupColumns,kanban,listTable} from './staff-items-view.mjs?v=20261107-views-v1';
+import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261107-views-v1';
+import {createWithholdingUI} from './staff-withholding.mjs?v=20261107-views-v1';
+import {createCreditAgeingUI} from './staff-credit-ageing.mjs?v=20261107-views-v1';
 import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261105-check-v1';
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
-import {createAccountingUI} from './staff-accounting.mjs?v=20261107-sidebar-v1';
+import {createAccountingUI} from './staff-accounting.mjs?v=20261107-views-v1';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261107-sidebar-v1';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261107-views-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 export function createWorkspaceUI(ctx){
@@ -14,7 +15,7 @@ export function createWorkspaceUI(ctx){
  const ledger=createLedgerUI(ctx,{onPayrollImport:projectId=>periodImports.newImport(projectId,{kind:'Payroll'})});
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty}=ctx;
  const d=()=>ctx.data(),editor=()=>['PARTNER','MANAGER','SUPERVISOR'].includes(d().me.category_code),leader=()=>['PARTNER','MANAGER'].includes(d().me.category_code);
- let selected='',selectedPeriod='',showSchedules=false,taskFilter='All',workSearch='',workFirm='',workShow='open',workYear='',workLimit=25,timeFilter='My time',week='',importPage=0;
+ let itemsView=loadMode(globalThis.localStorage),selected='',selectedPeriod='',showSchedules=false,taskFilter='All',workSearch='',workFirm='',workShow='open',workYear='',workLimit=25,timeFilter='My time',week='',importPage=0;
  const schedule=id=>d().schedules.find(s=>s.project_id===id);
  const candidates=firm=>d().candidates.filter(s=>s.firm_id===firm);
  const opts=(items,value,blank='Choose…')=>`<option value="">${esc(blank)}</option>`+items.map(([v,l])=>`<option value="${esc(v)}" ${v===value?'selected':''}>${esc(l)}</option>`).join('');
@@ -26,6 +27,18 @@ export function createWorkspaceUI(ctx){
  const clientFinancialPeriod=client=>{const value=today(),year=Number(value.slice(0,4)),month=Number(client?.year_end_month),day=Number(client?.year_end_day);if(!month||!day)return {start:value,end:scheduleEndFor(value)};const endFor=y=>{const last=new Date(Date.UTC(y,month,0)).getUTCDate();return `${y}-${String(month).padStart(2,'0')}-${String(Math.min(day,last)).padStart(2,'0')}`;};let end=endFor(year);if(end<value)end=endFor(year+1);const prior=endFor(Number(end.slice(0,4))-1),start=new Date(`${prior}T00:00:00Z`);start.setUTCDate(start.getUTCDate()+1);return {start:start.toISOString().slice(0,10),end};};
  const scheduleThrough=s=>{const start=String(s?.starts_on||today()).slice(0,10),end=String(s?.ends_on||'').slice(0,10);return !end||end===`${start.slice(0,4)}-12-31`?scheduleEndFor(start):end;};
  const scheduleEnded=s=>!!s?.ends_on&&String(s.ends_on).slice(0,10)<=today();
+  const projectCard=p=>{let s=schedule(p.project_id);return `<a class="project-card" href="#project=${p.project_id}" data-open-project="${p.project_id}"><b>${esc(p.project_name)}</b><small>${esc(firmName(p.handling_firm_id))} · ${esc(s?.frequency||'Schedule not set')}</small>${badge(p.status)}</a>`;};
+ function projectItems(items){
+  const mode=normalizeMode(itemsView);
+  if(mode==='list')return listTable(['Project','Firm','Schedule','Status'],items.map(p=>{const s=schedule(p.project_id);return [`<a href="#project=${p.project_id}" data-open-project="${p.project_id}"><b>${esc(p.project_name)}</b></a>`,esc(firmName(p.handling_firm_id)),esc(s?.frequency||'Schedule not set'),badge(p.status)];}));
+  if(mode==='kanban')return kanban(groupColumns(items,p=>p.status,['Draft','Active','Inactive','Archived']),projectCard,esc);
+  return `<div class="project-cards">${items.map(projectCard).join('')}</div>`;
+ }
+ function taskKanban(tasks){
+  const stageOf=t=>{const w=d().task_procedures?.find(w=>w.task_id===t.task_id);return w&&w.profile!=='Supporting task'?w.stage:t.status;};
+  const card=t=>{const due=t.due_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(t.due_at)),late=due&&due<today();return `<a class="kanban-card${late?' late':''}" href="#task=${t.task_id}" data-open-task="${t.task_id}"><b>${esc(String(t.task_name).replace(/ · \d{4}-W\d{2}.*$| · \d{4}-\d{2}-\d{2}$/,''))}</b><small>${esc(staffName(t.assigned_to)||'Unassigned')} · Due ${esc(shortDate(t.due_at))}</small>${late?'<span class="pill-late">Overdue</span>':''}</a>`;};
+  return kanban(groupColumns(tasks,stageOf,['Not started','Pending client documents','In progress','Pending supervisor review','Awaiting client approval','Ready to file','Filed - pending payment'],false),card,esc);
+ }
  function projects(){
   const list=ctx.filtered().projects;if(selected&&!list.some(p=>p.project_id===selected))selected='';
   const p=list.find(p=>p.project_id===selected),s=p&&schedule(p.project_id),carryoverCount=p?ctx.filtered().tasks.filter(t=>t.project_id===p.project_id&&!['Completed','Cancelled'].includes(t.status)).length:0,periods=(d().work_periods||[]).filter(w=>list.some(p=>p.project_id===w.project_id));
@@ -65,6 +78,7 @@ export function createWorkspaceUI(ctx){
   </div>`:'';
   return `<section class="card"><div class="section-head"><div><span class="eyebrow">ONE WORKSPACE · ALL AUTHORISED FIRMS</span><h2>Projects & tasks</h2></div>${editor()?`<div class="actions"><button data-v6="project">+ New project</button>${p?'<button data-v6="task">+ New task</button>':''}</div>`:''}</div>
    <div class="actions subnav"><button data-v6="schedule-view">${showSchedules?'Show monthly work':'Service schedules'}</button>${leader()?'<button data-v6="archive">Archived work</button>':''}</div>
+   <div class="items-bar"><span class="muted">Show items as</span>${modeSwitch(itemsView,esc)}</div>
    <div class="filters">${select('project','Engagement / project',list.map(p=>[p.project_id,p.project_name]),selected,'All open work')}${p?.tax_master?select('workPeriod','Monthly / annual work project',current.map(w=>[w.work_period_id,w.period_kind+' · '+w.starts_on.slice(0,10)]),selectedPeriod,'All open periods'):''}${p?select('taskFilter','Task view',['All','My tasks','Catch-up uploads','Weekly','Monthly','Annually','Pending client documents','Pending supervisor review','Awaiting client approval','Ready to file','Payment follow-up'],taskFilter):''}</div>
    ${p?`<div class="project-banner">
     <div class="project-head"><div><h3>${esc(p.project_name)}</h3><p class="muted">${esc(clientName(p.client_id))} · ${esc(firmName(p.handling_firm_id))} · ${badge(p.status)}${s?` · ${esc(s.frequency)} · ${shortDate(s.starts_on)}–${shortDate(s.ends_on)}`:''}</p></div>
@@ -79,8 +93,8 @@ export function createWorkspaceUI(ctx){
     </div>
     <details class="project-help"><summary>How recurring work is scheduled</summary><p class="muted">Archive a completed reporting period to close its work and keep the master project open for the next period. Pausing stops new task creation; ending recurrence stops future periods. Tax monthly projects contain calendar-week compilation tasks. Payroll starts on the 22nd of the current month; PAYE is due internally by the 6th of the next month. Other monthly work targets the 15th of the next month, subject to an earlier statutory deadline. Filed items move to Payment follow-up; closed work leaves this list.</p></details>
     <div data-project-discussion></div></div>`:
-   `${showSchedules?'':workCards}<div class="project-cards">${list.filter(p=>showSchedules||!p.tax_master||!periods.some(w=>w.project_id===p.project_id)).map(p=>{let s=schedule(p.project_id);return `<a class="project-card" href="#project=${p.project_id}" data-open-project="${p.project_id}"><b>${esc(p.project_name)}</b><small>${esc(firmName(p.handling_firm_id))} · ${esc(s?.frequency||'Schedule not set')}</small>${badge(p.status)}</a>`;}).join('')}</div>`}
-   ${p?`${p.status==='Draft'&&carryoverCount?`<p class="muted"><b>Earlier UAT carry-over:</b> ${carryoverCount} existing task(s) are kept for review; they do not activate the project or release new tasks.</p>`:''}${groupedTasks(tasks)}${tasks.length===1000?'<p class="info">Use the work period filter or project report to narrow the results.</p>':''}`:''}</section>`;
+   `${showSchedules?'':workCards}${projectItems(list.filter(p=>showSchedules||!p.tax_master||!periods.some(w=>w.project_id===p.project_id)))}`}
+   ${p?`${p.status==='Draft'&&carryoverCount?`<p class="muted"><b>Earlier UAT carry-over:</b> ${carryoverCount} existing task(s) are kept for review; they do not activate the project or release new tasks.</p>`:''}${normalizeMode(itemsView)==='kanban'?taskKanban(tasks):groupedTasks(tasks)}${tasks.length===1000?'<p class="info">Use the work period filter or project report to narrow the results.</p>':''}`:''}</section>`;
  }
  async function archive(periodId=''){
   const r=await request({action:'work_archive',work_period_id:periodId||undefined});
@@ -264,6 +278,7 @@ export function createWorkspaceUI(ctx){
   if($('#content [name=timeFilter]'))$('#content [name=timeFilter]').onchange=e=>{timeFilter=e.target.value;ctx.render();};
  }
  document.addEventListener('click',async e=>{const b=e.target.closest('[data-v6]');if(!b)return;b.disabled=true;try{const id=b.dataset.id;
+  if(b.dataset.v6==='items-view'){itemsView=normalizeMode(b.dataset.mode);saveMode(globalThis.localStorage,itemsView);ctx.render();}
   if(b.dataset.v6==='select'){selected=id;ctx.render();}
   if(b.dataset.v6==='project')editProject(id);
   if(b.dataset.v6==='schedule-pause'||b.dataset.v6==='schedule-resume'){const operation=b.dataset.v6==='schedule-pause'?'Pause':'Resume',s=schedule(id);await request({action:'schedule_state',project_id:id,operation,version:s?.version});await load();notice(operation==='Pause'?'Future recurring tasks are paused. Existing tasks and records remain available.':'Recurring tasks will resume from the next schedule date.');}
