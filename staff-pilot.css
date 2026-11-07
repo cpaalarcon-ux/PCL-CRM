@@ -316,3 +316,20 @@ body.workspace-active>footer{flex:0 0 auto;padding:7px 18px;border-top:1px solid
 .sidebar-brand .mark.mark-logo{width:40px;height:40px}
 .login-logo{display:block;width:min(340px,100%);height:auto;margin:0 0 18px;mix-blend-mode:multiply}
 .stmt table td+td,.stmt table th+th{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.stmt table td:first-child{min-width:240px}
+/* Project page: summary cards, task chips, completed view (build .94) */
+.statusline{margin:12px 0;padding:9px 12px;background:var(--green-l,#e6f2ec);border-radius:9px;color:#164b36;font-size:13px}
+.project-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:12px 0 16px}
+.project-stats .stat{background:#fff;border:1px solid #dfe6e2;border-radius:12px;padding:12px 14px}
+.project-stats .stat small{display:block;color:#6b7a72;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+.project-stats .stat strong{display:block;font-size:24px;margin-top:2px}.project-stats .stat em{font-style:normal;font-size:12px;color:#6b7a72}
+.project-stats .stat.warn{border-color:#f3c98b;background:#fffaf1}.project-stats .stat.warn strong{color:#b45f06}
+@media(max-width:800px){.project-stats{grid-template-columns:repeat(2,1fr)}}
+.project-more{margin:10px 0}.project-more>summary{cursor:pointer;font-weight:600;color:#0f5c3f;padding:6px 0}
+.task-chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0}
+.task-chips .chip{padding:5px 12px;border:1px solid #dfe6e2;border-radius:999px;background:#fff;font-size:13px;color:#33453c;cursor:pointer}
+.task-chips .chip.on{background:#0f5c3f;color:#fff;border-color:#0f5c3f}.task-chips .chip .n{opacity:.7;margin-left:5px}.task-chips .chip.sep{margin-left:14px}
+.task-chips label{margin-left:auto;min-width:160px;flex:0 0 auto}
+.completed-table{width:100%;border-collapse:collapse;table-layout:fixed}.completed-table th{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#6b7a72;text-align:left;padding:8px 12px;border-bottom:1px solid #dfe6e2}
+.completed-table td{padding:10px 12px;border-bottom:1px solid #eef2f0;overflow-wrap:anywhere}.completed-table td.t{font-weight:600}
+.completed-note{margin:8px 0 12px}.linkish{background:none;border:0;padding:0;color:#0f5c3f;text-decoration:underline;cursor:pointer;font:inherit}
+.reopen{font-size:12px;padding:4px 10px}
