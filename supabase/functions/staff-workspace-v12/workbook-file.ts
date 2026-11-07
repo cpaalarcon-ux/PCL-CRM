@@ -1,0 +1,3 @@
+import ExcelJS from 'exceljs';
+const clean=(v:any)=>typeof v==='object'&&v!==null?JSON.stringify(v):v??'';
+export async function workbook(sheets:any[]){const book=new ExcelJS.Workbook();for(const [name,headers,rows] of sheets){const sheet=book.addWorksheet(name.slice(0,31));sheet.addRow(headers);for(const r of rows)sheet.addRow(r.map(clean));sheet.eachRow((r:any)=>{r.eachCell((c:any)=>{c.font={name:'Arial',size:9};c.alignment={wrapText:true,vertical:'top'};});});sheet.columns.forEach((c:any)=>c.width=24);sheet.getRow(1).font={name:'Arial',size:9,bold:true};sheet.pageSetup={paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0};}return new Uint8Array(await book.xlsx.writeBuffer());}
