@@ -34,7 +34,7 @@ test('Open is the default view: closed tasks are hidden, and the cards count ope
  assert.deepEqual([...document.querySelectorAll('.task-row')].map(r=>r.textContent.split(' · ')[0]).sort(),['PAYE','Turnover tax','VAT']);
  assert.doesNotMatch(html,/completed-table/,'the completed table is not on the default view');
  assert.match(html,/data-filter="Completed"[^>]*>Completed<span class="n">2<\/span>/);assert.match(html,/data-filter="All"[^>]*>Open<span class="n">3<\/span>/);
- assert.match(html,/class="project-more"><summary>⋯ More actions/);
+ assert.match(html,/class="project-more" open=""><summary>Project actions/,'the action groups stay visible (a collapsed menu hid them from the browser UAT and from staff)');
 });
 test('the Completed chip lists closed tasks with prepared, reviewed and closed-by sign-offs and offers Raise correction, never a reopen',()=>{
  const m=mount('MANAGER');document.querySelector('[data-filter="Completed"]').click();
