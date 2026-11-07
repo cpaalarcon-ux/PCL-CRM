@@ -1,6 +1,6 @@
 let documentKind='Evidence';
-import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v2';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261107-annualpack-v2';
+import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261107-annualpack-v3';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261105-check-v1';
 import {createPresenceUI} from './staff-presence.mjs?v=20261103-idle-timeout-v1';
@@ -9,9 +9,9 @@ import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261106-worksp
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261107-annualpack-v2';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261107-annualpack-v3';
 import {createMessenger} from './staff-messenger.mjs?v=20261105-check-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261107-annualpack-v2';
+import {createSuiteUI} from './staff-suite.mjs?v=20261107-annualpack-v3';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261105-check-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
