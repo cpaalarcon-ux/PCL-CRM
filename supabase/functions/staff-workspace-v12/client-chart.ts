@@ -28,7 +28,7 @@ export function proposeAccounts(accounts:any[],entityType:string,packs:string[],
   &&(!x.statutory_tags?.length||x.statutory_tags.some((t:string)=>statutory[t]!=='no')));
 }
 
-// 'yes' / 'unconfirmed' / 'no' per statutory tag (VAT, PAYE), decided in the database because obligation rows are visible to leaders only.
+// 'yes' / 'unconfirmed' / 'no' per statutory tag in use (VAT, PAYE and any tag in erp_private.statutory_tag_obligations), decided in the database because obligation rows are visible to leaders only.
 // Only 'no' removes accounts from the proposal; an unconfirmed obligation keeps them.
 async function clientStatutory(tx:any,clientId:string,from:string){
  const rows=await tx`select tag,status from erp_private.client_statutory_status(${clientId}::uuid,${from}::date)`;
@@ -36,7 +36,7 @@ async function clientStatutory(tx:any,clientId:string,from:string){
 }
 
 async function clientPacks(tx:any,clientId:string,from:string){
- const rows=await tx`select distinct pack_code from erp_private.client_activities where client_id=${clientId} and (effective_to is null or effective_to>=${from}) order by pack_code`;
+ const rows=await tx`select distinct pack_code from erp_private.client_activities where client_id=${clientId} and effective_from<=${from} and (effective_to is null or effective_to>=${from}) order by pack_code`;
  return rows.map((r:any)=>r.pack_code);
 }
 
