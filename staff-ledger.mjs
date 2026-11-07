@@ -1,4 +1,4 @@
-import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261107-automap-v1';
+import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261107-chartwhy-v1';
 // Client working papers. All reads and mutations are authorised again by the API.
 export function createLedgerUI(ctx,{onPayrollImport}={}){
  const {$,esc,field,select,form,modal,request,notice,shortDate,projectName}=ctx,reviewerPick=list=>`<label class="full">Send to reviewer<select name="requested_reviewer_id"><option value="">Any Manager or Partner</option>${(list||[]).map(x=>`<option value="${esc(x.staff_id)}">${esc(x.full_name)} · ${esc(x.category_code==='PARTNER'?'Partner':'Manager')}</option>`).join('')}</select></label><p class="info full">Choose the Manager or Partner who knows this client or has time to review it. Leave it as "Any" and the first available one takes it. A Partner can always step in.</p>`,d=()=>ctx.data(),leader=()=>['PARTNER','MANAGER'].includes(d().me.category_code),partner=()=>d().me.category_code==='PARTNER';
@@ -107,7 +107,14 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
    ${select('kind','Type',['Bank current','Bank savings','Mobile money','Overdraft','Other'],x.kind||'Bank current')}${select('gl_code','Ledger account',codes,x.gl_code||'10020')}
    ${select('currency','Currency',['KES','USD','EUR','GBP'],x.currency||'KES')}${field('opened_on','Opened on',x.opened_on||'','date')}
    ${b&&['PARTNER','MANAGER'].includes(d().me.category_code)?select('status','Status',['Active','Closed'],'Active')+field('closed_on','Closed on','', 'date'):''}
+   ${b?'':'<p id="bankSuggest" class="info full" role="status" aria-live="polite"></p>'}
    ${field('note','Note',x.note||'')}`,b?'Save bank account':'Add bank account'),f=>request({...payload('ledger_bank_save'),bank_account_id:b?.bank_account_id,revision:b?.revision,...Object.fromEntries(f)}),async()=>{await refresh();});
+  if(!b){
+   // Suggest the ledger account for the type of bank (the standard one, then the next free additional account) and say what it still needs.
+   const kind=$('#editForm [name=kind]'),gl=$('#editForm [name=gl_code]'),box=$('#bankSuggest');
+   const suggest=async(propose=false)=>{try{const r=await request({...payload(propose?'ledger_bank_propose_chart':'ledger_bank_suggest'),kind:kind.value,bank_name:$('#editForm [name=bank_name]').value});if(r.code&&[...gl.options].some(o=>o.value===r.code))gl.value=r.code;box.innerHTML=esc(r.message||'')+(r.state==='needs_chart_amendment'?' <button type="button" id="bankPropose">Propose chart amendment</button>':'');const go=$('#bankPropose');if(go)go.onclick=()=>suggest(true);}catch(e){box.textContent=e.message;}};
+   kind.onchange=()=>suggest();suggest();
+  }
  }
 
  async function ensureFixit(force=false){if(fixitLoading)return;if(!force&&fixit&&fixit.period_id===r.period.period_id)return;fixitLoading=true;try{fixit={...await request({...payload('ledger_bank_fixit_read'),as_of:r.as_of}),period_id:r.period.period_id};}catch(e){fixit={error:e.message||'The Fix-It queue could not be loaded.',period_id:r.period.period_id};}finally{fixitLoading=false;}if(tab==='Banks')paint();}

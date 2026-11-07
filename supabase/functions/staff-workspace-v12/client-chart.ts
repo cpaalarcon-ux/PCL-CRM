@@ -28,6 +28,30 @@ export function proposeAccounts(accounts:any[],entityType:string,packs:string[],
   &&(!x.statutory_tags?.length||x.statutory_tags.some((t:string)=>statutory[t]!=='no')));
 }
 
+// Why an account is in a proposed chart: the entity layer, an industry activity, a tax obligation, or the core every client gets.
+export function accountWhy(x:any,entityType:string,packs:string[],statutory:Record<string,string>={}):string[]{
+ const why:string[]=[];
+ if(x.entity_types?.length&&x.entity_types.includes(entityType))why.push(`For ${entityType} clients`);
+ const hit=(x.industry_packs||[]).filter((p:string)=>packs.includes(p));
+ if(hit.length)why.push(`Needed by the ${hit.join(' / ')} ${hit.length>1?'activities':'activity'}`);
+ for(const t of x.statutory_tags||[]){const st=statutory[t];if(st==='no')continue;why.push(st==='yes'?`${t} obligation applies to this client`:`${t} obligation is not confirmed yet, so the account is kept`);}
+ if(!why.length)why.push('Core account used by every client');
+ return why;
+}
+
+// What changed since a chart was approved: accounts the current rules would add, accounts no longer active, accounts the rules no longer
+// propose (not counting extras someone added on purpose), a changed legal entity type, and activities that began or ended.
+export function chartDrift(o:{approved:{codes:Set<string>,entity_type:string,packs:string[],extras:string[]},proposed:any[],catalog:any[],entityType:string,packs:string[]}){
+ const proposedCodes=new Set(o.proposed.map((x:any)=>x.code)),byCode=new Map(o.catalog.map((x:any)=>[x.code,x]));
+ const added=o.proposed.filter((x:any)=>!o.approved.codes.has(x.code)).map((x:any)=>({code:x.code,name:x.name,why:x.why||[]}));
+ const retired=[...o.approved.codes].filter((c:string)=>{const x:any=byCode.get(c);return !x||x.status!=='Active'||x.is_legacy;}).map((c:string)=>({code:c,name:(byCode.get(c) as any)?.name||'Unknown account',why:['The account is no longer active in the master chart']}));
+ const gone=new Set(retired.map((r:any)=>r.code));
+ const dropped=[...o.approved.codes].filter((c:string)=>!gone.has(c)&&!proposedCodes.has(c)&&!o.approved.extras.includes(c)).map((c:string)=>({code:c,name:(byCode.get(c) as any)?.name||'Unknown account',why:['The current rules no longer propose it: the legal entity type, an activity or the tax profile has changed']}));
+ const entity_changed=o.approved.entity_type&&o.approved.entity_type!==o.entityType?{from:o.approved.entity_type,to:o.entityType}:null;
+ const packs_added=o.packs.filter((x:string)=>!o.approved.packs.includes(x)),packs_ended=o.approved.packs.filter((x:string)=>!o.packs.includes(x));
+ return {added,retired,dropped,entity_changed,packs_added,packs_ended,total:added.length+retired.length+dropped.length+(entity_changed?1:0)+packs_added.length+packs_ended.length};
+}
+
 // 'yes' / 'unconfirmed' / 'no' per statutory tag in use (VAT, PAYE and any tag in erp_private.statutory_tag_obligations), decided in the database because obligation rows are visible to leaders only.
 // Only 'no' removes accounts from the proposal; an unconfirmed obligation keeps them.
 async function clientStatutory(tx:any,clientId:string,from:string){
@@ -91,7 +115,7 @@ async function proposal(tx:any,clientId:string,from:string){
  const codes=new Set(proposed.map((x:any)=>x.code)),used=await usedAccounts(tx,clientId,from);
  const exceptions=[...used.entries()].filter(([code])=>!codes.has(code)).map(([code,sources])=>{const x=catalog.find((y:any)=>y.code===code);return {code,name:x?.name||'Unknown account',sources,reason:x?(x.entity_types?.length&&!x.entity_types.includes(c.legal_entity_type)?`For ${x.entity_types.join(', ')} only`:x.statutory_tags?.length&&x.statutory_tags.every((t:string)=>statutory[t]==='no')?`Needs the client's ${x.statutory_tags.join(' / ')} obligation, which is not on its verified tax profile`:x.industry_packs?.length?`Industry pack ${x.industry_packs.join(', ')} not among the client's activities`:x.status!=='Active'?'Account is not active':'Outside the proposal'):'Not in the master chart'};});
  const draftsForPacks=catalog.filter((x:any)=>x.status==='Draft'&&x.industry_packs?.some((p:string)=>packs.includes(p))).map((x:any)=>({code:x.code,name:x.name}));
- return {client:c,packs,statutory,accounts:proposed.map((x:any)=>({code:x.code,name:x.name,account_group:x.account_group,layer:chartLayer(x),entity_types:x.entity_types,industry_packs:x.industry_packs,statutory_tags:x.statutory_tags||[]})),exceptions,awaiting_partner_approval:draftsForPacks,catalog};
+ return {client:c,packs,statutory,accounts:proposed.map((x:any)=>({code:x.code,name:x.name,account_group:x.account_group,layer:chartLayer(x),entity_types:x.entity_types,industry_packs:x.industry_packs,statutory_tags:x.statutory_tags||[],why:accountWhy(x,c.legal_entity_type||'',packs,statutory)})),exceptions,awaiting_partner_approval:draftsForPacks,catalog};
 }
 
 export async function clientChartAction(tx:any,a:any,p:any){
@@ -104,10 +128,11 @@ export async function clientChartAction(tx:any,a:any,p:any){
   const current=versions.find((v:any)=>v.status==='Approved');
   const stale=current?prop.packs.filter((x:string)=>!(current.packs||[]).includes(x)):[];
   const currentCodes=current?new Set<string>((await tx`select accounts from erp_private.client_chart_versions where version_id=${current.version_id}`)[0]?.accounts||[]):new Set<string>();
+  const drift=current?chartDrift({approved:{codes:currentCodes,entity_type:current.entity_type,packs:current.packs||[],extras:(Array.isArray(current.extra_accounts)?current.extra_accounts:[]).map((x:any)=>x.code)},proposed:prop.accounts,catalog,entityType:prop.client.legal_entity_type||'',packs:prop.packs}):null;
   const staleStatutory=current?prop.accounts.filter((x:any)=>x.statutory_tags?.length&&!currentCodes.has(x.code)).map((x:any)=>({code:x.code,name:x.name,tags:x.statutory_tags})):[];
   return {...prop,reviewers:await reviewCandidates(tx,cid),effective_from:from,versions,draft:versions.find((v:any)=>v.status==='Draft')||null,current:current||null,
-   status:current?(stale.length||staleStatutory.length?'Out of date':'Approved'):versions.some((v:any)=>v.status==='Draft')?'Pending review':'Not approved',
-   stale_packs:stale,stale_statutory:staleStatutory,extra_choices:catalog.filter((x:any)=>x.status==='Active'&&!x.is_legacy&&!prop.accounts.some((y:any)=>y.code===x.code)).map((x:any)=>({code:x.code,name:x.name}))};
+   status:current?(stale.length||staleStatutory.length||drift?.total?'Out of date':'Approved'):versions.some((v:any)=>v.status==='Draft')?'Pending review':'Not approved',
+   stale_packs:stale,stale_statutory:staleStatutory,drift,extra_choices:catalog.filter((x:any)=>x.status==='Active'&&!x.is_legacy&&!prop.accounts.some((y:any)=>y.code===x.code)).map((x:any)=>({code:x.code,name:x.name}))};
  }
  if(p.action==='v3_client_chart_propose'){
   preparer(a);const cid=uuid(p.client_id),from=date(p.effective_from);if(!from)fail(400,'Choose the date the client chart applies from.');
