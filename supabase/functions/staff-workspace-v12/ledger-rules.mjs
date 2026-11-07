@@ -34,22 +34,34 @@ export function normaliseLines(input,accounts,{allowUnmapped=false,opening=false
   return {line_no:i+1,account_code:code||null,legacy_code:String(r.legacy_code||'').slice(0,80),source_name:String(r.source_name||account?.name||'').slice(0,200),description:String(r.description||'').slice(0,1000),debit:debit/100,credit:credit/100,source_status:r.source_status==='Confirmed'?'Confirmed':'Unverified',source_reference:String(r.source_reference||'').slice(0,1000),activity_id:/^[0-9a-f-]{36}$/i.test(String(r.activity_id||''))?String(r.activity_id):null};
  });
 }
-export function journalIssues(lines,accounts,{kind='Adjustment',entityType='',sourceSnapshot={}}={}){
- const issues=[],sum=lines.reduce((x,r)=>x+cashAmount(r.debit)-cashAmount(r.credit),0);
- if(!lines.length||!lines.some(l=>Number(l.debit)||Number(l.credit)))issues.push('Enter journal amounts.');
- if(sum!==0)issues.push(`Debits and credits differ by KES ${(sum/100).toFixed(2)}. The trial balance must balance: correct the entry. No suspense or balancing entry is created or allowed.`);
+// Structured exceptions for a journal: the same rules journalIssues has always applied, but each failure says which line and why, so a preparer can fix
+// only the broken rows. scope is 'journal' (affects the whole entry) or 'line'. source_row is the Excel row the line came from, when it has one.
+export function journalExceptions(lines,accounts,{kind='Adjustment',entityType='',sourceSnapshot={}}={}){
+ const out=[],sum=lines.reduce((x,r)=>x+cashAmount(r.debit)-cashAmount(r.credit),0);
+ const add=(scope,e)=>out.push({scope,line_no:null,source_row:null,account_code:null,source_name:'',...e});
+ if(!lines.length||!lines.some(l=>Number(l.debit)||Number(l.credit)))add('journal',{kind:'NO_AMOUNTS',message:'Enter journal amounts.'});
+ if(sum!==0)add('journal',{kind:'OUT_OF_BALANCE',difference:sum/100,message:`Debits and credits differ by KES ${(sum/100).toFixed(2)}. The trial balance must balance: correct the entry. No suspense or balancing entry is created or allowed.`});
  if(kind==='Opening')for(const control of sourceSnapshot?.source_controls||[]){
-  if(control.type==='difference_in_books'&&Math.abs(Number(control.difference_kes||0))>0.01)issues.push(`The source trial balance reports a non-zero “Difference in Books” of KES ${Number(control.difference_kes).toFixed(2)}. Reconcile the prior-year closing balance before submitting this opening entry.`);
+  if(control.type==='difference_in_books'&&Math.abs(Number(control.difference_kes||0))>0.01)add('journal',{kind:'DIFFERENCE_IN_BOOKS',source_row:control.source_row||null,difference:Number(control.difference_kes),message:`The source trial balance reports a non-zero “Difference in Books” of KES ${Number(control.difference_kes).toFixed(2)}. Reconcile the prior-year closing balance before submitting this opening entry.`});
  }
  for(const r of lines){if(!Number(r.debit)&&!Number(r.credit))continue;const c=accounts.find(a=>a.code===r.account_code);
-  if(String(r.account_code)==='37000')issues.push(`Line ${r.line_no}: there is no suspense account. Post to the correct account; the trial balance must balance.`);
-  else if(!c||c.status!=='Active'||c.is_legacy)issues.push(`Line ${r.line_no}: map to an active detailed account.`);
-  else if(c.in_client_chart===false)issues.push(`Line ${r.line_no}: ERP account ${r.account_code} is not in this client's approved chart of accounts.`);
+  const sourceRow=Number((String(r.source_reference||'').match(/\|\s*row\s+(\d+)\s*$/i)||String(r.description||'').match(/Excel row (\d+)/)||[])[1])||null;
+  const line=(k,message)=>add('line',{kind:k,line_no:r.line_no,source_row:sourceRow,account_code:r.account_code||null,source_name:r.source_name||'',message});
+  if(String(r.account_code)==='37000')line('SUSPENSE',`Line ${r.line_no}: there is no suspense account. Post to the correct account; the trial balance must balance.`);
+  else if(!c||c.status!=='Active'||c.is_legacy)line(r.account_code?'ACCOUNT_NOT_ACTIVE':'UNMAPPED',`Line ${r.line_no}: map to an active detailed account.`);
+  else if(c.in_client_chart===false)line('NOT_IN_CHART',`Line ${r.line_no}: ERP account ${r.account_code} is not in this client's approved chart of accounts.`);
   const n=Number(r.account_code);
-  if(n>=30000&&n<=36020&&((entityType==='Limited company'&&n>=35000)||(entityType==='Sole proprietor'&&!(n>=35000&&n<=35010))||(entityType==='Non-profit organisation'&&(n<=31000||n>=35000))||(entityType==='Partnership'&&!(n>=36000&&n<=36020))||(entityType==='Foreign branch'&&(n<=31000||n>=35000))))issues.push(`Line ${r.line_no}: equity account does not match the entity type.`);
-  if(kind==='Opening'&&(r.source_status!=='Confirmed'||String(r.source_reference||'').trim().length<3))issues.push(`Line ${r.line_no}: confirm the opening source and evidence reference.`);
+  if(n>=30000&&n<=36020&&((entityType==='Limited company'&&n>=35000)||(entityType==='Sole proprietor'&&!(n>=35000&&n<=35010))||(entityType==='Non-profit organisation'&&(n<=31000||n>=35000))||(entityType==='Partnership'&&!(n>=36000&&n<=36020))||(entityType==='Foreign branch'&&(n<=31000||n>=35000))))line('EQUITY_ENTITY_MISMATCH',`Line ${r.line_no}: equity account does not match the entity type.`);
+  if(kind==='Opening'&&(r.source_status!=='Confirmed'||String(r.source_reference||'').trim().length<3))line('SOURCE_UNCONFIRMED',`Line ${r.line_no}: confirm the opening source and evidence reference.`);
  }
- return [...new Set(issues)];
+ return out;
+}
+export function journalIssues(lines,accounts,options={}){return [...new Set(journalExceptions(lines,accounts,options).map(e=>e.message))];}
+// What the preparer sees: how many rows pass, which fail and why, the totals, and whether the entry may be sent for review (only with no exceptions).
+export function journalCheckSummary(lines,exceptions){
+ const used=lines.filter(l=>Number(l.debit)||Number(l.credit)),failing=new Set(exceptions.filter(e=>e.scope==='line').map(e=>e.line_no));
+ const debit=used.reduce((n,l)=>n+cashAmount(l.debit),0),credit=used.reduce((n,l)=>n+cashAmount(l.credit),0);
+ return {rows_total:used.length,rows_failing:failing.size,rows_passing:used.length-failing.size,journal_exceptions:exceptions.filter(e=>e.scope==='journal').length,debit:debit/100,credit:credit/100,difference:(debit-credit)/100,ready:exceptions.length===0&&used.length>0};
 }
 
 export function costJournal(row){

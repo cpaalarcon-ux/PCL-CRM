@@ -38,3 +38,27 @@ test('a nonzero prior-year Difference in Books control blocks opening submission
  assert.ok(journalIssues(lines,accounts,{kind:'Opening',entityType:'Limited company',sourceSnapshot:{source_controls:[{type:'difference_in_books',difference_kes:1000.01}]}}).some(s=>s.includes('Difference in Books')));
  assert.deepEqual(journalIssues(lines,accounts,{kind:'Opening',entityType:'Limited company',sourceSnapshot:{source_controls:[{type:'difference_in_books',difference_kes:0}]}}),[]);
 });
+
+import {journalExceptions,journalCheckSummary,journalIssues as issuesOf} from '../supabase/functions/staff-workspace-v12/ledger-rules.mjs';
+test('journal exceptions name the failing line, its Excel row and the reason; the summary counts rows; the plain issue list is the same set of messages',()=>{
+ const accounts=[{code:'10000',name:'Cash',status:'Active',is_legacy:false,in_client_chart:true},{code:'50100',name:'Not in chart',status:'Active',is_legacy:false,in_client_chart:false},{code:'30000',name:'Share capital',status:'Active',is_legacy:false,in_client_chart:true}];
+ const line=(n,code,d,c,ref='Opening.xlsx | TB | row '+(n+1),st='Confirmed')=>({line_no:n,account_code:code,debit:d,credit:c,source_name:'Source '+n,source_reference:ref,source_status:st});
+ const lines=[line(1,'10000',1000,0),line(2,'50100',0,600),line(3,'',0,300),line(4,'37000',0,50),line(5,'30000',0,50,'x','Unverified'),line(6,'10000',0,0)];
+ const ex=journalExceptions(lines,accounts,{kind:'Opening',entityType:'Limited company',sourceSnapshot:{source_controls:[{type:'difference_in_books',source_row:20,difference_kes:25}]}});
+ const by=k=>ex.filter(e=>e.kind===k);
+ assert.deepEqual(by('NOT_IN_CHART').map(e=>[e.line_no,e.source_row,e.account_code]),[[2,3,'50100']]);
+ assert.deepEqual(by('UNMAPPED').map(e=>[e.line_no,e.source_row]),[[3,4]]);assert.deepEqual(by('SUSPENSE').map(e=>e.line_no),[4]);
+ assert.deepEqual(by('SOURCE_UNCONFIRMED').map(e=>e.line_no),[5]);
+ assert.equal(by('OUT_OF_BALANCE').length,0,'the lines balance: 1000 against 600+300+50+50');
+ assert.deepEqual(by('DIFFERENCE_IN_BOOKS').map(e=>[e.scope,e.source_row,e.difference]),[['journal',20,25]]);
+ assert.ok(ex.filter(e=>e.scope==='line').every(e=>e.line_no&&e.message.startsWith('Line '+e.line_no)),'every line exception names its line');
+ assert.ok(!ex.some(e=>e.line_no===6),'a zero row is not an exception');
+ const s=journalCheckSummary(lines,ex);
+ assert.deepEqual([s.rows_total,s.rows_failing,s.rows_passing,s.journal_exceptions,s.debit,s.credit,s.difference,s.ready],[5,4,1,1,1000,1000,0,false]);
+ assert.deepEqual(issuesOf(lines,accounts,{kind:'Opening',entityType:'Limited company',sourceSnapshot:{source_controls:[{type:'difference_in_books',difference_kes:25}]}}),[...new Set(ex.map(e=>e.message))]);
+ const clean=[line(1,'10000',500,0),line(2,'30000',0,500)];
+ assert.deepEqual(journalExceptions(clean,accounts,{kind:'Opening',entityType:'Limited company'}),[]);assert.equal(journalCheckSummary(clean,[]).ready,true);
+ const off=journalExceptions([line(1,'10000',500,0),line(2,'30000',0,400)],accounts,{kind:'Opening',entityType:'Limited company'});
+ assert.deepEqual(off.map(e=>[e.kind,e.scope,e.difference]),[['OUT_OF_BALANCE','journal',100]]);
+ assert.equal(journalCheckSummary([],[]).ready,false,'an empty entry is never ready');
+});

@@ -40,6 +40,21 @@ test('Client ledger: source integrity, maker/checker, entity profit and shared P
  await ledger('MANAGER',{...base,action:'ledger_journal_review',journal_id:opening.journal_id,revision:j.journal.revision,status:'Posted',review_note:'Independently verified bank and share capital.'});
  await assert.rejects(()=>as('ASSISTANT',()=>tx`update erp_private.ledger_lines set debit=2 where journal_id=${opening.journal_id} and debit>0`),/draft/);
  const bad=await ledger('ASSISTANT',{...base,action:'ledger_journal_save',kind:'Adjustment',reference:'UNBALANCED',journal_date:'2026-09-30',evidence:'Fictional deliberately incomplete journal',lines:[entry('61180',1000,0),entry('20000',0,900)]});await assert.rejects(()=>submit(bad.journal_id),/No suspense/);
+ // Row-level exceptions and the single-line fix: the broken entry says exactly what is wrong, a correction needs a reason and records who changed what,
+ // the entry is checked again, and an entry with an open exception cannot be sent for review.
+ let bx=await jr(bad.journal_id);
+ assert.ok(bx.exceptions.some(e=>e.scope==='journal'&&e.kind==='OUT_OF_BALANCE'&&e.difference===100),'the imbalance is reported with its amount');
+ assert.equal(bx.exception_summary.ready,false);assert.equal(bx.exception_summary.rows_total,2);assert.equal(bx.exception_summary.difference,100);
+ const fixBase={...base,action:'ledger_journal_line_fix',journal_id:bad.journal_id,line_no:2};
+ await assert.rejects(()=>ledger('ASSISTANT',{...fixBase,revision:bx.journal.revision,credit:1000,reason:'short'}),/reason of at least 10/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...fixBase,revision:bx.journal.revision,account_code:'99999',reason:'Fictional account that does not exist'}),/active detailed account|not available|Record unavailable/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...fixBase,revision:bx.journal.revision,credit:900,reason:'Fictional unchanged amount here'}),/Nothing was changed/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...fixBase,revision:bx.journal.revision,debit:5,credit:1000,reason:'Fictional both sides filled in'}),/either a debit or a credit/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...fixBase,revision:String(Number(bx.journal.revision)+5),credit:1000,reason:'Fictional stale revision attempt'}),/changed/);
+ const fixed=await ledger('ASSISTANT',{...fixBase,revision:bx.journal.revision,credit:1000,reason:'Fictional credit corrected to the evidenced amount'});
+ assert.equal(fixed.exception_summary.ready,true);assert.deepEqual(fixed.exceptions,[]);assert.equal(fixed.corrections.length,1);
+ assert.deepEqual([fixed.corrections[0].before.credit,fixed.corrections[0].after.credit,fixed.corrections[0].by],[900,1000,actors.ASSISTANT.staff_id]);
+ await assert.rejects(()=>ledger('SUPERVISOR',{...fixBase,revision:fixed.revision,credit:900,reason:'Fictional edit by someone not the preparer'}),/open draft|not available|Record unavailable|permission|right/i);
  const a=await ledger('ASSISTANT',{...base,action:'ledger_journal_save',kind:'Adjustment',journal_id:bad.journal_id,revision:(await jr(bad.journal_id)).journal.revision,reference:'EXPENSE',journal_date:'2026-09-30',evidence:'Fictional statutory licence and receipt',lines:[entry('61180',1000,0),entry('20000',0,1000)]});await post(a.journal_id);
  const payroll=await ledger('ASSISTANT',{...base,action:'ledger_payroll_create',reference:'PAY-SEP',journal_date:'2026-09-30',gross_pay:99000,paye:10000,employer_nssf:3000,evidence:'Fictional draft payroll schedule'});
  let px=await jr(payroll.journal_id);await ledger('ASSISTANT',{...base,action:'ledger_journal_metadata',journal_id:payroll.journal_id,revision:px.journal.revision,reference:'PAY-SEP',journal_date:'2026-09-30',evidence:'Fictional authorised payroll schedule, corrected source'});

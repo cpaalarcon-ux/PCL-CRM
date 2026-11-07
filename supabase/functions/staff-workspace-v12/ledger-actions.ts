@@ -10,7 +10,7 @@ import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,noti
 import {readWorkbookSheet} from './workbook-reader.mjs';
 import {checkWorkbookZip} from './workspace-rules.mjs';
 import {loadCrosswalk,revenueAccount} from './sales-crosswalk.ts';
-import {cashAmount,day,normaliseLines,journalIssues,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal,profitByActivity,isoWeek,DATA_CUTOFF} from './ledger-rules.mjs';
+import {cashAmount,day,normaliseLines,journalIssues,journalExceptions,journalCheckSummary,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal,profitByActivity,isoWeek,DATA_CUTOFF} from './ledger-rules.mjs';
 import {debtorsRead,receiptAction} from './debtors.ts';
 import {payablesReport,supplierAction} from './payables.ts';
 import {bankRegister,bankAccountAction} from './bank-accounts.ts';
@@ -90,6 +90,11 @@ async function confirmJournalSources(tx:any,a:any,project:any,j:any,l:any,note:a
 }
 async function period(tx:any,id:string,pid:string){return one(await tx`select * from erp_private.ledger_periods where period_id=${id} and project_id=${pid} for update`);}
 async function lines(tx:any,id:string){return await tx`select * from erp_private.ledger_lines where journal_id=${id} order by line_no`;}
+// Row-level exceptions and the pass/fail summary for a journal. The entry can only be sent for review when there are none.
+function journalChecks(items:any[],chartAccounts:any[],j:any,l:any){
+ const exceptions=journalExceptions(items,chartAccounts,{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});
+ return {exceptions,exception_summary:journalCheckSummary(items,exceptions),corrections:Array.isArray(j.source_snapshot?.corrections)?j.source_snapshot.corrections:[]};
+}
 // Income and expense lines carry the business activity they belong to. When exactly one activity
 // covers the journal date, untagged income and expense lines take it automatically.
 async function activityDefaults(tx:any,j:any,items:any[]){
@@ -326,7 +331,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id}`),items=await lines(tx,j.journal_id);
   const chartAccounts=await chartCatalogue(tx,await catalogue(tx),l.client_id,day(j.journal_date||l.starts_on));
   const needsCheck=(await tx`select erp_private.is_junior_preparer(${j.prepared_by}) a,erp_private.is_junior_preparer(${j.last_prepared_by}) b`)[0],checker=j.checked_by?(await tx`select erp_private.reviewer_label(${j.checked_by}) n`)[0]?.n:null;
-  return {journal:j,check:{needed:!!(needsCheck.a||needsCheck.b),checked_by:j.checked_by,checked_by_name:checker,checked_at:j.checked_at,check_note:j.check_note},lines:items,accounts:chartAccounts,issues:journalIssues(items,chartAccounts,{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot})};
+  return {journal:j,check:{needed:!!(needsCheck.a||needsCheck.b),checked_by:j.checked_by,checked_by_name:checker,checked_at:j.checked_at,check_note:j.check_note},lines:items,accounts:chartAccounts,issues:journalIssues(items,chartAccounts,{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot}),...journalChecks(items,chartAccounts,j,l)};
  }
  if(p.action==='ledger_asset_read'){const asset=one(await tx`select * from erp_private.ledger_assets where asset_id=${uuid(p.asset_id)} and period_id=${l.period_id}`);return {asset,rate:asset.rate_snapshot,calculation:assetCalculation(asset,asset.rate_snapshot,l.starts_on,l.ends_on)};}
  if(l.status!=='Open')fail(400,'This client year is closed. Its posted snapshot remains available.');
@@ -435,6 +440,37 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(p.action==='ledger_journal_metadata'){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);const at=date(p.journal_date);if(j.kind==='Depreciation'&&at!==day(j.journal_date))fail(400,'The depreciation date follows its reserved calculation period.');
   await tx`update erp_private.ledger_journals set reference=${text(p.reference,100)},journal_date=${at},description=${text(p.description||'',2000,false)},evidence=${text(p.evidence,5000)},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};
+ }
+ // Fix one flagged line without touching the uploaded workbook. The original source rows stay exactly as uploaded; the change, the reason and the person
+ // are recorded on the entry, the entry goes back to Draft, and the whole entry is checked again so nothing is sent for review with an open exception.
+ if(p.action==='ledger_journal_line_fix'){
+  const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);
+  if(j.generated)fail(400,'A generated journal is corrected by refreshing its sources, not by editing a line.');
+  if(j.kind==='Reversal')fail(400,'A reversal mirrors its original and cannot be edited line by line.');
+  const reason=text(p.reason,1000);if(reason.length<10)fail(400,'Give a reason of at least 10 characters for the correction.');
+  const lineNo=Math.trunc(Number(p.line_no));if(!Number.isInteger(lineNo)||lineNo<1)fail(400,'Choose the line to correct.');
+  const row=one(await tx`select * from erp_private.ledger_lines where journal_id=${j.journal_id} and line_no=${lineNo} for update`);
+  const code=p.account_code==null||String(p.account_code).trim()===''?(row.account_code||''):String(p.account_code).trim();
+  const debit=p.debit==null||p.debit===''?Number(row.debit):amount(p.debit,'debit'),credit=p.credit==null||p.credit===''?Number(row.credit):amount(p.credit,'credit');
+  if(debit<0||credit<0||(debit&&credit))fail(400,'Enter either a debit or a credit on the line. Not both, and not a negative amount.');
+  if(code){
+   const acct=(await catalogue(tx)).find((x:any)=>x.code===code);
+   if(!acct||acct.status!=='Active'||acct.is_legacy)fail(400,`ERP account ${code} is not an active detailed account.`);
+   await requireChartAccount(tx,l.client_id,code,day(j.journal_date||l.starts_on));
+  }
+  const before={account_code:row.account_code||null,debit:Number(row.debit),credit:Number(row.credit)},after={account_code:code||null,debit,credit};
+  if(before.account_code===after.account_code&&before.debit===after.debit&&before.credit===after.credit)fail(400,'Nothing was changed on this line.');
+  await tx`update erp_private.ledger_lines set account_code=${code||null},debit=${debit},credit=${credit} where journal_id=${j.journal_id} and line_no=${lineNo}`;
+  // A pending client mapping created by this preparer for the same source row follows the corrected account; reviewed mappings are never changed here.
+  if(j.kind==='Opening'&&code&&before.account_code!==code){
+   const srcRow=Number(String(row.source_reference||'').match(/\|\s*row\s+(\d+)\s*$/i)?.[1]),map=(j.source_snapshot?.source_rows||[]).find((x:any)=>Number(x.source_row)===srcRow)?.client_mapping_id;
+   if(map)await tx`update erp_private.client_account_mappings set erp_account_code=${code} where mapping_id=${map} and status='Draft' and created_by=${a.staff_id}`;
+  }
+  const entry={line_no:lineNo,source_row:Number(String(row.source_reference||'').match(/\|\s*row\s+(\d+)\s*$/i)?.[1])||null,before,after,reason,by:a.staff_id,at:new Date().toISOString()};
+  const snapshot={...(j.source_snapshot||{}),corrections:[...(Array.isArray(j.source_snapshot?.corrections)?j.source_snapshot.corrections:[]),entry].slice(-500)};
+  await tx`update erp_private.ledger_journals set source_snapshot=${tx.json(snapshot)},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;
+  const fresh=one(await tx`select * from erp_private.ledger_journals where journal_id=${j.journal_id}`),chartAccounts=await chartCatalogue(tx,await catalogue(tx),l.client_id,day(fresh.journal_date||l.starts_on));
+  return {ok:true,journal_id:j.journal_id,revision:fresh.revision,...journalChecks(await lines(tx,j.journal_id),chartAccounts,fresh,l)};
  }
  if(p.action==='ledger_journal_refresh'){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);
