@@ -92,7 +92,7 @@
     if (retryButton) retryButton.hidden = true;
     notice('Opening your secure workspace…');
     try {
-      await import('./staff-pilot.mjs?v=20261107-views-v2');
+      await import('./staff-pilot.mjs?v=20261107-automap-v1');
     } catch {
       workspaceLoading = false;
       if (readSavedSession()) {
