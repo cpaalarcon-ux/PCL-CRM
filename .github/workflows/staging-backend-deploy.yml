@@ -59,9 +59,13 @@ jobs:
         run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
 
       - name: Check pending migrations (dry run)
+        shell: bash
         run: |
-          supabase migration list --password "$SUPABASE_DB_PASSWORD" | tee migration-list.txt
-          supabase db push --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee dry-run.txt
+          set -euo pipefail
+          # Always query the linked staging database. A failed CLI command must stop here,
+          # not be hidden by tee and reported as "Pending: none".
+          supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" | tee migration-list.txt
+          supabase db push --linked --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee dry-run.txt
           pending=$(grep -oE '[0-9]{14}_[A-Za-z0-9_]+\.sql' dry-run.txt | sort -u || true)
           echo "Pending: ${pending:-none}"
           for f in $pending; do
@@ -72,7 +76,10 @@ jobs:
           done
 
       - name: Apply pending migrations
-        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
 
       - name: Deploy staff-workspace-v12
         # Gateway JWT verification stays off: login/setup routes are called before a session exists,
