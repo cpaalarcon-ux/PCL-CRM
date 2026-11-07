@@ -97,7 +97,7 @@ test('Invoices: period, duplicate warning, continuous numbering, balance brought
  assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='INVOICE_PDF'`)[0].n,2);
  assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='FIRM_LOGO_SET'`)[0].n,1);
  assert.equal((await as('PARTNER',()=>suiteRead(tx))).firms?.find?.(f=>f.firm_id===F)?.has_logo??true,true);
- await assert.rejects(()=>act('PARTNER',{action:'invoice_pdf',invoice_id:inv.invoice_id.replace(/./,'0')}),/./);
+ await assert.rejects(()=>act('PARTNER',{action:'invoice_pdf',invoice_id:inv.invoice_id.replace(/./,c=>c==='0'?'1':'0')}),/./);
  await act('PARTNER',{action:'invoice_void',invoice_id:other,reason:'Entered in error for test',revision:1});
  await assert.rejects(()=>act('PARTNER',{action:'invoice_pdf',invoice_id:other}),/void/i);
 
