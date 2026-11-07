@@ -285,7 +285,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(p.action==='ledger_debtors_read')return await debtorsRead(tx,l,p.as_of?date(p.as_of):day(l.ends_on));
  if(p.action==='ledger_payables_read')return await payablesReport(tx,l,p.as_of?date(p.as_of):day(l.ends_on));
  if(p.action==='ledger_supplier_save'||p.action==='ledger_supplier_build')return await supplierAction(tx,a,l,p);
- if(p.action==='ledger_bank_save')return await bankAccountAction(tx,a,l,p);
+ if(['ledger_bank_save','ledger_bank_suggest','ledger_bank_propose_chart'].includes(p.action))return await bankAccountAction(tx,a,l,p);
  if(['ledger_bank_fixit_read','ledger_bank_lines_map','ledger_bank_apply_rules','ledger_bank_rule_save','ledger_bank_rule_review','ledger_bank_summary_read','ledger_bank_category_save','ledger_bank_category_retire'].includes(p.action))return await bankLineAction(tx,a,l,p);
  if(p.action==='ledger_receipt_allocate'||p.action==='ledger_receipt_reverse')return await receiptAction(tx,a,l,p);
  if(p.action==='ledger_report_submit'){

@@ -10,6 +10,15 @@ import {statementContinuity} from './bank-statement.mjs';
 export const STATEMENT_ACCOUNTS=['10020','10030','10040','20080'];
 // Ledger accounts that can carry a registered bank, savings or mobile-money account (10021-10028 are the additional bank accounts).
 export const BANK_LEDGER_CODES=[...STATEMENT_ACCOUNTS,...Array.from({length:8},(_,i)=>String(10021+i))];
+const FIRST_CODE={'Bank current':'10020','Bank savings':'10030','Mobile money':'10040','Overdraft':'20080','Other':'10020'};
+// The ledger account a new bank account should use: the standard account for its type, then the next free additional account (10021-10028).
+// `used` is the set of ledger codes already linked to an active bank account of the client. Null when none is free.
+export function suggestBankCode(kind,used){
+ const first=FIRST_CODE[kind]||'10020';
+ if(!used.has(first))return first;
+ if(kind==='Overdraft')return null;
+ return BANK_LEDGER_CODES.slice(4).find(c=>!used.has(c))||null;
+}
 export const BANK_KINDS=['Bank current','Bank savings','Mobile money','Overdraft','Other'];
 const WINDOW_DAYS=3;
 const cents=v=>Math.round(Number(v||0)*100);
