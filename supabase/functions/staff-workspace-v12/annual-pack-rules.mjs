@@ -1,3 +1,4 @@
+import {comparativesStatus} from './annual-pack-comparatives.mjs';
 // Annual financial statements: what must be true before a pack can be relied on. Pure rules, no database and no tax rates.
 // IFRS for SMEs Accounting Standard, Third Edition (2025) is effective for annual periods beginning on or after 1 January 2027; earlier use is early application and must be disclosed.
 export const THIRD_EDITION_EFFECTIVE='2027-01-01';
@@ -37,7 +38,7 @@ const sample=(items,n=6)=>items.slice(0,n).join(', ')+(items.length>n?` and ${it
 // Readiness for one client year. Each check is Pass, Blocked or Info. The pack is ready only when nothing is Blocked.
 // Input: {period:{starts_on,ends_on,status}, reporting, tb:[{code,name,opening,net,movement_debit,movement_credit}], maps:[...rows], lines:[{line_code,statement}],
 //         issues:[string], prior:{source}, priorPeriodExists:boolean, asOf}
-export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,priorPeriodExists=false,asOf}){
+export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,priorPeriodExists=false,asOf,approvedSet=null,draftSet=null,recon=null}){
  const at=asOf||day(period.ends_on),checks=[],add=(code,label,status,detail='')=>checks.push({code,label,status,detail});
  const problems=validateReporting(reporting,period.starts_on);
  add('REPORTING_BASIS','Reporting framework and edition recorded',problems.length?'Blocked':'Pass',problems.join(' ')||`${reporting.framework}, ${reporting.edition}, ${reporting.presentation_currency}, ${reporting.rounding.toLowerCase()}, indirect cash flow.`);
@@ -58,12 +59,13 @@ export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,pr
  const total=tb.reduce((s,r)=>s+cents(r.net),0);
  add('TB_BALANCED','Trial balance balances',total===0?'Pass':'Blocked',total===0?'':`Out by KES ${kes(total)}.`);
  add('LEDGER_REVIEW','Ledger review items cleared',issues.length?'Blocked':'Pass',issues.length?`${issues.length} item(s): ${issues.slice(0,3).join(' | ')}${issues.length>3?' | …':''}`:'');
- const basis=reporting?.comparatives_basis;
+ let comparatives=null;
  if(!reporting)add('COMPARATIVES','Prior-year comparatives','Blocked','Record the reporting basis first.');
- else if(basis==='First period - none')add('COMPARATIVES','Prior-year comparatives',priorPeriodExists?'Blocked':'Pass',priorPeriodExists?'A prior year exists in the ERP. Comparatives must be presented.':'First period: no comparatives.');
- else if(basis==='Prior year ledger')add('COMPARATIVES','Prior-year comparatives',prior?.source==='Prior-year ledger'?'Pass':'Blocked',prior?.source==='Prior-year ledger'?'':'There is no prior-year ledger. Build it, or use approved opening balances as the basis.');
- else add('COMPARATIVES','Prior-year comparatives',prior?.source==='Opening balances'?'Pass':'Blocked',prior?.source==='Opening balances'?'Comparatives come from approved opening balances.':'A prior-year ledger exists. Use it for the comparatives.');
+ else{
+  comparatives=comparativesStatus({basis:reporting.comparatives_basis,prior,priorPeriodExists,approved:approvedSet,draft:draftSet,recon});
+  add('COMPARATIVES','Prior-year comparatives for every primary statement',comparatives.pass?'Pass':'Blocked',comparatives.detail);
+ }
  if(period.status!=='Open')add('PERIOD','Ledger year status','Info',`The ledger year is ${period.status}.`);
  const blocked=checks.filter(c=>c.status==='Blocked');
- return {ready:blocked.length===0,status:blocked.length?'Not ready':'Ready for review',blocked:blocked.length,checks,summary:blocked.length?`Not ready: ${blocked[0].label}. ${blocked[0].detail}`.trim():'All readiness checks pass.'};
+ return {comparatives,ready:blocked.length===0,status:blocked.length?'Not ready':'Ready for review',blocked:blocked.length,checks,summary:blocked.length?`Not ready: ${blocked[0].label}. ${blocked[0].detail}`.trim():'All readiness checks pass.'};
 }

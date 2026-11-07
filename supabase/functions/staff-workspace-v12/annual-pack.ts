@@ -1,5 +1,7 @@
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
-import {FRAMEWORKS,defaultReporting,validateReporting,packReadiness} from './annual-pack-rules.mjs';
+import {FRAMEWORKS,defaultReporting,validateReporting,packReadiness,mapInForce} from './annual-pack-rules.mjs';
+import {EQUITY_MOVES,CASH_FLOW_LINES,STATEMENTS,parseComparativeText,formatComparativeText,validateComparativeLines,reconcileComparatives,openingByLine} from './annual-pack-comparatives.mjs';
+import {DATA_CUTOFF} from './ledger-rules.mjs';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 const addDays=(d:string,n:number)=>{const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10);};
@@ -90,12 +92,85 @@ export async function reportingSave(tx:any,a:any,l:any,p:any){
  return await reportingRead(tx,l);
 }
 
+// ---- Prior-year comparatives for a first ERP year ----
+const num=(r:any)=>({...r,amount:Number(r.amount)});
+async function loadSets(tx:any,periodId:string){
+ const heads=await tx`select set_id,version,prior_year_end,source_kind,source_reference,status,entered_by,entered_at,reviewed_by,reviewed_at,review_note,erp_private.reviewer_label(entered_by) entered_name,erp_private.reviewer_label(reviewed_by) reviewed_name from erp_private.period_comparative_sets where period_id=${periodId} order by version desc`;
+ const withLines=async(h:any)=>h?{...h,prior_year_end:day(h.prior_year_end),lines:(await tx`select statement,line_code,movement,amount from erp_private.period_comparative_lines where set_id=${h.set_id} order by statement,line_code,movement`).map(num)}:null;
+ return {heads,approved:await withLines(heads.find((h:any)=>h.status==='Approved')),draft:await withLines(heads.find((h:any)=>h.status==='Draft'))};
+}
+async function reconInputs(tx:any,l:any,data:any){
+ const lineDefs=await tx`select line_code,statement,section,label,normal_side from erp_private.statement_lines`;
+ const maps=await tx`select account_code,line_code,effective_from,effective_to,status from erp_private.account_statement_map where status='Approved'`;
+ const opening=openingByLine(data.tb.map((r:any)=>({code:r.code,opening:r.opening})),maps,mapInForce,day(l.starts_on));
+ return {lineDefs,maps,opening};
+}
+// A twelve-month year ending on `end` starts the day after the same date a year earlier.
+const priorStart=(end:string)=>{const x=new Date(end+'T00:00:00Z');x.setUTCFullYear(x.getUTCFullYear()-1);x.setUTCDate(x.getUTCDate()+1);return x.toISOString().slice(0,10);};
+export async function comparativesRead(tx:any,a:any,l:any,data:any){
+ const sets=await loadSets(tx,l.period_id),inp=await reconInputs(tx,l,data);
+ const reconOf=(s:any)=>s?reconcileComparatives({lines:s.lines,lineDefs:inp.lineDefs,opening:inp.opening}):null;
+ const pe=new Date(day(l.starts_on)+'T00:00:00Z');pe.setUTCDate(pe.getUTCDate()-1);const prior_end=pe.toISOString().slice(0,10);
+ const exists=(await tx`select 1 from erp_private.ledger_periods where client_id=${l.client_id} and ends_on=${prior_end}`).length>0;
+ const unmappedOpening=inp.opening.find((o:any)=>o.line_code==='UNMAPPED');
+ const shown=sets.draft||sets.approved;
+ return {
+  sets:sets.heads.map((h:any)=>({set_id:h.set_id,version:h.version,status:h.status,source_kind:h.source_kind,entered_name:h.entered_name,reviewed_name:h.reviewed_name,review_note:h.review_note,entered_at:h.entered_at,reviewed_at:h.reviewed_at})),
+  draft:sets.draft&&{...sets.draft,recon:reconOf(sets.draft)},approved:sets.approved&&{...sets.approved,recon:reconOf(sets.approved)},
+  texts:{pl:shown?formatComparativeText('Profit or loss',shown.lines):'',eq:shown?formatComparativeText('Changes in equity',shown.lines):'',cf:shown?formatComparativeText('Cash flow',shown.lines):''},
+  source_kind:shown?.source_kind||'Signed prior-year financial statements',source_reference:shown?.source_reference||'',
+  catalogs:{pl:inp.lineDefs.filter((d:any)=>d.statement==='Profit or loss'&&d.line_code!=='PL.UNRESOLVED').map((d:any)=>({code:d.line_code,label:d.label,side:d.normal_side})),
+   equity:inp.lineDefs.filter((d:any)=>d.statement==='Financial position'&&d.section==='Equity').map((d:any)=>({code:d.line_code,label:d.label})),equity_moves:EQUITY_MOVES.map(([code,label]:any)=>({code,label})),
+   cash_flow:CASH_FLOW_LINES.map(([code,section,label]:any)=>({code,section,label}))},
+  opening_unmapped:unmappedOpening?true:false,
+  prior_ledger:{prior_year_end:prior_end,prior_year_start:priorStart(prior_end),exists,can_build:!exists&&prior_end>=DATA_CUTOFF&&isLeader(a)&&l.status==='Open'}
+ };
+}
+export async function comparativesSave(tx:any,a:any,l:any,p:any){
+ if(!isLeader(a))fail(403,'A Manager or Partner must enter prior-year comparatives.');
+ if(l.status!=='Open')fail(409,'This ledger year is closed. Its comparatives can no longer be changed.');
+ const kind=choice(p.source_kind,['Signed prior-year financial statements','Prior-year accounting records outside the ERP','Management accounts']),ref=text(p.source_reference,500);
+ if(ref.length<10)fail(400,'Name the source document and its date (at least 10 characters).');
+ const parsed=[['Profit or loss',p.pl],['Changes in equity',p.eq],['Cash flow',p.cf]].map(([st,t]:any)=>parseComparativeText(st,typeof t==='string'?t.slice(0,60000):''));
+ const errors=parsed.flatMap((x:any)=>x.errors);if(errors.length)fail(400,errors[0]+(errors.length>1?` (${errors.length-1} more row problem(s))`:''));
+ const lines=parsed.flatMap((x:any)=>x.rows);if(!lines.length)fail(400,'Enter at least one comparative line.');if(lines.length>400)fail(400,'Too many lines.');
+ const defs=await tx`select line_code,statement,section from erp_private.statement_lines`,bad=validateComparativeLines(lines,defs);if(bad.length)fail(400,bad[0]+(bad.length>1?` (${bad.length-1} more problem(s))`:''));
+ await tx`select pg_advisory_xact_lock(hashtextextended(${l.period_id+':comparatives'},0))`;
+ await tx`update erp_private.period_comparative_sets set status='Superseded' where period_id=${l.period_id} and status='Draft'`;
+ const ver=Number((await tx`select coalesce(max(version),0)+1 v from erp_private.period_comparative_sets where period_id=${l.period_id}`)[0].v);
+ const pe=new Date(day(l.starts_on)+'T00:00:00Z');pe.setUTCDate(pe.getUTCDate()-1);
+ const head=(await tx`insert into erp_private.period_comparative_sets(period_id,project_id,client_id,version,prior_year_end,source_kind,source_reference,entered_by) values(${l.period_id},${l.project_id},${l.client_id},${ver},${pe.toISOString().slice(0,10)},${kind},${ref},${a.staff_id}) returning set_id,version,status`)[0];
+ for(const x of lines)await tx`insert into erp_private.period_comparative_lines(set_id,project_id,statement,line_code,movement,amount) values(${head.set_id},${l.project_id},${x.statement},${x.line_code},${x.movement},${x.amount})`;
+ return {...head,lines:lines.length};
+}
+export async function comparativesReview(tx:any,a:any,l:any,p:any,data:any){
+ if(a.category_code!=='PARTNER')fail(403,'Only a Partner can approve or return prior-year comparatives.');
+ if(l.status!=='Open')fail(409,'This ledger year is closed.');
+ const decision=choice(p.decision,['Approved','Returned']),note=text(p.review_note??'',500,false);
+ await tx`select pg_advisory_xact_lock(hashtextextended(${l.period_id+':comparatives'},0))`;
+ const sets=await loadSets(tx,l.period_id),set=sets.draft;
+ if(!set||set.set_id!==uuid(p.set_id))fail(409,'These comparatives have changed. Refresh and review the latest draft.');
+ if(decision==='Returned'){
+  if(note.length<10)fail(400,'Give a reason of at least 10 characters.');
+  await tx`update erp_private.period_comparative_sets set status='Returned',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where set_id=${set.set_id}`;
+  return {status:'Returned'};
+ }
+ if(set.entered_by===a.staff_id)fail(403,'Comparatives must be approved by a Partner other than the person who entered them.');
+ const inp=await reconInputs(tx,l,data),recon=reconcileComparatives({lines:set.lines,lineDefs:inp.lineDefs,opening:inp.opening});
+ if(!recon.ok)fail(400,'These comparatives do not reconcile yet: '+(recon.problems[0]||'a primary statement is missing')+(recon.problems.length>1?` (${recon.problems.length-1} more)`:''));
+ if(inp.opening.some((o:any)=>o.line_code==='UNMAPPED'))fail(400,'Some opening balances are on accounts with no approved statement line. Approve the statement-line map first.');
+ await tx`update erp_private.period_comparative_sets set status='Superseded' where period_id=${l.period_id} and status='Approved'`;
+ await tx`update erp_private.period_comparative_sets set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note||null} where set_id=${set.set_id}`;
+ return {status:'Approved',version:set.version};
+}
+
 // Readiness for the annual pack, from the same report the ledger screens use (data = report(...)).
 export async function packReadinessFrom(tx:any,l:any,data:any){
  const reporting=(await tx`select * from erp_private.ledger_period_reporting where period_id=${l.period_id}`)[0]||null;
  const lines=await tx`select line_code,statement from erp_private.statement_lines`;
  const maps=await tx`select account_code,line_code,effective_from,effective_to,status from erp_private.account_statement_map where status in ('Draft','Approved')`;
  const priorPeriodExists=(await tx`select 1 from erp_private.ledger_periods where client_id=${l.client_id} and ends_on=${day(l.starts_on)}::date-1`).length>0;
- const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of});
+ const sets=await loadSets(tx,l.period_id),inp=await reconInputs(tx,l,data),recon=sets.approved?reconcileComparatives({lines:sets.approved.lines,lineDefs:inp.lineDefs,opening:inp.opening}):null;
+ const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon});
  return {...readiness,as_of:data.as_of,reporting:reporting||{...defaultReporting(day(l.starts_on)),saved:false}};
 }
