@@ -2,6 +2,7 @@ import {fail,text,uuid,choice,date,revision} from './validation.mjs';
 import {FRAMEWORKS,defaultReporting,validateReporting,packReadiness,mapInForce} from './annual-pack-rules.mjs';
 import {EQUITY_MOVES,CASH_FLOW_LINES,STATEMENTS,parseComparativeText,formatComparativeText,validateComparativeLines,reconcileComparatives,openingByLine} from './annual-pack-comparatives.mjs';
 import {buildStatements} from './annual-pack-statements.mjs';
+import {buildEquityStatement,buildCashFlow} from './annual-pack-flows.mjs';
 import {DATA_CUTOFF} from './ledger-rules.mjs';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
@@ -180,11 +181,21 @@ export async function packReadinessFrom(tx:any,l:any,data:any){
 export async function statementsFrom(tx:any,l:any,data:any){
  const client=(await tx`select company_name,kra_pin from erp_private.clients where client_id=${l.client_id}`)[0]||{};
  const reporting=(await tx`select * from erp_private.ledger_period_reporting where period_id=${l.period_id}`)[0]||{...defaultReporting(day(l.starts_on)),saved:false};
- const lineDefs=await tx`select line_code,statement,section,label,sort_order,normal_side from erp_private.statement_lines`;
+ const lineDefs=await tx`select line_code,statement,section,label,sort_order,normal_side,cash_flow_class from erp_private.statement_lines`;
  const maps=await tx`select account_code,line_code,effective_from,effective_to,status from erp_private.account_statement_map where status='Approved'`;
  const sets=await loadSets(tx,l.period_id),approved=sets.approved,inp=approved?await reconInputs(tx,l,data):null;
  const priorPl=approved?approved.lines.filter((x:any)=>x.statement==='Profit or loss').map((x:any)=>({line_code:x.line_code,amount:x.amount})):null;
  const statements=buildStatements({lineDefs,maps,tb:data.tb,startsOn:day(l.starts_on),endsOn:day(l.ends_on),asOf:data.as_of,rounding:reporting.rounding,priorPl,priorOpening:inp?inp.opening.filter((o:any)=>o.line_code!=='UNMAPPED'):null});
+ // Changes in equity and cash flow, from the same trial balance and the same approved line map. The prior-year columns are the approved comparatives for those statements.
+ const priorEquity=approved?approved.lines.filter((x:any)=>x.statement==='Changes in equity').map((x:any)=>({line_code:x.line_code,movement:x.movement,amount:x.amount})):null;
+ const priorCash=approved?approved.lines.filter((x:any)=>x.statement==='Cash flow').map((x:any)=>({line_code:x.line_code,amount:x.amount})):null;
+ const flowIn={lineDefs,maps,tb:data.tb,asOf:data.as_of,rounding:reporting.rounding};
+ const equity=buildEquityStatement({...flowIn,priorEquity}),cashFlow=buildCashFlow({...flowIn,priorCashFlow:priorCash});
+ // Unmapped accounts are already reported once for the statements above.
+ const flowProblems=[...equity.problems,...cashFlow.problems].filter((p:string)=>!/have no approved statement line/.test(p));
+ if(approved&&!equity.has_prior)flowProblems.push('The approved comparatives have no prior-year changes in equity, so that column is not shown.');
+ if(approved&&!cashFlow.has_prior)flowProblems.push('The approved comparatives have no prior-year cash flow, so that column is not shown.');
+ statements.changes_in_equity=equity;statements.cash_flow=cashFlow;statements.problems.push(...flowProblems);statements.complete=statements.problems.length===0;
  const priorInErp=(await tx`select 1 from erp_private.ledger_periods where client_id=${l.client_id} and ends_on=${day(l.starts_on)}::date-1`).length>0;
  if(!approved&&priorInErp)statements.problems.push('The prior year is held in the ERP. Comparatives taken from that ledger year are not shown yet.');
  const readiness=await packReadinessFrom(tx,l,data);

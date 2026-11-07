@@ -65,3 +65,22 @@ test('statements escape text from the server and never render markup',async()=>{
  await ui.open('project-1');await click('[data-ledger-tab="Annual accounts"]');await pause();await click('[data-ledger="pack-statements"]');
  assert.equal(document.querySelectorAll('#editorBody img, #editorBody script').length,0);assert.match($('#editorBody').textContent,/<script>x<\/script>/);
 });
+
+test('changes in equity and cash flows are shown with their prior-year blocks, and an older server reply without them still renders',async()=>{
+ const eqRows=[{move:'OPENING',label:'Balance at the start of the year',cells:{'SFP.SHARE_CAP':100000,'SFP.RETAINED':200000},total:300000},{move:'PROFIT',label:'Profit for the year',cells:{'SFP.SHARE_CAP':0,'SFP.RETAINED':0,'SFP.CURRENT_PROFIT':300000},total:300000},{move:'DIVIDENDS_DRAWINGS',label:'Dividends or drawings',cells:{'SFP.SHARE_CAP':0,'SFP.RETAINED':-50000},total:-50000},{move:'CLOSING',label:'Balance at the end of the year',cells:{'SFP.SHARE_CAP':100000,'SFP.RETAINED':150000,'SFP.CURRENT_PROFIT':300000},total:550000}];
+ const columns=[{code:'SFP.SHARE_CAP',label:'Share capital'},{code:'SFP.RETAINED',label:'Retained earnings'},{code:'SFP.CURRENT_PROFIT',label:'Profit for the year'}];
+ statementsReply={client:{name:'Fictional Mlima Traders'},reporting:{framework:'F',edition:'E'},status:'Draft - not ready',readiness:{summary:'x'},statements:{period:{ends_on:'2026-12-31'},presentation:{unit_label:'KES'},problems:['Other equity movements of KES 40.00 are included in financing. Confirm they were cash movements.'],
+  profit_or_loss:{title:'Statement of profit or loss',has_prior:false,rows:[row('total','Profit for the year',300000)]},financial_position:{title:'Statement of financial position',has_prior:false,rows:[row('total','Total assets',550000)]},
+  changes_in_equity:{title:'Statement of changes in equity',has_prior:true,current:{columns,rows:eqRows},prior:{columns:columns.slice(0,2),rows:[{move:'OPENING',label:'Balance at the start of the year',cells:{'SFP.SHARE_CAP':100000,'SFP.RETAINED':100000},total:200000},{move:'CLOSING',label:'Balance at the end of the year',cells:{'SFP.SHARE_CAP':100000,'SFP.RETAINED':200000},total:300000}]}},
+  cash_flow:{title:'Statement of cash flows',has_prior:true,rows:[{kind:'heading',label:'Cash flows from operating activities'},row('line','Profit before tax',350000,200000,'CF.PBT'),row('subtotal','Net cash from operating activities',350000,200000),row('total','Net increase or (decrease) in cash',350000,200000),row('total','Cash and cash equivalents at the end of the year',420000,70000,'CF.CASH_CLOSE')]}}};
+ await ui.open('project-1');await click('[data-ledger-tab="Annual accounts"]');await pause();await click('[data-ledger="pack-statements"]');
+ const heads=[...document.querySelectorAll('#editorBody h4')].map(x=>x.textContent);
+ assert.ok(heads.some(h=>/Statement of changes in equity for the year ended 2026-12-31/.test(h)));assert.ok(heads.some(h=>/Statement of cash flows for the year ended 2026-12-31/.test(h)));
+ const subheads=[...document.querySelectorAll('#editorBody h5')].map(x=>x.textContent);assert.deepEqual(subheads,['Year ended 2026-12-31','Prior year']);
+ const tables=document.querySelectorAll('#editorBody .stmt table');assert.equal(tables.length,5,'profit or loss, financial position, equity (current and prior) and cash flow');
+ const eq=tables[2];assert.deepEqual([...eq.querySelectorAll('thead th')].map(x=>x.textContent),['','Share capital','Retained earnings','Profit for the year','Total']);
+ assert.match(eq.textContent,/\(50,000\)/,'dividends show in brackets');assert.match(eq.textContent,/550,000/);
+ assert.equal(tables[3].querySelectorAll('thead th').length,4,'the prior-year equity block lists only the lines it has, with a label and a total');
+ assert.match(tables[4].textContent,/Profit before tax/);assert.match(tables[4].textContent,/420,000/);assert.equal(tables[4].querySelectorAll('thead th').length,3);
+ assert.match($('#editorBody').textContent,/Other equity movements of KES 40\.00/);
+});

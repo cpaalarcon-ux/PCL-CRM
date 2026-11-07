@@ -39,6 +39,9 @@ test('formatted statements through the action: draft until comparatives are appr
  assert.equal(line(s.statements.profit_or_loss,'Profit for the year').current,300000);
  assert.equal(line(s.statements.financial_position,'Total assets').current,600000);assert.equal(line(s.statements.financial_position,'Total equity and liabilities').current,600000);
  assert.equal(s.statements.profit_or_loss.has_prior,false);assert.match(s.statements.problems.join(' '),/prior-year profit or loss/);
+ const eq0=s.statements.changes_in_equity,cf0=s.statements.cash_flow,eqRow=(e,m)=>e.current.rows.find(r=>r.move===m);
+ assert.equal(eqRow(eq0,'OPENING').total,300000);assert.equal(eqRow(eq0,'PROFIT').total,300000);assert.equal(eqRow(eq0,'CLOSING').total,600000);assert.equal(eq0.total_closing,600000,'equity closes at 600,000, the equity in the financial position');
+ assert.equal(eq0.has_prior,false);assert.equal(cf0.reconciles,true);assert.equal(cf0.cash_open,120000);assert.equal(cf0.cash_close,420000);assert.equal(cf0.net_change,300000);
  assert.equal(s.status,'Draft - not ready');assert.equal(s.readiness.ready,false);
 
  // reporting basis, then comparatives entered by a Manager and approved by a second Partner
@@ -50,6 +53,9 @@ test('formatted statements through the action: draft until comparatives are appr
  assert.equal(p.has_prior,true);assert.equal(line(p,'Revenue').prior,1000000);assert.equal(line(p,'Profit for the year').prior,210000);assert.equal(line(p,'Profit for the year').current,300000);
  assert.equal(f.has_prior,true);assert.equal(line(f,'Total assets').prior,300000);assert.equal(line(f,'Total equity and liabilities').prior,300000);
  assert.deepEqual(s.statements.problems,[]);assert.equal(s.readiness.ready,true);assert.equal(s.status,'Ready for review');
+ const eq1=s.statements.changes_in_equity,cf1=s.statements.cash_flow;
+ assert.equal(eq1.has_prior,true);assert.equal(eq1.prior.rows.find(r=>r.move==='DIVIDENDS_DRAWINGS').total,-60000);assert.equal(eq1.prior.rows.find(r=>r.move==='CLOSING').total,300000,'prior closing equals this year opening');assert.equal(eqRow(eq1,'OPENING').total,eq1.prior.rows.find(r=>r.move==='CLOSING').total);
+ assert.equal(cf1.has_prior,true);assert.equal(cf1.reconciles,true);assert.equal(cf1.rows.find(r=>r.code==='CF.CASH_CLOSE').prior,120000);assert.equal(cf1.rows.find(r=>r.code==='CF.CASH_OPEN').current,cf1.rows.find(r=>r.code==='CF.CASH_CLOSE').prior,'prior closing cash is this year opening cash');
  assert.equal(s.reporting.rounding,'Whole shillings');assert.equal(s.reporting.edition,'Third Edition (2025)');
 
  // an account with a balance and no approved line stops the statements being complete, and the account is named
