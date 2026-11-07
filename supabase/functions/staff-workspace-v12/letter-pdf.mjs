@@ -27,14 +27,14 @@ export function wrap(font,size,text,width){
 // pdf-lib is passed in by the caller (the server imports it; tests load the pinned copy).
 export async function letterPdf(l,{PDFDocument,StandardFonts,rgb}){
  const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica),bold=await doc.embedFont(StandardFonts.HelveticaBold);
- const when=new Date(l.issued_at);doc.setTitle(safe(`${l.reference} · ${l.subject}`));doc.setAuthor(safe(l.firm.legal_name));doc.setCreator('PCL ERP');doc.setProducer('PCL ERP');doc.setCreationDate(when);doc.setModificationDate(when);
+ const when=new Date(l.issued_at);doc.setTitle(safe(`${l.reference} · ${l.subject}`));doc.setAuthor(safe(l.firm.legal_name));doc.setCreator('PCL Practice Management System');doc.setProducer('PCL Practice Management System');doc.setCreationDate(when);doc.setModificationDate(when);
  const W=595.28,H=841.89,M=56,green=rgb(0.05,0.25,0.18),grey=rgb(0.35,0.35,0.35),text=W-2*M;
  let page=doc.addPage([W,H]),y=H-M,pageNo=1;
  const header=()=>{page.drawText(safe(l.firm.legal_name).toUpperCase(),{x:M,y:H-M,size:15,font:bold,color:green});
   const meta=[l.firm.physical_address,[l.firm.phone,l.firm.email].filter(Boolean).join(' · '),l.firm.kra_pin?'KRA PIN: '+l.firm.kra_pin:''].filter(Boolean);
   let hy=H-M-16;for(const m of meta){page.drawText(safe(m),{x:M,y:hy,size:8.5,font,color:grey});hy-=11;}
   page.drawLine({start:{x:M,y:hy-2},end:{x:W-M,y:hy-2},thickness:1,color:green});y=hy-24;};
- const footer=()=>{page.drawText(safe(`${l.reference} · Issued ${l.issued_on} from PCL ERP · Page ${pageNo}`),{x:M,y:28,size:7.5,font,color:grey});};
+ const footer=()=>{page.drawText(safe(`${l.reference} · Issued ${l.issued_on} from PCL Practice Management System · Page ${pageNo}`),{x:M,y:28,size:7.5,font,color:grey});};
  const need=h=>{if(y-h<M+90){footer();page=doc.addPage([W,H]);pageNo++;header();}};
  const para=(t,size=10.5,f=font,gap=4)=>{for(const ln of wrap(f,size,t,text)){need(size+3);page.drawText(ln,{x:M,y,size,font:f});y-=size+3;}y-=gap;};
  header();

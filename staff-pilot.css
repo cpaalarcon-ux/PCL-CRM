@@ -312,3 +312,6 @@ body.workspace-active>footer{flex:0 0 auto;padding:7px 18px;border-top:1px solid
 .rv tbody tr.lane-head td::before{content:none}
 .rv tbody tr.lane-head span{background:#fff;border:1px solid var(--line);border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600;color:var(--muted)}
 .scroll:has(.rv){overflow:visible}
+.brand .mark.mark-logo,.sidebar-brand .mark.mark-logo{display:block;flex:0 0 auto;width:44px;height:44px;padding:0;border:0;border-radius:10px;object-fit:contain;letter-spacing:0}
+.sidebar-brand .mark.mark-logo{width:40px;height:40px}
+.login-logo{display:block;width:min(340px,100%);height:auto;margin:0 0 18px;mix-blend-mode:multiply}

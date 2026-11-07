@@ -1,4 +1,4 @@
-// Hosted staging check for the PCL ERP. Fictional accounts and a fictional client only.
+// Hosted staging check for the PCL Practice Management System. Fictional accounts and a fictional client only.
 // 1. Release identity: the live page, the live server and this commit carry the same build label.
 // 2. Sign-in: the page loads in Chromium with sign-in enabled and no release warning.
 // 3. Optional role checks (secrets UAT_<ROLE>_LOGIN / _PASSWORD): each account signs in with its role.
