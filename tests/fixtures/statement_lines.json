@@ -1,0 +1,582 @@
+[
+{
+"line_code": "SFP.PPE",
+"statement": "Financial position",
+"section": "Non-current assets",
+"label": "Property, plant and equipment",
+"sort_order": 100,
+"normal_side": "Debit",
+"cash_flow_class": "Investing",
+"note_ref": "PPE"
+},
+{
+"line_code": "SFP.ROU",
+"statement": "Financial position",
+"section": "Non-current assets",
+"label": "Right-of-use assets",
+"sort_order": 110,
+"normal_side": "Debit",
+"cash_flow_class": "Investing",
+"note_ref": "LEASES"
+},
+{
+"line_code": "SFP.INVPROP",
+"statement": "Financial position",
+"section": "Non-current assets",
+"label": "Investment property",
+"sort_order": 120,
+"normal_side": "Debit",
+"cash_flow_class": "Investing",
+"note_ref": "INVPROP"
+},
+{
+"line_code": "SFP.INTANG",
+"statement": "Financial position",
+"section": "Non-current assets",
+"label": "Intangible assets and goodwill",
+"sort_order": 130,
+"normal_side": "Debit",
+"cash_flow_class": "Investing",
+"note_ref": "INTANG"
+},
+{
+"line_code": "SFP.BIO_NC",
+"statement": "Financial position",
+"section": "Non-current assets",
+"label": "Biological assets - non-current",
+"sort_order": 140,
+"normal_side": "Debit",
+"cash_flow_class": "Investing",
+"note_ref": "BIO"
+},
+{
+"line_code": "SFP.INVEST",
+"statement": "Financial position",
+"section": "Non-current assets",
+"label": "Investments",
+"sort_order": 150,
+"normal_side": "Debit",
+"cash_flow_class": "Investing",
+"note_ref": "INVEST"
+},
+{
+"line_code": "SFP.INV",
+"statement": "Financial position",
+"section": "Current assets",
+"label": "Inventories",
+"sort_order": 200,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "INV"
+},
+{
+"line_code": "SFP.BIO_C",
+"statement": "Financial position",
+"section": "Current assets",
+"label": "Biological assets and harvested produce - current",
+"sort_order": 210,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "BIO"
+},
+{
+"line_code": "SFP.TRADE_REC",
+"statement": "Financial position",
+"section": "Current assets",
+"label": "Trade receivables",
+"sort_order": 220,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "REC"
+},
+{
+"line_code": "SFP.CONTRACT_ASSET",
+"statement": "Financial position",
+"section": "Current assets",
+"label": "Contract assets and retentions receivable",
+"sort_order": 230,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "CONTRACTS"
+},
+{
+"line_code": "SFP.OTHER_REC",
+"statement": "Financial position",
+"section": "Current assets",
+"label": "Other receivables, deposits and prepayments",
+"sort_order": 240,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "REC"
+},
+{
+"line_code": "SFP.RELATED_REC",
+"statement": "Financial position",
+"section": "Current assets",
+"label": "Amounts due from group companies",
+"sort_order": 250,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "RELATED"
+},
+{
+"line_code": "SFP.TAX_REC",
+"statement": "Financial position",
+"section": "Current assets",
+"label": "Tax and statutory receivables",
+"sort_order": 260,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "TAX"
+},
+{
+"line_code": "SFP.CASH",
+"statement": "Financial position",
+"section": "Current assets",
+"label": "Cash and cash equivalents",
+"sort_order": 270,
+"normal_side": "Debit",
+"cash_flow_class": "Cash",
+"note_ref": "CASH"
+},
+{
+"line_code": "SFP.SHARE_CAP",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Share capital",
+"sort_order": 300,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "EQUITY"
+},
+{
+"line_code": "SFP.SHARE_PREM",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Share premium",
+"sort_order": 310,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "EQUITY"
+},
+{
+"line_code": "SFP.OWNER_CAP",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Owner or partner capital",
+"sort_order": 320,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "EQUITY"
+},
+{
+"line_code": "SFP.OWNER_CUR",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Partner current accounts",
+"sort_order": 330,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "EQUITY"
+},
+{
+"line_code": "SFP.DRAWINGS",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Drawings",
+"sort_order": 340,
+"normal_side": "Debit",
+"cash_flow_class": "Equity",
+"note_ref": "EQUITY"
+},
+{
+"line_code": "SFP.REVAL",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Revaluation surplus",
+"sort_order": 350,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "EQUITY"
+},
+{
+"line_code": "SFP.RESERVES",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Other reserves",
+"sort_order": 360,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "EQUITY"
+},
+{
+"line_code": "SFP.RETAINED",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Retained earnings",
+"sort_order": 370,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "EQUITY"
+},
+{
+"line_code": "SFP.FUND_ACCUM",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Accumulated fund",
+"sort_order": 380,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "FUNDS"
+},
+{
+"line_code": "SFP.FUND_RESTR",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Restricted funds",
+"sort_order": 390,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "FUNDS"
+},
+{
+"line_code": "SFP.FUND_DESIG",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Designated funds",
+"sort_order": 395,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "FUNDS"
+},
+{
+"line_code": "SFP.HEAD_OFFICE",
+"statement": "Financial position",
+"section": "Equity",
+"label": "Head office account",
+"sort_order": 398,
+"normal_side": "Credit",
+"cash_flow_class": "Equity",
+"note_ref": "EQUITY"
+},
+{
+"line_code": "SFP.BORROW_NC",
+"statement": "Financial position",
+"section": "Non-current liabilities",
+"label": "Borrowings - long-term",
+"sort_order": 400,
+"normal_side": "Credit",
+"cash_flow_class": "Financing",
+"note_ref": "BORROW"
+},
+{
+"line_code": "SFP.LEASE_NC",
+"statement": "Financial position",
+"section": "Non-current liabilities",
+"label": "Lease liabilities - long-term",
+"sort_order": 410,
+"normal_side": "Credit",
+"cash_flow_class": "Financing",
+"note_ref": "LEASES"
+},
+{
+"line_code": "SFP.DEFTAX",
+"statement": "Financial position",
+"section": "Non-current liabilities",
+"label": "Deferred tax",
+"sort_order": 420,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "TAX"
+},
+{
+"line_code": "SFP.PROVISIONS",
+"statement": "Financial position",
+"section": "Non-current liabilities",
+"label": "Provisions",
+"sort_order": 430,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "PROV"
+},
+{
+"line_code": "SFP.TRADE_PAY",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Trade payables",
+"sort_order": 500,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "PAY"
+},
+{
+"line_code": "SFP.ACCRUALS",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Accruals",
+"sort_order": 510,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "PAY"
+},
+{
+"line_code": "SFP.DEPOSITS",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Customer deposits and deferred income",
+"sort_order": 520,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "CONTRACTS"
+},
+{
+"line_code": "SFP.GRANTS_ADV",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Grants received in advance",
+"sort_order": 530,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "FUNDS"
+},
+{
+"line_code": "SFP.GRANTS_REFUND",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Grants refundable to donors",
+"sort_order": 535,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "FUNDS"
+},
+{
+"line_code": "SFP.RELATED_PAY",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Amounts due to group companies",
+"sort_order": 540,
+"normal_side": "Credit",
+"cash_flow_class": "Financing",
+"note_ref": "RELATED"
+},
+{
+"line_code": "SFP.BORROW_C",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Borrowings - current",
+"sort_order": 550,
+"normal_side": "Credit",
+"cash_flow_class": "Financing",
+"note_ref": "BORROW"
+},
+{
+"line_code": "SFP.LEASE_C",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Lease liabilities - current",
+"sort_order": 560,
+"normal_side": "Credit",
+"cash_flow_class": "Financing",
+"note_ref": "LEASES"
+},
+{
+"line_code": "SFP.OVERDRAFT",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Bank overdraft",
+"sort_order": 570,
+"normal_side": "Credit",
+"cash_flow_class": "Cash",
+"note_ref": "CASH"
+},
+{
+"line_code": "SFP.DIVIDENDS_PAY",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Dividends payable",
+"sort_order": 580,
+"normal_side": "Credit",
+"cash_flow_class": "Financing",
+"note_ref": "EQUITY"
+},
+{
+"line_code": "SFP.VAT",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "VAT payable",
+"sort_order": 600,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "TAX"
+},
+{
+"line_code": "SFP.PAYROLL_PAY",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Payroll liabilities",
+"sort_order": 610,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "PAY"
+},
+{
+"line_code": "SFP.INCOME_TAX",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Income tax payable",
+"sort_order": 620,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "TAX"
+},
+{
+"line_code": "SFP.OTHER_STATUTORY",
+"statement": "Financial position",
+"section": "Current liabilities",
+"label": "Other taxes and statutory levies payable",
+"sort_order": 630,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "TAX"
+},
+{
+"line_code": "PL.REVENUE",
+"statement": "Profit or loss",
+"section": "Revenue",
+"label": "Revenue",
+"sort_order": 1000,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "REVENUE"
+},
+{
+"line_code": "PL.GRANTS",
+"statement": "Profit or loss",
+"section": "Revenue",
+"label": "Grants, donations and membership income",
+"sort_order": 1010,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "FUNDS"
+},
+{
+"line_code": "PL.COST_SALES",
+"statement": "Profit or loss",
+"section": "Cost of sales",
+"label": "Cost of sales",
+"sort_order": 1100,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "INV"
+},
+{
+"line_code": "PL.OTHER_INCOME",
+"statement": "Profit or loss",
+"section": "Other income",
+"label": "Other income and gains",
+"sort_order": 1200,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "OTHER"
+},
+{
+"line_code": "PL.STAFF",
+"statement": "Profit or loss",
+"section": "Operating costs",
+"label": "Staff costs",
+"sort_order": 1300,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "STAFF"
+},
+{
+"line_code": "PL.DEPREC",
+"statement": "Profit or loss",
+"section": "Operating costs",
+"label": "Depreciation and amortisation",
+"sort_order": 1310,
+"normal_side": "Debit",
+"cash_flow_class": "None",
+"note_ref": "PPE"
+},
+{
+"line_code": "PL.IMPAIR",
+"statement": "Profit or loss",
+"section": "Operating costs",
+"label": "Impairment of assets",
+"sort_order": 1315,
+"normal_side": "Debit",
+"cash_flow_class": "None",
+"note_ref": "PPE"
+},
+{
+"line_code": "PL.PROGRAMME",
+"statement": "Profit or loss",
+"section": "Operating costs",
+"label": "Programme and beneficiary costs",
+"sort_order": 1320,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "FUNDS"
+},
+{
+"line_code": "PL.OTHER_OPEX",
+"statement": "Profit or loss",
+"section": "Operating costs",
+"label": "Other operating expenses",
+"sort_order": 1330,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "OPEX"
+},
+{
+"line_code": "PL.FIN_INCOME",
+"statement": "Profit or loss",
+"section": "Finance",
+"label": "Finance income",
+"sort_order": 1400,
+"normal_side": "Credit",
+"cash_flow_class": "Operating",
+"note_ref": "FINANCE"
+},
+{
+"line_code": "PL.FIN_COSTS",
+"statement": "Profit or loss",
+"section": "Finance",
+"label": "Finance costs",
+"sort_order": 1410,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "FINANCE"
+},
+{
+"line_code": "PL.TAX",
+"statement": "Profit or loss",
+"section": "Tax",
+"label": "Income tax expense",
+"sort_order": 1500,
+"normal_side": "Debit",
+"cash_flow_class": "Operating",
+"note_ref": "TAX"
+},
+{
+"line_code": "PL.UNRESOLVED",
+"statement": "Profit or loss",
+"section": "Unresolved",
+"label": "Unresolved review items",
+"sort_order": 1900,
+"normal_side": "Debit",
+"cash_flow_class": "None",
+"note_ref": "UNRESOLVED"
+},
+{
+"line_code": "EXCL.LEGACY",
+"statement": "Excluded",
+"section": "Excluded",
+"label": "Legacy account - must carry no balance",
+"sort_order": 9000,
+"normal_side": "Debit",
+"cash_flow_class": "None",
+"note_ref": ""
+}
+]
