@@ -15,6 +15,7 @@ import {debtorsRead,receiptAction} from './debtors.ts';
 import {payablesReport,supplierAction} from './payables.ts';
 import {bankRegister,bankAccountAction} from './bank-accounts.ts';
 import {bankLineAction} from './bank-lines.ts';
+import {statementMapAction,reportingRead,reportingSave,packReadinessFrom} from './annual-pack.ts';
 import {stockRollsRead,stockJournalPlan} from './stock-journal.ts';
 import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
@@ -260,6 +261,7 @@ export async function annualTaxLedgerControl(tx:any,projectId:string,start:strin
 export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(!String(p.action).startsWith('ledger_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Interns can access assigned tasks, not client accounting working papers.');
+ if(String(p.action).startsWith('ledger_statement_map_'))return await statementMapAction(tx,a,p);
  if(p.action==='ledger_rate_add'){
   if(a.category_code!=='PARTNER')fail(403,'The Engagement Partner must add a dated shared-rate version.');
   const code=text(p.class_code,30);if(!/^[A-Z][A-Z0-9_]{1,29}$/.test(code))fail(400,'Use an uppercase class code.');
@@ -282,6 +284,9 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  }
  const l=await period(tx,uuid(p.period_id),pid);
  if(p.action==='ledger_read')return {...await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)),rates};
+ if(p.action==='ledger_reporting_read')return await reportingRead(tx,l);
+ if(p.action==='ledger_reporting_save')return await reportingSave(tx,a,l,p);
+ if(p.action==='ledger_pack_readiness')return await packReadinessFrom(tx,l,await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)));
  if(p.action==='ledger_debtors_read')return await debtorsRead(tx,l,p.as_of?date(p.as_of):day(l.ends_on));
  if(p.action==='ledger_payables_read')return await payablesReport(tx,l,p.as_of?date(p.as_of):day(l.ends_on));
  if(p.action==='ledger_supplier_save'||p.action==='ledger_supplier_build')return await supplierAction(tx,a,l,p);
