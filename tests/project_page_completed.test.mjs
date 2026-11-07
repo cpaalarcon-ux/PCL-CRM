@@ -34,7 +34,7 @@ test('Open is the default view: closed tasks are hidden, and the cards count ope
  assert.deepEqual([...document.querySelectorAll('.task-row')].map(r=>r.textContent.split(' · ')[0]).sort(),['PAYE','Turnover tax','VAT']);
  assert.doesNotMatch(html,/completed-table/,'the completed table is not on the default view');
  assert.match(html,/data-filter="Completed"[^>]*>Completed<span class="n">2<\/span>/);assert.match(html,/data-filter="All"[^>]*>Open<span class="n">3<\/span>/);
- assert.match(html,/class="project-more" open=""><summary>Project actions/,'the action groups stay visible (a collapsed menu hid them from the browser UAT and from staff)');
+ assert.match(html,/role="tablist"/);assert.doesNotMatch(html,/project-action-groups/,'the action buttons live in their own tabs, not above the tasks');
 });
 test('the Completed chip lists closed tasks with prepared, reviewed and closed-by sign-offs and offers Raise correction, never a reopen',()=>{
  const m=mount('MANAGER');document.querySelector('[data-filter="Completed"]').click();
@@ -55,5 +55,26 @@ test('Overdue chip shows only late open work; switching back to Open restores th
 test('the server-side payload carries who closed a task, and the build label moved together',()=>{
  assert.match(fs.readFileSync(new URL('../supabase/functions/staff-workspace-v12/workspace-read.ts',import.meta.url),'utf8'),/w\.closed_at,w\.closed_by,w\.revision/);
  const rel=JSON.parse(fs.readFileSync(new URL('../supabase/functions/staff-workspace-v12/release.json',import.meta.url),'utf8'));
- assert.match(JSON.stringify(rel),/2026-11-07\.94/);
+ assert.match(JSON.stringify(rel),/2026-11-07\.95/);
+});
+
+test('tabs: Tasks opens first; each other tab shows only its own group of buttons; an Intern sees no import or accounting tab',()=>{
+ mount('MANAGER');const tabs=()=>[...document.querySelectorAll('[data-v6="project-tab"]')].map(b=>b.dataset.tab);
+ assert.deepEqual(tabs(),['Tasks','Schedule','Imports','Accounting & tax','Reports & team']);
+ assert.equal(document.querySelector('.ptab.on').dataset.tab,'Tasks');assert.ok(document.querySelector('[data-filter="Completed"]'));assert.equal(document.querySelector('[data-v6="rows"]'),null);
+ const open=name=>document.querySelector(`[data-v6="project-tab"][data-tab="${name}"]`).click();
+ open('Imports');assert.ok(document.querySelector('[data-v6="rows"]'));assert.ok(document.querySelector('[data-period-import]'));assert.ok(document.querySelector('[data-purchase-ledger]'));assert.equal(document.querySelector('[data-ledger="open"]'),null);assert.equal(document.querySelector('[data-filter="Completed"]'),null);
+ open('Accounting & tax');assert.ok(document.querySelector('[data-ledger="open"]'));assert.ok(document.querySelector('[data-accounting="reconciliations"]'));assert.equal(document.querySelector('[data-v6="rows"]'),null);
+ open('Schedule');assert.ok(document.querySelector('[data-v6="project"]'));assert.ok(document.querySelector('[data-v6="preview"]'));assert.ok(document.querySelector('[data-v6="schedule-cancel"]'),'End recurrence is in the Schedule tab for a leader');assert.match($('#content').innerHTML,/How recurring work is scheduled/);
+ open('Reports & team');assert.ok(document.querySelector('[data-v6="report"]'));assert.ok(document.querySelector('[data-chat-project]'));
+ open('Tasks');assert.ok(document.querySelector('[data-filter="Completed"]'));
+ assert.match($('#content').innerHTML,/class="project-stats"/,'the cards stay above the tabs on every tab');
+});
+test('an Intern gets only Tasks, Schedule and Reports; Supervisors and Managers see all five',()=>{
+ mount('INTERN');assert.deepEqual([...document.querySelectorAll('[data-v6="project-tab"]')].map(b=>b.dataset.tab),['Tasks','Schedule','Reports & team']);
+ mount('SUPERVISOR');assert.equal(document.querySelectorAll('[data-v6="project-tab"]').length,5);
+});
+test('switching to another project goes back to the Tasks tab (state is kept in the page module, reset per project)',()=>{
+ const src=fs.readFileSync(new URL('../staff-workspace-v6.mjs',import.meta.url),'utf8');
+ assert.match(src,/if\(selected!==tabProject\)\{tabProject=selected;projectTab='Tasks';\}/);
 });
