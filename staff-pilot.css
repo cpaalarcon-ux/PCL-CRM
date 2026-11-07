@@ -333,3 +333,11 @@ body.workspace-active>footer{flex:0 0 auto;padding:7px 18px;border-top:1px solid
 .completed-table td{padding:10px 12px;border-bottom:1px solid #eef2f0;overflow-wrap:anywhere}.completed-table td.t{font-weight:600}
 .completed-note{margin:8px 0 12px}.linkish{background:none;border:0;padding:0;color:#0f5c3f;text-decoration:underline;cursor:pointer;font:inherit}
 .reopen{font-size:12px;padding:4px 10px}
+/* Project page tabs (build .95) */
+.project-tabs{display:flex;gap:4px;border-bottom:1px solid #dfe6e2;margin:14px 0}
+.project-tabs .ptab{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;padding:10px 14px;color:#6b7a72;font-weight:500;cursor:pointer}
+.project-tabs .ptab.on{color:#0f5c3f;border-color:#0f5c3f;font-weight:600}
+.project-panel{margin:8px 0 16px}.project-panel .project-help{margin-top:14px}
+.project-panel section{background:#fff;border:1px solid #dfe6e2;border-radius:12px;padding:14px 16px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.project-panel section h4{flex:0 0 100%;margin:0 0 4px;font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:#6b7a72}
+@media(max-width:700px){.project-tabs{overflow-x:auto}}
