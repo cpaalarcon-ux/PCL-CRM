@@ -50,7 +50,7 @@ test('Client ledger: source integrity, maker/checker, entity profit and shared P
  await assert.rejects(()=>ledger('ASSISTANT',{...fixBase,revision:bx.journal.revision,account_code:'99999',reason:'Fictional account that does not exist'}),/active detailed account|not available|Record unavailable/);
  await assert.rejects(()=>ledger('ASSISTANT',{...fixBase,revision:bx.journal.revision,credit:900,reason:'Fictional unchanged amount here'}),/Nothing was changed/);
  await assert.rejects(()=>ledger('ASSISTANT',{...fixBase,revision:bx.journal.revision,debit:5,credit:1000,reason:'Fictional both sides filled in'}),/either a debit or a credit/);
- await assert.rejects(()=>ledger('ASSISTANT',{...fixBase,revision:bx.journal.revision-1,credit:1000,reason:'Fictional stale revision attempt'}),/changed/);
+ await assert.rejects(()=>ledger('ASSISTANT',{...fixBase,revision:String(Number(bx.journal.revision)+5),credit:1000,reason:'Fictional stale revision attempt'}),/changed/);
  const fixed=await ledger('ASSISTANT',{...fixBase,revision:bx.journal.revision,credit:1000,reason:'Fictional credit corrected to the evidenced amount'});
  assert.equal(fixed.exception_summary.ready,true);assert.deepEqual(fixed.exceptions,[]);assert.equal(fixed.corrections.length,1);
  assert.deepEqual([fixed.corrections[0].before.credit,fixed.corrections[0].after.credit,fixed.corrections[0].by],[900,1000,actors.ASSISTANT.staff_id]);
