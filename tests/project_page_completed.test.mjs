@@ -45,7 +45,7 @@ test('the Completed chip lists closed tasks with prepared, reviewed and closed-b
  assert.ok(html.indexOf('Oct')<html.length,'grouped by period');
  document.querySelector('[data-v6="correction"][data-task="t-done"]').click();
  assert.equal($('#title').textContent,'Create task');assert.match($('#editorBody').innerHTML,/Correction · PAYE/);assert.match($('#editorBody').innerHTML,/audit-locked/);assert.match($('#editorBody').innerHTML,/t-done/,'the original task is referenced');
- assert.deepEqual(m.calls,[],'nothing is changed on the original task');
+ assert.deepEqual(m.calls.filter(c=>!['project_hub_page','project_detail_read'].includes(c.action)),[],'nothing is changed on the original task (loading the project board is read-only)');
 });
 test('Overdue chip shows only late open work; switching back to Open restores the list',()=>{
  mount('SUPERVISOR');document.querySelector('[data-filter="Overdue"]').click();
