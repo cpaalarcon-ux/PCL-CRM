@@ -3,16 +3,16 @@
 // enforce the same rules; this file only shows the queue and the buttons.
 export const PROPOSER_ROLES=Object.freeze(['ASSISTANT','SUPERVISOR']);
 export const canPropose=role=>PROPOSER_ROLES.includes(role);
-export const PROPOSAL_HELP='Your entry is saved as a proposal and nothing on the client record changes yet. An Assistant’s proposal is checked by a Supervisor, Manager or Partner; a Manager or Partner who did not prepare or check it then approves it.';
+export const PROPOSAL_HELP='Your entry is saved as a proposal and nothing on the client record changes yet. Every proposal is checked by a Supervisor, Manager or Partner other than the person who proposed it; a Manager or Partner who neither prepared nor checked it then approves it. Each step needs a note of at least 10 characters.';
 const OPEN=['Proposed','Checked'];
 export function proposalActions(p,me){
  const open=OPEN.includes(p.status),mine=p.proposed_by===me.staff_id,out=[];
  if(!open)return out;
  const lead=['PARTNER','MANAGER'].includes(me.category_code),checker=['SUPERVISOR','MANAGER','PARTNER'].includes(me.category_code);
  if(mine)out.push('withdraw');
- if(!mine&&checker&&p.status==='Proposed'&&p.proposed_role==='ASSISTANT')out.push('check');
- if(!mine&&lead&&p.checked_by!==me.staff_id&&(p.status==='Checked'||p.proposed_role==='SUPERVISOR'))out.push('approve');
- if(!mine&&checker&&!(me.category_code==='SUPERVISOR'&&p.proposed_role!=='ASSISTANT'))out.push('return');
+ if(!mine&&checker&&p.status==='Proposed')out.push('check');
+ if(!mine&&lead&&p.checked_by!==me.staff_id&&p.status==='Checked')out.push('approve');
+ if(!mine&&checker)out.push('return');
  return out;
 }
 const LABEL={check:'Check',approve:'Approve and apply',return:'Return',withdraw:'Withdraw'};
@@ -44,10 +44,10 @@ export function bindProposals(ctx){
   }
   const b=e.target.closest('[data-proposal]');if(!b)return;
   const kind=b.dataset.proposal,base={proposal_id:b.dataset.id,revision:b.dataset.rev},p=(data().proposals||[]).find(x=>x.proposal_id===b.dataset.id);
-  const ask=(title,label,required,action,success)=>modal(title,form(`<p class="info full">${esc(p?.summary||'')}</p>`+field('note',label,'','text',required?'required maxlength="500"':'maxlength="500"'),title),f=>request({action,...base,note:f.get('note')||''}),undefined,{successMessage:success});
-  if(kind==='check')ask('Check this proposal','Check note (optional)',false,'client_proposal_check','Checked. A Manager or Partner can now approve it.');
-  if(kind==='return')ask('Return this proposal','What needs to change? *',true,'client_proposal_return','Returned to the proposer.');
-  if(kind==='approve')ask('Approve and apply','Note (optional)',false,'client_proposal_approve','Approved and applied to the client record.');
+  const ask=(title,label,required,action,success)=>modal(title,form(`<p class="info full">${esc(p?.summary||'')}</p>`+field('note',label,'','text',required?'required minlength="10" maxlength="500"':'maxlength="500"'),title),f=>request({action,...base,note:f.get('note')||''}),undefined,{successMessage:success});
+  if(kind==='check')ask('Check this proposal','Check conclusion * (at least 10 characters)',true,'client_proposal_check','Checked. A Manager or Partner can now approve it.');
+  if(kind==='return')ask('Return this proposal','What needs to change? * (at least 10 characters)',true,'client_proposal_return','Returned to the proposer.');
+  if(kind==='approve')ask('Approve and apply','Approval note * (at least 10 characters)',true,'client_proposal_approve','Approved and applied to the client record.');
   if(kind==='withdraw'){try{await request({action:'client_proposal_withdraw',...base});await ctx.load();ctx.notice('Proposal withdrawn.');}catch(err){ctx.notice(err.message,true);}}
  });
 }

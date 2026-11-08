@@ -28,33 +28,37 @@ test('proposals: the right people check and approve, nobody approves their own w
  // 2. Approval comes only after a check, and not from the people who prepared or may not approve.
  await assert.rejects(()=>act('ASSISTANT',{action:'client_proposal_approve',proposal_id:a1.proposal_id}),/Manager or Partner can approve/);
  await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_approve',proposal_id:a1.proposal_id}),/Manager or Partner can approve/);
- await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:a1.proposal_id}),/check this Assistant proposal first/);
+ await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:a1.proposal_id}),/must check this proposal first/);
  await assert.rejects(()=>act('ASSISTANT',{action:'client_proposal_check',proposal_id:a1.proposal_id}),/Supervisor, Manager or Partner|access/);
- await act('SUPERVISOR',{action:'client_proposal_check',proposal_id:a1.proposal_id,note:'Matches the certificate'});r=await row(a1.proposal_id);assert.equal(r.status,'Checked');assert.equal(r.checked_by,actors.SUPERVISOR.staff_id);
- await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_check',proposal_id:a1.proposal_id}),/not been checked/);
+ await act('SUPERVISOR',{action:'client_proposal_check',proposal_id:a1.proposal_id,note:'Matches the certificate of incorporation'});r=await row(a1.proposal_id);assert.equal(r.status,'Checked');assert.equal(r.checked_by,actors.SUPERVISOR.staff_id);
+ await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_check',proposal_id:a1.proposal_id,note:'Checked again by mistake'}),/not been checked/);
  // 3. A failing replay changes nothing and leaves the proposal waiting.
- await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:a1.proposal_id},async()=>{throw new Error('Client changed or is unavailable. Refresh before editing.');}),/Client changed/);
+ await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:a1.proposal_id,note:'Approved after the check'},async()=>{throw new Error('Client changed or is unavailable. Refresh before editing.');}),/Client changed/);
  assert.equal((await row(a1.proposal_id)).status,'Checked');
  // 4. The approver applies it under their own name.
- const done=await act('PARTNER',{action:'client_proposal_approve',proposal_id:a1.proposal_id,note:'Approved'});assert.equal(done.status,'Approved');assert.equal(await name(),'UAT Fictional New Name Ltd');
+ const done=await act('PARTNER',{action:'client_proposal_approve',proposal_id:a1.proposal_id,note:'Approved after the check'});assert.equal(done.status,'Approved');assert.equal(await name(),'UAT Fictional New Name Ltd');
  r=await row(a1.proposal_id);assert.equal(r.status,'Approved');assert.equal(r.decided_by,actors.PARTNER.staff_id);assert.notEqual(r.decided_by,r.proposed_by);assert.equal(r.result.ok,true);
  await assert.rejects(()=>act('PARTNER',{action:'client_proposal_approve',proposal_id:a1.proposal_id}),/already closed/);
  // 5. Whoever checked cannot also approve.
  const a2=await propose('ASSISTANT',{action:'contact_save',client_id:C,full_name:'Fictional Contact',role_in_decision:'Decision Maker'});
- await act('MANAGER',{action:'client_proposal_check',proposal_id:a2.proposal_id});
- await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:a2.proposal_id}),/another Manager or Partner must approve/);
- await act('MANAGER2',{action:'client_proposal_approve',proposal_id:a2.proposal_id,note:'Fictional approval'},async q=>({ok:true,saw:q.action}));assert.equal((await row(a2.proposal_id)).decided_by,actors.MANAGER2.staff_id);
- // 6. A Supervisor's proposal skips the check; only a Manager or Partner approves it.
+ await assert.rejects(()=>act('MANAGER',{action:'client_proposal_check',proposal_id:a2.proposal_id}),/at least 10 characters/);
+ await act('MANAGER',{action:'client_proposal_check',proposal_id:a2.proposal_id,note:'Contact details match the ID copy'});
+ await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:a2.proposal_id,note:'Approved by the checker'}),/another Manager or Partner must approve/);
+ await act('MANAGER2',{action:'client_proposal_approve',proposal_id:a2.proposal_id,note:'Fictional approval by Manager 2'},async q=>({ok:true,saw:q.action}));assert.equal((await row(a2.proposal_id)).decided_by,actors.MANAGER2.staff_id);
+ // 6. A Supervisor's proposal is checked by someone else too, then approved by a Manager or Partner who neither proposed nor checked it.
  const s1=await propose('SUPERVISOR',{action:'owner_add',client_id:C,full_name:'Fictional Owner',identity_reference:'ID-FICT-1',ownership_percentage:40});
- await assert.rejects(()=>act('MANAGER',{action:'client_proposal_check',proposal_id:s1.proposal_id}),/not been checked|Assistant proposal/);
- await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_approve',proposal_id:s1.proposal_id}),/Manager or Partner can approve/);
- await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_return',proposal_id:s1.proposal_id,note:'No'}),/cannot return your own/);
- await act('MANAGER',{action:'client_proposal_approve',proposal_id:s1.proposal_id},async q=>({ok:true,saw:q.action}));assert.equal((await row(s1.proposal_id)).status,'Approved');
+ await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:s1.proposal_id,note:'Approving without any check'}),/must check this proposal first/);
+ await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_check',proposal_id:s1.proposal_id,note:'Checking my own proposal'}),/cannot check your own/);
+ await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_approve',proposal_id:s1.proposal_id,note:'A Supervisor cannot approve'}),/Manager or Partner can approve/);
+ await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_return',proposal_id:s1.proposal_id,note:'No'}),/cannot return your own|10 characters/);
+ await act('MANAGER',{action:'client_proposal_check',proposal_id:s1.proposal_id,note:'Fallback check by a Manager: no other Supervisor'});
+ await assert.rejects(()=>act('MANAGER2',{action:'client_proposal_approve',proposal_id:s1.proposal_id,note:'ok'}),/at least 10 characters/);
+ await act('MANAGER2',{action:'client_proposal_approve',proposal_id:s1.proposal_id,note:'Approved after the Manager check'},async q=>({ok:true,saw:q.action}));assert.equal((await row(s1.proposal_id)).status,'Approved');
  // 7. Return needs a reason and closes it; only the proposer withdraws.
  const a3=await propose('ASSISTANT',{action:'owner_add',client_id:C,full_name:'Fictional Owner Two',identity_reference:'ID-FICT-2',ownership_percentage:10});
- await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_return',proposal_id:a3.proposal_id,note:''}),/Say what needs to change/);
+ await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_return',proposal_id:a3.proposal_id,note:'short'}),/at least 10 characters/);
  await act('SUPERVISOR',{action:'client_proposal_return',proposal_id:a3.proposal_id,note:'Identity reference is missing a digit'});assert.equal((await row(a3.proposal_id)).status,'Returned');
- await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:a3.proposal_id}),/already closed/);
+ await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:a3.proposal_id,note:'Approving a closed one'}),/already closed/);
  const a4=await propose('ASSISTANT',{action:'contact_save',client_id:C,full_name:'Fictional Withdrawn Contact'});
  await assert.rejects(()=>act('SUPERVISOR',{action:'client_proposal_withdraw',proposal_id:a4.proposal_id}),/access/);
  await act('ASSISTANT',{action:'client_proposal_withdraw',proposal_id:a4.proposal_id});assert.equal((await row(a4.proposal_id)).status,'Withdrawn');
@@ -63,6 +67,11 @@ test('proposals: the right people check and approve, nobody approves their own w
  await assert.rejects(()=>as('ASSISTANT',()=>tx`update erp_private.change_proposals set status='Approved' where proposal_id=${a5.proposal_id}`),/Manager or Partner|neither proposed/);
  await assert.rejects(()=>as('ASSISTANT',()=>tx`update erp_private.change_proposals set payload='{}'::jsonb where proposal_id=${a5.proposal_id}`),/cannot be edited/);
  await assert.rejects(()=>as('MANAGER',()=>tx`update erp_private.change_proposals set status='Approved' where proposal_id=${a5.proposal_id}`),/check/);
+ // The database also refuses a check or decision without a real note, whatever endpoint is used.
+ const a6=await propose('ASSISTANT',{action:'contact_save',client_id:C,full_name:'Fictional Note Contact'});
+ await assert.rejects(()=>as('SUPERVISOR',()=>tx`update erp_private.change_proposals set status='Checked',check_note='ok' where proposal_id=${a6.proposal_id}`),/at least 10 characters/);
+ await assert.rejects(()=>as('SUPERVISOR',()=>tx`update erp_private.change_proposals set status='Checked' where proposal_id=${a6.proposal_id}`),/at least 10 characters/);
+ await assert.rejects(()=>as('SUPERVISOR',()=>tx`update erp_private.change_proposals set status='Checked',check_note='          ' where proposal_id=${a6.proposal_id}`),/at least 10 characters/);
  await assert.rejects(()=>as('MANAGER',()=>tx`delete from erp_private.change_proposals where proposal_id=${a5.proposal_id}`),/delet|permission denied/i);
  await assert.rejects(()=>as('ASSISTANT',()=>tx`insert into erp_private.change_proposals(action,summary,payload,proposed_by,proposed_role) values('client_save','Forged',${'{}'},${actors.MANAGER.staff_id},'ASSISTANT')`),/row-level security/);
  // 9. Visibility: an Assistant sees only their own; a Supervisor and the leaders see every proposal.

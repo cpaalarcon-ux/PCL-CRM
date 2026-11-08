@@ -121,7 +121,7 @@ test('Withholding tax: purchase rows, schedule, return and journal',async t=>{
   await assert.rejects(()=>wht('ASSISTANT',{action:'wht_line_void',line_id:agentId,reason:'short'}),/at least 10/);
   await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,status,prepared_by) values(${P},'WHT','2026-11-01','2026-11-30','Submitted',${actors.ASSISTANT.staff_id})`;
   await assert.rejects(()=>wht('ASSISTANT',{action:'wht_line_void',line_id:agentId,reason:'The month is already submitted'}),/submitted or locked/);
-  await tx`update erp_private.tax_cases set status='Returned' where project_id=${P} and kind='WHT'`;
+  await tx`update erp_private.tax_cases set status='Returned',review_note='Fictional return: line removal needed' where project_id=${P} and kind='WHT'`;
   await wht('MANAGER',{action:'wht_line_void',line_id:agentId,reason:'Entered against the wrong client'});
   assert.equal((await lines()).some(x=>x.payee_name==='Fictional Agent'),false);
   assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='WITHHOLDING_LINE_REMOVED'`)[0].n,1);

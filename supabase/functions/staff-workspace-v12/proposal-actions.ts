@@ -27,7 +27,7 @@ export async function createProposal(tx:any,a:any,p:any){
  const summary=proposalSummary(action,p);
  const [row]=await tx`insert into erp_private.change_proposals(client_id,action,summary,payload,reason,proposed_by,proposed_role)
   values(${clientId},${action},${summary},${tx.json(payload)},${reason||null},${a.staff_id},${a.category_code}) returning proposal_id,status`;
- return {ok:true,proposed:true,proposal_id:row.proposal_id,status:row.status,message:a.category_code==='ASSISTANT'?'Proposal saved. A Supervisor, Manager or Partner will check it, then a Manager or Partner approves it. Nothing has changed on the client record yet.':'Proposal saved. A Manager or Partner will approve it. Nothing has changed on the client record yet.'};
+ return {ok:true,proposed:true,proposal_id:row.proposal_id,status:row.status,message:'Proposal saved. A different Supervisor, Manager or Partner will check it, then a Manager or Partner who did not prepare or check it approves it. Nothing has changed on the client record yet.'};
 }
 export async function proposalsRead(tx:any){
  return await tx`select p.proposal_id,p.client_id,c.company_name,p.action,p.summary,p.reason,p.status,p.proposed_role,p.proposed_at,p.proposed_by,s.full_name proposed_by_name,
@@ -46,16 +46,17 @@ export async function proposalAction(tx:any,a:any,p:any,replay:(p:any)=>Promise<
  const action=String(p.action||'');
  if(action==='client_proposal_check'){
   if(!canCheck(a))deny();const row=await load(tx,p);
-  if(row.status!=='Proposed'||row.proposed_role!=='ASSISTANT')fail(409,'Only an Assistant proposal that has not been checked can be checked.');
+  if(row.status!=='Proposed')fail(409,'Only a proposal that has not been checked can be checked.');
   if(row.proposed_by===a.staff_id)fail(403,'You cannot check your own proposal.');
-  await tx`update erp_private.change_proposals set status='Checked',check_note=${text(p.note||'',1000,false)||null} where proposal_id=${row.proposal_id}`;
+  const note=text(p.note||'',1000,false);if(note.length<10)fail(400,'Record your check conclusion in at least 10 characters.');
+  await tx`update erp_private.change_proposals set status='Checked',check_note=${note} where proposal_id=${row.proposal_id}`;
   return {ok:true,status:'Checked'};
  }
  if(action==='client_proposal_return'){
   if(!canCheck(a))deny();const row=await load(tx,p);
   if(!['Proposed','Checked'].includes(row.status))fail(409,'This proposal is already closed.');
   if(row.proposed_by===a.staff_id)fail(403,'You cannot return your own proposal. Withdraw it instead.');
-  const note=text(p.note||'',1000,false);if(note.length<3)fail(400,'Say what needs to change.');
+  const note=text(p.note||'',1000,false);if(note.length<10)fail(400,'Say what needs to change in at least 10 characters.');
   await tx`update erp_private.change_proposals set status='Returned',decision_note=${note} where proposal_id=${row.proposal_id}`;
   return {ok:true,status:'Returned'};
  }
@@ -71,10 +72,11 @@ export async function proposalAction(tx:any,a:any,p:any,replay:(p:any)=>Promise<
   if(!['Proposed','Checked'].includes(row.status))fail(409,'This proposal is already closed.');
   if(row.proposed_by===a.staff_id)fail(403,'You cannot approve your own proposal.');
   if(row.checked_by&&row.checked_by===a.staff_id)fail(403,'You checked this proposal, so another Manager or Partner must approve it.');
-  if(row.proposed_role==='ASSISTANT'&&row.status!=='Checked')fail(409,'A Supervisor, Manager or Partner must check this Assistant proposal first.');
+  if(row.status!=='Checked')fail(409,'A Supervisor, Manager or Partner other than the proposer must check this proposal first.');
+  const approvalNote=text(p.note||'',1000,false);if(approvalNote.length<10)fail(400,'Record your approval note in at least 10 characters.');
   // Replayed under the approver's own name: every existing validation, scope and review rule runs exactly as if the approver had typed it.
   const result=await replay({...row.payload,action:row.action,proposal_applied:row.proposal_id});
-  await tx`update erp_private.change_proposals set status='Approved',decision_note=${text(p.note||'',1000,false)||null},result=${tx.json(JSON.parse(JSON.stringify(result??{ok:true})))} where proposal_id=${row.proposal_id}`;
+  await tx`update erp_private.change_proposals set status='Approved',decision_note=${approvalNote},result=${tx.json(JSON.parse(JSON.stringify(result??{ok:true})))} where proposal_id=${row.proposal_id}`;
   return {ok:true,status:'Approved',applied:result};
  }
  return undefined;

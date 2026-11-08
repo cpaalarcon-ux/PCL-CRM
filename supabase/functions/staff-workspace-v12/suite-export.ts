@@ -4,6 +4,7 @@ import {PDFDocument,StandardFonts} from 'pdf-lib';
 import {fail,uuid} from './validation.mjs';
 import {taxSummary} from './tax-review-actions.ts';
 import {vat3File} from './vat3-export.ts';
+import {approvalTrailRows,TRAIL_HEADERS} from './approval-trail.ts';
 import {one,leader} from './suite-actions.ts';
 const clean=(v:any)=>typeof v==='object'&&v!==null?JSON.stringify(v):v??'';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
@@ -94,6 +95,7 @@ export async function suiteExport(tx:any,a:any,p:any,storage:any){
   if(current.reconciliation){const cr=current.reconciliation;sheets.push(['Sales bank review',['Field','Reviewed value'],Object.entries(cr).filter(([k])=>k!=='inputs'&&k!=='result')]);sheets.push(['Bank bridge',['Category','Amount KES','Reference','Note','Evidence'],(cr.result?.allocations||[]).map((x:any)=>[x.category,x.amount,x.reference,x.note,x.evidence_id])]);}
   if(calculated.employees)sheets.push(['Payroll',['Employee','Employment type','Gross','Deductions','Taxable pay','PAYE','Source PAYE','Difference'],calculated.employees.map((e:any)=>[e.name,e.employment_type||'Permanent',e.gross,e.allowed_deductions,e.taxable,e.paye,e.source_paye,e.variance])]);
   if(calculated.allocation)sheets.push(['Partner allocations',['Partner','Profit share %','Allocated income'],calculated.allocation.map((x:any)=>[x.name,x.share,x.amount])]);
+  sheets.push(['Approval Trail',TRAIL_HEADERS,await approvalTrailRows(tx,'tax_cases',[c.case_id])]);
   sheets.push(['Applied tax rules',['Code','Label','From','Through','Parameters','Official source','Approval'],(current.applied_rates||[]).map((r:any)=>[r.rate_key,r.label,dateText(r.effective_from),dateText(r.effective_to),r.parameters,r.source_url,r.approved_at])]);
   if(current.profile)sheets.push(['Client tax profile',['Field','Value'],Object.entries(current.profile).filter(([k])=>['entity_type','residency','regime','obligations','effective_from','effective_to','notes','verified_at'].includes(k))]);
   if(!locked)sheets.push(['Review blockers',['Issue'],current.issues.map((i:string)=>[i])]);

@@ -271,7 +271,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  }
  if(p.action==='timesheet_review'){
   if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must review timesheets.');
-  const status=choice(p.status,['Approved','Rejected']),note=text(p.review_note||'',2000,status==='Rejected');
+  const status=choice(p.status,['Approved','Rejected']),note=text(p.review_note||'',2000,true);if(note.length<10)fail(400,'Record a review note of at least 10 characters.');
   const rows=await tx`update erp_private.timesheets set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note}
    where timesheet_id=${uuid(p.timesheet_id)} and staff_id<>${a.staff_id} and status='Submitted' and revision=${revision(p.revision)} returning timesheet_id`;
   if(!rows.length)fail(409,'This entry cannot be reviewed. Refresh the queue.');return {ok:true};

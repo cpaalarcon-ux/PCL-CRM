@@ -18,9 +18,11 @@ test('policy sign-off: Assistants are locked out until the Partner signs; only a
  await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id) values(${C},'UAT Fictional Old Name Ltd',${actors.MANAGER.staff_id})`;await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C},${F})`;
  const P=id();await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${P},${C},${F},'UAT Fictional proposals project','TAX-COMP',${actors.MANAGER.staff_id})`;
  for(const role of ['ASSISTANT','SUPERVISOR'])await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors[role].staff_id},${F},${role})`;
- const pol=()=>as('MANAGER',()=>policiesRead(tx)).then(r=>r[0]);
+ const pol=()=>as('MANAGER',()=>policiesRead(tx)).then(r=>r.find(x=>x.policy_code==='ASSISTANT_DATA_ENTRY'));
  // 1. Seeded as Pending.
  let p=await pol();assert.equal(p.policy_code,'ASSISTANT_DATA_ENTRY');assert.equal(p.status,'Pending');assert.equal(p.signed_by,null);assert.match(p.statement,/I authorize Audit Assistants to enter client data/);
+ // 1b. The assignment, leave and security policies are recorded as Pending too, with their own wording.
+ const all=await as('MANAGER',()=>policiesRead(tx));assert.deepEqual(all.map(x=>x.policy_code).sort(),['ASSIGNMENT_POLICY','ASSISTANT_DATA_ENTRY','LEAVE_HANDOVER_POLICY','SECURITY_POLICY']);assert.ok(all.every(x=>x.status==='Pending'));assert.match(all.find(x=>x.policy_code==='SECURITY_POLICY').statement,/second factor/);
  // 2. Locked: an Assistant cannot propose client data; a Supervisor is not affected by this policy.
  const entry={action:'contact_save',client_id:C,full_name:'Fictional Contact'};
  await assert.rejects(()=>as('ASSISTANT',a=>createProposal(tx,a,entry)),/locked pending Partner authorization/);
@@ -45,7 +47,7 @@ test('policy sign-off: Assistants are locked out until the Partner signs; only a
  await as('PARTNER',a=>policyAction(tx,a,{action:'policy_revoke',policy_code:'ASSISTANT_DATA_ENTRY'}));p=await pol();assert.equal(p.status,'Pending');assert.equal(p.signed_by,null);
  await assert.rejects(()=>as('ASSISTANT',a=>createProposal(tx,a,entry)),/locked/);
  assert.equal((await tx`select count(*)::int n from erp_private.change_proposals`)[0].n,2);
- const audit=await tx`select count(*)::int n from erp_private.audit_events where table_name like '%system_policies'`;assert.equal(audit[0].n,2,'the signature and the withdrawal are audit-logged');
+ const audit=await tx`select count(*)::int n from erp_private.audit_events where table_name like '%system_policies' and action<>'INSERT'`;assert.equal(audit[0].n,2,'the signature and the withdrawal are audit-logged');
 });
 const me=role=>({category_code:role,staff_id:'s-'+role});
 test('the Settings card and banner: Partner gets Sign / Withdraw, others read only; Assistants see the locked banner and nothing else changes',()=>{

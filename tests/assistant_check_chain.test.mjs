@@ -35,7 +35,10 @@ test('Assistant prepares, a Supervisor checks, a different Manager approves',asy
   await assert.rejects(()=>decide('MANAGER',v2,'Approved'),/cannot also approve/);
   assert.equal((await decide('MANAGER2',v2,'Approved'))[0].status,'Approved','a different Manager approves');
   const v3=await propose('SUPERVISOR','2028-01-01');
-  assert.equal((await decide('MANAGER',v3,'Approved'))[0].status,'Approved','a Supervisor-prepared chart needs no separate check');
+  await assert.rejects(()=>decide('MANAGER',v3,'Approved'),/must check a chart prepared by/);
+  await assert.rejects(()=>check('SUPERVISOR',v3),/other than the preparer must check/);
+  assert.equal((await check('MANAGER2',v3)).length,1,'a Supervisor-prepared chart is checked by someone else');
+  assert.equal((await decide('MANAGER',v3,'Approved'))[0].status,'Approved','then a different Manager approves');
   const v4=await propose('ASSISTANT','2029-01-01');
   assert.equal((await decide('SUPERVISOR',v4,'Returned'))[0].status,'Returned','a Supervisor can return an Assistant chart');
  });
