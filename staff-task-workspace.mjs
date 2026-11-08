@@ -2,6 +2,7 @@
 export function workspaceRoute(hash){
  const p=new URLSearchParams(String(hash||'').replace(/^#/,''));
  if(p.has('task'))return {view:'task',id:p.get('task')||''};
+ if(p.has('client'))return {view:'clientfile',id:p.get('client')||''};
  if(p.has('project'))return {view:'projects',id:p.get('project')||''};
  if(p.has('view'))return {view:p.get('view')||'home'};
  return null;
