@@ -66,6 +66,8 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
    (select count(*)::int from erp_private.stock_policy_versions x where x.client_id=c.client_id) as stock_method_count,
    (select count(*)::int from erp_private.stock_categories x where x.client_id=c.client_id) as category_count,
    (select count(*)::int from erp_private.client_account_mappings x where x.client_id=c.client_id and x.status='Active') as approved_account_count,
+   (select count(*)::int from erp_private.client_account_mappings x where x.client_id=c.client_id and x.status in ('Active','Draft')) as usable_account_count,
+   (select count(*)::int from erp_private.client_activities x where x.client_id=c.client_id and (x.effective_to is null or x.effective_to>=current_date) and x.pack_code in ('Wholesale','Retail','Agriculture','Manufacturing','Construction','Hospitality')) as stock_required_count,
    (select count(*)::int from erp_private.client_account_mappings x where x.client_id=c.client_id and x.status='Draft') as pending_account_count
    from erp_private.clients c where c.deleted_at is null order by c.company_name limit 1000`;
  }
@@ -229,7 +231,13 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
   if(activity.effective_to&&minimum>asDay(activity.effective_to))fail(400,'No stock settings date is available within this activity period. Update the activity dates first.');
   if(from<minimum)fail(400,`Choose ${minimum} or later. New settings must start after the current settings and any submitted or approved stock period.`);
   const basis=text(p.valuation_basis||'',2000,false),policyEvidence=stockPolicyEvidence(p);
-  return one(await tx`insert into erp_private.stock_policy_versions(client_id,activity_id,inventory_method,valuation_basis,effective_from,count_frequency,variance_threshold,evidence,configured_by) values(${cid},${activity.activity_id},${choice(p.inventory_method,['Periodic','Perpetual'])},${basis},${from},${choice(p.count_frequency,['Weekly','Monthly','Annually'])},${threshold},${policyEvidence},${a.staff_id}) returning policy_id`);
+  const categoryNames=[...new Set(String(p.stock_categories||'').split(/[\n;,]+/).map((x:string)=>x.trim()).filter(Boolean))];
+  if(categoryNames.length>20)fail(400,'Enter at most 20 stock categories at a time.');
+  for(const name of categoryNames){if(name.length<2||name.length>100||/^(?:n\/?a|not applicable|—|-)$/i.test(name))fail(400,'Enter the actual product or material category, 2 to 100 characters.');}
+  const inventoryUse=choice(p.inventory_use||'Goods for resale',['Goods for resale','Construction raw materials','Other inventory']);
+  const saved=one(await tx`insert into erp_private.stock_policy_versions(client_id,activity_id,inventory_method,valuation_basis,effective_from,count_frequency,variance_threshold,evidence,configured_by) values(${cid},${activity.activity_id},${choice(p.inventory_method,['Periodic','Perpetual'])},${basis},${from},${choice(p.count_frequency,['Weekly','Monthly','Annually'])},${threshold},${policyEvidence},${a.staff_id}) returning policy_id`);
+  for(const name of categoryNames)await tx`insert into erp_private.stock_categories(client_id,activity_id,inventory_use,stock_class,created_by) values(${cid},${activity.activity_id},${inventoryUse},${name},${a.staff_id}) on conflict do nothing`;
+  return saved;
  }
  if(p.action==='v3_vat_categories_save'){
   leader(a);const c=one(await tx`select * from erp_private.clients where client_id=${uuid(p.client_id)} and deleted_at is null for update`);fresh(c,p);

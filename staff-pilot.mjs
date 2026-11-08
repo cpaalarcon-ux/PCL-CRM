@@ -2,7 +2,7 @@ let documentKind='Evidence';
 import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261108-proposals-v1';
 import {policyCard,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261108-policy-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261107-annualpack-v3';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261108-stockcats-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261105-check-v1';
 import {createPresenceUI} from './staff-presence.mjs?v=20261103-idle-timeout-v1';
@@ -15,7 +15,7 @@ import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261108-project-hub
 import {createMessenger} from './staff-messenger.mjs?v=20261105-check-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261107-annualpack-v3';
 import {uploadChoices} from './staff-pilot-upload.mjs';
-import {clientProgress,nextStep,clientStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261108-cards-v1';
+import {clientProgress,nextStep,clientStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261108-cards-v2';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261105-check-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261029-audit-start-flow-v1';
