@@ -15,11 +15,77 @@ export function createWorkspaceUI(ctx){
  const ledger=createLedgerUI(ctx,{onPayrollImport:projectId=>periodImports.newImport(projectId,{kind:'Payroll'})});
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty}=ctx;
  const d=()=>ctx.data(),editor=()=>['PARTNER','MANAGER','SUPERVISOR'].includes(d().me.category_code),leader=()=>['PARTNER','MANAGER'].includes(d().me.category_code);
- let itemsView=loadMode(globalThis.localStorage),selected='',selectedPeriod='',showSchedules=false,taskFilter='All',projectTab='Tasks',tabProject='',workSearch='',workFirm='',workShow='open',workYear='',workLimit=25,timeFilter='My time',week='',importPage=0;
+ let itemsView=loadMode(globalThis.localStorage),selected='',selectedPeriod='',showSchedules=false,taskFilter='All',projectTab='Tasks',tabProject='',workSearch='',workFirm='',workShow='open',workYear='',workHub={key:'',items:[],snapshot_at:'',cursor:null,has_more:false,loaded:false,busy:false,error:'',serial:0},projectDetailsLoaded=new Set(),projectDetailsPending=new Map(),projectDetailsErrors=new Map(),detailEpoch=0,cachedData=null,timeFilter='My time',week='',importPage=0;
  const stripTask=name=>String(name).replace(/ · \d{4}-W\d{2}.*$| · \d{4}-\d{2}-\d{2}$/,'');
  const schedule=id=>d().schedules.find(s=>s.project_id===id);
  const candidates=firm=>d().candidates.filter(s=>s.firm_id===firm);
  const opts=(items,value,blank='Choose…')=>`<option value="">${esc(blank)}</option>`+items.map(([v,l])=>`<option value="${esc(v)}" ${v===value?'selected':''}>${esc(l)}</option>`).join('');
+  function syncProjectCaches(){
+   if(cachedData===d())return;
+   cachedData=d();detailEpoch++;projectDetailsLoaded.clear();projectDetailsPending.clear();projectDetailsErrors.clear();
+   workHub={key:'',items:[],snapshot_at:'',cursor:null,has_more:false,loaded:false,busy:false,error:'',serial:workHub.serial+1};
+  }
+  function mergeRows(key,idKey,rows){
+   const map=new Map((d()[key]||[]).map(row=>[row[idKey],row]));
+   for(const row of rows||[]){const prior=map.get(row[idKey])||{};map.set(row[idKey],{...prior,...row});}
+   d()[key]=[...map.values()];
+  }
+  function mergeProjectHubItems(items){
+   const projects=[],schedules=[];
+   for(const item of items||[]){
+    const {schedule:sc,periods,open_count,overdue_count,company_name,firm_code,...project}=item;
+    projects.push(project);
+    const client=(d().clients||[]).find(x=>x.client_id===item.client_id);
+    if(client){if(client.company_name!==company_name)client.company_name=company_name;}
+    else d().clients=[...(d().clients||[]),{client_id:item.client_id,company_name,details_visible:false}];
+    const firmRow=(d().firms||[]).find(x=>x.firm_id===item.handling_firm_id);
+    if(firmRow){if(firm_code)firmRow.firm_code=firm_code;}
+    else d().firms=[...(d().firms||[]),{firm_id:item.handling_firm_id,firm_code:firm_code||''}];
+    if(sc)schedules.push(sc);
+    else d().schedules=(d().schedules||[]).filter(x=>x.project_id!==item.project_id);
+   }
+   mergeRows('projects','project_id',projects);mergeRows('schedules','project_id',schedules);
+  }
+  function mergeProjectDetail(result){
+   const pid=result.project.project_id,oldTasks=(d().tasks||[]).filter(t=>t.project_id===pid),oldTaskIds=new Set(oldTasks.map(t=>t.task_id)),oldPeriodIds=new Set((d().work_periods||[]).filter(w=>w.project_id===pid).map(w=>w.work_period_id));
+   mergeRows('projects','project_id',[result.project]);
+   const currentClient=(d().clients||[]).find(c=>c.client_id===result.client.client_id)||{};
+   mergeRows('clients','client_id',[{...currentClient,...result.client,details_visible:true}]);
+   if(result.firm)mergeRows('firms','firm_id',[result.firm]);
+   d().schedules=(d().schedules||[]).filter(x=>x.project_id!==pid);if(result.schedule)d().schedules.push(result.schedule);
+   d().work_periods=(d().work_periods||[]).filter(x=>x.project_id!==pid).concat(result.work_periods||[]);
+   d().tasks=(d().tasks||[]).filter(t=>t.project_id!==pid).concat(result.tasks||[]);
+   d().task_procedures=(d().task_procedures||[]).filter(x=>x.project_id!==pid&&!oldTaskIds.has(x.task_id)).concat(result.task_procedures||[]);
+   d().work_period_tasks=(d().work_period_tasks||[]).filter(x=>!oldPeriodIds.has(x.work_period_id)).concat(result.work_period_tasks||[]);
+   d().task_events=(d().task_events||[]).filter(x=>!oldTaskIds.has(x.task_id)).concat(result.task_events||[]);
+  }
+  async function ensureProjectDetail(pid){
+   if(!pid||projectDetailsLoaded.has(pid)||projectDetailsPending.has(pid))return;
+   const epoch=detailEpoch,token={};projectDetailsPending.set(pid,token);projectDetailsErrors.delete(pid);
+   try{
+    const result=await request({action:'project_detail_read',project_id:pid});
+    if(epoch!==detailEpoch||projectDetailsPending.get(pid)!==token)return;
+    mergeProjectDetail(result);projectDetailsLoaded.add(pid);
+   }catch(error){if(epoch===detailEpoch&&projectDetailsPending.get(pid)===token)projectDetailsErrors.set(pid,error?.message||'Could not load the project record.');}
+   finally{if(epoch===detailEpoch&&projectDetailsPending.get(pid)===token){projectDetailsPending.delete(pid);ctx.render();}}
+  }
+  async function loadProjectHub(reset=false){
+   const selectedFirm=ctx.firm()||workFirm||'',year=workYear||today().slice(0,4),key=JSON.stringify({firm:selectedFirm,search:workSearch.trim(),show:workShow,year});
+   if(reset||workHub.key!==key){workHub={key,items:[],snapshot_at:'',cursor:null,has_more:false,loaded:false,busy:false,error:'',serial:workHub.serial+1};}
+   if(workHub.busy||(!reset&&workHub.loaded&&!workHub.has_more))return;
+   const serial=workHub.serial;workHub.busy=true;workHub.error='';
+   try{
+    const query={action:'project_hub_page',page_size:25,firm_id:selectedFirm||undefined,search:workSearch.trim(),show:workShow,year};
+    if(!reset&&workHub.snapshot_at){query.snapshot_at=workHub.snapshot_at;if(workHub.cursor){query.after_created_at=workHub.cursor.created_at;query.after_project_id=workHub.cursor.project_id;}}
+    const page=await request(query);
+    if(serial!==workHub.serial)return;
+    workHub.snapshot_at=page.snapshot_at;workHub.cursor=page.next_cursor;workHub.has_more=!!page.has_more;workHub.loaded=true;
+    workHub.items=reset?(page.items||[]):workHub.items.concat(page.items||[]);
+    mergeProjectHubItems(page.items||[]);
+   }catch(error){if(serial===workHub.serial){workHub.loaded=true;workHub.error=error?.message||'Could not load projects.';}}
+   finally{if(serial===workHub.serial){workHub.busy=false;ctx.render();}}
+  }
+
  const dates=()=>{let date=new Date(today()+'T00:00:00Z');date.setUTCDate(date.getUTCDate()-((date.getUTCDay()+6)%7));return date.toISOString().slice(0,10);};
  const currentPeriodStart=(client={})=>currentReportingMonth(client,today()).starts_on;
  const monthEnd=value=>{if(!/^\d{4}-\d{2}$/.test(String(value||'')))return '';const [year,month]=value.split('-').map(Number);return new Date(Date.UTC(year,month,0)).toISOString().slice(0,10);};
