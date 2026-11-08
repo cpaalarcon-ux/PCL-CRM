@@ -91,6 +91,93 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   if(!existingSchedule&&s.pack==='Tax Compilation'&&s.frequency!=='Once-off'&&s.starts_on.slice(8,10)!=='01')fail(400,'Set recurring work to the first day of the client’s current reporting month. Earlier missing months can be added as one catch-up task.');
   return await previewSchedule(tx,s,cid);
  }
+ if(p.action==='project_hub_page'){
+  const pageSize=Number(p.page_size||25);if(!Number.isInteger(pageSize)||pageSize<1||pageSize>50)fail(400,'Choose a project page size from 1 to 50.');
+  const yearText=String(p.year||nairobiDate().slice(0,4));if(!/^\d{4}$/.test(yearText)||Number(yearText)<2000||Number(yearText)>2200)fail(400,'Choose a valid reporting year.');
+  const yearStart=`${yearText}-01-01`,yearEnd=`${Number(yearText)+1}-01-01`,firm=p.firm_id?uuid(p.firm_id):null,search=text(p.search||'',120,false),show=choice(p.show||'open',['open','overdue','all']);
+  const timestamp=(value:any,label:string)=>{if(value==null||value==='')return null;if(typeof value!=='string'||value.length>40||!Number.isFinite(Date.parse(value)))fail(400,`The ${label} is invalid.`);return new Date(value).toISOString();};
+  const snapshotInput=timestamp(p.snapshot_at,'project snapshot'),afterCreatedAt=timestamp(p.after_created_at,'project page cursor'),afterProjectId=p.after_project_id?uuid(p.after_project_id):null;
+  if(Boolean(afterCreatedAt)!==Boolean(afterProjectId))fail(400,'The project page cursor is incomplete. Restart the project list.');
+  const [snapshot]=await tx`select coalesce(${snapshotInput}::timestamptz,transaction_timestamp()) snapshot_at`;
+  const fullAccess=['PARTNER','MANAGER'].includes(a.category_code),intern=a.category_code==='INTERN',today=nairobiDate();
+  const rows=await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,p.service_code,p.status,p.tax_master,p.revision,p.created_at,
+    c.company_name,f.firm_code,
+    (select to_jsonb(s) from erp_private.project_schedules s where s.project_id=p.project_id and s.deleted_at is null) schedule,
+    board.periods,board.open_count,board.overdue_count
+   from erp_private.projects p
+   join erp_private.clients c using(client_id)
+   join erp_private.firms f on f.firm_id=p.handling_firm_id
+   cross join lateral (
+    select coalesce(jsonb_agg(jsonb_build_object('work_period_id',w.work_period_id,'project_id',w.project_id,'period_kind',w.period_kind,'starts_on',w.starts_on,'ends_on',w.ends_on,'status',w.status,'open_count',counts.open_count,'overdue_count',counts.overdue_count) order by w.starts_on,w.period_kind),'[]'::jsonb) periods,
+      coalesce(sum(counts.open_count),0)::int open_count,coalesce(sum(counts.overdue_count),0)::int overdue_count
+    from erp_private.project_work_periods w
+    cross join lateral (
+     select count(distinct t.task_id) filter(where t.status not in ('Completed','Cancelled'))::int open_count,
+       count(distinct t.task_id) filter(where t.status not in ('Completed','Cancelled') and (t.due_at at time zone 'Africa/Nairobi')::date<(now() at time zone 'Africa/Nairobi')::date)::int overdue_count
+     from erp_private.work_period_tasks l join erp_private.tasks t using(task_id)
+     where l.work_period_id=w.work_period_id and t.deleted_at is null
+      and (
+       ${fullAccess}::boolean
+       or (${!intern}::boolean and exists(select 1 from erp_private.project_assignments pa where pa.project_id=t.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date)))
+       or t.assigned_to=${a.staff_id}
+       or (${!intern}::boolean and (
+        exists(select 1 from erp_private.task_procedures tp where tp.task_id=t.task_id and tp.reviewer_id=${a.staff_id} and tp.prepared_by<>${a.staff_id})
+        or exists(select 1 from erp_private.project_schedules ps where ps.project_id=t.project_id and ps.deleted_at is null and ps.reviewer_id=${a.staff_id} and t.status='In Review')
+       ))
+      )
+    ) counts
+    where w.project_id=p.project_id and w.status='Open' and w.starts_on>=${yearStart}::date and w.starts_on<${yearEnd}::date
+   ) board
+   where p.deleted_at is null and c.deleted_at is null
+    and p.created_at<=${snapshot.snapshot_at}::timestamptz
+    and (${firm}::uuid is null or p.handling_firm_id=${firm}::uuid)
+    and (${search}='' or c.company_name ilike ('%'||${search}||'%'))
+    and jsonb_array_length(board.periods)>0
+    and (${show}='all' or (${show}='open' and board.open_count>0) or (${show}='overdue' and board.overdue_count>0))
+    and (${afterCreatedAt}::timestamptz is null or (p.created_at,p.project_id)<(${afterCreatedAt}::timestamptz,${afterProjectId}::uuid))
+    and (
+     ${fullAccess}::boolean
+     or (${!intern}::boolean and exists(select 1 from erp_private.project_assignments pa where pa.project_id=p.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date)))
+     or exists(select 1 from erp_private.tasks own where own.project_id=p.project_id and own.assigned_to=${a.staff_id} and own.deleted_at is null)
+     or (${a.category_code!=='INTERN'}::boolean and (
+      exists(select 1 from erp_private.task_procedures tp join erp_private.tasks rt using(task_id) where tp.project_id=p.project_id and tp.reviewer_id=${a.staff_id} and tp.prepared_by<>${a.staff_id} and rt.deleted_at is null)
+      or exists(select 1 from erp_private.project_schedules ps join erp_private.tasks review_task using(project_id) where ps.project_id=p.project_id and ps.deleted_at is null and ps.reviewer_id=${a.staff_id} and review_task.status='In Review' and review_task.deleted_at is null)
+     ))
+    )
+   order by p.created_at desc,p.project_id desc limit ${pageSize+1}`;
+  const hasMore=rows.length>pageSize,items=rows.slice(0,pageSize),last=items[items.length-1]||null;
+  return {snapshot_at:snapshot.snapshot_at,items,has_more:hasMore,next_cursor:hasMore&&last?{created_at:last.created_at,project_id:last.project_id}:null,page_size:pageSize};
+ }
+ if(p.action==='project_detail_read'){
+  const pid=uuid(p.project_id),fullAccess=['PARTNER','MANAGER'].includes(a.category_code),intern=a.category_code==='INTERN',today=nairobiDate();
+  const project=one(await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,p.service_code,p.status,p.tax_master,p.revision,p.created_at,c.company_name,c.year_end_month,c.year_end_day,c.opening_balance_status,f.firm_code,f.legal_name
+   from erp_private.projects p join erp_private.clients c using(client_id) join erp_private.firms f on f.firm_id=p.handling_firm_id
+   where p.project_id=${pid} and p.deleted_at is null and c.deleted_at is null and (
+    ${fullAccess}::boolean
+    or (${!intern}::boolean and exists(select 1 from erp_private.project_assignments pa where pa.project_id=p.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date)))
+    or exists(select 1 from erp_private.tasks own where own.project_id=p.project_id and own.assigned_to=${a.staff_id} and own.deleted_at is null)
+    or (${a.category_code!=='INTERN'}::boolean and (
+     exists(select 1 from erp_private.task_procedures tp join erp_private.tasks rt using(task_id) where tp.project_id=p.project_id and tp.reviewer_id=${a.staff_id} and tp.prepared_by<>${a.staff_id} and rt.deleted_at is null)
+     or exists(select 1 from erp_private.project_schedules ps join erp_private.tasks review_task using(project_id) where ps.project_id=p.project_id and ps.deleted_at is null and ps.reviewer_id=${a.staff_id} and review_task.status='In Review' and review_task.deleted_at is null)
+    ))
+   )`);
+  const [scheduleRow]=await tx`select * from erp_private.project_schedules where project_id=${pid} and deleted_at is null`;
+  const periods=await tx`select * from erp_private.project_work_periods where project_id=${pid} and status='Open' order by starts_on desc,period_kind`;
+  const tasks=await tx`select t.task_id,t.project_id,t.assigned_to,t.task_name,t.description,t.due_at,t.status,t.blocked_reason,t.revision,t.requires_document,t.period_start,t.period_end,t.template_key,t.filing_date,t.iso_week_year,t.iso_week_number from erp_private.tasks t where t.project_id=${pid} and t.deleted_at is null and (
+   ${fullAccess}::boolean
+   or (${!intern}::boolean and exists(select 1 from erp_private.project_assignments pa where pa.project_id=t.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date)))
+   or t.assigned_to=${a.staff_id}
+   or (${!intern}::boolean and (
+    exists(select 1 from erp_private.task_procedures tp where tp.task_id=t.task_id and tp.reviewer_id=${a.staff_id} and tp.prepared_by<>${a.staff_id})
+    or exists(select 1 from erp_private.project_schedules ps where ps.project_id=t.project_id and ps.deleted_at is null and ps.reviewer_id=${a.staff_id} and t.status='In Review')
+   ))
+  ) order by (t.status in ('Completed','Cancelled')),t.due_at nulls last,t.task_id`;
+  const taskIds=tasks.map((t:any)=>t.task_id);
+  const procedures=taskIds.length?await tx`select w.task_id,w.project_id,w.profile,w.stage,w.case_id,w.reviewer_id,w.prepared_by,w.closed_at,w.closed_by,w.revision from erp_private.task_procedures w where w.task_id=any(${taskIds}::uuid[])`:[];
+  const periodTasks=taskIds.length?await tx`select l.* from erp_private.work_period_tasks l join erp_private.project_work_periods w using(work_period_id) where w.project_id=${pid} and w.status='Open' and l.task_id=any(${taskIds}::uuid[])`:[];
+  const events=taskIds.length?await tx`select e.* from erp_private.task_events e where e.task_id=any(${taskIds}::uuid[]) order by e.created_at desc limit 500`:[];
+  return {project,client:{client_id:project.client_id,company_name:project.company_name,year_end_month:project.year_end_month,year_end_day:project.year_end_day,opening_balance_status:project.opening_balance_status},firm:{firm_id:project.handling_firm_id,firm_code:project.firm_code,legal_name:project.legal_name},schedule:scheduleRow||null,work_periods:periods,tasks,task_procedures:procedures,work_period_tasks:periodTasks,task_events:events,task_count:tasks.length};
+ }
  if(p.action==='project_save'){
   editor(a);const pid=p.project_id?uuid(p.project_id):crypto.randomUUID(),cid=uuid(p.client_id),firm=uuid(p.firm_id),service=text(p.service_code,40);
   const old=p.project_id?one(await tx`select * from erp_private.projects where project_id=${pid} and deleted_at is null for update`):null;
@@ -107,6 +194,13 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    const preview=await previewSchedule(tx,s,cid);
    if(preview.due_now>12&&p.confirm_task_backlog!==true)fail(400,`The schedule would create ${preview.due_now} tasks now. Review the catch-up count and confirm, or change the start date.`);
   }
+  const isTaxMaster=service==='TAX-COMP'&&s.pack==='Tax Compilation';
+  if(old?.tax_master&&!isTaxMaster)fail(400,'A tax master project must remain the Tax Compilation master. Create a separate project for another service.');
+  if(isTaxMaster){
+   await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':'+firm+':tax-master'},0))`;
+   const duplicate=(await tx`select project_id from erp_private.projects where client_id=${cid} and handling_firm_id=${firm} and tax_master and deleted_at is null and project_id<>${pid} limit 1`)[0];
+   if(duplicate)fail(409,'A tax master project already exists for this client and handling firm. Open it and add reporting periods as tasks; do not create a separate project for each month.');
+  }
   if(!old||s.enabled&&s.obligations.length)await requireProjectSetup(tx,cid);
   if(!old)await requireRightChart(tx,cid,'creating the draft project');
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
@@ -114,7 +208,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   if(a.category_code==='PARTNER')await tx`insert into erp_private.staff_firm_access(staff_id,firm_id) values(${a.staff_id},${firm}) on conflict(staff_id,firm_id) do update set deleted_at=null`;
   if(old)await tx`update erp_private.projects set project_name=${name},service_code=${service} where project_id=${pid}`;
   else await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${pid},${cid},${firm},${name},${service},${a.staff_id})`;
-  if(service==='TAX-COMP'&&s.pack==='Tax Compilation'){
+  if(isTaxMaster){
    if(s.assigned_to===s.reviewer_id)fail(400,'Choose a different Supervisor, Manager or Partner for independent review.');
    await tx`update erp_private.projects set tax_master=true where project_id=${pid}`;
   }

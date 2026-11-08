@@ -15,11 +15,79 @@ export function createWorkspaceUI(ctx){
  const ledger=createLedgerUI(ctx,{onPayrollImport:projectId=>periodImports.newImport(projectId,{kind:'Payroll'})});
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty}=ctx;
  const d=()=>ctx.data(),editor=()=>['PARTNER','MANAGER','SUPERVISOR'].includes(d().me.category_code),leader=()=>['PARTNER','MANAGER'].includes(d().me.category_code);
- let itemsView=loadMode(globalThis.localStorage),selected='',selectedPeriod='',showSchedules=false,taskFilter='All',projectTab='Tasks',tabProject='',workSearch='',workFirm='',workShow='open',workYear='',workLimit=25,timeFilter='My time',week='',importPage=0;
+ let itemsView=loadMode(globalThis.localStorage),selected='',selectedPeriod='',showSchedules=false,taskFilter='All',projectTab='Tasks',tabProject='',workSearch='',workFirm='',workShow='open',workYear='',workHub={key:'',items:[],snapshot_at:'',cursor:null,has_more:false,loaded:false,busy:false,error:'',serial:0},projectDetailsLoaded=new Set(),projectDetailsPending=new Map(),projectDetailsErrors=new Map(),projectNeedsDetail=new Set(),detailEpoch=0,cachedData=null,timeFilter='My time',week='',importPage=0;
  const stripTask=name=>String(name).replace(/ · \d{4}-W\d{2}.*$| · \d{4}-\d{2}-\d{2}$/,'');
  const schedule=id=>d().schedules.find(s=>s.project_id===id);
  const candidates=firm=>d().candidates.filter(s=>s.firm_id===firm);
  const opts=(items,value,blank='Choose…')=>`<option value="">${esc(blank)}</option>`+items.map(([v,l])=>`<option value="${esc(v)}" ${v===value?'selected':''}>${esc(l)}</option>`).join('');
+  function syncProjectCaches(){
+   if(cachedData===d())return;
+   cachedData=d();detailEpoch++;projectDetailsLoaded.clear();projectDetailsPending.clear();projectDetailsErrors.clear();projectNeedsDetail.clear();
+   workHub={key:'',items:[],snapshot_at:'',cursor:null,has_more:false,loaded:false,busy:false,error:'',serial:workHub.serial+1};
+  }
+  function mergeRows(key,idKey,rows){
+   const map=new Map((d()[key]||[]).map(row=>[row[idKey],row]));
+   for(const row of rows||[]){const prior=map.get(row[idKey])||{};map.set(row[idKey],{...prior,...row});}
+   d()[key]=[...map.values()];
+  }
+  function mergeProjectHubItems(items){
+   const projects=[],schedules=[];
+   for(const item of items||[]){
+    const {schedule:sc,periods,open_count,overdue_count,company_name,firm_code,...project}=item;
+    if(!(d().projects||[]).some(x=>x.project_id===item.project_id)||!(d().work_periods||[]).some(w=>w.project_id===item.project_id))projectNeedsDetail.add(item.project_id);
+    projects.push(project);
+    const client=(d().clients||[]).find(x=>x.client_id===item.client_id);
+    if(client){if(client.company_name!==company_name)client.company_name=company_name;}
+    else d().clients=[...(d().clients||[]),{client_id:item.client_id,company_name,details_visible:false}];
+    const firmRow=(d().firms||[]).find(x=>x.firm_id===item.handling_firm_id);
+    if(firmRow){if(firm_code)firmRow.firm_code=firm_code;}
+    else d().firms=[...(d().firms||[]),{firm_id:item.handling_firm_id,firm_code:firm_code||''}];
+    if(sc)schedules.push(sc);
+    else d().schedules=(d().schedules||[]).filter(x=>x.project_id!==item.project_id);
+   }
+   mergeRows('projects','project_id',projects);mergeRows('schedules','project_id',schedules);
+  }
+  function mergeProjectDetail(result){
+   const pid=result.project.project_id,oldTasks=(d().tasks||[]).filter(t=>t.project_id===pid),oldTaskIds=new Set(oldTasks.map(t=>t.task_id)),oldPeriodIds=new Set((d().work_periods||[]).filter(w=>w.project_id===pid).map(w=>w.work_period_id)),freshTaskIds=new Set((result.tasks||[]).map(t=>t.task_id)),allTaskIds=new Set([...oldTaskIds,...freshTaskIds]),allPeriodIds=new Set([...oldPeriodIds,...(result.work_periods||[]).map(w=>w.work_period_id)]);
+   mergeRows('projects','project_id',[result.project]);
+   const currentClient=(d().clients||[]).find(c=>c.client_id===result.client.client_id)||{};
+   mergeRows('clients','client_id',[{...currentClient,client_id:result.client.client_id,company_name:result.client.company_name,year_end_month:result.client.year_end_month,year_end_day:result.client.year_end_day,opening_balance_status:result.client.opening_balance_status,details_visible:currentClient.details_visible===true}]);
+   if(result.firm)mergeRows('firms','firm_id',[result.firm]);
+   d().schedules=(d().schedules||[]).filter(x=>x.project_id!==pid);if(result.schedule)d().schedules.push(result.schedule);
+   d().work_periods=(d().work_periods||[]).filter(x=>x.project_id!==pid).concat(result.work_periods||[]);
+   d().tasks=(d().tasks||[]).filter(t=>t.project_id!==pid).concat(result.tasks||[]);
+   d().task_procedures=(d().task_procedures||[]).filter(x=>x.project_id!==pid&&!oldTaskIds.has(x.task_id)).concat(result.task_procedures||[]);
+   d().work_period_tasks=(d().work_period_tasks||[]).filter(x=>!allPeriodIds.has(x.work_period_id)&&!allTaskIds.has(x.task_id)).concat(result.work_period_tasks||[]);
+   d().task_events=(d().task_events||[]).filter(x=>!allTaskIds.has(x.task_id)).concat(result.task_events||[]);
+  }
+  const projectDetailStatus=pid=>{const error=projectDetailsErrors.get(pid);return error?`<p class='info'>${esc(error)} <button type='button' data-v6='project-detail-retry'>Retry</button></p>`:`<p class='muted'>Loading all authorised project tasks…</p>`;};
+  async function ensureProjectDetail(pid){
+   if(!pid||projectDetailsLoaded.has(pid)||projectDetailsPending.has(pid))return;
+   const epoch=detailEpoch,token={};projectDetailsPending.set(pid,token);projectDetailsErrors.delete(pid);
+   try{
+    const result=await request({action:'project_detail_read',project_id:pid});
+    if(epoch!==detailEpoch||projectDetailsPending.get(pid)!==token)return;
+    mergeProjectDetail(result);projectNeedsDetail.delete(pid);projectDetailsLoaded.add(pid);
+   }catch(error){if(epoch===detailEpoch&&projectDetailsPending.get(pid)===token)projectDetailsErrors.set(pid,error?.message||'Could not load the project record.');}
+   finally{if(epoch===detailEpoch&&projectDetailsPending.get(pid)===token){projectDetailsPending.delete(pid);ctx.render();}}
+  }
+  async function loadProjectHub(reset=false){
+   const selectedFirm=ctx.firm()||workFirm||'',year=workYear||today().slice(0,4),key=JSON.stringify({firm:selectedFirm,search:workSearch.trim(),show:workShow,year});
+   if(reset||workHub.key!==key){workHub={key,items:[],snapshot_at:'',cursor:null,has_more:false,loaded:false,busy:false,error:'',serial:workHub.serial+1};}
+   if(workHub.busy||(!reset&&workHub.loaded&&!workHub.has_more))return;
+   const serial=workHub.serial;workHub.busy=true;workHub.error='';
+   try{
+    const query={action:'project_hub_page',page_size:25,firm_id:selectedFirm||undefined,search:workSearch.trim(),show:workShow,year};
+    if(!reset&&workHub.snapshot_at){query.snapshot_at=workHub.snapshot_at;if(workHub.cursor){query.after_created_at=workHub.cursor.created_at;query.after_project_id=workHub.cursor.project_id;}}
+    const page=await request(query);
+    if(serial!==workHub.serial)return;
+    workHub.snapshot_at=page.snapshot_at;workHub.cursor=page.next_cursor;workHub.has_more=!!page.has_more;workHub.loaded=true;
+    workHub.items=reset?(page.items||[]):workHub.items.concat(page.items||[]);
+    mergeProjectHubItems(page.items||[]);
+   }catch(error){if(serial===workHub.serial){workHub.loaded=true;workHub.error=error?.message||'Could not load projects.';}}
+   finally{if(serial===workHub.serial){workHub.busy=false;ctx.render();}}
+  }
+
  const dates=()=>{let date=new Date(today()+'T00:00:00Z');date.setUTCDate(date.getUTCDate()-((date.getUTCDay()+6)%7));return date.toISOString().slice(0,10);};
  const currentPeriodStart=(client={})=>currentReportingMonth(client,today()).starts_on;
  const monthEnd=value=>{if(!/^\d{4}-\d{2}$/.test(String(value||'')))return '';const [year,month]=value.split('-').map(Number);return new Date(Date.UTC(year,month,0)).toISOString().slice(0,10);};
@@ -41,34 +109,32 @@ export function createWorkspaceUI(ctx){
   return kanban(groupColumns(tasks,stageOf,['Not started','Pending client documents','In progress','Pending supervisor review','Awaiting client approval','Ready to file','Filed - pending payment'],false),card,esc);
  }
  function projects(){
-  const list=ctx.filtered().projects;if(selected&&!list.some(p=>p.project_id===selected))selected='';
-  const p=list.find(p=>p.project_id===selected),s=p&&schedule(p.project_id),carryoverCount=p?ctx.filtered().tasks.filter(t=>t.project_id===p.project_id&&!['Completed','Cancelled'].includes(t.status)).length:0,periods=(d().work_periods||[]).filter(w=>list.some(p=>p.project_id===w.project_id));
-  const current=periods.filter(w=>w.project_id===selected);if(selectedPeriod&&!current.some(w=>w.work_period_id===selectedPeriod))selectedPeriod='';
-  const periodsForTask=new Map((d().work_period_tasks||[]).map(l=>[l.task_id,l.work_period_id]));
-  const tasks=ctx.filtered().tasks.filter(t=>{
-   const w=d().task_procedures?.find(w=>w.task_id===t.task_id),filed=w?.stage==='Filed - pending payment';
-   const closed=['Completed','Cancelled'].includes(t.status);if(taskFilter==='Completed'?!closed:closed)return false;
-   if(selected&&t.project_id!==selected||selectedPeriod&&periodsForTask.get(t.task_id)!==selectedPeriod)return false;
-   if(taskFilter==='Completed')return true;
-   if(taskFilter==='Payment follow-up')return filed;
-   if(filed)return false;
-   return taskFilter==='All'||taskFilter==='Overdue'&&!!t.due_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(t.due_at))<today()||taskFilter==='My tasks'&&t.assigned_to===d().me.staff_id||taskFilter==='Catch-up uploads'&&t.template_key==='catchup-upload'||taskFilter==='Weekly'&&t.template_key?.startsWith('weekly-')||taskFilter==='Monthly'&&t.template_key?.startsWith('monthly-')||taskFilter==='Annually'&&t.template_key?.startsWith('annual-')||taskFilter===w?.stage;
-  });
-  // Client work board: one row per engagement with its reporting periods as a strip of chips,
-  // so staff scan a year per client instead of one card per month.
-  const now=today(),openByPeriod=new Map(),overdueByPeriod=new Map();
-  const openTasks=new Map(d().tasks.filter(t=>!['Completed','Cancelled'].includes(t.status)).map(t=>[t.task_id,t]));
-  for(const l of d().work_period_tasks||[]){const t=openTasks.get(l.task_id);if(!t)continue;openByPeriod.set(l.work_period_id,(openByPeriod.get(l.work_period_id)||0)+1);const due=t.due_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(t.due_at));if(due&&due<now)overdueByPeriod.set(l.work_period_id,(overdueByPeriod.get(l.work_period_id)||0)+1);}
-  const years=[...new Set(periods.map(w=>w.starts_on.slice(0,4)))].sort().reverse();if(workYear&&!years.includes(workYear))workYear='';const year=workYear||years.find(y=>y===now.slice(0,4))||years[0]||'';
-  const monthName=v=>new Intl.DateTimeFormat('en-GB',{month:'short',timeZone:'UTC'}).format(new Date(v.slice(0,10)+'T00:00:00Z'));
-  const chipLabel=w=>w.period_kind==='Monthly'?monthName(w.starts_on):w.period_kind==='Weekly'?'Wk '+shortDate(w.starts_on):w.period_kind==='Quarterly'?'Q'+(Math.floor(Number(w.starts_on.slice(5,7))/3)+1):w.period_kind==='Annually'?'Annual':'Once-off';
-  const periodsByProject=new Map();for(const w of periods){if(w.starts_on.slice(0,4)!==year)continue;const l=periodsByProject.get(w.project_id)||[];l.push(w);periodsByProject.set(w.project_id,l);}
-  const boardRows=list.filter(p=>periodsByProject.has(p.project_id)).map(p=>{const ps=[...periodsByProject.get(p.project_id)].sort((a,b)=>a.starts_on.localeCompare(b.starts_on)||a.period_kind.localeCompare(b.period_kind));const open=ps.reduce((n,w)=>n+(openByPeriod.get(w.work_period_id)||0),0),overdue=ps.reduce((n,w)=>n+(overdueByPeriod.get(w.work_period_id)||0),0);return {p,ps,open,overdue};})
-   .filter(r=>r.ps.length&&(!workFirm||r.p.handling_firm_id===workFirm)&&(!workSearch||clientName(r.p.client_id).toLowerCase().includes(workSearch.toLowerCase()))&&(workShow==='all'||workShow==='open'&&r.open||workShow==='overdue'&&r.overdue))
-   .sort((a,b)=>b.overdue-a.overdue||clientName(a.p.client_id).localeCompare(clientName(b.p.client_id)));
-  const chip=w=>{const open=openByPeriod.get(w.work_period_id)||0,late=overdueByPeriod.get(w.work_period_id)||0,current=w.starts_on.slice(0,10)<=now&&w.ends_on.slice(0,10)>=now,state=late?'late':open?'open':'clear';return `<a class="period-chip ${state}${current?' current':''}${w.status!=='Open'?' archived':''}" href="#project=${w.project_id}" data-open-project="${w.project_id}" data-work-period="${w.work_period_id}" title="${esc(`${chipLabel(w)} · ${shortDate(w.starts_on)}–${shortDate(w.ends_on)} · ${open} open${late?`, ${late} overdue`:''}`)}"><span>${esc(chipLabel(w))}</span>${open?`<b>${open}</b>`:''}</a>`;};
-  const totals=boardRows.reduce((t,r)=>({open:t.open+r.open,overdue:t.overdue+r.overdue}),{open:0,overdue:0});
-  const firmChoices=[...new Set(list.map(p=>p.handling_firm_id))].map(id=>[id,firmName(id)]);
+  const list=ctx.filtered().projects;
+   syncProjectCaches();if(ctx.firm()&&workFirm&&workFirm!==ctx.firm())workFirm='';
+   if(selected&&!projectDetailsLoaded.has(selected)&&!projectDetailsErrors.has(selected)){
+    const known=(d().projects||[]).some(x=>x.project_id===selected),needsDetail=projectNeedsDetail.has(selected)||!known||(d().tasks||[]).length>=1000;
+    if(needsDetail)void ensureProjectDetail(selected);else projectDetailsLoaded.add(selected);
+   }
+   const p=list.find(p=>p.project_id===selected)||d().projects.find(p=>p.project_id===selected),detailReady=!selected||projectDetailsLoaded.has(selected),s=p&&schedule(p.project_id),carryoverCount=p?ctx.filtered().tasks.filter(t=>t.project_id===p.project_id&&!['Completed','Cancelled'].includes(t.status)).length:0,periods=(d().work_periods||[]).filter(w=>list.some(p=>p.project_id===w.project_id));
+   const current=periods.filter(w=>w.project_id===selected);if(selectedPeriod&&projectDetailsLoaded.has(selected)&&!current.some(w=>w.work_period_id===selectedPeriod))selectedPeriod='';
+   const periodsForTask=new Map((d().work_period_tasks||[]).map(l=>[l.task_id,l.work_period_id]));
+   const tasks=ctx.filtered().tasks.filter(t=>{
+    const w=d().task_procedures?.find(w=>w.task_id===t.task_id),filed=w?.stage==='Filed - pending payment';
+    const closed=['Completed','Cancelled'].includes(t.status);if(taskFilter==='Completed'?!closed:closed)return false;
+    if(selected&&t.project_id!==selected||selectedPeriod&&periodsForTask.get(t.task_id)!==selectedPeriod)return false;
+    if(taskFilter==='Completed')return true;
+    if(taskFilter==='Payment follow-up')return filed;
+    if(filed)return false;
+    return taskFilter==='All'||taskFilter==='Overdue'&&!!t.due_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(t.due_at))<today()||taskFilter==='My tasks'&&t.assigned_to===d().me.staff_id||taskFilter==='Catch-up uploads'&&t.template_key==='catchup-upload'||taskFilter==='Weekly'&&t.template_key?.startsWith('weekly-')||taskFilter==='Monthly'&&t.template_key?.startsWith('monthly-')||taskFilter==='Annually'&&t.template_key?.startsWith('annual-')||taskFilter===w?.stage;
+   });
+   const now=today(),years=[...new Set([...periods.map(w=>w.starts_on.slice(0,4)),now.slice(0,4),...(workYear?[workYear]:[])])].sort().reverse(),year=workYear||now.slice(0,4);
+   const hubKey=JSON.stringify({firm:ctx.firm()||workFirm||'',search:workSearch.trim(),show:workShow,year});if(workHub.key!==hubKey)void loadProjectHub(true);
+   const monthName=v=>new Intl.DateTimeFormat('en-GB',{month:'short',timeZone:'UTC'}).format(new Date(v.slice(0,10)+'T00:00:00Z'));
+   const chipLabel=w=>w.period_kind==='Monthly'?monthName(w.starts_on):w.period_kind==='Weekly'?'Wk '+shortDate(w.starts_on):w.period_kind==='Quarterly'?'Q'+(Math.floor(Number(w.starts_on.slice(5,7))/3)+1):w.period_kind==='Annually'?'Annual':'Once-off';
+   const boardRows=(workHub.items||[]).map(item=>{const ps=(item.periods||[]).slice().sort((a,b)=>a.starts_on.localeCompare(b.starts_on)||a.period_kind.localeCompare(b.period_kind)),open=Number(item.open_count||0),overdue=Number(item.overdue_count||0);return {p:item,ps,open,overdue};});
+   const chip=w=>{const open=Number(w.open_count||0),late=Number(w.overdue_count||0),current=w.starts_on.slice(0,10)<=now&&w.ends_on.slice(0,10)>=now,state=late?'late':open?'open':'clear';return `<a class="period-chip ${state}${current?' current':''}${w.status!=='Open'?' archived':''}" href="#project=${w.project_id}" data-open-project="${w.project_id}" data-work-period="${w.work_period_id}" title="${esc(`${chipLabel(w)} · ${shortDate(w.starts_on)}–${shortDate(w.ends_on)} · ${open} open${late?`, ${late} overdue`:''}`)}"><span>${esc(chipLabel(w))}</span>${open?`<b>${open}</b>`:''}</a>`;};
+   const totals=boardRows.reduce((t,r)=>({open:t.open+r.open,overdue:t.overdue+r.overdue}),{open:0,overdue:0});
+  const firmChoices=(d().firms||[]).filter(x=>!ctx.firm()||x.firm_id===ctx.firm()).map(x=>[x.firm_id,(x.firm_code||'Firm')+(x.legal_name?' · '+x.legal_name:'')]);
   // Tasks inside a project are grouped by reporting period (week, month, year), newest first.
   const groupedTasks=list2=>{if(!list2.length)return taskRows(list2);const now2=today(),groups=new Map();for(const t of list2){const key=t.period_start?String(t.period_start).slice(0,10):'';const g=groups.get(key)||[];g.push(t);groups.set(key,g);}
    return [...groups.entries()].sort((a,b)=>b[0].localeCompare(a[0])).map(([key,g])=>{const t0=g[0],late=g.filter(t=>t.due_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(t.due_at))<now2).length,label=!key?'Other tasks':t0.iso_week_number?`Week ${t0.iso_week_number} · ${shortDate(key)}–${shortDate(t0.period_end)}`:`${shortDate(key)}–${shortDate(t0.period_end)}`;
@@ -88,11 +154,16 @@ export function createWorkspaceUI(ctx){
   const projectTabs=['Tasks','Schedule',...(d().me.category_code!=='INTERN'?['Imports','Accounting & tax']:[]),'Reports & team'];if(!projectTabs.includes(projectTab))projectTab='Tasks';
   const tabBar=p?`<div class="project-tabs" role="tablist">${projectTabs.map(t=>`<button type="button" role="tab" class="ptab${projectTab===t?' on':''}" aria-selected="${projectTab===t}" data-v6="project-tab" data-tab="${esc(t)}">${esc(t)}</button>`).join('')}</div>`:'';
   const tabPanel=({'Schedule':`<div class="project-panel">${secSchedule}${scheduleHelp}</div>`,'Imports':`<div class="project-panel">${secImports}</div>`,'Accounting & tax':`<div class="project-panel">${secAccounting}</div>`,'Reports & team':`<div class="project-panel">${secReports}</div>`})[projectTab]||'';
-  const workCards=periods.length?`<div class="work-board">
-   <div class="work-board-tools"><label>Client<input name="workSearch" type="search" placeholder="Search client name" value="${esc(workSearch)}"></label>${select('workFirm','Firm',firmChoices,workFirm,'All firms')}${select('workShow','Show',[['open','With open work'],['overdue','Overdue only'],['all','All engagements']],workShow)}${years.length>1?select('workYear','Year',years.map(y=>[y,y]),year):''}</div>
-   <div class="work-board-summary"><span><b>${boardRows.length}</b> client engagement${boardRows.length===1?'':'s'}</span><span><b>${totals.open}</b> open task${totals.open===1?'':'s'}</span><span class="${totals.overdue?'late':''}"><b>${totals.overdue}</b> overdue</span><span class="legend"><i class="period-chip open"></i>Open <i class="period-chip late"></i>Overdue <i class="period-chip clear"></i>No open tasks <i class="period-chip current"></i>Current period</span></div>
-   ${boardRows.length?boardRows.slice(0,workLimit).map(r=>`<article class="work-row${r.overdue?' has-late':''}"><div class="work-row-head"><a href="#project=${r.p.project_id}" data-open-project="${r.p.project_id}"><b>${esc(clientName(r.p.client_id))}</b></a><small>${esc(r.p.project_name.replace(clientName(r.p.client_id),'').replace(/^\s*[-–·]\s*/,'')||'Tax compilation')} · ${esc(firmName(r.p.handling_firm_id))}</small><span class="work-row-count">${r.open} open${r.overdue?` · <em>${r.overdue} overdue</em>`:''}</span></div><div class="period-strip">${r.ps.map(chip).join('')}</div></article>`).join('')+(boardRows.length>workLimit?`<div class="work-board-more"><span class="muted">Showing ${workLimit} of ${boardRows.length} engagements, overdue first. Search or filter to narrow the list.</span><button type="button" data-v6="work-more">Show ${Math.min(25,boardRows.length-workLimit)} more</button></div>`:''):'<p class="muted">No client engagements match these filters.</p>'}
-  </div>`:'';
+  
+const workCards=`<div class="work-board">
+    <div class="work-board-tools"><label>Client<input name="workSearch" type="search" placeholder="Search client name" value="${esc(workSearch)}"></label>${select('workFirm','Firm',firmChoices,workFirm,'All firms')}${select('workShow','Show',[['open','With open work'],['overdue','Overdue only'],['all','All engagements']],workShow)}${select('workYear','Year',years.map(y=>[y,y]),year)}</div>
+    <div class="work-board-summary"><span>Showing <b>${workHub.items.length}</b> engagement${workHub.items.length===1?'':'s'}${workHub.has_more?' loaded so far':''}</span><span><b>${totals.open}</b> open tasks in loaded engagements</span><span class="${totals.overdue?'late':''}"><b>${totals.overdue}</b> overdue</span><span class="legend"><i class="period-chip open"></i>Open <i class="period-chip late"></i>Overdue <i class="period-chip clear"></i>No open tasks <i class="period-chip current"></i>Current period</span></div>
+    ${workHub.busy&&!boardRows.length?'<p class="muted">Loading projects…</p>':''}
+    ${boardRows.length?boardRows.map(r=>`<article class="work-row${r.overdue?' has-late':''}"><div class="work-row-head"><a href="#project=${r.p.project_id}" data-open-project="${r.p.project_id}"><b>${esc(clientName(r.p.client_id))}</b></a><small>${esc(r.p.project_name.replace(clientName(r.p.client_id),'').replace(/^\s*[-–·]\s*/,'')||'Tax compilation')} · ${esc(firmName(r.p.handling_firm_id))}</small><span class="work-row-count">${r.open} open${r.overdue?` · <em>${r.overdue} overdue</em>`:''}</span></div><div class="period-strip">${r.ps.map(chip).join('')}</div></article>`).join(''):workHub.loaded&&!workHub.error?'<p class="muted">No client engagements match these filters.</p>':''}
+    ${workHub.error?`<p class="info">${esc(workHub.error)} <button type="button" data-v6="project-hub-retry">Retry</button></p>`:''}
+    ${workHub.has_more?`<div class="work-board-more"><span class="muted">Showing ${workHub.items.length} engagement(s) in the project list.</span><button type="button" data-v6="work-more" ${workHub.busy?'disabled':''}>${workHub.busy?'Loading…':'Load next 25'}</button></div>`:''}
+   </div>`;
+
   return `<section class="card"><div class="section-head"><div><span class="eyebrow">ONE WORKSPACE · ALL AUTHORISED FIRMS</span><h2>Projects & tasks</h2></div>${editor()?`<div class="actions"><button data-v6="project">+ New project</button>${p?'<button data-v6="task">+ New task</button>':''}</div>`:''}</div>
    <div class="actions subnav"><button data-v6="schedule-view">${showSchedules?'Show monthly work':'Service schedules'}</button>${leader()?'<button data-v6="archive">Archived work</button>':''}</div>
    <div class="items-bar"><span class="muted">Show items as</span>${modeSwitch(itemsView,esc)}</div>
@@ -100,12 +171,12 @@ export function createWorkspaceUI(ctx){
    ${p?`<div class="project-banner">
     <div class="project-head"><div><h3>${esc(p.project_name)}</h3><p class="muted">${esc(clientName(p.client_id))} · ${esc(firmName(p.handling_firm_id))} · ${badge(p.status)}${s?` · ${esc(s.frequency)} · ${shortDate(s.starts_on)}–${shortDate(s.ends_on)}`:''}</p></div>
      <div class="project-primary">${leader()&&p.status==='Draft'?`<button class="primary" data-suite="engagement" data-id="${p.project_id}">Complete checks & activate</button>`:''}${editor()&&p.status==='Active'?`<button class="primary" data-v6="generate" data-id="${p.project_id}">Generate due tasks</button>`:''}</div></div>
-    <p class="statusline">${esc(p.status==='Draft'?'Draft: waiting for a Manager or Partner to complete the checks and activate.':s?.enabled?'Tasks are releasing on schedule.':s?'Recurring tasks are paused or ended.':'No schedule set yet.')}${p.status==='Active'?' · Engagement checks complete.':''}</p>${statCards(p.project_id)}
+    <p class="statusline">${esc(p.status==='Draft'?'Draft: waiting for a Manager or Partner to complete the checks and activate.':s?.enabled?'Tasks are releasing on schedule.':s?'Recurring tasks are paused or ended.':'No schedule set yet.')}${p.status==='Active'?' · Engagement checks complete.':''}</p>${detailReady?statCards(p.project_id):projectDetailStatus(selected)}
     <ol class="project-steps">${[['Schedule',!!s,s?(s.enabled?'Configured':scheduleEnded(s)?'Ended':'Paused'):'Not set'],['Engagement checks',p.status==='Active',p.status==='Active'?'Complete':'Open'],['Tasks released',p.status==='Active'&&!!s?.enabled,p.status==='Active'?(s?.enabled?'Releasing':'Held'):'Held until activation']].map(([label,done,state],n)=>`<li class="${done?'done':''}"><b>${n+1}</b><span>${esc(label)}<small>${esc(state)}</small></span></li>`).join('')}</ol>
     ${p.status==='Draft'?'<p class="info"><b>Draft:</b> the schedule is saved but no new tasks are released and financial outputs are not ready. Resolve the opening TB, complete the engagement checks, then activate.</p>':''}${s?.catchup_starts_on?`<p class="info"><b>One catch-up upload:</b> ${shortDate(s.catchup_starts_on)}–${shortDate(s.catchup_ends_on)}. Recurring tasks start from ${shortDate(s.starts_on)}.</p>`:''}
     <div data-project-discussion></div></div>`:
-   `${showSchedules?'':workCards}${projectItems(list.filter(p=>showSchedules||!p.tax_master||!periods.some(w=>w.project_id===p.project_id)))}`}
-   ${p?`${tabBar}${projectTab!=='Tasks'?tabPanel:`${p.status==='Draft'&&carryoverCount?`<p class="muted"><b>Earlier UAT carry-over:</b> ${carryoverCount} existing task(s) are kept for review; they do not activate the project or release new tasks.</p>`:''}${taskChips(p.project_id)}${taskFilter==='Completed'?completedTable(tasks):normalizeMode(itemsView)==='kanban'?taskKanban(tasks):groupedTasks(tasks)}${tasks.length===1000?'<p class="info">Use the work period filter or project report to narrow the results.</p>':''}`}`:''}</section>`;
+   `${showSchedules?'':workCards}${selected&&!p?projectDetailStatus(selected):''}${projectItems(list.filter(p=>showSchedules||!p.tax_master||(!periods.some(w=>w.project_id===p.project_id)&&!workHub.items.some(item=>item.project_id===p.project_id))))}`}
+   ${p?`${tabBar}${projectTab!=='Tasks'?tabPanel:`${detailReady?`${p.status==='Draft'&&carryoverCount?`<p class="muted"><b>Earlier UAT carry-over:</b> ${carryoverCount} existing task(s) are kept for review; they do not activate the project or release new tasks.</p>`:''}${taskChips(p.project_id)}${taskFilter==='Completed'?completedTable(tasks):normalizeMode(itemsView)==='kanban'?taskKanban(tasks):groupedTasks(tasks)}`:projectDetailStatus(selected)}`}`:''}</section>`;
  }
  async function archive(periodId=''){
   const r=await request({action:'work_archive',work_period_id:periodId||undefined});
@@ -282,8 +353,8 @@ export function createWorkspaceUI(ctx){
  function bind(){
   if($('#content [name=project]'))$('#content [name=project]').onchange=e=>{if(ctx.openProject)ctx.openProject(e.target.value);else{selected=e.target.value;ctx.render();}};
   if($('#content [name=workPeriod]'))$('#content [name=workPeriod]').onchange=e=>{selectedPeriod=e.target.value;ctx.render();};
-  const workInput=$('#content [name=workSearch]');if(workInput){let timer;workInput.oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>{workSearch=e.target.value;workLimit=25;ctx.render();const again=$('#content [name=workSearch]');if(again){again.focus();again.setSelectionRange(again.value.length,again.value.length);}},250);};}
-  for(const [name,set] of [['workFirm',v=>workFirm=v],['workShow',v=>workShow=v],['workYear',v=>workYear=v]])if($(`#content [name=${name}]`))$(`#content [name=${name}]`).onchange=e=>{set(e.target.value);workLimit=25;ctx.render();};
+  const workInput=$('#content [name=workSearch]');if(workInput){let timer;workInput.oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>{workSearch=e.target.value;ctx.render();const again=$('#content [name=workSearch]');if(again){again.focus();again.setSelectionRange(again.value.length,again.value.length);}},250);};}
+  for(const [name,set] of [['workFirm',v=>workFirm=v],['workShow',v=>workShow=v],['workYear',v=>workYear=v]])if($(`#content [name=${name}]`))$(`#content [name=${name}]`).onchange=e=>{set(e.target.value);ctx.render();};
   if($('#content [name=taskFilter]'))$('#content [name=taskFilter]').onchange=e=>{taskFilter=e.target.value;ctx.render();};
   if($('#content [name=week]'))$('#content [name=week]').onchange=e=>{week=e.target.value;ctx.render();};
   if($('#content [name=timeFilter]'))$('#content [name=timeFilter]').onchange=e=>{timeFilter=e.target.value;ctx.render();};
@@ -296,7 +367,9 @@ export function createWorkspaceUI(ctx){
   if(b.dataset.v6==='schedule-cancel'){const s=schedule(id);modal('End recurring schedule',form(`<p class="info full">This stops future recurring task generation and periods for this project. Existing tasks, documents, invoices and history remain. To restart this service later, create a new project from the client’s saved setup.</p><label class="full">Reason for ending recurrence *<textarea name="reason" required minlength="3" maxlength="1000"></textarea></label>`,'End recurrence'),f=>request({action:'schedule_cancel',project_id:id,version:s?.version,reason:f.get('reason')}));}
   if(b.dataset.v6==='archive')await archive(id);
   if(b.dataset.v6==='archive-ready'){const r=await request({action:'work_period_archive',project_id:id});await load();notice(`${r.archived} fully closed work periods archived. Unfinished work remains visible.`);}
-  if(b.dataset.v6==='work-more'){workLimit+=25;ctx.render();}
+  if(b.dataset.v6==='work-more')await loadProjectHub(false);
+   if(b.dataset.v6==='project-hub-retry')await loadProjectHub(true);
+   if(b.dataset.v6==='project-detail-retry'){projectDetailsErrors.delete(selected);await ensureProjectDetail(selected);}
   if(b.dataset.v6==='schedule-view'){showSchedules=!showSchedules;selected='';selectedPeriod='';ctx.render();}
   if(b.dataset.v6==='task')newTask();
   if(b.dataset.v6==='project-tab'){projectTab=b.dataset.tab||'Tasks';ctx.render();}

@@ -55,7 +55,7 @@ test('Overdue chip shows only late open work; switching back to Open restores th
 test('the server-side payload carries who closed a task, and the build label moved together',()=>{
  assert.match(fs.readFileSync(new URL('../supabase/functions/staff-workspace-v12/workspace-read.ts',import.meta.url),'utf8'),/w\.closed_at,w\.closed_by,w\.revision/);
  const rel=JSON.parse(fs.readFileSync(new URL('../supabase/functions/staff-workspace-v12/release.json',import.meta.url),'utf8'));
- assert.match(JSON.stringify(rel),/2026-11-08\.98/);
+ assert.match(JSON.stringify(rel),/2026-11-08\.99/);
 });
 
 test('tabs: Tasks opens first; each other tab shows only its own group of buttons; an Intern sees no import or accounting tab',()=>{
