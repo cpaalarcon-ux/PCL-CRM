@@ -11,7 +11,7 @@ import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261106-worksp
 import {createLeadsUI} from './staff-leads.mjs?v=20261026-v4';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261107-annualpack-v3';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261108-project-hub-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261105-check-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261107-annualpack-v3';
 import {uploadChoices} from './staff-pilot-upload.mjs';
@@ -395,7 +395,7 @@ function applyWorkspaceRoute(paint=true){
  view=route.view;missingProject=false;
  if(view==='task')selectedTask=route.id;
  const projectId=route.view==='task'?data.tasks.find(t=>t.task_id===route.id)?.project_id:route.id;
- if(projectId){const p=data.projects.find(p=>p.project_id===projectId);if(p){if(firm&&firm!==p.handling_firm_id){firm=p.handling_firm_id;$('#firmFilter').value=firm;}v6.selectProject(p.project_id);}else if(view==='projects')missingProject=true;}
+ if(projectId){const p=data.projects.find(p=>p.project_id===projectId);if(p){if(firm&&firm!==p.handling_firm_id){firm=p.handling_firm_id;$('#firmFilter').value=firm;}v6.selectProject(p.project_id);}else if(view==='projects')v6.selectProject(projectId);}
  else if(view==='projects')v6.selectProject('');
  if(paint){render();const heading=$('#taskWorkspaceTitle');if(heading)heading.focus();}
 }
