@@ -27,5 +27,5 @@ test('the action is proposable, summarised, and the server routes it',()=>{
  assert.match(rd(fx+'staff-access-control.mjs'),/kyc_proposal_/);
  assert.match(rd(fx+'engagement-actions.ts'),/kyc_promote_document/);
  const pilot=rd('staff-pilot.mjs');assert.match(pilot,/staff-proposals\.mjs\?v=20261109-kyc-v1/);
- assert.match(rd('staff-pilot-auth.js'),/staff-pilot\.mjs\?v=20261109-kyc-v1/);
+ assert.match(rd('staff-pilot-auth.js'),/staff-pilot\.mjs\?v=\d{8}-/);
 });

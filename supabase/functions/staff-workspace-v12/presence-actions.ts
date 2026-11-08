@@ -52,8 +52,12 @@ export async function presenceAction(tx:any,a:any,p:any,context:any){
   return {ok:true,suggested:{task_id:task.task_id,work_date:when,seconds:secs,hours:hours}};
  }
  if(p.action==='presence_team'){
-  leader(a);const rows=await tx`select s.staff_id,s.full_name,p.last_seen_at,p.last_activity_at,p.manual_status,a.clock_in,a.clock_out,a.review_required,t.task_id,t.status as timer_status,k.task_name from erp_private.staff_members s left join erp_private.staff_presence p using(staff_id) left join erp_private.attendance a on a.staff_id=s.staff_id and a.work_date=${when} left join erp_private.task_timers t on t.staff_id=s.staff_id and t.status='Running' left join erp_private.tasks k on k.task_id=t.task_id where s.deleted_at is null and s.access_status='Active' and erp_private.manages(s.staff_id) order by s.full_name limit 200`;
-  return {rows:rows.map((r:any)=>({...r,status:presenceLabel(r.last_seen_at?r:null,r)})),updated_at:new Date().toISOString()};
+  if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner must access team attendance.');
+  const target=p.target_staff_id?uuid(p.target_staff_id):null;
+  const rows=await tx`select s.staff_id,s.full_name,s.category_code,p.last_seen_at,p.last_activity_at,p.manual_status,a.clock_in,a.clock_out,a.review_required,t.task_id,t.status as timer_status,k.task_name from erp_private.staff_members s left join erp_private.staff_presence p using(staff_id) left join erp_private.attendance a on a.staff_id=s.staff_id and a.work_date=${when} left join erp_private.task_timers t on t.staff_id=s.staff_id and t.status='Running' left join erp_private.tasks k on k.task_id=t.task_id where s.deleted_at is null and s.access_status='Active' and s.staff_id in (select v.staff_id from erp_private.view_staff_ids(${target}::uuid) v) order by s.full_name limit 200`;
+  // A red flag when someone has been clocked in for more than 10 hours without clocking out.
+  const now=Date.now();
+  return {rows:rows.map((r:any)=>({...r,status:presenceLabel(r.last_seen_at?r:null,r),open_hours:r.clock_in&&!r.clock_out?Math.round((now-new Date(r.clock_in).getTime())/36000)/100:null,over_ten_hours:!!(r.clock_in&&!r.clock_out&&now-new Date(r.clock_in).getTime()>10*3600000)})),target_staff_id:target,updated_at:new Date().toISOString()};
  }
  if(p.action==='presence_report'){
   const start=date(p.starts_on),end=date(p.ends_on);if(!start||!end||end<start||Date.parse(end)-Date.parse(start)>180*86400000)fail(400,'Choose a range up to 180 days.');

@@ -5,7 +5,8 @@ const REVIEWERS=['PARTNER','MANAGER','SUPERVISOR'];
 export async function teamAction(tx:any,a:any,p:any){
  if(p.action==='task_team_workload'){
   if(!REVIEWERS.includes(a.category_code))fail(403,'You do not have access to this action.');
-  return {people:await tx`select staff_id,full_name,category_code,active_tasks,overdue_tasks,on_leave,is_overloaded from erp_private.team_workload()`,threshold:15};
+  const target=p.target_staff_id?uuid(p.target_staff_id):null;
+  return {people:await tx`select staff_id,full_name,category_code,active_tasks,overdue_tasks,on_leave,is_overloaded from erp_private.team_workload() where staff_id in (select v.staff_id from erp_private.view_staff_ids(${target}::uuid) v)`,threshold:15,target_staff_id:target};
  }
  if(p.action==='task_pool_list'){
   if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'The Manager Pool is for Managers and Partners.');
