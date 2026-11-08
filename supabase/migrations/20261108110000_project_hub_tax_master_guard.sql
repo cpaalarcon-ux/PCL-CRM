@@ -27,6 +27,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS projects_one_active_tax_master_per_client_firm
   ON erp_private.projects (client_id, handling_firm_id)
   WHERE tax_master IS TRUE AND deleted_at IS NULL;
 
-CREATE INDEX IF NOT EXISTS projects_active_hub_cursor_idx
+CREATE INDEX IF NOT EXISTS projects_active_firm_hub_cursor_idx
   ON erp_private.projects (handling_firm_id, created_at DESC, project_id DESC)
+  WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS projects_active_hub_cursor_idx
+  ON erp_private.projects (created_at DESC, project_id DESC)
   WHERE deleted_at IS NULL;
