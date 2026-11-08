@@ -160,7 +160,7 @@ test('every record section opts in and the page applies the views after drawing 
   assert.match(pilot, /from '\.\/staff-items-view\.mjs\?v=/);
   assert.match(pilot, /\[view\]\)\(\);applyItemViews\(\$\('#content'\),\{view,storage:globalThis\.localStorage\}\);v6\.bind\(\);/);
   assert.match(pilot, /bindItemViews\(\{storage:globalThis\.localStorage,getView:\(\)=>view,render\}\)/);
-  for (const [file, marker] of [['staff-pilot.mjs', 'data-views="Sector / branch"'], ['staff-pilot.mjs', 'data-views="ERP role"'], ['staff-pilot.mjs', 'data-views="Category"'], ['staff-leads.mjs', 'data-views="Stage / qualification"'], ['staff-workspace-v6.mjs', 'data-views="Status"'], ['staff-suite.mjs', 'data-views="${esc(group)}"']]) assert.ok(read(file).includes(marker), file + ' ' + marker);
+  for (const [file, marker] of [['staff-pilot.mjs', 'data-views="ERP role"'], ['staff-pilot.mjs', 'data-views="Category"'], ['staff-leads.mjs', 'data-views="Stage / qualification"'], ['staff-workspace-v6.mjs', 'data-views="Status"'], ['staff-suite.mjs', 'data-views="${esc(group)}"']]) assert.ok(read(file).includes(marker), file + ' ' + marker);
   const suite = read('staff-suite.mjs');
   assert.equal((suite.match(/\]\),'Status'\)/g) || []).length, 3, 'invoices, letters and attendance');
   const css = read('staff-pilot.css');
