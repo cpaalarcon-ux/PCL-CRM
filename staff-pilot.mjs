@@ -1,5 +1,5 @@
 let documentKind='Evidence';
-import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261108-notes-v2';
+import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-rev-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
 import {createImprovementUI} from './staff-improvements.mjs?v=20261108-stockcats-v1';

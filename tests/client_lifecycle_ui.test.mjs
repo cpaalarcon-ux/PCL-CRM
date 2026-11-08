@@ -44,5 +44,5 @@ test('server and page wiring',()=>{
  assert.match(rd(fx+'staff-access-control.mjs'),/client_save\|client_lifecycle\|client_routing_/);
  const read=rd(fx+'workspace-read.ts');for(const col of ['c.record_status','c.service_status','c.lifecycle_reason','c.archive_reason','c.doc_request_contact_id','c.report_delivery_contact_id'])assert.ok(read.includes(col),col);
  const pilot=rd('staff-pilot.mjs');assert.match(pilot,/data-client-life|dataset\.clientLife/);assert.match(pilot,/clientShowArchived/);assert.match(pilot,/data-routing-form/);assert.match(pilot,/Show archived/);
- assert.match(rd('staff-pilot-auth.js'),/staff-pilot\.mjs\?v=20261109-cf-v2/);
+ assert.match(rd('staff-pilot-auth.js'),/staff-pilot\.mjs\?v=20261109-kyc-v1/);
 });

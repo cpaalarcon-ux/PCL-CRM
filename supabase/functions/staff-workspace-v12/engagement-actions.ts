@@ -54,7 +54,11 @@ async function addEvidence(tx:any,a:any,cid:string,p:any,rules:any[]){
  for(const x of covered)if(!rules.some((r:any)=>r.rule_code===x))fail(400,'Choose covered requirements from the KYC evidence list.');
  const evidenceDate=date(p.evidence_date),expires=date(p.expires_on);if(!evidenceDate||evidenceDate>today())fail(400,'Enter the evidence date (not in the future).');if(expires&&expires<evidenceDate)fail(400,'The expiry date cannot be before the evidence date.');
  let doc=null,ref=text(p.document_reference||'',200,false)||null,location=null,copy=null,onlineSource=null,onlineRef=null;
- if(form==='upload'){doc=uuid(p.document_id);one(await tx`select document_id from erp_private.documents where document_id=${doc} and client_id=${cid} and category='Permanent File' and is_locked`);}
+ if(form==='upload'){doc=uuid(p.document_id);
+  // A file proposed by an Assistant or Supervisor sits in 'KYC Pending' and becomes evidence only when a Manager or Partner approves the proposal that carries it.
+  const pending=(await tx`select document_id from erp_private.documents where document_id=${doc} and client_id=${cid} and category='KYC Pending' and deleted_at is null`).length>0;
+  if(pending){if(!p.proposal_applied)fail(400,'This file was proposed by a colleague. Approve the proposal to record it as evidence.');await tx`select erp_private.kyc_promote_document(${doc}::uuid,${cid}::uuid)`;}
+  one(await tx`select document_id from erp_private.documents where document_id=${doc} and client_id=${cid} and category='Permanent File' and is_locked`);}
  if(form==='physical'){ref=text(p.document_reference,200);location=text(p.physical_location,200);copy=choice(p.copy_type,['Original','Certified copy']);}
  if(form==='online'){onlineSource=text(p.online_source,200);onlineRef=text(p.online_reference,200);}
  return one(await tx`insert into erp_private.client_kyc_evidence(client_id,document_type,evidence_form,covered_items,document_id,document_reference,evidence_date,expires_on,physical_location,copy_type,sighted_by,sighted_at,online_source,online_reference,checked_by,checked_at,recorded_by)

@@ -51,5 +51,5 @@ export const isRightCode=code=>RIGHT_CODES.includes(code);
 
 // Entries an Assistant or Supervisor may propose instead of saving directly. A proposal is checked and then approved by a Manager or Partner,
 // and the approver's own account applies it, so every existing validation still runs. Verification and approval actions are never proposable.
-export const PROPOSABLE_ACTIONS=Object.freeze(['client_save','contact_save','owner_add']);
+export const PROPOSABLE_ACTIONS=Object.freeze(['client_save','contact_save','owner_add','compliance_evidence_save']);
 export const isProposableAction=action=>PROPOSABLE_ACTIONS.includes(action);

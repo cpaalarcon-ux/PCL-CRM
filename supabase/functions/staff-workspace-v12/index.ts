@@ -16,6 +16,7 @@ import {handoverAction} from './handover-actions.ts';
 import {teamAction} from './team-actions.ts';
 import {holidayAction} from './holiday-actions.ts';
 import {clientLifecycleAction} from './client-lifecycle-actions.ts';
+import {kycProposalAction} from './kyc-upload-actions.ts';
 import {metricsAction} from './metrics-actions.ts';
 import {escalationAction} from './escalation-actions.ts';
 import {autoMapAction} from './auto-map.ts';
@@ -46,7 +47,7 @@ import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput
 import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,scopeWorkspaceRecords,staffAreaCanUse} from './staff-access-control.mjs';
 import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode,isProposableAction} from './staff-rights-catalog.mjs';
 import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts';
-import {policiesRead,policyAction} from './policy-actions.ts';
+import {policiesRead,policyAction,requireAssistantEntryAuthorised} from './policy-actions.ts';
 
 const url=Deno.env.get('SUPABASE_URL')!;
 const secret=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')||'{}').default;
@@ -237,14 +238,20 @@ async function upload(req:Request,id:any){
  const bytes=new Uint8Array(await file.arrayBuffer()),name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_'),mime=fileType(name,bytes);
  if(mime==='application/vnd.openxmlformats-officedocument.wordprocessingml.document')fail(400,'Upload Word policies through Settings → Reference documents. Project source files use CSV, XLSX or ZIP.');
  const cid=uuid(f.get('client_id')),firm=uuid(f.get('firm_id')),pid=f.get('project_id')?uuid(f.get('project_id')):null,tid=f.get('task_id')?uuid(f.get('task_id')):null;
- const cat=choice(f.get('category'),['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports','Import Sources']);
+ const cat=choice(f.get('category'),['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports','Import Sources','KYC Pending']);
  const importPurpose=cat==='Import Sources'?choice(f.get('import_purpose')||'General',['General','Opening TB']):'General';
  if(cat==='Import Sources'&&(!['text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mime)||!pid&&importPurpose!=='Opening TB'))fail(400,'Import sources require a project and a CSV, XLSX or ZIP file. Only an Opening TB workbook may be staged at client level.');
  if(importPurpose==='Opening TB'&&(pid||tid||mime!=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))fail(400,'Stage an opening TB as a client-level XLSX with no project or task link.');
  const doc=crypto.randomUUID(),key=documentObjectKey(cid,firm,doc,mime),digest=await sha(bytes);
  await bucket();let uploaded=false;
  try{return await scoped(id,async(tx,a)=>{
-  await requireStaffArea(tx,a,'documents');
+  if(cat==='KYC Pending'){
+   // A proposed KYC file: Assistants and Supervisors only, client level, PDF or image, and only while the data-entry policy is signed.
+   if(!['ASSISTANT','SUPERVISOR'].includes(a.category_code))fail(400,'Managers and Partners record KYC files straight into the Permanent File.');
+   if(pid||tid)fail(400,'A proposed KYC file is not linked to a project or task.');
+   if(!['application/pdf','image/png','image/jpeg'].includes(mime))fail(400,'Upload a PDF, PNG or JPEG for KYC evidence.');
+   await requireStaffArea(tx,a,'clients');await requireAssistantEntryAuthorised(tx,a);
+  }else await requireStaffArea(tx,a,'documents');
   // Read through RLS before checking relationships; never disclose another team's records.
   const project=pid?(await tx`select project_id,client_id,handling_firm_id,status from erp_private.projects where project_id=${pid} and deleted_at is null`)[0]:null;
   const task=tid?(await tx`select task_id,project_id from erp_private.tasks where task_id=${tid} and deleted_at is null`)[0]:null;
@@ -354,6 +361,7 @@ async function action(id:any,p:any){
   const handover=await handoverAction(tx,a,p);if(handover!==undefined)return handover;
   const team=await teamAction(tx,a,p);if(team!==undefined)return team;
   const lifecycle=await clientLifecycleAction(tx,a,p);if(lifecycle!==undefined)return lifecycle;
+  const kycOptions=await kycProposalAction(tx,a,p);if(kycOptions!==undefined)return kycOptions;
   const holidays=await holidayAction(tx,a,p);if(holidays!==undefined)return holidays;
   const metrics=await metricsAction(tx,a,p);if(metrics!==undefined)return metrics;
   const escalation=await escalationAction(tx,a,p);if(escalation!==undefined)return escalation;
