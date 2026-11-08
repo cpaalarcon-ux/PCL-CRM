@@ -1,4 +1,4 @@
--- Keep one active tax compilation master per client and handling firm.
+-- Keep one non-deleted tax compilation master per client and handling firm.
 -- Resolve any existing duplicate masters deliberately before applying this migration.
 DO $$
 DECLARE
@@ -15,7 +15,7 @@ BEGIN
 
   IF FOUND THEN
     RAISE EXCEPTION
-      'Cannot enforce one tax master project per client and firm: client %, firm %, active projects %. Review and resolve these projects before retrying.',
+      'Cannot enforce one tax master project per client and firm: client %, firm %, non-deleted projects %. Review and resolve these projects before retrying.',
       duplicate_master.client_id,
       duplicate_master.handling_firm_id,
       duplicate_master.project_count;
@@ -23,7 +23,7 @@ BEGIN
 END
 $$;
 
-CREATE UNIQUE INDEX IF NOT EXISTS projects_one_active_tax_master_per_client_firm_uq
+CREATE UNIQUE INDEX IF NOT EXISTS projects_one_tax_master_per_client_firm_uq
   ON erp_private.projects (client_id, handling_firm_id)
   WHERE tax_master IS TRUE AND deleted_at IS NULL;
 
