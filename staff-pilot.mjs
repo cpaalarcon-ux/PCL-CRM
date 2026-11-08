@@ -5,7 +5,8 @@ import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-an
 import {createImprovementUI} from './staff-improvements.mjs?v=20261108-stockcats-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261109-cf-v1';
-import {clientProfile} from './staff-client-profile.mjs?v=20261109-cf-v1';
+import {clientProfile} from './staff-client-profile.mjs?v=20261109-cf-v2';
+import {LIFECYCLE_WORDS,lifecycleForm,isArchived} from './staff-client-lifecycle.mjs?v=20261109-cf-v2';
 import {createPresenceUI} from './staff-presence.mjs?v=20261109-hol-v1';
 import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-check-v1';
 import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261109-hol-v1';
@@ -20,7 +21,7 @@ import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261109-hol-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261108-nav-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261108-notes-v2';
 import {uploadChoices} from './staff-pilot-upload.mjs';
-import {clientProgress,nextStep,clientStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261109-cf-v1';
+import {clientProgress,nextStep,clientStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261109-cf-v2';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261105-check-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261029-audit-start-flow-v1';
@@ -121,9 +122,9 @@ function classifyClients(){
  modal('Classify clients',form(classifyTable({clients:list,rows,esc,options}),'Save classifications'),f=>{const items=classifyItems(f);if(!items.length)throw Error('Choose a Legal structure and Subcategory for at least one client.');return request({action:'client_classify_save',items,note:f.get('note')||''});},result=>notice(`${result.classified} client(s) classified.`));
  bindClassifyTable($('#editor'),rows,options);
 }
-let clientStateFilter='all',bindClientChips=()=>{};
+let clientStateFilter='all',clientServiceFilter='all',clientShowArchived=false,bindClientChips=()=>{};
 function clients(){
- const rows=filtered().clients;
+ const rows=filtered().clients.filter(c=>(clientShowArchived||!isArchived(c))&&(clientServiceFilter==='all'||(c.service_status||'Active')===clientServiceFilter));
  const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button data-v6="sector">+ Add sector</button><button class="primary" data-new="client">+ Add client</button><button data-suite="import-clients">Import clients from Excel</button></div>':'';
  const cards=rows.map(c=>{
   const missing=c.details_visible?clientMissing(c):[],stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);
@@ -134,12 +135,12 @@ function clients(){
  });
  const counts=stateCounts(cards.map(x=>({status:isLeader()?clientStatus(x.progress,nextStep(x.progress)):{state:'all'}})));
  const body=cards.map(x=>x.card).join('');
- return assistantLockBanner(data,esc)+proposalsCard(data,esc,staffName)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions}</div><p class="muted">Use the setup guide to move each client through identity and year-end, opening TB import, period source posting, tax checks and project release. Create a draft project and client year first, then the preparer can upload, map and import the opening TB in one sitting. An independent Manager or Partner reviews the mappings and journal together and posts once. Complete Wholesale first, then repeat for Construction.</p>${isLeader()?'<p class="muted">Draft project setup does not unlock reporting or task release. Reports use posted entries only, and tasks stay locked until the opening balances are posted or confirmed not applicable and engagement checks are complete.</p><div class="actions"><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a></div>':''}<div class="actions">${structureFilter(structureRows(data),esc)}</div><input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients">${isLeader()?chipRow(counts,clientStateFilter,esc):''}<div class="client-grid">${body}</div>${!rows.length?empty('No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}</div>`;
+ return assistantLockBanner(data,esc)+proposalsCard(data,esc,staffName)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions}</div><p class="muted">Use the setup guide to move each client through identity and year-end, opening TB import, period source posting, tax checks and project release. Create a draft project and client year first, then the preparer can upload, map and import the opening TB in one sitting. An independent Manager or Partner reviews the mappings and journal together and posts once. Complete Wholesale first, then repeat for Construction.</p>${isLeader()?'<p class="muted">Draft project setup does not unlock reporting or task release. Reports use posted entries only, and tasks stay locked until the opening balances are posted or confirmed not applicable and engagement checks are complete.</p><div class="actions"><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a></div>':''}<div class="actions">${structureFilter(structureRows(data),esc)}</div>${isLeader()?`<div class="actions" id="clientLifeFilters"><label>Service status <select id="clientServiceFilter"><option value="all"${clientServiceFilter==='all'?' selected':''}>All</option>${['Active','Paused','Cancelled'].map(k=>`<option value="${k}"${clientServiceFilter===k?' selected':''}>${k}</option>`).join('')}</select></label><label><input type="checkbox" id="clientShowArchived"${clientShowArchived?' checked':''}> Show archived</label></div>`:''}<input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients">${isLeader()?chipRow(counts,clientStateFilter,esc):''}<div class="client-grid">${body}</div>${!rows.length?empty('No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}</div>`;
 }
 function renderClientProfile(){
  const c=data.clients.find(x=>x.client_id===selectedClient);let progress=null,step=null,status=null;
  if(c&&isLeader()){const missing=c.details_visible?clientMissing(c):[],stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB});step=nextStep(progress);status=clientStatus(progress,step);}
- return clientProfile({data,clientId:selectedClient,tab:clientTab,esc,shortDate,badge,staffName,structureLabel,progress,status,step,leader:isLeader()});
+ return clientProfile({category:data.me.category_code,data,clientId:selectedClient,tab:clientTab,esc,shortDate,badge,staffName,structureLabel,progress,status,step,leader:isLeader()});
 }
 function removeImportSource(documentId,after){const d=data.documents.find(x=>x.document_id===documentId);if(!d)throw Error('That upload is no longer available. Refresh and try again.');modal('Remove incorrect import upload',form(`<p class="info full"><b>${esc(d.file_name)}</b><br>This removes the source and its imported rows from active mapping. It does not permanently delete the file, imported data or accounting history. They remain available in Archived sources. If any row has been mapped, reviewed or posted, a Partner or Manager must archive it as a controlled correction.</p><label class="full">Why is this upload being removed? *<textarea name="reason" required minlength="3" maxlength="1000" placeholder="For example, the wrong client workbook was uploaded"></textarea></label><label class="full"><input name="confirm_remove" type="checkbox" required> I confirm this is the wrong upload and want to remove it from active mapping.</label>`,'Confirm removal'),f=>request({action:'document_archive',document_id:d.document_id,reason:f.get('reason'),confirmed:f.has('confirm_remove')}),result=>{documentKind='Archived sources';render();notice(`Removed from active mapping. ${result.retained_rows||0} imported row(s) and the original file remain available in Archived sources.`);if(after)after();});}
 function stageOpeningTB(clientId){const c=data.clients.find(x=>x.client_id===clientId);if(!c)return;const firms=data.client_firms.filter(x=>x.client_id===clientId),firmId=firms.length===1?firms[0].firm_id:'';upload({openingTB:true,client_id:clientId,firm_id:firmId});}
@@ -318,6 +319,8 @@ $('#closeEditor').onclick=()=>{$('#editor').close();$('#editorBody').replaceChil
 $('#editor').addEventListener('close',()=>{if(!$('#editor').open)$('#editorBody').replaceChildren();});
 bindItemViews({storage:globalThis.localStorage,getView:()=>view,render});
 $('#firmFilter').onchange=e=>{firm=e.target.value;render();};
+document.addEventListener('change',e=>{const t=e.target;if(t.id==='clientServiceFilter'){clientServiceFilter=t.value;render();}if(t.id==='clientShowArchived'){clientShowArchived=t.checked;render();}});
+document.addEventListener('submit',async e=>{const f=e.target.closest?.('form[data-routing-form]');if(!f)return;e.preventDefault();const b=f.querySelector('button[type=submit]');b.disabled=true;try{await request({action:'client_routing_save',client_id:f.dataset.routingForm,doc_request_contact_id:f.elements.doc_request_contact_id.value||null,report_delivery_contact_id:f.elements.report_delivery_contact_id.value||null});await load();notice('Contact routing saved.');}catch(err){notice(err.message,true);}finally{b.disabled=false;}});
 document.addEventListener('click',async e=>{const b=e.target.closest('button,a[data-open-task],a[data-open-project],a[data-workspace-view],a[data-view]');
  if(!b){const row=e.target.closest('[data-task-row]');if(row&&!e.target.closest('a,input,select,textarea,label')&&!window.getSelection()?.toString())navigateWorkspace('task',row.dataset.taskRow);return;}
  if(b.matches('a')){if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();}
@@ -343,6 +346,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.setupGuide)await setupGuide.open(b.dataset.setupGuide);
  if(b.dataset.clientOpen){navigateWorkspace('clientfile',b.dataset.clientOpen);return;}
  if(b.dataset.cprofileTab){clientTab=b.dataset.cprofileTab;render();return;}
+ if(b.dataset.clientLife){const act=b.dataset.clientLife,cid=b.dataset.id,w=LIFECYCLE_WORDS[act];if(w){const c=data.clients.find(x=>x.client_id===cid);modal(w.title+(c?' · '+c.company_name:''),form(lifecycleForm(act,esc),w.verb),f=>request({action:'client_lifecycle',client_id:cid,lifecycle:act,reason:f.get('reason')}),()=>render(),{successMessage:'Client updated.'});}return;}
  if(b.dataset.client)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
  if(b.dataset.clientView){navigateWorkspace('clientfile',b.dataset.clientView);return;}
  if(b.dataset.clientAccounts){clientAccountReturn=null;await clientAccountSetup(b.dataset.clientAccounts,{onReturn:null});}

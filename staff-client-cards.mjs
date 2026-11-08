@@ -1,3 +1,4 @@
+import {lifecycleBadge} from './staff-client-lifecycle.mjs?v=20261109-cf-v2';
 // Client list as cards: three set-up pillars, one computed next step, one status badge.
 // Pure functions so the rules can be tested without a browser. The page passes in its own helpers.
 
@@ -59,7 +60,7 @@ export function clientCard({client:c,progress:p,esc,structureLabel,leader,lightA
  const sub=detailsVisible?[cleanText(c.kra_pin)||'KRA PIN missing',structureLabel(c,esc)].filter(Boolean).join(' · '):'Assigned work needed to open the client file';
  const tags=detailsVisible?`<div class="cc-tags">${c.primary_sector?`<span class="cc-tag">🏢 ${esc(c.primary_sector)}</span>`:'<span class="cc-tag missing">Missing sector</span>'}${c.branch_location?`<span class="cc-tag">${esc(c.branch_location)}</span>`:''}</div>`:'';
  const attrs=`data-search="${esc(searchText)}" data-structure="${esc(c.legal_structure||'')}" data-state="${leader?status.state:'all'}"`;
- if(!leader)return `<article class="client-card" ${attrs}><div class="cc-head"><div><h3>${detailsVisible?`<button class="link" data-client-view="${id}">${esc(c.company_name)}</button>`:esc(c.company_name)}</h3><div class="cc-meta">${esc(sub)}</div></div></div>${tags}${lightActions?`<div class="cc-foot">${lightActions}</div>`:''}</article>`;
+ if(!leader)return `<article class="client-card" ${attrs}><div class="cc-head"><div><h3>${detailsVisible?`<button class="link" data-client-view="${id}">${esc(c.company_name)}</button>`:esc(c.company_name)}</h3><div class="cc-meta">${esc(sub)}${lifecycleBadge(c,esc)}</div></div></div>${tags}${lightActions?`<div class="cc-foot">${lightActions}</div>`:''}</article>`;
  const cls=ok=>ok===null?'na':ok?'ok':'warn',mark=ok=>ok===null?'…':ok?'✓':'!';
  const sb=(action,cl,inner)=>`<button type="button" data-suite="${action}" data-id="${id}" class="${cl}">${inner}</button>`;
  const kyc=sb('compliance',`cc-pill ${cls(p.kycOk)}`,`<i>${mark(p.kycOk)}</i>KYC &amp; contacts`);
@@ -69,7 +70,7 @@ export function clientCard({client:c,progress:p,esc,structureLabel,leader,lightA
  const next=['kyc','tax'].includes(step.key)
   ?sb(step.key==='kyc'?'compliance':'tax-profile',`cc-next ${step.tone}`,`<span>${esc(step.title)}${step.detail?`<small>${esc(step.detail)}</small>`:''}</span><span>›</span>`)
   :`<button class="cc-next ${step.tone}" ${target}><span>${esc(step.title)}${step.detail?`<small>${esc(step.detail)}</small>`:''}</span><span>›</span></button>`;
- return `<article class="client-card" ${attrs}><div class="cc-head"><div><h3><button class="link" data-client-open="${id}">${esc(c.company_name)}</button></h3><div class="cc-meta">${esc(sub)}</div></div><span class="badge ${status.tone}" data-client-status="${id}">${esc(status.label)}</span></div>${tags}<div class="cc-pills">${kyc}${tax}${act}</div>${next}<div class="cc-foot"><button data-client="${id}">View details</button><button data-client-accounts="${id}">Client accounts</button><button class="primary" data-setup-guide="${id}">Continue setup</button></div></article>`;
+ return `<article class="client-card" ${attrs}><div class="cc-head"><div><h3><button class="link" data-client-open="${id}">${esc(c.company_name)}</button></h3><div class="cc-meta">${esc(sub)}${lifecycleBadge(c,esc)}</div></div><span class="badge ${status.tone}" data-client-status="${id}">${esc(status.label)}</span></div>${tags}<div class="cc-pills">${kyc}${tax}${act}</div>${next}<div class="cc-foot"><button data-client="${id}">View details</button><button data-client-accounts="${id}">Client accounts</button><button class="primary" data-setup-guide="${id}">Continue setup</button></div></article>`;
 }
 
 export const chipRow=(counts,current,esc)=>`<div class="cc-chips" role="group" aria-label="Filter clients by status">${CLIENT_STATES.map(([k,l])=>`<button type="button" class="cc-chip${k===current?' on':''}" data-client-state="${k}" aria-pressed="${k===current}">${esc(l)}<em>${counts[k]??0}</em></button>`).join('')}</div>`;
