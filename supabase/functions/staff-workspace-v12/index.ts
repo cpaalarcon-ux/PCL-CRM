@@ -13,6 +13,7 @@ import {taxPeriodAction} from './tax-period-actions.ts';
 import {improvementAction} from './improvement-actions.ts';
 import {reviewQueueAction} from './review-queue.ts';
 import {handoverAction} from './handover-actions.ts';
+import {teamAction} from './team-actions.ts';
 import {escalationAction} from './escalation-actions.ts';
 import {autoMapAction} from './auto-map.ts';
 import {withdrawAction} from './withdraw-actions.ts';
@@ -348,6 +349,7 @@ async function action(id:any,p:any){
   const improvements=await improvementAction(tx,a,p,admin.storage.from(BUCKET));if(improvements!==undefined)return improvements;
   const queue=await reviewQueueAction(tx,a,p);if(queue!==undefined)return queue;
   const handover=await handoverAction(tx,a,p);if(handover!==undefined)return handover;
+  const team=await teamAction(tx,a,p);if(team!==undefined)return team;
   const escalation=await escalationAction(tx,a,p);if(escalation!==undefined)return escalation;
   const autoMap=await autoMapAction(tx,a,p);if(autoMap!==undefined)return autoMap;
   const withdrawn=await withdrawAction(tx,a,p);if(withdrawn!==undefined)return withdrawn;
