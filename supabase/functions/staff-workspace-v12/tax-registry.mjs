@@ -93,10 +93,10 @@ export function validateProfile(p){
  if(regime==='TOT'&&(annual_turnover===null||annual_turnover<=1000000||annual_turnover>25000000))fail(400,'TOT requires reviewed annual turnover above KES 1 million and at most KES 25 million.');
  if(regime==='MRI'&&(annual_turnover===null||annual_turnover<288000||annual_turnover>15000000))fail(400,'MRI requires reviewed qualifying annual residential rent from KES 288,000 to KES 15 million.');
  if(finalIncomeRegimes.includes(regime)&&ordinaryIncomePositions.some(x=>obligations.includes(x)))fail(400,`${regime} is final on the covered income. Remove ordinary income tax, instalment tax or advance tax from this profile; refer any income outside the regime to the Tax Lead because it needs a separately reviewed treatment.`);
- const obligation_statuses=normalizeObligationStatuses(obligations,p.obligation_statuses,p.effective_from,p.effective_to);
+ const obligation_statuses=normalizeObligationStatuses(obligations,p.obligation_statuses,dateString(p.effective_from)||null,dateString(p.effective_to)||null);
  const vat_taxable_supplies_status=choice(p.vat_taxable_supplies_status||'UNKNOWN',['CONFIRMED','UNKNOWN']);
  const vat_taxable_supplies_12m=p.vat_taxable_supplies_12m===''||p.vat_taxable_supplies_12m==null?null:amount(p.vat_taxable_supplies_12m);
- const vat_threshold_checked_on=date(p.vat_threshold_checked_on);
+ const vat_threshold_checked_on=date(dateString(p.vat_threshold_checked_on)||null);
  const vat_threshold_evidence_reference=text(p.vat_threshold_evidence_reference||'',300,false);
  if(vat_taxable_supplies_status==='CONFIRMED'&&(vat_taxable_supplies_12m===null||!vat_threshold_checked_on||!vat_threshold_evidence_reference))fail(400,'Enter the rolling 12-month taxable-supplies amount, check date and evidence reference.');
  if(vat_taxable_supplies_status==='UNKNOWN'&&(vat_taxable_supplies_12m!==null||vat_threshold_checked_on||vat_threshold_evidence_reference))fail(400,'Clear the amount, check date and evidence reference or mark the rolling 12-month taxable-supplies figure Confirmed.');
