@@ -370,3 +370,9 @@ body.workspace-active>footer{flex:0 0 auto;padding:7px 18px;border-top:1px solid
 .cc-chip em{font-style:normal;opacity:.75;margin-left:5px}
 .cc-chip.on{background:var(--green);color:#fff;border-color:var(--green)}
 .badge.info{background:#e8f0fe;color:#175cd3}
+
+/* Project board row: who is handling and at which stage */
+.work-row-meta{display:flex;flex-wrap:wrap;gap:4px 18px;margin:-2px 0 10px;font-size:12.5px;color:var(--text)}
+.work-row-meta em{font-style:normal;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-right:5px}
+.work-row-meta i{font-style:normal;background:#eef1ef;color:#46564e;border-radius:999px;padding:0 6px;font-size:11px;margin-left:2px}
+.work-row-meta .late{color:var(--red);font-weight:700}
