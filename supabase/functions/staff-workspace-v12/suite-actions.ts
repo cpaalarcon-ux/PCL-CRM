@@ -328,7 +328,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
  }
  if(p.action==='leave_review'){
   leader(a);const l=one(await tx`select * from erp_private.leave_requests where leave_id=${uuid(p.leave_id)} for update`);current(l,p);if(l.staff_id===a.staff_id)fail(403,'Another authorised reviewer must review your leave.');if(l.status!=='Pending')fail(400,'Only pending requests can be reviewed.');if(l.busy_season)partner(a);
-  const status=choice(p.status,['Approved','Rejected']),note=text(p.review_note,1000);await tx`select pg_advisory_xact_lock(hashtextextended(${l.staff_id+':attendance'},0))`;
+  const status=choice(p.status,['Approved','Rejected']),note=text(p.review_note,1000);if(note.length<10)fail(400,'Record a review note of at least 10 characters.');await tx`select pg_advisory_xact_lock(hashtextextended(${l.staff_id+':attendance'},0))`;
   if(status==='Approved'){
    if((await tx`select attendance_id from erp_private.attendance where staff_id=${l.staff_id} and work_date between ${l.starts_on} and ${l.ends_on}`).length)fail(400,'Attendance already exists for these dates. Review it before approving leave.');
    const assignments=await tx`select project_id from erp_private.project_assignments where staff_id=${l.staff_id} and deleted_at is null and start_date<=${l.ends_on} and end_date>=${l.starts_on}`;

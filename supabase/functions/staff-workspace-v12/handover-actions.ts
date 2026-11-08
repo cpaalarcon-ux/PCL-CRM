@@ -23,7 +23,7 @@ export async function handoverAction(tx:any,a:any,p:any){
  if(p.action==='task_handover_decide'){
   decider(a);const decision=choice(p.decision,['Reallocated','Declined']);
   const to=decision==='Reallocated'?uuid(p.new_assignee_id):null;
-  const note=decision==='Declined'?narration(p.note,'a reason'):text(p.note||'',1000,false).trim();
+  const note=narration(p.note,decision==='Declined'?'a reason':'a handover note for the new assignee');
   const [r]=await tx`select erp_private.handover_decide(${uuid(p.handover_id)}::uuid,${decision},${to}::uuid,${note}) moved`;
   return {ok:true,moved:r.moved};
  }

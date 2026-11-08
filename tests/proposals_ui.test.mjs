@@ -20,9 +20,11 @@ test('after the check only a Manager or Partner who did not check it can approve
  assert.deepEqual(proposalActions(prop({status:'Checked',checked_by:'s-mgr'}),person('MANAGER','s-mgr')),['return'],'a Manager who checked it cannot also approve it');
  assert.deepEqual(proposalActions(checked,person('ASSISTANT','s-assist')),['withdraw']);
 });
-test('Supervisor proposals skip the check: a Manager or Partner approves or returns; a Supervisor cannot decide on a Supervisor proposal',()=>{
+test('Supervisor proposals are checked too: another Supervisor, Manager or Partner checks, then a Manager or Partner who did not check it approves',()=>{
  const sp=prop({proposed_role:'SUPERVISOR',proposed_by:'s-sup'});
- assert.deepEqual(proposalActions(sp,person('MANAGER','s-mgr')),['approve','return']);assert.deepEqual(proposalActions(sp,person('SUPERVISOR','s-sup')),['withdraw']);assert.deepEqual(proposalActions(sp,person('SUPERVISOR','s-sup2')),[]);
+ assert.deepEqual(proposalActions(sp,person('MANAGER','s-mgr')),['check','return']);assert.deepEqual(proposalActions(sp,person('SUPERVISOR','s-sup')),['withdraw']);assert.deepEqual(proposalActions(sp,person('SUPERVISOR','s-sup2')),['check','return'],'a peer Supervisor can check');
+ const checked=prop({proposed_role:'SUPERVISOR',proposed_by:'s-sup',status:'Checked',checked_by:'s-sup2'});
+ assert.deepEqual(proposalActions(checked,person('MANAGER','s-mgr')),['approve','return']);assert.deepEqual(proposalActions(checked,person('SUPERVISOR','s-sup2')),['return'],'the checker cannot approve and a Supervisor never approves');
  assert.deepEqual(proposalActions(prop({status:'Approved'}),person('MANAGER','s-mgr')),[],'closed proposals have no buttons');
 });
 test('the queue lists waiting items first with who did what, and the Propose buttons are only for Assistants and Supervisors',()=>{
