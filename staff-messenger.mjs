@@ -22,7 +22,7 @@ export function createMessenger(ctx){
  const unreadTotal=()=>state.channels.reduce((n,c)=>n+Number(c.unread||0),0);
  function mount(){
   const host=document.querySelector('#messenger');if(!host)return;
-  if(!host.dataset.ready){host.dataset.ready='1';host.innerHTML=`<button type="button" id="messengerButton" class="messenger-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="messengerPanel"><span aria-hidden="true">💬</span> Chat<span id="messengerBadge" class="messenger-badge" hidden></span></button><section id="messengerPanel" class="messenger-panel" role="dialog" aria-label="Staff chat" hidden></section>`;}
+  if(!host.dataset.ready){host.dataset.ready='1';host.innerHTML=`<button type="button" id="messengerButton" class="messenger-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="messengerPanel"><span aria-hidden="true">💬</span> Messenger<span id="messengerBadge" class="messenger-badge" hidden></span></button><section id="messengerPanel" class="messenger-panel" role="dialog" aria-label="Staff chat" hidden></section>`;}
   mounted=true;paintBadge();
  }
  function paintBadge(){

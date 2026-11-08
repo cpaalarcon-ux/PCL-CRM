@@ -30,7 +30,7 @@ test('the signed-in workspace has a fixed sidebar beside the shared workspace sh
 
 test('the Home launcher lists integrated areas and filters by server-provided access areas', () => {
   assert.doesNotMatch(css, /workspace-nav-open|navScrim|navToggle|nav-more|erp-area-grid|erp-module|home-areas/);
-  for (const label of ['Clients', 'Projects & tasks', 'Time & HR', 'Documents', 'Comms', 'Audit & assurance', 'Billing & WIP', 'Staff & access', 'Settings', 'Leads']) {
+  for (const label of ['Clients', 'Projects & Tasks', 'Time & Attendance', 'Documents', 'Communications Hub', 'Audit & assurance', 'Finance & Reports', 'Staff & access', 'Settings', 'Leads & Pipeline']) {
     assert.ok(app.includes("title:'" + label + "'"), 'launcher catalog includes ' + label);
   }
   assert.match(app, /catalog\.filter\(item=>canArea\(item\.area\)\)/);
@@ -82,7 +82,8 @@ test('the sidebar keeps the original dark-green identity through named colour to
 });
 
 test('the sidebar is built from the same permission-filtered catalog as the launcher', () => {
-  assert.match(app, /sideItems=\[\{view:'home',title:'Home',icon:'⌂'\},\.\.\.catalog\.filter\(item=>canArea\(item\.area\)\)\]/);
+  assert.match(app, /by=v=>catalog\.find\(item=>item\.view===v&&canArea\(item\.area\)\)/);
+  assert.match(app, /sideItems=\[\{view:'home',title:'Home',icon:'⌂',subs:\[\]\}/);
   assert.match(app, /\$\('#sideNav'\)\.innerHTML=sideItems\.map/);
   assert.match(html, /<aside id="workspaceSidebar"[^>]*aria-label="Main navigation">/);
   assert.match(css, /@media\(max-width:850px\)\{\s*body\.workspace-active>main>#workspace\{flex-direction:column\}/);

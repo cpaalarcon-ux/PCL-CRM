@@ -376,3 +376,8 @@ body.workspace-active>footer{flex:0 0 auto;padding:7px 18px;border-top:1px solid
 .work-row-meta em{font-style:normal;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-right:5px}
 .work-row-meta i{font-style:normal;background:#eef1ef;color:#46564e;border-radius:999px;padding:0 6px;font-size:11px;margin-left:2px}
 .work-row-meta .late{color:var(--red);font-weight:700}
+
+/* Sub-items under Clients, Projects & Tasks and Administration (shown when that section is open). */
+.sidebar-nav .side-item.side-sub{min-height:34px;padding:6px 12px 6px 44px;font-size:12px;font-weight:500;opacity:.92}
+.badge.bad{background:#b3261e;color:#fff;border-color:#b3261e}
+@media(max-width:850px){.sidebar-nav .side-item.side-sub{padding:6px 12px}}
