@@ -14,3 +14,14 @@ test('the obligation change handler rebuilds the status rows after reading the o
  assert.match(handler,/renderedCodes=\[\.\.\.f\.querySelectorAll\('\[name="obligations"\]:checked'\)\]/);
  assert.match(handler,/\$\('#obligationStatusRows'\)\.innerHTML=statusFields\(renderedCodes,statusCache/);
 });
+
+test('a saved profile read back from the database (Date values) still validates, so verification works with a VAT threshold date',async()=>{
+ const {validateProfile}=await import('../supabase/functions/staff-workspace-v12/tax-registry.mjs');
+ const st={registered:'YES',applicable:'YES',client_status:'ACTIVE',effective_from:'2026-01-01',effective_to:'2026-12-31',evidence_reference:'Fictional extract',handling_firm_ids:[]};
+ const row={entity_type:'Individual',residency:'Resident',regime:'Standard',obligations:['Individual','PAYE'],obligation_statuses:{Individual:st,PAYE:st},annual_turnover:'3900000.00',vat_taxable_supplies_status:'CONFIRMED',vat_taxable_supplies_12m:'3600000.00',vat_threshold_evidence_reference:'Fictional sales book',notes:'Fictional'};
+ const asStrings=validateProfile({...row,effective_from:'2026-01-01',effective_to:'2026-12-31',vat_threshold_checked_on:'2026-11-05'});
+ const asDates=validateProfile({...row,effective_from:new Date('2026-01-01'),effective_to:new Date('2026-12-31'),vat_threshold_checked_on:new Date('2026-11-05')});
+ assert.equal(asDates.vat_threshold_checked_on,'2026-11-05');
+ assert.deepEqual(asDates,asStrings);
+ assert.throws(()=>validateProfile({...row,effective_from:'2026-01-01',effective_to:'2026-12-31',vat_threshold_checked_on:'2026-02-30'}),/valid date/);
+});
