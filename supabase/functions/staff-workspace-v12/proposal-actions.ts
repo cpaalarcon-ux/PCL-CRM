@@ -11,6 +11,7 @@ export function proposalSummary(action:string,p:any):string{
  if(action==='client_save')return (p.client_id?'Change client details: ':'Add client: ')+(v(p.company_name)||'client');
  if(action==='contact_save')return 'Add client contact: '+(v(p.full_name)||'contact');
  if(action==='owner_add')return 'Add owner or controller: '+(v(p.full_name)||'person');
+ if(action==='compliance_evidence_save')return 'Add KYC file: '+(v(p.document_type)||'evidence')+(p.file_name?' ('+v(p.file_name)+')':'');
  return 'Change: '+action.replace(/_/g,' ');
 }
 // Assistants and Supervisors do not change client onboarding records directly. Their entry is kept exactly as typed and waits for review.
@@ -20,7 +21,14 @@ export async function createProposal(tx:any,a:any,p:any){
  await requireAssistantEntryAuthorised(tx,a);
  if(p.tax_setup||p.purchase_setup)fail(409,'Project and schedule set-up is done by a Manager or Partner. Propose the client details on their own.');
  const reason=text(p.proposal_reason||'',1000,false);
- const {action:_a,proposal_reason:_r,...payload}=p;
+ if(action==='compliance_evidence_save'){
+  // Only a file this person uploaded for this client into the pending category can be proposed, and only as an uploaded file.
+  if(p.evidence_form!=='upload')fail(400,'Propose a KYC file by uploading it. Physical and online evidence is recorded by a Manager or Partner.');
+  const cid=uuid(p.client_id),name=(await tx`select erp_private.kyc_pending_file(${uuid(p.document_id)}::uuid,${cid}::uuid) n`)[0].n;
+  if(!name)fail(400,'Upload the KYC file first, then propose it.');
+  p={...p,file_name:name};
+ }
+ const {action:_a,proposal_reason:_r,file_name:_f,...payload}=p;
  if(JSON.stringify(payload).length>MAX_PAYLOAD)fail(413,'This entry is too large to propose.');
  let clientId:string|null=null;
  if(p.client_id){clientId=uuid(p.client_id);if(!(await tx`select client_id from erp_private.clients where client_id=${clientId}`).length)fail(403,'This record is not available to your account.');}
