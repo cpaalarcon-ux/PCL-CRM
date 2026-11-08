@@ -16,8 +16,11 @@ export function clientProgress({client:c,missing=[],compliance,contacts=[],taxPr
  const profileOk=!missing.length;
  let activitiesOk=null; // null = still loading
  if(readiness){
-  const activities=Number(readiness.activity_count||0),accounts=Number(readiness.approved_account_count||0);
-  activitiesOk=profileOk&&activities>0&&accounts>0&&Number(readiness.stock_method_count||0)>0&&Number(readiness.category_count||0)>0;
+  // General mappings are usable while pending review (they are reviewed when the opening journal is posted), so Active and Draft both count.
+  // Stock method and categories are required only when an active activity carries stock; a salon or consultancy does not need them.
+  const activities=Number(readiness.activity_count||0),accounts=Number(readiness.usable_account_count??readiness.approved_account_count??0);
+  const stockNeeded=readiness.stock_required_count==null||Number(readiness.stock_required_count)>0;
+  activitiesOk=profileOk&&activities>0&&accounts>0&&(!stockNeeded||(Number(readiness.stock_method_count||0)>0&&Number(readiness.category_count||0)>0));
  }
  const openingDone=!!c.has_opening_balance||c.opening_balance_status==='No opening balances';
  return {profileOk,missing,kycOk,kycMissing,taxOk,activitiesOk,openingDone,stagedTB};
