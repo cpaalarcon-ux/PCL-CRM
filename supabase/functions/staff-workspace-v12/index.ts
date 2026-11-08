@@ -366,6 +366,7 @@ async function action(id:any,p:any){
   if(p.action==='task_status'){
    const task=uuid(p.task_id),status=choice(p.status,statuses),reason=text(p.blocked_reason||'',1000,false);
    if(status==='Blocked'&&!reason)fail(400,'Enter the reason the task is blocked.');
+   if(['Waiting on client','Paused'].includes(status)&&reason.length<3)fail(400,status==='Paused'?'Say why the task is paused.':'Say what you are waiting for from the client.');
    const rev=revision(p.revision),filed=p.filing_date?date(p.filing_date):null;
    if(filed&&filed>new Date().toLocaleDateString('en-CA',{timeZone:'Africa/Nairobi'}))fail(400,'Filing date cannot be in the future.');
    const t=one(await tx`select template_key from erp_private.tasks where task_id=${task}`);

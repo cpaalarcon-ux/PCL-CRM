@@ -11,7 +11,7 @@ export const revision=v=>{const s=String(v);if(!/^[1-9][0-9]{0,17}$/.test(s))fai
 export const categories=['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN','ADMIN'];
 export const sectors=['Agribusiness','Financial Services','Energy','Healthcare','NGO','Public Sector','SME/Startup','Legal','Education'];
 export const branches=['Nairobi','Bungoma','Kisii','Other'];
-export const statuses=['Pending','In Progress','In Review','Blocked','Completed','Cancelled'];
+export const statuses=['Pending','In Progress','Waiting on client','Paused','In Review','Blocked','Completed','Cancelled'];
 export function staffInput(p,actor,old=null){
  const category=choice(p.category_code,categories), employment=choice(p.employment_type,['Permanent','Contract','Internship','Consultant']);
  if(actor.category_code==='MANAGER' && (['PARTNER','MANAGER'].includes(category)||old&&['PARTNER','MANAGER'].includes(old.category_code)))fail(403,'Only the Engagement Partner can manage Partner or Manager accounts.');
