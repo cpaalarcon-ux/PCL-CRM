@@ -40,7 +40,8 @@ import { createClient } from 'supabase';
 import postgres from 'postgres';
 import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
 import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,scopeWorkspaceRecords,staffAreaCanUse} from './staff-access-control.mjs';
-import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode} from './staff-rights-catalog.mjs';
+import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode,isProposableAction} from './staff-rights-catalog.mjs';
+import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts';
 
 const url=Deno.env.get('SUPABASE_URL')!;
 const secret=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')||'{}').default;
@@ -319,10 +320,14 @@ async function action(id:any,p:any){
     w.staff=visibleStaff.map((s:any)=>({...s,restricted_areas:byStaff.get(s.staff_id)||[],restricted_rights:rightsByStaff.get(s.staff_id)||[]}));
    }
    w.suite=await suiteRead(tx);
+   w.proposals=['ASSISTANT','SUPERVISOR','MANAGER','PARTNER'].includes(a.category_code)?await proposalsRead(tx):[];
    w.me={...w.me,restricted_rights:await restrictedRights(tx,a.staff_id)};
    return {...scopeWorkspaceRecords(filterWorkspaceAccess(w,areas),a.category_code,a.staff_id),release:'v12-uat-individual-area-access-v2'};
   }
+  const run=async(p:any):Promise<any>=>{
   const requestArea=areaForStaffAction(String(p.action||''));if(!requestArea)deny();await requireStaffArea(tx,a,requestArea);await requireStaffRight(tx,a,String(p.action||''));
+  if(isProposableAction(String(p.action||''))&&['ASSISTANT','SUPERVISOR'].includes(a.category_code))return await createProposal(tx,a,p);
+  const proposals=await proposalAction(tx,a,p,run);if(proposals!==undefined)return proposals;
   const rights=await staffRightsAction(tx,a,p);if(rights!==undefined)return rights;
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
   const discussion=await discussionAction(tx,a,p);if(discussion!==undefined)return discussion;
@@ -477,6 +482,8 @@ async function action(id:any,p:any){
    return {ok:true};
   }
   fail(404,'Unknown action.');
+  };
+  return run(p);
  });
 }
 Deno.serve(async(req:Request)=>{
