@@ -202,7 +202,6 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    if(duplicate)fail(409,'A tax master project already exists for this client and handling firm. Open it and add reporting periods as tasks; do not create a separate project for each month.');
   }
   if(!old||s.enabled&&s.obligations.length)await requireProjectSetup(tx,cid);
-  if(!old||s.enabled&&s.obligations.length)await requireProjectSetup(tx,cid);
   if(!old)await requireRightChart(tx,cid,'creating the draft project');
   one(await tx`select client_id from erp_private.client_firm_links where client_id=${cid} and firm_id=${firm} and deleted_at is null`);
   // Partners can explicitly select any registered firm; other categories require existing firm access.
