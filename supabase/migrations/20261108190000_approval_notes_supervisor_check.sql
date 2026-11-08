@@ -102,3 +102,10 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION erp_private.approval_trail(text,text[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION erp_private.approval_trail(text,text[]) TO erp_api;
+
+-- 5. The error text said "prepared by an Assistant"; it now covers Supervisor-prepared work too (the rule itself was changed in section 2).
+DO $$
+BEGIN
+ EXECUTE replace(pg_get_functiondef('erp_private.ledger_check_guard()'::regprocedure),'prepared by an Assistant,','prepared by an Assistant or Supervisor,');
+ EXECUTE replace(pg_get_functiondef('erp_private.client_chart_version_guard()'::regprocedure),'a chart prepared by an Assistant before','a chart prepared by an Assistant or Supervisor before');
+END $$;

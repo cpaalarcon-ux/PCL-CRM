@@ -43,8 +43,8 @@ test('assistants see only assigned work; unfinished work is handed over with a n
  assert.deepEqual(cands,['Fictional ASSISTANT2','Fictional MANAGER','Fictional PARTNER','Fictional SUPERVISOR'],'active firm staff; never the person handing over and never an intern');
 
  // Reallocation.
- await assert.rejects(()=>act('SUPERVISOR',{action:'task_handover_decide',handover_id:req.handover_id,decision:'Reallocated',new_assignee_id:actors.ASSISTANT.staff_id}),/another active staff member/);
- await assert.rejects(()=>act('SUPERVISOR',{action:'task_handover_decide',handover_id:req.handover_id,decision:'Reallocated',new_assignee_id:actors.INTERN.staff_id}),/another active staff member/);
+ await assert.rejects(()=>act('SUPERVISOR',{action:'task_handover_decide',handover_id:req.handover_id,decision:'Reallocated',new_assignee_id:actors.ASSISTANT.staff_id,note:'Move to the colleague on leave cover.'}),/another active staff member/);
+ await assert.rejects(()=>act('SUPERVISOR',{action:'task_handover_decide',handover_id:req.handover_id,decision:'Reallocated',new_assignee_id:actors.INTERN.staff_id,note:'Move to the colleague on leave cover.'}),/another active staff member/);
  const done=await act('SUPERVISOR',{action:'task_handover_decide',handover_id:req.handover_id,decision:'Reallocated',new_assignee_id:actors.ASSISTANT2.staff_id,note:'Chase the client for the till rolls first.'});
  assert.equal(done.moved,1);
  assert.equal((await tx`select assigned_to from erp_private.tasks where task_id=${T1}`)[0].assigned_to,actors.ASSISTANT2.staff_id);
@@ -67,7 +67,7 @@ test('assistants see only assigned work; unfinished work is handed over with a n
  // The whole project: requested by the assistant, then reallocated directly by a Partner.
  const req3=await act('ASSISTANT',{action:'task_handover_request',project_id:P,narration:'I am leaving the engagement; please take all my open work on it.'});
  assert.ok(req3.handover_id);
- const moved=await act('PARTNER',{action:'task_handover_decide',handover_id:req3.handover_id,decision:'Reallocated',new_assignee_id:actors.ASSISTANT2.staff_id});
+ const moved=await act('PARTNER',{action:'task_handover_decide',handover_id:req3.handover_id,decision:'Reallocated',new_assignee_id:actors.ASSISTANT2.staff_id,note:'Continue from the saved draft return.'});
  assert.equal(moved.moved,1);
  assert.equal(await count('ASSISTANT','projects'),0,'the first assistant no longer sees the project or client');assert.equal(await count('ASSISTANT','clients'),0);
 
