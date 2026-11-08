@@ -59,6 +59,7 @@ export function createWorkspaceUI(ctx){
    d().work_period_tasks=(d().work_period_tasks||[]).filter(x=>!oldPeriodIds.has(x.work_period_id)).concat(result.work_period_tasks||[]);
    d().task_events=(d().task_events||[]).filter(x=>!oldTaskIds.has(x.task_id)).concat(result.task_events||[]);
   }
+  const projectDetailStatus=pid=>{const error=projectDetailsErrors.get(pid);return error?`<p class='info'>${esc(error)} <button type='button' data-v6='project-detail-retry'>Retry</button></p>`:`<p class='muted'>Loading all authorised project tasks…</p>`;};
   async function ensureProjectDetail(pid){
    if(!pid||projectDetailsLoaded.has(pid)||projectDetailsPending.has(pid))return;
    const epoch=detailEpoch,token={};projectDetailsPending.set(pid,token);projectDetailsErrors.delete(pid);
@@ -110,7 +111,7 @@ export function createWorkspaceUI(ctx){
   const list=ctx.filtered().projects;
    syncProjectCaches();
    if(selected&&!projectDetailsLoaded.has(selected)&&!projectDetailsErrors.has(selected))void ensureProjectDetail(selected);
-   const p=list.find(p=>p.project_id===selected)||d().projects.find(p=>p.project_id===selected),s=p&&schedule(p.project_id),carryoverCount=p?ctx.filtered().tasks.filter(t=>t.project_id===p.project_id&&!['Completed','Cancelled'].includes(t.status)).length:0,periods=(d().work_periods||[]).filter(w=>list.some(p=>p.project_id===w.project_id));
+   const p=list.find(p=>p.project_id===selected)||d().projects.find(p=>p.project_id===selected),detailReady=!selected||projectDetailsLoaded.has(selected),s=p&&schedule(p.project_id),carryoverCount=p?ctx.filtered().tasks.filter(t=>t.project_id===p.project_id&&!['Completed','Cancelled'].includes(t.status)).length:0,periods=(d().work_periods||[]).filter(w=>list.some(p=>p.project_id===w.project_id));
    const current=periods.filter(w=>w.project_id===selected);if(selectedPeriod&&!current.some(w=>w.work_period_id===selectedPeriod))selectedPeriod='';
    const periodsForTask=new Map((d().work_period_tasks||[]).map(l=>[l.task_id,l.work_period_id]));
    const tasks=ctx.filtered().tasks.filter(t=>{
@@ -166,12 +167,12 @@ const workCards=`<div class="work-board">
    ${p?`<div class="project-banner">
     <div class="project-head"><div><h3>${esc(p.project_name)}</h3><p class="muted">${esc(clientName(p.client_id))} · ${esc(firmName(p.handling_firm_id))} · ${badge(p.status)}${s?` · ${esc(s.frequency)} · ${shortDate(s.starts_on)}–${shortDate(s.ends_on)}`:''}</p></div>
      <div class="project-primary">${leader()&&p.status==='Draft'?`<button class="primary" data-suite="engagement" data-id="${p.project_id}">Complete checks & activate</button>`:''}${editor()&&p.status==='Active'?`<button class="primary" data-v6="generate" data-id="${p.project_id}">Generate due tasks</button>`:''}</div></div>
-    <p class="statusline">${esc(p.status==='Draft'?'Draft: waiting for a Manager or Partner to complete the checks and activate.':s?.enabled?'Tasks are releasing on schedule.':s?'Recurring tasks are paused or ended.':'No schedule set yet.')}${p.status==='Active'?' · Engagement checks complete.':''}</p>${statCards(p.project_id)}
+    <p class="statusline">${esc(p.status==='Draft'?'Draft: waiting for a Manager or Partner to complete the checks and activate.':s?.enabled?'Tasks are releasing on schedule.':s?'Recurring tasks are paused or ended.':'No schedule set yet.')}${p.status==='Active'?' · Engagement checks complete.':''}</p>${detailReady?statCards(p.project_id):projectDetailStatus(selected)}
     <ol class="project-steps">${[['Schedule',!!s,s?(s.enabled?'Configured':scheduleEnded(s)?'Ended':'Paused'):'Not set'],['Engagement checks',p.status==='Active',p.status==='Active'?'Complete':'Open'],['Tasks released',p.status==='Active'&&!!s?.enabled,p.status==='Active'?(s?.enabled?'Releasing':'Held'):'Held until activation']].map(([label,done,state],n)=>`<li class="${done?'done':''}"><b>${n+1}</b><span>${esc(label)}<small>${esc(state)}</small></span></li>`).join('')}</ol>
     ${p.status==='Draft'?'<p class="info"><b>Draft:</b> the schedule is saved but no new tasks are released and financial outputs are not ready. Resolve the opening TB, complete the engagement checks, then activate.</p>':''}${s?.catchup_starts_on?`<p class="info"><b>One catch-up upload:</b> ${shortDate(s.catchup_starts_on)}–${shortDate(s.catchup_ends_on)}. Recurring tasks start from ${shortDate(s.starts_on)}.</p>`:''}
     <div data-project-discussion></div></div>`:
-   `${showSchedules?'':workCards}${projectItems(list.filter(p=>showSchedules||!p.tax_master||!periods.some(w=>w.project_id===p.project_id)))}`}
-   ${p?`${tabBar}${projectTab!=='Tasks'?tabPanel:`${p.status==='Draft'&&carryoverCount?`<p class="muted"><b>Earlier UAT carry-over:</b> ${carryoverCount} existing task(s) are kept for review; they do not activate the project or release new tasks.</p>`:''}${taskChips(p.project_id)}${taskFilter==='Completed'?completedTable(tasks):normalizeMode(itemsView)==='kanban'?taskKanban(tasks):groupedTasks(tasks)}${tasks.length===1000?'<p class="info">Use the work period filter or project report to narrow the results.</p>':''}`}`:''}</section>`;
+   `${showSchedules?'':workCards}${selected&&!p?projectDetailStatus(selected):''}${projectItems(list.filter(p=>showSchedules||!p.tax_master||!periods.some(w=>w.project_id===p.project_id)))}`}
+   ${p?`${tabBar}${projectTab!=='Tasks'?tabPanel:`${detailReady?`${p.status==='Draft'&&carryoverCount?`<p class="muted"><b>Earlier UAT carry-over:</b> ${carryoverCount} existing task(s) are kept for review; they do not activate the project or release new tasks.</p>`:''}${taskChips(p.project_id)}${taskFilter==='Completed'?completedTable(tasks):normalizeMode(itemsView)==='kanban'?taskKanban(tasks):groupedTasks(tasks)}`:projectDetailStatus(selected)}`}`:''}</section>`;
  }
  async function archive(periodId=''){
   const r=await request({action:'work_archive',work_period_id:periodId||undefined});
@@ -348,8 +349,8 @@ const workCards=`<div class="work-board">
  function bind(){
   if($('#content [name=project]'))$('#content [name=project]').onchange=e=>{if(ctx.openProject)ctx.openProject(e.target.value);else{selected=e.target.value;ctx.render();}};
   if($('#content [name=workPeriod]'))$('#content [name=workPeriod]').onchange=e=>{selectedPeriod=e.target.value;ctx.render();};
-  const workInput=$('#content [name=workSearch]');if(workInput){let timer;workInput.oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>{workSearch=e.target.value;workLimit=25;ctx.render();const again=$('#content [name=workSearch]');if(again){again.focus();again.setSelectionRange(again.value.length,again.value.length);}},250);};}
-  for(const [name,set] of [['workFirm',v=>workFirm=v],['workShow',v=>workShow=v],['workYear',v=>workYear=v]])if($(`#content [name=${name}]`))$(`#content [name=${name}]`).onchange=e=>{set(e.target.value);workLimit=25;ctx.render();};
+  const workInput=$('#content [name=workSearch]');if(workInput){let timer;workInput.oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>{workSearch=e.target.value;ctx.render();const again=$('#content [name=workSearch]');if(again){again.focus();again.setSelectionRange(again.value.length,again.value.length);}},250);};}
+  for(const [name,set] of [['workFirm',v=>workFirm=v],['workShow',v=>workShow=v],['workYear',v=>workYear=v]])if($(`#content [name=${name}]`))$(`#content [name=${name}]`).onchange=e=>{set(e.target.value);ctx.render();};
   if($('#content [name=taskFilter]'))$('#content [name=taskFilter]').onchange=e=>{taskFilter=e.target.value;ctx.render();};
   if($('#content [name=week]'))$('#content [name=week]').onchange=e=>{week=e.target.value;ctx.render();};
   if($('#content [name=timeFilter]'))$('#content [name=timeFilter]').onchange=e=>{timeFilter=e.target.value;ctx.render();};
@@ -362,7 +363,9 @@ const workCards=`<div class="work-board">
   if(b.dataset.v6==='schedule-cancel'){const s=schedule(id);modal('End recurring schedule',form(`<p class="info full">This stops future recurring task generation and periods for this project. Existing tasks, documents, invoices and history remain. To restart this service later, create a new project from the client’s saved setup.</p><label class="full">Reason for ending recurrence *<textarea name="reason" required minlength="3" maxlength="1000"></textarea></label>`,'End recurrence'),f=>request({action:'schedule_cancel',project_id:id,version:s?.version,reason:f.get('reason')}));}
   if(b.dataset.v6==='archive')await archive(id);
   if(b.dataset.v6==='archive-ready'){const r=await request({action:'work_period_archive',project_id:id});await load();notice(`${r.archived} fully closed work periods archived. Unfinished work remains visible.`);}
-  if(b.dataset.v6==='work-more'){workLimit+=25;ctx.render();}
+  if(b.dataset.v6==='work-more')await loadProjectHub(false);
+   if(b.dataset.v6==='project-hub-retry')await loadProjectHub(true);
+   if(b.dataset.v6==='project-detail-retry'){projectDetailsErrors.delete(selected);await ensureProjectDetail(selected);}
   if(b.dataset.v6==='schedule-view'){showSchedules=!showSchedules;selected='';selectedPeriod='';ctx.render();}
   if(b.dataset.v6==='task')newTask();
   if(b.dataset.v6==='project-tab'){projectTab=b.dataset.tab||'Tasks';ctx.render();}
