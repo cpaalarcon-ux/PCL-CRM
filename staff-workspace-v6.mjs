@@ -47,17 +47,17 @@ export function createWorkspaceUI(ctx){
    mergeRows('projects','project_id',projects);mergeRows('schedules','project_id',schedules);
   }
   function mergeProjectDetail(result){
-   const pid=result.project.project_id,oldTasks=(d().tasks||[]).filter(t=>t.project_id===pid),oldTaskIds=new Set(oldTasks.map(t=>t.task_id)),oldPeriodIds=new Set((d().work_periods||[]).filter(w=>w.project_id===pid).map(w=>w.work_period_id));
+   const pid=result.project.project_id,oldTasks=(d().tasks||[]).filter(t=>t.project_id===pid),oldTaskIds=new Set(oldTasks.map(t=>t.task_id)),oldPeriodIds=new Set((d().work_periods||[]).filter(w=>w.project_id===pid).map(w=>w.work_period_id)),freshTaskIds=new Set((result.tasks||[]).map(t=>t.task_id)),allTaskIds=new Set([...oldTaskIds,...freshTaskIds]),allPeriodIds=new Set([...oldPeriodIds,...(result.work_periods||[]).map(w=>w.work_period_id)]);
    mergeRows('projects','project_id',[result.project]);
    const currentClient=(d().clients||[]).find(c=>c.client_id===result.client.client_id)||{};
-   mergeRows('clients','client_id',[{...currentClient,...result.client,details_visible:true}]);
+   mergeRows('clients','client_id',[{...currentClient,client_id:result.client.client_id,company_name:result.client.company_name,year_end_month:result.client.year_end_month,year_end_day:result.client.year_end_day,opening_balance_status:result.client.opening_balance_status,details_visible:currentClient.details_visible===true}]);
    if(result.firm)mergeRows('firms','firm_id',[result.firm]);
    d().schedules=(d().schedules||[]).filter(x=>x.project_id!==pid);if(result.schedule)d().schedules.push(result.schedule);
    d().work_periods=(d().work_periods||[]).filter(x=>x.project_id!==pid).concat(result.work_periods||[]);
    d().tasks=(d().tasks||[]).filter(t=>t.project_id!==pid).concat(result.tasks||[]);
    d().task_procedures=(d().task_procedures||[]).filter(x=>x.project_id!==pid&&!oldTaskIds.has(x.task_id)).concat(result.task_procedures||[]);
-   d().work_period_tasks=(d().work_period_tasks||[]).filter(x=>!oldPeriodIds.has(x.work_period_id)).concat(result.work_period_tasks||[]);
-   d().task_events=(d().task_events||[]).filter(x=>!oldTaskIds.has(x.task_id)).concat(result.task_events||[]);
+   d().work_period_tasks=(d().work_period_tasks||[]).filter(x=>!allPeriodIds.has(x.work_period_id)&&!allTaskIds.has(x.task_id)).concat(result.work_period_tasks||[]);
+   d().task_events=(d().task_events||[]).filter(x=>!allTaskIds.has(x.task_id)).concat(result.task_events||[]);
   }
   const projectDetailStatus=pid=>{const error=projectDetailsErrors.get(pid);return error?`<p class='info'>${esc(error)} <button type='button' data-v6='project-detail-retry'>Retry</button></p>`:`<p class='muted'>Loading all authorised project tasks…</p>`;};
   async function ensureProjectDetail(pid){
@@ -109,10 +109,10 @@ export function createWorkspaceUI(ctx){
  }
  function projects(){
   const list=ctx.filtered().projects;
-   syncProjectCaches();
+   syncProjectCaches();if(ctx.firm()&&workFirm&&workFirm!==ctx.firm())workFirm='';
    if(selected&&!projectDetailsLoaded.has(selected)&&!projectDetailsErrors.has(selected))void ensureProjectDetail(selected);
    const p=list.find(p=>p.project_id===selected)||d().projects.find(p=>p.project_id===selected),detailReady=!selected||projectDetailsLoaded.has(selected),s=p&&schedule(p.project_id),carryoverCount=p?ctx.filtered().tasks.filter(t=>t.project_id===p.project_id&&!['Completed','Cancelled'].includes(t.status)).length:0,periods=(d().work_periods||[]).filter(w=>list.some(p=>p.project_id===w.project_id));
-   const current=periods.filter(w=>w.project_id===selected);if(selectedPeriod&&!current.some(w=>w.work_period_id===selectedPeriod))selectedPeriod='';
+   const current=periods.filter(w=>w.project_id===selected);if(selectedPeriod&&projectDetailsLoaded.has(selected)&&!current.some(w=>w.work_period_id===selectedPeriod))selectedPeriod='';
    const periodsForTask=new Map((d().work_period_tasks||[]).map(l=>[l.task_id,l.work_period_id]));
    const tasks=ctx.filtered().tasks.filter(t=>{
     const w=d().task_procedures?.find(w=>w.task_id===t.task_id),filed=w?.stage==='Filed - pending payment';
