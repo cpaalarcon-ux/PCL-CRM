@@ -38,17 +38,18 @@ export async function presenceAction(tx:any,a:any,p:any,context:any){
   one(await tx`select attendance_id from erp_private.attendance where staff_id=${sid} and work_date=${when} and clock_in is not null and clock_out is null and deleted_at is null for update`);
   const presence=(await tx`select manual_status from erp_private.staff_presence where staff_id=${sid}`)[0];if(presence?.manual_status==='Break')fail(400,'Resume work before starting a task timer.');
   const old=(await tx`select * from erp_private.task_timers where staff_id=${sid} for update`)[0];if(old?.status==='Running')fail(400,'Stop the current task timer first.');
-  await tx`insert into erp_private.task_timers(staff_id,task_id,started_at) values(${sid},${task.task_id},now()) on conflict(staff_id) do update set task_id=excluded.task_id,started_at=now(),stopped_at=null,paused_at=null,paused_seconds=0,status='Running',timesheet_id=null,notes=null`;return {ok:true};
+  await tx`insert into erp_private.task_timers(staff_id,task_id,started_at) values(${sid},${task.task_id},now()) on conflict(staff_id) do update set task_id=excluded.task_id,started_at=now(),stopped_at=null,paused_at=null,paused_seconds=0,status='Running',timesheet_id=null,notes=null,suggested_seconds=null,suggested_task_id=null,suggested_date=null`;return {ok:true};
  }
  if(p.action==='timer_stop'){
   await tx`select pg_advisory_xact_lock(hashtextextended(${sid+':timer'},0))`;const timer=one(await tx`select * from erp_private.task_timers where staff_id=${sid} for update`);
   if(timer.status!=='Running')return {ok:true,timesheet_id:timer.timesheet_id,needs_review:timer.status==='Needs review'};
   const task=(await tx`select * from erp_private.tasks where task_id=${timer.task_id} and assigned_to=${sid} and deleted_at is null`)[0],date0=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(timer.started_at));
   const seconds=Math.max(0,(Date.now()-new Date(timer.started_at).getTime())/1000-Number(timer.paused_seconds)-(timer.paused_at?(Date.now()-new Date(timer.paused_at).getTime())/1000:0)),hours=Math.round(seconds/36)/100;
-  if(!task||date0!==when||hours>24){await tx`update erp_private.task_timers set stopped_at=now(),status='Needs review',notes='Confirm actual work date and hours manually; task or date changed.' where staff_id=${sid}`;return {ok:true,needs_review:true};}
-  const [sum]=await tx`select coalesce(sum(hours),0) hours from erp_private.timesheets where staff_id=${sid} and work_date=${when} and status<>'Rejected' and deleted_at is null`;if(Number(sum.hours)+hours>24)fail(400,'Recorded time would exceed 24 hours. Review your existing timesheets.');
-  let id=null;if(hours>0){const r=one(await tx`insert into erp_private.timesheets(staff_id,project_id,task_id,work_date,hours,description,billable,status) values(${sid},${task.project_id},${task.task_id},${when},${hours},'Task timer draft — confirm actual work and description before submission.',true,'Draft') returning timesheet_id`);id=r.timesheet_id;}
-  await tx`update erp_private.task_timers set stopped_at=now(),status='Stopped',timesheet_id=${id},notes='Stopped by staff. Draft time requires confirmation and independent approval.' where staff_id=${sid}`;return {ok:true,timesheet_id:id};
+  if(!task||date0!==when||hours>24){await tx`update erp_private.task_timers set stopped_at=now(),status='Needs review',notes='Key the actual work date and hours manually; task or date changed.' where staff_id=${sid}`;return {ok:true,needs_review:true};}
+  // The timer only suggests a figure. The recorded time is what the person keys in; nothing is written to timesheets here.
+  const secs=Math.round(seconds);
+  await tx`update erp_private.task_timers set stopped_at=now(),status='Stopped',timesheet_id=null,suggested_seconds=${secs},suggested_task_id=${task.task_id},suggested_date=${when},notes='Timer stopped. Key the actual hours on the task; the timer figure is only a suggestion.' where staff_id=${sid}`;
+  return {ok:true,suggested:{task_id:task.task_id,work_date:when,seconds:secs,hours:hours}};
  }
  if(p.action==='presence_team'){
   leader(a);const rows=await tx`select s.staff_id,s.full_name,p.last_seen_at,p.last_activity_at,p.manual_status,a.clock_in,a.clock_out,a.review_required,t.task_id,t.status as timer_status,k.task_name from erp_private.staff_members s left join erp_private.staff_presence p using(staff_id) left join erp_private.attendance a on a.staff_id=s.staff_id and a.work_date=${when} left join erp_private.task_timers t on t.staff_id=s.staff_id and t.status='Running' left join erp_private.tasks k on k.task_id=t.task_id where s.deleted_at is null and s.access_status='Active' and erp_private.manages(s.staff_id) order by s.full_name limit 200`;
