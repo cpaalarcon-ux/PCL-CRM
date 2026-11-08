@@ -73,3 +73,8 @@ test('Settings lists every other Partner policy with its own sign button, Partne
  html=otherPoliciesCard({me:{category_code:'MANAGER'},policies});assert.doesNotMatch(html,/data-policy=/);assert.match(html,/Only a Partner can sign/);
  assert.equal(otherPoliciesCard({me:{category_code:'PARTNER'},policies:[policies[0]]}),'');
 });
+
+test('the Settings view actually renders both policy cards (the old firms() helper was never used)',async()=>{
+ const fs=await import('node:fs');const app=fs.readFileSync(new URL('../staff-pilot.mjs',import.meta.url),'utf8');
+ assert.match(app,/firms:\(\)=>policyCard\(data,esc,shortDate\)\+otherPoliciesCard\(data,esc,shortDate\)\+suite\.settings\(\)/);
+});
