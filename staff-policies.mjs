@@ -15,12 +15,21 @@ export function policyCard(data,esc=v=>String(v??''),fmt=v=>String(v||'').slice(
  const button=partner?(signed?`<button type="button" class="secondary" data-policy="revoke" data-code="${esc(p.policy_code)}" data-rev="${esc(p.revision)}">Withdraw authorization</button>`:`<button type="button" class="primary" data-policy="sign" data-code="${esc(p.policy_code)}" data-rev="${esc(p.revision)}">Digitally Sign &amp; Authorize</button>`):'<p class="muted">Only a Partner can sign this policy.</p>';
  return `<div class="card" id="policyCard"><div class="section-head"><h2>Compliance</h2></div><h3>${esc(p.policy_name)}</h3><blockquote class="policy-statement">${esc(p.statement)}</blockquote><p class="muted">Entries made by Assistants are saved as proposals and take effect only after a Manager or Partner approves them. Withdrawing the authorization locks Assistant data entry again; nothing already approved is undone.</p><p>${state}</p>${button}</div>`;
 }
+// The other Partner policies (assignment, leave and handover, security, and any added later). Each is a sign-off only; the wording cannot be edited.
+export function otherPoliciesCard(data,esc=v=>String(v??''),fmt=v=>String(v||'').slice(0,10)){
+ const list=(data.policies||[]).filter(p=>p.policy_code!==ASSISTANT_ENTRY_POLICY);if(!list.length)return '';
+ const partner=data.me?.category_code==='PARTNER';
+ const row=p=>{const signed=p.status==='Signed_Off',state=signed?`<span class="badge good">Signed off</span> by ${esc(p.signed_by_name||'a Partner')} on ${esc(fmt(p.signed_at))}`:'<span class="badge warn">Pending Partner sign-off</span>';
+  const button=partner?(signed?`<button type="button" class="secondary" data-policy="revoke" data-code="${esc(p.policy_code)}" data-rev="${esc(p.revision)}">Withdraw sign-off</button>`:`<button type="button" class="primary" data-policy="sign" data-code="${esc(p.policy_code)}" data-rev="${esc(p.revision)}">Digitally Sign &amp; Authorize</button>`):'';
+  return `<div class="task"><div><h3>${esc(p.policy_name)}</h3><blockquote class="policy-statement">${esc(p.statement)}</blockquote><p>${state}</p>${button}</div></div>`;};
+ return `<div class="card" id="otherPoliciesCard"><div class="section-head"><h2>Partner policies</h2></div><p class="muted">${partner?'Read each policy, then sign it. Only a Partner can sign or withdraw. Your name and the time are recorded.':'Only a Partner can sign these policies.'}</p>${list.map(row).join('')}</div>`;
+}
 export function bindPolicies(ctx){
  const {esc,form,modal,request,data}=ctx;
  document.addEventListener('click',e=>{
   const b=e.target.closest('[data-policy]');if(!b)return;const p=policyOf(data(),b.dataset.code);if(!p)return;
   const base={policy_code:p.policy_code,revision:b.dataset.rev};
-  if(b.dataset.policy==='sign')modal('Sign and authorize',form(`<p class="info full">${esc(p.statement)}</p><label class="full"><input type="checkbox" name="confirm" required> I confirm, as a Partner, that I authorize this policy.</label>`,'Digitally Sign & Authorize'),f=>request({action:'policy_sign',...base,confirm:f.get('confirm')==='on'||f.get('confirm')==='true'}),undefined,{successMessage:'Policy signed. Assistants can now propose client data.'});
-  else modal('Withdraw authorization',form(`<p class="info full">Assistants will no longer be able to propose client data. Nothing already approved is undone.</p>`,'Withdraw authorization'),()=>request({action:'policy_revoke',...base}),undefined,{successMessage:'Authorization withdrawn. Assistant data entry is locked.'});
+  if(b.dataset.policy==='sign')modal('Sign and authorize',form(`<p class="info full">${esc(p.statement)}</p><label class="full"><input type="checkbox" name="confirm" required> I confirm, as a Partner, that I authorize this policy.</label>`,'Digitally Sign & Authorize'),f=>request({action:'policy_sign',...base,confirm:f.get('confirm')==='on'||f.get('confirm')==='true'}),undefined,{successMessage:p.policy_code===ASSISTANT_ENTRY_POLICY?'Policy signed. Assistants can now propose client data.':'Policy signed. Your name and the time are recorded.'});
+  else modal('Withdraw authorization',form(`<p class="info full">${p.policy_code===ASSISTANT_ENTRY_POLICY?'Assistants will no longer be able to propose client data. Nothing already approved is undone.':'This policy goes back to Pending. Nothing is deleted; the change is audit-logged.'}</p>`,'Withdraw authorization'),()=>request({action:'policy_revoke',...base}),undefined,{successMessage:'Authorization withdrawn. Assistant data entry is locked.'});
  });
 }

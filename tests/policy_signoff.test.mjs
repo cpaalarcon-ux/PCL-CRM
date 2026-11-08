@@ -64,3 +64,12 @@ test('server wiring: sign and withdraw are Settings actions, the gate runs insid
  const fn=p=>fs.readFileSync(path.join(root,'supabase/functions/staff-workspace-v12',p),'utf8');
  assert.match(fn('staff-access-control.mjs'),/policy_\(\?:sign\|revoke\)/);assert.match(fn('proposal-actions.ts'),/await requireAssistantEntryAuthorised\(tx,a\)/);assert.match(fn('index.ts'),/w\.policies=await policiesRead\(tx\)/);assert.match(fn('index.ts'),/policyAction\(tx,a,p\)/);
 });
+
+test('Settings lists every other Partner policy with its own sign button, Partner only',async()=>{
+ const {otherPoliciesCard}=await import('../staff-policies.mjs');
+ const policies=[{policy_code:'ASSISTANT_DATA_ENTRY',policy_name:'Assistant policy',statement:'x',status:'Pending',revision:1},{policy_code:'SECURITY_POLICY',policy_name:'Security policy',statement:'Credentials are encrypted',status:'Pending',revision:1},{policy_code:'ASSIGNMENT_POLICY',policy_name:'Assignment policy',statement:'y',status:'Signed_Off',signed_by_name:'P. Partner',signed_at:'2026-11-09T01:00:00Z',revision:2}];
+ let html=otherPoliciesCard({me:{category_code:'PARTNER'},policies});
+ assert.doesNotMatch(html,/Assistant policy/,'the Assistant policy keeps its own card');assert.match(html,/Security policy/);assert.match(html,/data-policy="sign" data-code="SECURITY_POLICY"/);assert.match(html,/data-policy="revoke" data-code="ASSIGNMENT_POLICY"/);assert.match(html,/P\. Partner/);
+ html=otherPoliciesCard({me:{category_code:'MANAGER'},policies});assert.doesNotMatch(html,/data-policy=/);assert.match(html,/Only a Partner can sign/);
+ assert.equal(otherPoliciesCard({me:{category_code:'PARTNER'},policies:[policies[0]]}),'');
+});
