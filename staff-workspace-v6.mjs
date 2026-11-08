@@ -33,7 +33,7 @@ export function createWorkspaceUI(ctx){
   function mergeProjectHubItems(items){
    const projects=[],schedules=[];
    for(const item of items||[]){
-    const {schedule:sc,periods,open_count,overdue_count,company_name,firm_code,...project}=item;
+    const {schedule:sc,periods,open_count,overdue_count,next_due,handlers,stages,sort_name,company_name,firm_code,...project}=item;
     if(!(d().projects||[]).some(x=>x.project_id===item.project_id)||!(d().work_periods||[]).some(w=>w.project_id===item.project_id))projectNeedsDetail.add(item.project_id);
     projects.push(project);
     const client=(d().clients||[]).find(x=>x.client_id===item.client_id);
@@ -78,11 +78,11 @@ export function createWorkspaceUI(ctx){
    const serial=workHub.serial;workHub.busy=true;workHub.error='';
    try{
     const query={action:'project_hub_page',page_size:25,firm_id:selectedFirm||undefined,search:workSearch.trim(),show:workShow,year};
-    if(!reset&&workHub.snapshot_at){query.snapshot_at=workHub.snapshot_at;if(workHub.cursor){query.after_created_at=workHub.cursor.created_at;query.after_project_id=workHub.cursor.project_id;}}
+    if(!reset&&workHub.snapshot_at){query.snapshot_at=workHub.snapshot_at;if(workHub.cursor){query.after_overdue=workHub.cursor.overdue_count;query.after_name=workHub.cursor.sort_name;query.after_project_id=workHub.cursor.project_id;}}
     const page=await request(query);
     if(serial!==workHub.serial)return;
     workHub.snapshot_at=page.snapshot_at;workHub.cursor=page.next_cursor;workHub.has_more=!!page.has_more;workHub.loaded=true;
-    workHub.items=reset?(page.items||[]):workHub.items.concat(page.items||[]);
+    {const seen=new Set(),merged=(reset?[]:workHub.items).concat(page.items||[]);workHub.items=merged.filter(x=>seen.has(x.project_id)?false:(seen.add(x.project_id),true));}
     mergeProjectHubItems(page.items||[]);
    }catch(error){if(serial===workHub.serial){workHub.loaded=true;workHub.error=error?.message||'Could not load projects.';}}
    finally{if(serial===workHub.serial){workHub.busy=false;ctx.render();}}
@@ -132,6 +132,7 @@ export function createWorkspaceUI(ctx){
    const monthName=v=>new Intl.DateTimeFormat('en-GB',{month:'short',timeZone:'UTC'}).format(new Date(v.slice(0,10)+'T00:00:00Z'));
    const chipLabel=w=>w.period_kind==='Monthly'?monthName(w.starts_on):w.period_kind==='Weekly'?'Wk '+shortDate(w.starts_on):w.period_kind==='Quarterly'?'Q'+(Math.floor(Number(w.starts_on.slice(5,7))/3)+1):w.period_kind==='Annually'?'Annual':'Once-off';
    const boardRows=(workHub.items||[]).map(item=>{const ps=(item.periods||[]).slice().sort((a,b)=>a.starts_on.localeCompare(b.starts_on)||a.period_kind.localeCompare(b.period_kind)),open=Number(item.open_count||0),overdue=Number(item.overdue_count||0);return {p:item,ps,open,overdue};});
+   const boardMeta=item=>{const people=(item.handlers||[]).slice(0,3).map(h=>`${esc(staffName(h.staff_id)||'Team member')} <i>${h.tasks}</i>`),more=(item.handlers||[]).length>3?` +${(item.handlers||[]).length-3} more`:'',stages=(item.stages||[]).slice(0,4).map(x=>`${esc(x.stage)} <i>${x.tasks}</i>`),extra=(item.stages||[]).length>4?` +${(item.stages||[]).length-4} more`:'',due=item.next_due&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(item.next_due));if(!people.length&&!stages.length)return '';return `<div class="work-row-meta"><span><em>Handled by</em> ${people.join(' · ')||'Unassigned'}${more}</span><span><em>Stage</em> ${stages.join(' · ')||'None open'}${extra}</span>${due?`<span class="${due<now?'late':''}"><em>Next due</em> ${esc(shortDate(due))}${due<now?' · overdue':''}</span>`:''}</div>`;};
    const chip=w=>{const open=Number(w.open_count||0),late=Number(w.overdue_count||0),current=w.starts_on.slice(0,10)<=now&&w.ends_on.slice(0,10)>=now,state=late?'late':open?'open':'clear';return `<a class="period-chip ${state}${current?' current':''}${w.status!=='Open'?' archived':''}" href="#project=${w.project_id}" data-open-project="${w.project_id}" data-work-period="${w.work_period_id}" title="${esc(`${chipLabel(w)} · ${shortDate(w.starts_on)}–${shortDate(w.ends_on)} · ${open} open${late?`, ${late} overdue`:''}`)}"><span>${esc(chipLabel(w))}</span>${open?`<b>${open}</b>`:''}</a>`;};
    const totals=boardRows.reduce((t,r)=>({open:t.open+r.open,overdue:t.overdue+r.overdue}),{open:0,overdue:0});
   const firmChoices=(d().firms||[]).filter(x=>!ctx.firm()||x.firm_id===ctx.firm()).map(x=>[x.firm_id,(x.firm_code||'Firm')+(x.legal_name?' · '+x.legal_name:'')]);
@@ -159,7 +160,7 @@ const workCards=`<div class="work-board">
     <div class="work-board-tools"><label>Client<input name="workSearch" type="search" placeholder="Search client name" value="${esc(workSearch)}"></label>${select('workFirm','Firm',firmChoices,workFirm,'All firms')}${select('workShow','Show',[['open','With open work'],['overdue','Overdue only'],['all','All engagements']],workShow)}${select('workYear','Year',years.map(y=>[y,y]),year)}</div>
     <div class="work-board-summary"><span>Showing <b>${workHub.items.length}</b> engagement${workHub.items.length===1?'':'s'}${workHub.has_more?' loaded so far':''}</span><span><b>${totals.open}</b> open tasks in loaded engagements</span><span class="${totals.overdue?'late':''}"><b>${totals.overdue}</b> overdue</span><span class="legend"><i class="period-chip open"></i>Open <i class="period-chip late"></i>Overdue <i class="period-chip clear"></i>No open tasks <i class="period-chip current"></i>Current period</span></div>
     ${workHub.busy&&!boardRows.length?'<p class="muted">Loading projects…</p>':''}
-    ${boardRows.length?boardRows.map(r=>`<article class="work-row${r.overdue?' has-late':''}"><div class="work-row-head"><a href="#project=${r.p.project_id}" data-open-project="${r.p.project_id}"><b>${esc(clientName(r.p.client_id))}</b></a><small>${esc(r.p.project_name.replace(clientName(r.p.client_id),'').replace(/^\s*[-–·]\s*/,'')||'Tax compilation')} · ${esc(firmName(r.p.handling_firm_id))}</small><span class="work-row-count">${r.open} open${r.overdue?` · <em>${r.overdue} overdue</em>`:''}</span></div><div class="period-strip">${r.ps.map(chip).join('')}</div></article>`).join(''):workHub.loaded&&!workHub.error?'<p class="muted">No client engagements match these filters.</p>':''}
+    ${boardRows.length?boardRows.map(r=>`<article class="work-row${r.overdue?' has-late':''}"><div class="work-row-head"><a href="#project=${r.p.project_id}" data-open-project="${r.p.project_id}"><b>${esc(clientName(r.p.client_id))}</b></a><small>${esc(r.p.project_name.replace(clientName(r.p.client_id),'').replace(/^\s*[-–·]\s*/,'')||'Tax compilation')} · ${esc(firmName(r.p.handling_firm_id))}</small><span class="work-row-count">${r.open} open${r.overdue?` · <em>${r.overdue} overdue</em>`:''}</span></div>${boardMeta(r.p)}<div class="period-strip">${r.ps.map(chip).join('')}</div></article>`).join(''):workHub.loaded&&!workHub.error?'<p class="muted">No client engagements match these filters.</p>':''}
     ${workHub.error?`<p class="info">${esc(workHub.error)} <button type="button" data-v6="project-hub-retry">Retry</button></p>`:''}
     ${workHub.has_more?`<div class="work-board-more"><span class="muted">Showing ${workHub.items.length} engagement(s) in the project list.</span><button type="button" data-v6="work-more" ${workHub.busy?'disabled':''}>${workHub.busy?'Loading…':'Load next 25'}</button></div>`:''}
    </div>`;

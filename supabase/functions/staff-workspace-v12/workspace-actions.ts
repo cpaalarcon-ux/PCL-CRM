@@ -96,25 +96,30 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   const yearText=String(p.year||nairobiDate().slice(0,4));if(!/^\d{4}$/.test(yearText)||Number(yearText)<2000||Number(yearText)>2200)fail(400,'Choose a valid reporting year.');
   const yearStart=`${yearText}-01-01`,yearEnd=`${Number(yearText)+1}-01-01`,firm=p.firm_id?uuid(p.firm_id):null,search=text(p.search||'',120,false),show=choice(p.show||'open',['open','overdue','all']);
   const timestamp=(value:any,label:string)=>{if(value==null||value==='')return null;if(typeof value!=='string'||value.length>40||!Number.isFinite(Date.parse(value)))fail(400,`The ${label} is invalid.`);return new Date(value).toISOString();};
-  const snapshotInput=timestamp(p.snapshot_at,'project snapshot'),afterCreatedAt=timestamp(p.after_created_at,'project page cursor'),afterProjectId=p.after_project_id?uuid(p.after_project_id):null;
-  if(Boolean(afterCreatedAt)!==Boolean(afterProjectId))fail(400,'The project page cursor is incomplete. Restart the project list.');
+  const snapshotInput=timestamp(p.snapshot_at,'project snapshot'),afterProjectId=p.after_project_id?uuid(p.after_project_id):null,afterName=p.after_name==null?null:text(p.after_name,300,false),afterOverdue=p.after_overdue==null||p.after_overdue===''?null:Number(p.after_overdue);
+  if(afterOverdue!==null&&(!Number.isInteger(afterOverdue)||afterOverdue<0))fail(400,'The project page cursor is invalid. Restart the project list.');
+  if([afterOverdue!==null,afterName!==null,!!afterProjectId].some(Boolean)&&![afterOverdue!==null,afterName!==null,!!afterProjectId].every(Boolean))fail(400,'The project page cursor is incomplete. Restart the project list.');
   const [snapshot]=await tx`select coalesce(${snapshotInput}::timestamptz,transaction_timestamp()) snapshot_at`;
   const fullAccess=['PARTNER','MANAGER'].includes(a.category_code),intern=a.category_code==='INTERN',today=nairobiDate();
   const rows=await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,p.service_code,p.status,p.tax_master,p.revision,p.created_at,
-    c.company_name,f.firm_code,
+    c.company_name,lower(c.company_name) sort_name,f.firm_code,
     (select to_jsonb(s) from erp_private.project_schedules s where s.project_id=p.project_id and s.deleted_at is null) schedule,
-    board.periods,board.open_count,board.overdue_count
+    board.periods,board.open_count,board.overdue_count,board.next_due,board.handler_sets,board.stage_sets
    from erp_private.projects p
    join erp_private.clients c using(client_id)
    join erp_private.firms f on f.firm_id=p.handling_firm_id
    cross join lateral (
     select coalesce(jsonb_agg(jsonb_build_object('work_period_id',w.work_period_id,'project_id',w.project_id,'period_kind',w.period_kind,'starts_on',w.starts_on,'ends_on',w.ends_on,'status',w.status,'open_count',counts.open_count,'overdue_count',counts.overdue_count) order by w.starts_on,w.period_kind),'[]'::jsonb) periods,
-      coalesce(sum(counts.open_count),0)::int open_count,coalesce(sum(counts.overdue_count),0)::int overdue_count
+      coalesce(sum(counts.open_count),0)::int open_count,coalesce(sum(counts.overdue_count),0)::int overdue_count,
+      min(counts.next_due) next_due,coalesce(jsonb_agg(counts.handlers),'[]'::jsonb) handler_sets,coalesce(jsonb_agg(counts.stages),'[]'::jsonb) stage_sets
     from erp_private.project_work_periods w
     cross join lateral (
      select count(distinct t.task_id) filter(where t.status not in ('Completed','Cancelled'))::int open_count,
-       count(distinct t.task_id) filter(where t.status not in ('Completed','Cancelled') and (t.due_at at time zone 'Africa/Nairobi')::date<(now() at time zone 'Africa/Nairobi')::date)::int overdue_count
-     from erp_private.work_period_tasks l join erp_private.tasks t using(task_id)
+       count(distinct t.task_id) filter(where t.status not in ('Completed','Cancelled') and (t.due_at at time zone 'Africa/Nairobi')::date<(now() at time zone 'Africa/Nairobi')::date)::int overdue_count,
+       min(t.due_at) filter(where t.status not in ('Completed','Cancelled')) next_due,
+       coalesce(jsonb_agg(t.assigned_to) filter(where t.status not in ('Completed','Cancelled') and t.assigned_to is not null),'[]'::jsonb) handlers,
+       coalesce(jsonb_agg(case when tpr.profile is not null and tpr.profile<>'Supporting task' then tpr.stage else t.status end) filter(where t.status not in ('Completed','Cancelled')),'[]'::jsonb) stages
+     from erp_private.work_period_tasks l join erp_private.tasks t using(task_id) left join erp_private.task_procedures tpr on tpr.task_id=t.task_id
      where l.work_period_id=w.work_period_id and t.deleted_at is null
       and (
        ${fullAccess}::boolean
@@ -134,7 +139,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
     and (${search}='' or c.company_name ilike ('%'||${search}||'%'))
     and jsonb_array_length(board.periods)>0
     and (${show}='all' or (${show}='open' and board.open_count>0) or (${show}='overdue' and board.overdue_count>0))
-    and (${afterCreatedAt}::timestamptz is null or (p.created_at,p.project_id)<(${afterCreatedAt}::timestamptz,${afterProjectId}::uuid))
+    and (${afterOverdue}::int is null or board.overdue_count<${afterOverdue}::int or (board.overdue_count=${afterOverdue}::int and (lower(c.company_name),p.project_id)>(${afterName}::text,${afterProjectId}::uuid)))
     and (
      ${fullAccess}::boolean
      or (${!intern}::boolean and exists(select 1 from erp_private.project_assignments pa where pa.project_id=p.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date)))
@@ -144,9 +149,11 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
       or exists(select 1 from erp_private.project_schedules ps join erp_private.tasks review_task using(project_id) where ps.project_id=p.project_id and ps.deleted_at is null and ps.reviewer_id=${a.staff_id} and review_task.status='In Review' and review_task.deleted_at is null)
      ))
     )
-   order by p.created_at desc,p.project_id desc limit ${pageSize+1}`;
-  const hasMore=rows.length>pageSize,items=rows.slice(0,pageSize),last=items[items.length-1]||null;
-  return {snapshot_at:snapshot.snapshot_at,items,has_more:hasMore,next_cursor:hasMore&&last?{created_at:last.created_at,project_id:last.project_id}:null,page_size:pageSize};
+   order by board.overdue_count desc,lower(c.company_name),p.project_id limit ${pageSize+1}`;
+  // Most overdue first, then client name. People and stages are tallied here so the browser needs no task list to draw a row.
+  const tally=(sets:any,top:number)=>{const m=new Map<string,number>();for(const set of (Array.isArray(sets)?sets:[]))for(const v of (Array.isArray(set)?set:[]))if(v)m.set(String(v),(m.get(String(v))||0)+1);return [...m.entries()].sort((x,y)=>y[1]-x[1]||x[0].localeCompare(y[0])).slice(0,top);};
+  const hasMore=rows.length>pageSize,items=rows.slice(0,pageSize).map((r:any)=>{const {handler_sets,stage_sets,sort_name,...rest}=r;return {...rest,sort_name,handlers:tally(handler_sets,50).map(([staff_id,tasks])=>({staff_id,tasks})),stages:tally(stage_sets,20).map(([stage,tasks])=>({stage,tasks}))};}),last=items[items.length-1]||null;
+  return {snapshot_at:snapshot.snapshot_at,items,has_more:hasMore,next_cursor:hasMore&&last?{overdue_count:last.overdue_count,sort_name:last.sort_name,project_id:last.project_id}:null,page_size:pageSize,order:'overdue first, then client name'};
  }
  if(p.action==='project_detail_read'){
   const pid=uuid(p.project_id),fullAccess=['PARTNER','MANAGER'].includes(a.category_code),intern=a.category_code==='INTERN',today=nairobiDate();
