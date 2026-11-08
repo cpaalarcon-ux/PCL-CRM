@@ -92,7 +92,7 @@
     if (retryButton) retryButton.hidden = true;
     notice('Opening your secure workspace…');
     try {
-      await import('./staff-pilot.mjs?v=20261109-pool-v1');
+      await import('./staff-pilot.mjs?v=20261109-hol-v1');
     } catch {
       workspaceLoading = false;
       if (readSavedSession()) {

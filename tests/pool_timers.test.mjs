@@ -97,7 +97,7 @@ test('screens and server expose the new statuses, the pool widget for Managers a
  assert.match(val,/'Waiting on client','Paused'/);assert.match(app,/states=\['Pending','In Progress','Waiting on client','Paused'/);
  assert.match(idx,/\['Waiting on client','Paused'\]\.includes\(status\)&&reason\.length<3/);
  assert.match(dash,/\['PARTNER','MANAGER'\]\.includes\(role\)\?'<section class="card home-my-reviews" id="homePool"/,'the pool widget is for Managers and Partners only');
- assert.match(app,/\['PARTNER','MANAGER'\]\.includes\(data\.me\.category_code\)\)void teamUI\.paintPool\(\)/);
+ assert.match(app,/\['PARTNER','MANAGER'\]\.includes\(data\.me\.category_code\)\)\{void teamUI\.paintPool\(\)/);
  for(const a of ['task_pool_list','task_pool_claim','task_pool_send','task_team_workload'])assert.ok(team.includes(`'${a}'`),a);
  assert.match(team,/The Manager Pool is for Managers and Partners/);
  assert.match(tw,/data-pool="send"/);assert.match(rd('staff-team.mjs'),/Pull &amp; Assign to Me/);

@@ -267,7 +267,15 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   if(Number(total.hours)+v.hours>24)fail(400,'Total time for a day cannot exceed 24 hours.');
   if(tid){const rows=await tx`update erp_private.timesheets set work_date=${v.work_date},hours=${v.hours},description=${v.description},billable=${v.billable},status=${v.status},reviewed_by=null,reviewed_at=null,review_note=null
    where timesheet_id=${tid} and staff_id=${a.staff_id} and task_id=${v.task_id} and revision=${revision(p.revision)} returning timesheet_id`;if(!rows.length)fail(409,'Only your draft or rejected time can be edited. Refresh first.');return {ok:true};}
-  return one(await tx`insert into erp_private.timesheets(staff_id,project_id,task_id,work_date,hours,description,billable,status) values(${a.staff_id},${task.project_id},${v.task_id},${v.work_date},${v.hours},${v.description},${v.billable},${v.status}) returning timesheet_id`);
+  // Recorded time is always the hours keyed in. A stopped timer may only be referenced as a suggestion, and only if it is this person's own, for this task.
+  let timerSeconds:number|null=null;
+  if(p.timer_seconds!==undefined&&p.timer_seconds!==null&&p.timer_seconds!==''){
+   const tm=(await tx`select suggested_seconds from erp_private.task_timers where staff_id=${a.staff_id} and status='Stopped' and suggested_task_id=${v.task_id} and suggested_seconds=${Math.round(Number(p.timer_seconds))} and timesheet_id is null for update`)[0];
+   if(tm)timerSeconds=tm.suggested_seconds;
+  }
+  const saved=one(await tx`insert into erp_private.timesheets(staff_id,project_id,task_id,work_date,hours,description,billable,status,timer_seconds,time_source) values(${a.staff_id},${task.project_id},${v.task_id},${v.work_date},${v.hours},${v.description},${v.billable},${v.status},${timerSeconds},${timerSeconds===null?'Manual':'Manual with timer'}) returning timesheet_id`);
+  if(timerSeconds!==null)await tx`update erp_private.task_timers set timesheet_id=${saved.timesheet_id} where staff_id=${a.staff_id}`;
+  return saved;
  }
  if(p.action==='timesheet_review'){
   if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must review timesheets.');
