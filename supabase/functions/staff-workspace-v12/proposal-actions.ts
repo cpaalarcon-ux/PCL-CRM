@@ -1,5 +1,6 @@
 import {fail,text,uuid} from './validation.mjs';
 import {isProposableAction} from './staff-rights-catalog.mjs';
+import {requireAssistantEntryAuthorised} from './policy-actions.ts';
 const deny=():never=>fail(403,'You do not have access to this action.');
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 const canCheck=(a:any)=>['SUPERVISOR','MANAGER','PARTNER'].includes(a.category_code);
@@ -16,6 +17,7 @@ export function proposalSummary(action:string,p:any):string{
 export async function createProposal(tx:any,a:any,p:any){
  const action=String(p.action||'');
  if(!isProposableAction(action)||!['ASSISTANT','SUPERVISOR'].includes(a.category_code))deny();
+ await requireAssistantEntryAuthorised(tx,a);
  if(p.tax_setup||p.purchase_setup)fail(409,'Project and schedule set-up is done by a Manager or Partner. Propose the client details on their own.');
  const reason=text(p.proposal_reason||'',1000,false);
  const {action:_a,proposal_reason:_r,...payload}=p;
