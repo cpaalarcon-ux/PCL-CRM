@@ -6,10 +6,10 @@ const setup=()=>{const dom=new JSDOM('<div id="bell"></div><section id="homeMetr
 const tick=()=>new Promise(r=>setTimeout(r,5));
 test('the holiday card is Partner only and lists dates with their status',async()=>{
  setup();let me='MANAGER',calls=[];
- const ui=createHolidaysUI({esc:String,request:async p=>{calls.push(p.action);return {holidays:[{holiday_date:'2026-12-25',name:'Christmas Day',is_working_day:false,confirmed:false,source:'Seeded'},{holiday_date:'2026-12-26',name:'Boxing Day / Utamaduni Day',is_working_day:true,confirmed:true,source:'Gazette notice 12',confirmed_by_name:'Fictional Partner',confirmed_at:'2026-11-08T10:00:00Z'}]};},notice(){},modal(){},form:x=>x,field:()=>'',data:()=>({me:{category_code:me}}),render(){}});
+ const ui=createHolidaysUI({esc:String,request:async p=>{calls.push(p.action);return {holidays:[{holiday_date:'2026-12-25',name:'Christmas Day',is_working_day:false,confirmed:false,source_note:'Seeded'},{holiday_date:'2026-12-26',name:'Boxing Day / Utamaduni Day',is_working_day:true,confirmed:true,source_note:'Gazette notice 12',confirmed_by_name:'Fictional Partner',confirmed_at:'2026-11-08T10:00:00Z'}]};},notice(){},modal(){},form:x=>x,field:()=>'',data:()=>({me:{category_code:me}}),render(){}});
  assert.equal(ui.render(),'','a Manager sees no holiday card and no request is made');assert.deepEqual(calls,[]);
  me='PARTNER';assert.match(ui.render(),/Loading/);await tick();
- const html=ui.render();assert.match(html,/Christmas Day/);assert.match(html,/Not yet confirmed/);assert.match(html,/Clocks paused/);assert.match(html,/Firm works/);assert.match(html,/Fictional Partner/);
+ const html=ui.render();assert.match(html,/Christmas Day/);assert.match(html,/Unconfirmed/);assert.match(html,/Clocks paused/);assert.match(html,/Firm works/);assert.match(html,/Fictional Partner/);
 });
 test('the metrics widget shows realization and keeps cash and margin apart',async()=>{
  setup();let sent=null;

@@ -26,7 +26,7 @@ test('Partner-only holidays that drive the clocks, scoped metrics, and manual ti
  for(const role of ['MANAGER','SUPERVISOR','ASSISTANT'])await rejects(()=>hol(role,'2026-11-11','Fictional firm closure day',false,'Partner meeting minute 12'),/Only a Partner/);
  await rejects(()=>hol('PARTNER','2026-11-11','Fictional firm closure day',false,'short'),/at least 10 characters/);
  await hol('PARTNER','2026-11-11','Fictional firm closure day',false,'Partner meeting minute 12');
- const added=(await tx`select confirmed,confirmed_by,confirmed_at,source,is_working_day from erp_private.public_holidays where holiday_date='2026-11-11'`)[0];
+ const added=(await tx`select confirmed,confirmed_by,confirmed_at,source_note,is_working_day from erp_private.public_holidays where holiday_date='2026-11-11'`)[0];
  assert.equal(added.confirmed,true);assert.equal(added.confirmed_by,actors.PARTNER.staff_id);assert.ok(added.confirmed_at);assert.equal(added.is_working_day,false);
  await rejects(()=>tx`delete from erp_private.public_holidays where holiday_date='2026-11-11'`,/./);
  assert.ok((await tx`select 1 from erp_private.audit_events where table_name='public_holidays' and record_key='2026-11-11' limit 1`).length===1,'the new holiday is audit-logged');
