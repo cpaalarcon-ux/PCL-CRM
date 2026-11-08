@@ -38,7 +38,7 @@ const PREFIX_AREAS=[
   [/^lead_/, 'leads'],
   [/^(?:staff_save|staff_disable|staff_access_|staff_right_|staff_rights_|account_link|master_staff_)/,'staff_access'],
   [/^(?:firm_save|firm_details|firm_logo|sector_save|reference_|rate_(?:save|approve|impact|test|legal_confirm)|release_(?:check_save|read))/, 'settings'],
-  [/^(?:client_save|client_classify_|compliance_|edd_approve|owner_add|contact_save|tax_profile_|v3_client_|v3_identity_|v3_activity_|v3_activities_|v3_stock_|v3_vat_|v3_category_|v3_bank_|v3_opening_balance|v3_partners_add)/,'clients'],
+  [/^(?:client_save|client_proposal_|client_classify_|compliance_|edd_approve|owner_add|contact_save|tax_profile_|v3_client_|v3_identity_|v3_activity_|v3_activities_|v3_stock_|v3_vat_|v3_category_|v3_bank_|v3_opening_balance|v3_partners_add)/,'clients'],
   [/^(?:task_|project_|schedule_|generate_tasks|engagement_|procedure_|accounting_|ledger_|purchase_ledger_|non_etims_|workbook_|period_import_|wht_|tax_|work_|sales_|v3_mapping_|v3_project_|v3_review_|v3_export_|v3_period_add|v3_suggestions|suite_export)/,'projects'],
   [/^audit_/, 'audit'],
   [/^(?:presence_|timer_|clock$|attendance_|leave_|roster_|performance_|credential_|timesheet_)/,'time_hr'],
@@ -71,6 +71,7 @@ export function filterWorkspaceAccess(workspace,areas){
     w.sectors=[];
   }
   if(!allowed.has('clients')){
+    w.proposals=[];
     const linked=new Set((w.projects||[]).map(p=>p.client_id));
     w.clients=(w.clients||[]).filter(c=>linked.has(c.client_id)).map(c=>({client_id:c.client_id,company_name:c.company_name}));
     w.client_firms=[];
