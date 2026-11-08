@@ -93,13 +93,13 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  }
  if(p.action==='project_hub_page'){
   const pageSize=Number(p.page_size||25);if(!Number.isInteger(pageSize)||pageSize<1||pageSize>50)fail(400,'Choose a project page size from 1 to 50.');
-  const yearText=String(p.year||nairobiDate().slice(0,4));if(!/^\\d{4}$/.test(yearText)||Number(yearText)<2000||Number(yearText)>2200)fail(400,'Choose a valid reporting year.');
+  const yearText=String(p.year||nairobiDate().slice(0,4));if(!/^\d{4}$/.test(yearText)||Number(yearText)<2000||Number(yearText)>2200)fail(400,'Choose a valid reporting year.');
   const yearStart=`${yearText}-01-01`,yearEnd=`${Number(yearText)+1}-01-01`,firm=p.firm_id?uuid(p.firm_id):null,search=text(p.search||'',120,false),show=choice(p.show||'open',['open','overdue','all']);
   const timestamp=(value:any,label:string)=>{if(value==null||value==='')return null;if(typeof value!=='string'||value.length>40||!Number.isFinite(Date.parse(value)))fail(400,`The ${label} is invalid.`);return new Date(value).toISOString();};
   const snapshotInput=timestamp(p.snapshot_at,'project snapshot'),afterCreatedAt=timestamp(p.after_created_at,'project page cursor'),afterProjectId=p.after_project_id?uuid(p.after_project_id):null;
   if(Boolean(afterCreatedAt)!==Boolean(afterProjectId))fail(400,'The project page cursor is incomplete. Restart the project list.');
   const [snapshot]=await tx`select coalesce(${snapshotInput}::timestamptz,transaction_timestamp()) snapshot_at`;
-  const fullAccess=['PARTNER','MANAGER'].includes(a.category_code),today=nairobiDate(),visibleToStaff=(p:any)=>p;
+  const fullAccess=['PARTNER','MANAGER'].includes(a.category_code),intern=a.category_code==='INTERN',today=nairobiDate();
   const rows=await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,p.service_code,p.status,p.tax_master,p.revision,p.created_at,
     c.company_name,f.firm_code,
     (select to_jsonb(s) from erp_private.project_schedules s where s.project_id=p.project_id and s.deleted_at is null) schedule,
@@ -116,6 +116,15 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
        count(distinct t.task_id) filter(where t.status not in ('Completed','Cancelled') and (t.due_at at time zone 'Africa/Nairobi')::date<(now() at time zone 'Africa/Nairobi')::date)::int overdue_count
      from erp_private.work_period_tasks l join erp_private.tasks t using(task_id)
      where l.work_period_id=w.work_period_id and t.deleted_at is null
+      and (
+       ${fullAccess}::boolean
+       or (${!intern}::boolean and exists(select 1 from erp_private.project_assignments pa where pa.project_id=t.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date)))
+       or t.assigned_to=${a.staff_id}
+       or (${!intern}::boolean and (
+        exists(select 1 from erp_private.task_procedures tp where tp.task_id=t.task_id and tp.reviewer_id=${a.staff_id} and tp.prepared_by<>${a.staff_id})
+        or exists(select 1 from erp_private.project_schedules ps where ps.project_id=t.project_id and ps.deleted_at is null and ps.reviewer_id=${a.staff_id} and t.status='In Review')
+       ))
+      )
     ) counts
     where w.project_id=p.project_id and w.status='Open' and w.starts_on>=${yearStart}::date and w.starts_on<${yearEnd}::date
    ) board
@@ -128,7 +137,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
     and (${afterCreatedAt}::timestamptz is null or (p.created_at,p.project_id)<(${afterCreatedAt}::timestamptz,${afterProjectId}::uuid))
     and (
      ${fullAccess}::boolean
-     or exists(select 1 from erp_private.project_assignments pa where pa.project_id=p.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date))
+     or (${!intern}::boolean and exists(select 1 from erp_private.project_assignments pa where pa.project_id=p.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date)))
      or exists(select 1 from erp_private.tasks own where own.project_id=p.project_id and own.assigned_to=${a.staff_id} and own.deleted_at is null)
      or (${a.category_code!=='INTERN'}::boolean and (
       exists(select 1 from erp_private.task_procedures tp join erp_private.tasks rt using(task_id) where tp.project_id=p.project_id and tp.reviewer_id=${a.staff_id} and tp.prepared_by<>${a.staff_id} and rt.deleted_at is null)
@@ -140,12 +149,12 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   return {snapshot_at:snapshot.snapshot_at,items,has_more:hasMore,next_cursor:hasMore&&last?{created_at:last.created_at,project_id:last.project_id}:null,page_size:pageSize};
  }
  if(p.action==='project_detail_read'){
-  const pid=uuid(p.project_id),fullAccess=['PARTNER','MANAGER'].includes(a.category_code),today=nairobiDate();
+  const pid=uuid(p.project_id),fullAccess=['PARTNER','MANAGER'].includes(a.category_code),intern=a.category_code==='INTERN',today=nairobiDate();
   const project=one(await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,p.service_code,p.status,p.tax_master,p.revision,p.created_at,c.company_name,c.year_end_month,c.year_end_day,c.opening_balance_status,f.firm_code,f.legal_name
    from erp_private.projects p join erp_private.clients c using(client_id) join erp_private.firms f on f.firm_id=p.handling_firm_id
    where p.project_id=${pid} and p.deleted_at is null and c.deleted_at is null and (
     ${fullAccess}::boolean
-    or exists(select 1 from erp_private.project_assignments pa where pa.project_id=p.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date))
+    or (${!intern}::boolean and exists(select 1 from erp_private.project_assignments pa where pa.project_id=p.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date)))
     or exists(select 1 from erp_private.tasks own where own.project_id=p.project_id and own.assigned_to=${a.staff_id} and own.deleted_at is null)
     or (${a.category_code!=='INTERN'}::boolean and (
      exists(select 1 from erp_private.task_procedures tp join erp_private.tasks rt using(task_id) where tp.project_id=p.project_id and tp.reviewer_id=${a.staff_id} and tp.prepared_by<>${a.staff_id} and rt.deleted_at is null)
@@ -153,11 +162,19 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
     ))
    )`);
   const [scheduleRow]=await tx`select * from erp_private.project_schedules where project_id=${pid} and deleted_at is null`;
-  const periods=await tx`select * from erp_private.project_work_periods where project_id=${pid} order by starts_on desc,period_kind`;
-  const tasks=await tx`select task_id,project_id,assigned_to,task_name,description,due_at,status,blocked_reason,revision,requires_document,period_start,period_end,template_key,filing_date,iso_week_year,iso_week_number from erp_private.tasks where project_id=${pid} and deleted_at is null order by (status in ('Completed','Cancelled')),due_at nulls last,task_id`;
-  const procedures=await tx`select w.task_id,w.project_id,w.profile,w.stage,w.case_id,w.reviewer_id,w.prepared_by,w.closed_at,w.revision from erp_private.task_procedures w where w.project_id=${pid}`;
+  const periods=await tx`select * from erp_private.project_work_periods where project_id=${pid} and status='Open' order by starts_on desc,period_kind`;
+  const tasks=await tx`select t.task_id,t.project_id,t.assigned_to,t.task_name,t.description,t.due_at,t.status,t.blocked_reason,t.revision,t.requires_document,t.period_start,t.period_end,t.template_key,t.filing_date,t.iso_week_year,t.iso_week_number from erp_private.tasks t where t.project_id=${pid} and t.deleted_at is null and (
+   ${fullAccess}::boolean
+   or (${!intern}::boolean and exists(select 1 from erp_private.project_assignments pa where pa.project_id=t.project_id and pa.staff_id=${a.staff_id} and pa.deleted_at is null and (pa.start_date is null or pa.start_date<=${today}::date) and (pa.end_date is null or pa.end_date>=${today}::date)))
+   or t.assigned_to=${a.staff_id}
+   or (${!intern}::boolean and (
+    exists(select 1 from erp_private.task_procedures tp where tp.task_id=t.task_id and tp.reviewer_id=${a.staff_id} and tp.prepared_by<>${a.staff_id})
+    or exists(select 1 from erp_private.project_schedules ps where ps.project_id=t.project_id and ps.deleted_at is null and ps.reviewer_id=${a.staff_id} and t.status='In Review')
+   ))
+  ) order by (t.status in ('Completed','Cancelled')),t.due_at nulls last,t.task_id`;
   const taskIds=tasks.map((t:any)=>t.task_id);
-  const periodTasks=await tx`select l.* from erp_private.work_period_tasks l join erp_private.project_work_periods w using(work_period_id) where w.project_id=${pid}`;
+  const procedures=taskIds.length?await tx`select w.task_id,w.project_id,w.profile,w.stage,w.case_id,w.reviewer_id,w.prepared_by,w.closed_at,w.closed_by,w.revision from erp_private.task_procedures w where w.task_id=any(${taskIds}::uuid[])`:[];
+  const periodTasks=taskIds.length?await tx`select l.* from erp_private.work_period_tasks l join erp_private.project_work_periods w using(work_period_id) where w.project_id=${pid} and w.status='Open' and l.task_id=any(${taskIds}::uuid[])`:[];
   const events=taskIds.length?await tx`select e.* from erp_private.task_events e where e.task_id=any(${taskIds}::uuid[]) order by e.created_at desc limit 500`:[];
   return {project,client:{client_id:project.client_id,company_name:project.company_name,year_end_month:project.year_end_month,year_end_day:project.year_end_day,opening_balance_status:project.opening_balance_status},firm:{firm_id:project.handling_firm_id,firm_code:project.firm_code,legal_name:project.legal_name},schedule:scheduleRow||null,work_periods:periods,tasks,task_procedures:procedures,work_period_tasks:periodTasks,task_events:events,task_count:tasks.length};
  }
