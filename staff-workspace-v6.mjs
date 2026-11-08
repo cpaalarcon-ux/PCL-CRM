@@ -107,33 +107,28 @@ export function createWorkspaceUI(ctx){
   return kanban(groupColumns(tasks,stageOf,['Not started','Pending client documents','In progress','Pending supervisor review','Awaiting client approval','Ready to file','Filed - pending payment'],false),card,esc);
  }
  function projects(){
-  const list=ctx.filtered().projects;if(selected&&!list.some(p=>p.project_id===selected))selected='';
-  const p=list.find(p=>p.project_id===selected),s=p&&schedule(p.project_id),carryoverCount=p?ctx.filtered().tasks.filter(t=>t.project_id===p.project_id&&!['Completed','Cancelled'].includes(t.status)).length:0,periods=(d().work_periods||[]).filter(w=>list.some(p=>p.project_id===w.project_id));
-  const current=periods.filter(w=>w.project_id===selected);if(selectedPeriod&&!current.some(w=>w.work_period_id===selectedPeriod))selectedPeriod='';
-  const periodsForTask=new Map((d().work_period_tasks||[]).map(l=>[l.task_id,l.work_period_id]));
-  const tasks=ctx.filtered().tasks.filter(t=>{
-   const w=d().task_procedures?.find(w=>w.task_id===t.task_id),filed=w?.stage==='Filed - pending payment';
-   const closed=['Completed','Cancelled'].includes(t.status);if(taskFilter==='Completed'?!closed:closed)return false;
-   if(selected&&t.project_id!==selected||selectedPeriod&&periodsForTask.get(t.task_id)!==selectedPeriod)return false;
-   if(taskFilter==='Completed')return true;
-   if(taskFilter==='Payment follow-up')return filed;
-   if(filed)return false;
-   return taskFilter==='All'||taskFilter==='Overdue'&&!!t.due_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(t.due_at))<today()||taskFilter==='My tasks'&&t.assigned_to===d().me.staff_id||taskFilter==='Catch-up uploads'&&t.template_key==='catchup-upload'||taskFilter==='Weekly'&&t.template_key?.startsWith('weekly-')||taskFilter==='Monthly'&&t.template_key?.startsWith('monthly-')||taskFilter==='Annually'&&t.template_key?.startsWith('annual-')||taskFilter===w?.stage;
-  });
-  // Client work board: one row per engagement with its reporting periods as a strip of chips,
-  // so staff scan a year per client instead of one card per month.
-  const now=today(),openByPeriod=new Map(),overdueByPeriod=new Map();
-  const openTasks=new Map(d().tasks.filter(t=>!['Completed','Cancelled'].includes(t.status)).map(t=>[t.task_id,t]));
-  for(const l of d().work_period_tasks||[]){const t=openTasks.get(l.task_id);if(!t)continue;openByPeriod.set(l.work_period_id,(openByPeriod.get(l.work_period_id)||0)+1);const due=t.due_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(t.due_at));if(due&&due<now)overdueByPeriod.set(l.work_period_id,(overdueByPeriod.get(l.work_period_id)||0)+1);}
-  const years=[...new Set(periods.map(w=>w.starts_on.slice(0,4)))].sort().reverse();if(workYear&&!years.includes(workYear))workYear='';const year=workYear||years.find(y=>y===now.slice(0,4))||years[0]||'';
-  const monthName=v=>new Intl.DateTimeFormat('en-GB',{month:'short',timeZone:'UTC'}).format(new Date(v.slice(0,10)+'T00:00:00Z'));
-  const chipLabel=w=>w.period_kind==='Monthly'?monthName(w.starts_on):w.period_kind==='Weekly'?'Wk '+shortDate(w.starts_on):w.period_kind==='Quarterly'?'Q'+(Math.floor(Number(w.starts_on.slice(5,7))/3)+1):w.period_kind==='Annually'?'Annual':'Once-off';
-  const periodsByProject=new Map();for(const w of periods){if(w.starts_on.slice(0,4)!==year)continue;const l=periodsByProject.get(w.project_id)||[];l.push(w);periodsByProject.set(w.project_id,l);}
-  const boardRows=list.filter(p=>periodsByProject.has(p.project_id)).map(p=>{const ps=[...periodsByProject.get(p.project_id)].sort((a,b)=>a.starts_on.localeCompare(b.starts_on)||a.period_kind.localeCompare(b.period_kind));const open=ps.reduce((n,w)=>n+(openByPeriod.get(w.work_period_id)||0),0),overdue=ps.reduce((n,w)=>n+(overdueByPeriod.get(w.work_period_id)||0),0);return {p,ps,open,overdue};})
-   .filter(r=>r.ps.length&&(!workFirm||r.p.handling_firm_id===workFirm)&&(!workSearch||clientName(r.p.client_id).toLowerCase().includes(workSearch.toLowerCase()))&&(workShow==='all'||workShow==='open'&&r.open||workShow==='overdue'&&r.overdue))
-   .sort((a,b)=>b.overdue-a.overdue||clientName(a.p.client_id).localeCompare(clientName(b.p.client_id)));
-  const chip=w=>{const open=openByPeriod.get(w.work_period_id)||0,late=overdueByPeriod.get(w.work_period_id)||0,current=w.starts_on.slice(0,10)<=now&&w.ends_on.slice(0,10)>=now,state=late?'late':open?'open':'clear';return `<a class="period-chip ${state}${current?' current':''}${w.status!=='Open'?' archived':''}" href="#project=${w.project_id}" data-open-project="${w.project_id}" data-work-period="${w.work_period_id}" title="${esc(`${chipLabel(w)} · ${shortDate(w.starts_on)}–${shortDate(w.ends_on)} · ${open} open${late?`, ${late} overdue`:''}`)}"><span>${esc(chipLabel(w))}</span>${open?`<b>${open}</b>`:''}</a>`;};
-  const totals=boardRows.reduce((t,r)=>({open:t.open+r.open,overdue:t.overdue+r.overdue}),{open:0,overdue:0});
+  const list=ctx.filtered().projects;
+   syncProjectCaches();
+   if(selected&&!projectDetailsLoaded.has(selected)&&!projectDetailsErrors.has(selected))void ensureProjectDetail(selected);
+   const p=list.find(p=>p.project_id===selected)||d().projects.find(p=>p.project_id===selected),s=p&&schedule(p.project_id),carryoverCount=p?ctx.filtered().tasks.filter(t=>t.project_id===p.project_id&&!['Completed','Cancelled'].includes(t.status)).length:0,periods=(d().work_periods||[]).filter(w=>list.some(p=>p.project_id===w.project_id));
+   const current=periods.filter(w=>w.project_id===selected);if(selectedPeriod&&!current.some(w=>w.work_period_id===selectedPeriod))selectedPeriod='';
+   const periodsForTask=new Map((d().work_period_tasks||[]).map(l=>[l.task_id,l.work_period_id]));
+   const tasks=ctx.filtered().tasks.filter(t=>{
+    const w=d().task_procedures?.find(w=>w.task_id===t.task_id),filed=w?.stage==='Filed - pending payment';
+    const closed=['Completed','Cancelled'].includes(t.status);if(taskFilter==='Completed'?!closed:closed)return false;
+    if(selected&&t.project_id!==selected||selectedPeriod&&periodsForTask.get(t.task_id)!==selectedPeriod)return false;
+    if(taskFilter==='Completed')return true;
+    if(taskFilter==='Payment follow-up')return filed;
+    if(filed)return false;
+    return taskFilter==='All'||taskFilter==='Overdue'&&!!t.due_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(t.due_at))<today()||taskFilter==='My tasks'&&t.assigned_to===d().me.staff_id||taskFilter==='Catch-up uploads'&&t.template_key==='catchup-upload'||taskFilter==='Weekly'&&t.template_key?.startsWith('weekly-')||taskFilter==='Monthly'&&t.template_key?.startsWith('monthly-')||taskFilter==='Annually'&&t.template_key?.startsWith('annual-')||taskFilter===w?.stage;
+   });
+   const now=today(),years=[...new Set([...periods.map(w=>w.starts_on.slice(0,4)),now.slice(0,4),...(workYear?[workYear]:[])])].sort().reverse(),year=workYear||now.slice(0,4);
+   const hubKey=JSON.stringify({firm:ctx.firm()||workFirm||'',search:workSearch.trim(),show:workShow,year});if(workHub.key!==hubKey)void loadProjectHub(true);
+   const monthName=v=>new Intl.DateTimeFormat('en-GB',{month:'short',timeZone:'UTC'}).format(new Date(v.slice(0,10)+'T00:00:00Z'));
+   const chipLabel=w=>w.period_kind==='Monthly'?monthName(w.starts_on):w.period_kind==='Weekly'?'Wk '+shortDate(w.starts_on):w.period_kind==='Quarterly'?'Q'+(Math.floor(Number(w.starts_on.slice(5,7))/3)+1):w.period_kind==='Annually'?'Annual':'Once-off';
+   const boardRows=(workHub.items||[]).map(item=>{const ps=(item.periods||[]).slice().sort((a,b)=>a.starts_on.localeCompare(b.starts_on)||a.period_kind.localeCompare(b.period_kind)),open=Number(item.open_count||0),overdue=Number(item.overdue_count||0);return {p:item,ps,open,overdue};});
+   const chip=w=>{const open=Number(w.open_count||0),late=Number(w.overdue_count||0),current=w.starts_on.slice(0,10)<=now&&w.ends_on.slice(0,10)>=now,state=late?'late':open?'open':'clear';return `<a class="period-chip ${state}${current?' current':''}${w.status!=='Open'?' archived':''}" href="#project=${w.project_id}" data-open-project="${w.project_id}" data-work-period="${w.work_period_id}" title="${esc(`${chipLabel(w)} · ${shortDate(w.starts_on)}–${shortDate(w.ends_on)} · ${open} open${late?`, ${late} overdue`:''}`)}"><span>${esc(chipLabel(w))}</span>${open?`<b>${open}</b>`:''}</a>`;};
+   const totals=boardRows.reduce((t,r)=>({open:t.open+r.open,overdue:t.overdue+r.overdue}),{open:0,overdue:0});
   const firmChoices=[...new Set(list.map(p=>p.handling_firm_id))].map(id=>[id,firmName(id)]);
   // Tasks inside a project are grouped by reporting period (week, month, year), newest first.
   const groupedTasks=list2=>{if(!list2.length)return taskRows(list2);const now2=today(),groups=new Map();for(const t of list2){const key=t.period_start?String(t.period_start).slice(0,10):'';const g=groups.get(key)||[];g.push(t);groups.set(key,g);}
