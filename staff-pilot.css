@@ -405,3 +405,9 @@ label.inline{display:inline-flex;align-items:center;gap:6px}
 .reg-pager{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:.6rem;margin:.8rem 0}
 .reg-pager .actions{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
 .cc-figures{display:flex;flex-wrap:wrap;gap:.2rem .9rem;font-size:.8rem;margin-top:.3rem}
+
+/* Banners: policy warnings and the Assistant lock notice */
+.notice{border:1px solid var(--line);border-left:4px solid var(--navy);background:#fff;border-radius:6px;padding:.7rem 1rem;margin:0 0 1rem}
+.notice.warn{border-left-color:var(--gold);background:#fffbeb}
+.notice.error{border-left-color:var(--red);background:#fef2f2;color:var(--red)}
+.notice ul{margin:.4rem 0 0 1.2rem;padding:0}

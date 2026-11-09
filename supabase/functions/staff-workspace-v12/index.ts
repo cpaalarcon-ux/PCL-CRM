@@ -18,6 +18,7 @@ import {holidayAction} from './holiday-actions.ts';
 import {clientLifecycleAction} from './client-lifecycle-actions.ts';
 import {kycProposalAction} from './kyc-upload-actions.ts';
 import {viewStaffAction} from './view-staff-actions.ts';
+import {documentRequestAction} from './document-request-actions.ts';
 import {clientRegisterAction} from './client-register-actions.ts';
 import {metricsAction} from './metrics-actions.ts';
 import {escalationAction} from './escalation-actions.ts';
@@ -366,6 +367,7 @@ async function action(id:any,p:any){
   const kycOptions=await kycProposalAction(tx,a,p);if(kycOptions!==undefined)return kycOptions;
   const viewStaff=await viewStaffAction(tx,a,p);if(viewStaff!==undefined)return viewStaff;
   const register=await clientRegisterAction(tx,a,p);if(register!==undefined)return register;
+  const docRequest=await documentRequestAction(tx,a,p);if(docRequest!==undefined)return docRequest;
   const holidays=await holidayAction(tx,a,p);if(holidays!==undefined)return holidays;
   const metrics=await metricsAction(tx,a,p);if(metrics!==undefined)return metrics;
   const escalation=await escalationAction(tx,a,p);if(escalation!==undefined)return escalation;
