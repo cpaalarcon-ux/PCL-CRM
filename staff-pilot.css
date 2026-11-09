@@ -411,3 +411,5 @@ label.inline{display:inline-flex;align-items:center;gap:6px}
 .notice.warn{border-left-color:var(--gold);background:#fffbeb}
 .notice.error{border-left-color:var(--red);background:#fef2f2;color:var(--red)}
 .notice ul{margin:.4rem 0 0 1.2rem;padding:0}
+.line-row{display:grid;grid-template-columns:2fr 1fr 1fr 2fr;gap:8px;align-items:end}
+@media(max-width:700px){.line-row{grid-template-columns:1fr 1fr}}
