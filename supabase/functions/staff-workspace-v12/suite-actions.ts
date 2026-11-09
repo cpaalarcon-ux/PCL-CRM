@@ -2,7 +2,7 @@ import {letterPdf,letterDetails} from './letter-pdf.mjs';
 import {invoicePdf,invoiceTotals} from './invoice-pdf.mjs';
 import {automaticBreakMinutes,lateClockIn} from './attendance-rules.mjs';
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
-import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,busySeason,weekdays,round,recurringFeePeriods,servicePeriod,serviceNarration,formatDay} from './suite-rules.mjs';
+import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,FIRM_VAT_RATE,VAT_POLICY,busySeason,weekdays,round,recurringFeePeriods,servicePeriod,serviceNarration,formatDay} from './suite-rules.mjs';
 // pdf-lib is supplied by index.ts so modules loaded in tests do not need it.
 let PDFLib:any=null;export function setPdfLib(lib:any){PDFLib=lib;}
 const roleLabels:any={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Supervisor',ASSISTANT:'Assistant',INTERN:'Intern'};
@@ -78,7 +78,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const frequency=choice(p.frequency,['Monthly','Quarterly','Annually']),starts=day(p.starts_on),ends=p.ends_on?day(p.ends_on):null;
   if(ends&&ends<starts)fail(400,'The end date must be on or after the start date.');
   const net=amount(p.amount_ex_vat);if(net<=0)fail(400,'Enter a recurring fee greater than zero before VAT.');
-  const vat=Number(choice(String(p.vat_rate??''),['0','8','16'])),description=text(String(p.description||'').trim()||project.service_name,250);
+  if(p.vat_rate!==undefined&&p.vat_rate!==null&&p.vat_rate!==''&&Number(p.vat_rate)!==FIRM_VAT_RATE)fail(400,VAT_POLICY);const vat=FIRM_VAT_RATE,description=text(String(p.description||'').trim()||project.service_name,250);
   const result=await tx`insert into erp_private.recurring_fee_schedules(project_id,frequency,amount_ex_vat,vat_rate,description,starts_on,ends_on,created_by,updated_by)
    values(${pid},${frequency},${net},${vat},${description},${starts},${ends},${a.staff_id},${a.staff_id}) returning fee_schedule_id`;
   return {...one(result),description};
@@ -104,7 +104,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const have=new Set(known.map((x:any)=>dayOf(x.recurring_period_start)));let generated=0,already=0;
   for(const period of periods){if(have.has(period.period_start)){already++;continue;}
    const lineDescription=serviceNarration(schedule.description,period.period_start,period.period_end),span=servicePeriod(period.period_start,period.period_end),monthStart=todayDate.slice(0,8)+'01',issueOn=period.period_start>=monthStart?period.period_start:todayDate,dueOn=new Date(Date.parse(issueOn+'T00:00:00Z')+14*86400000).toISOString().slice(0,10);
-   const lines=invoiceLines([{description:lineDescription,quantity:1,unit_price:schedule.amount_ex_vat,vat_rate:schedule.vat_rate}]);
+   const lines=invoiceLines([{description:lineDescription,quantity:1,unit_price:schedule.amount_ex_vat}]);
    const inserted=await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,recurring_fee_schedule_id,recurring_period_start,service_from,service_to,service_months,created_by)
     values(${crypto.randomUUID()},${schedule.project_id},${project.client_id},${project.handling_firm_id},${lineDescription},${issueOn},${dueOn},${tx.json(lines)},${lines[0].net},${lines[0].vat},${schedule.fee_schedule_id},${period.period_start},${span.service_from},${span.service_to},${span.service_months},${a.staff_id})
     on conflict do nothing returning invoice_id`;

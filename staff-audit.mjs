@@ -1,9 +1,9 @@
 import {createPlanningUI,planningGateSummary} from './staff-audit-planning.mjs?v=20261109-audit-a-v1';
 import {createAdjustmentsUI} from './staff-audit-adjustments.mjs?v=20261109-audit-b-v1';
-import {createLeadsUI} from './staff-audit-leads.mjs?v=20261109-audit-f-v1';
-import {createReportsUI} from './staff-audit-reports.mjs?v=20261109-audit-f-v1';
-import {createAnalyticsUI} from './staff-audit-analytics.mjs?v=20261109-audit-f-v1';
-import {createFirmUI} from './staff-audit-firm.mjs?v=20261109-audit-f-v1';
+import {createLeadsUI} from './staff-audit-leads.mjs?v=20261109-vat-v1';
+import {createReportsUI} from './staff-audit-reports.mjs?v=20261109-vat-v1';
+import {createAnalyticsUI} from './staff-audit-analytics.mjs?v=20261109-vat-v1';
+import {createFirmUI} from './staff-audit-firm.mjs?v=20261109-vat-v1';
 export function createAuditUI(ctx){
  const {esc,field,select,form,modal,request,notice,shortDate,empty,data}=ctx;
  const areas=['Permanent file','Acceptance and ethics','Planning','Risk assessment','Cash and bank','Trade receivables','Inventories','Property, plant and equipment','Trade payables','Borrowings','Taxation','Revenue','Payroll and expenses','Equity','Commitments and contingencies','Completion','Reporting and quality'];

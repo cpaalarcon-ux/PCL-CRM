@@ -28,7 +28,7 @@ test('advances are held by the receiving firm, applied only to that firm, linked
  // Task link on invoice lines: must belong to the invoice project.
  await assert.rejects(()=>draft(P,{description:'Wrong task',quantity:1,unit_price:1000,vat_rate:16,task_id:T2}),/task must belong/);
  const invA=await draft(P,{description:'Return filing',quantity:1,unit_price:10000,vat_rate:16,task_id:T,milestone:'Milestone 1'}),numA=await post(invA);
- const invB=await draft(P2,{description:'Advisory',quantity:1,unit_price:5000,vat_rate:0}),numB=await post(invB);
+ const invB=await draft(P2,{description:'Advisory',quantity:1,unit_price:5000,vat_rate:0,line_type:'Disbursement'}),numB=await post(invB);
  assert.notEqual(numA,numB,'each firm issues its own invoice number');
  assert.equal((await tx`select lines->0->>'task_id' t,lines->0->>'milestone' m from erp_private.invoices where invoice_id=${invA}`)[0].t,T);
  const billed=await act('MANAGER',{action:'billing_by_task',project_id:P});assert.equal(billed.rows.length,1);assert.equal(num(billed.rows[0].billed),10000);assert.equal(billed.not_linked,0);
