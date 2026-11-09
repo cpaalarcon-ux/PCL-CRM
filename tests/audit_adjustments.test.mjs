@@ -110,7 +110,7 @@ test('entries, schedule, adjusted TB and gates are enforced by the database',asy
  await assert.rejects(()=>tx`update erp_private.audit_files set file_status='In Review' where audit_file_id=${FILE}`,/draft and returned audit entry/);
  await as('ASSISTANT',()=>tx`select erp_private.audit_adjustment_withdraw(${draft}::uuid,'Not needed after all discussion')`);
  // Approval gate (planning gates are tested elsewhere, so set the file to In Review directly).
- await db.exec(`alter table erp_private.audit_files disable trigger planning_guard;alter table erp_private.audit_files disable trigger lead_guard`);
+ await db.exec(`alter table erp_private.audit_files disable trigger planning_guard;alter table erp_private.audit_files disable trigger lead_guard;alter table erp_private.audit_files disable trigger report_guard`);
  await tx`update erp_private.audit_files set file_status='In Review' where audit_file_id=${FILE}`;
  await assert.rejects(()=>tx`update erp_private.audit_files set file_status='Approved' where audit_file_id=${FILE}`,/exceed overall materiality/);
  await assert.rejects(()=>as('MANAGER',()=>tx`select erp_private.audit_misstatement_conclude(${FILE}::uuid,'A conclusion that is long enough to pass the limit')`),/Only a Partner/);
