@@ -1,11 +1,11 @@
 import {fail,text,uuid,choice} from './validation.mjs';
-// S8: milestones with compare, assembly complete, late changes. The rules live in the database functions (erp_private.audit_milestone_*,
+// S8/S8.1: milestones with compare, assembly complete, late changes. The rules live in the database functions (erp_private.audit_milestone_*,
 // audit_assembly_*, audit_amend_*); this file checks the input and passes it on. No retention period or deadline is fixed here.
 export const MILESTONE_KINDS=['Planning complete','Fieldwork complete','Draft report issued','Other'];
 export async function assemblyWorkspace(tx:any,fileId:string){return (await tx`select erp_private.audit_assembly_workspace(${fileId}::uuid) r`)[0].r;}
 export async function assemblyAction(tx:any,a:any,p:any):Promise<any>{
  const act=String(p.action||'');
- if(!['audit_assembly_milestone_take','audit_assembly_compare','audit_assembly_seal','audit_amend_open','audit_amend_close'].includes(act))return undefined;
+ if(!['audit_assembly_milestone_take','audit_assembly_compare','audit_assembly_seal','audit_amend_open','audit_amend_close','audit_lock_extend'].includes(act))return undefined;
  const file=uuid(p.audit_file_id);
  if(act==='audit_assembly_milestone_take'){
   if(!['MANAGER','PARTNER'].includes(a.category_code))fail(403,'Only a Manager or Partner can take a milestone.');
@@ -17,6 +17,12 @@ export async function assemblyAction(tx:any,a:any,p:any):Promise<any>{
  if(act==='audit_assembly_seal'){
   if(a.category_code!=='PARTNER')fail(403,'Only a Partner can record that assembly is complete.');
   return (await tx`select erp_private.audit_assembly_seal(${file}::uuid,${text(p.note,1000)}) r`)[0].r;
+ }
+ if(act==='audit_lock_extend'){
+  if(a.category_code!=='PARTNER')fail(403,'Only a Partner can extend the assembly deadline.');
+  const days=Number(p.days);
+  if(!Number.isInteger(days)||days<1||days>365)fail(400,'Enter the number of days to add, from 1 to 365.');
+  return (await tx`select erp_private.audit_lock_extend(${file}::uuid,${days}::integer,${text(p.reason,1000)}) r`)[0].r;
  }
  if(act==='audit_amend_open'){
   if(a.category_code!=='PARTNER')fail(403,'Only a Partner can open a late change.');
