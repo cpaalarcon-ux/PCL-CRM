@@ -73,8 +73,10 @@ test('Legal structure: mandatory classification, accounting family, audit trail 
  await tx`update erp_private.clients set legal_subtype='NGO' where client_id=${C3}`;
  assert.equal((await gate(C3,requireClassified)).legal_subtype,'NGO','proposing a chart needs only the classification');
  await assert.rejects(()=>gate(C3),/Confirm the client’s legal entity type/);
+ await db.exec('alter table erp_private.clients disable trigger zz_family_follows_structure');// the database now refuses this mismatch (entity_type_master test); the server gate is kept for older mismatched rows
  await tx`update erp_private.clients set legal_entity_type='Limited company' where client_id=${C3}`;
  await assert.rejects(()=>gate(C3),/does not match its Legal structure \(Non-profit organisation\)/);
+ await db.exec('alter table erp_private.clients enable trigger zz_family_follows_structure');
  await tx`update erp_private.clients set legal_entity_type='Non-profit organisation' where client_id=${C3}`;
  await assert.rejects(()=>gate(C3),/chart of accounts for this Non-profit organisation client is not approved yet/);
  await tx`insert into erp_private.client_chart_versions(client_id,effective_from,entity_type,packs,accounts,status,prepared_by,reviewed_by,reviewed_at,review_note) values(${C3},'2027-01-01','Limited company','{Other}','{10000}','Approved',${actors.PARTNER.staff_id},${actors.MANAGER.staff_id},now(),'Fictional approval of the wrong family')`;
