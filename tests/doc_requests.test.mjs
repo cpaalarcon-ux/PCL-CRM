@@ -86,3 +86,7 @@ test('document requests are enforced by the database',async t=>{
  await as('PARTNER',()=>tx`select erp_private.client_lifecycle(${C}::uuid,'Pause','Fictional pause for the request test')`);
  await assert.rejects(()=>create('ASSISTANT',['Payslips']),/active client/);
 });
+test('review queue is dispatched before the v3_ catch-all',()=>{
+ const idx=rd(fx+'index.ts'),q=idx.indexOf('reviewQueueAction(tx,a,p)'),i=idx.indexOf('improvementAction(tx,a,p');
+ assert.ok(q>0&&i>0&&q<i,'v3_review_queue was answered by improvementAction with "Invalid record reference"');
+});
