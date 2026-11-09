@@ -54,7 +54,7 @@ export function stateCounts(cards){
 }
 
 // Leaders get the full card. Others get a light card: name, PIN, entity type and what their role allows.
-export function clientCard({client:c,progress:p,esc,structureLabel,leader,lightActions='',searchText,detailsVisible}){
+export function clientCard({client:c,progress:p,esc,structureLabel,leader,lightActions='',searchText,detailsVisible,extra=''}){
  const step=leader?nextStep(p):null,status=leader?clientStatus(p,step):null;
  const id=esc(c.client_id);
  const sub=detailsVisible?[cleanText(c.kra_pin)||'KRA PIN missing',structureLabel(c,esc)].filter(Boolean).join(' · '):'Assigned work needed to open the client file';
@@ -70,7 +70,7 @@ export function clientCard({client:c,progress:p,esc,structureLabel,leader,lightA
  const next=['kyc','tax'].includes(step.key)
   ?sb(step.key==='kyc'?'compliance':'tax-profile',`cc-next ${step.tone}`,`<span>${esc(step.title)}${step.detail?`<small>${esc(step.detail)}</small>`:''}</span><span>›</span>`)
   :`<button class="cc-next ${step.tone}" ${target}><span>${esc(step.title)}${step.detail?`<small>${esc(step.detail)}</small>`:''}</span><span>›</span></button>`;
- return `<article class="client-card" ${attrs}><div class="cc-head"><div><h3><button class="link" data-client-open="${id}">${esc(c.company_name)}</button></h3><div class="cc-meta">${esc(sub)}${lifecycleBadge(c,esc)}</div></div><span class="badge ${status.tone}" data-client-status="${id}">${esc(status.label)}</span></div>${tags}<div class="cc-pills">${kyc}${tax}${act}</div>${next}<div class="cc-foot"><button data-client="${id}">View details</button><button data-client-accounts="${id}">Client accounts</button><button class="primary" data-setup-guide="${id}">Continue setup</button></div></article>`;
+ return `<article class="client-card" ${attrs}><div class="cc-head"><div><h3><button class="link" data-client-open="${id}">${esc(c.company_name)}</button></h3><div class="cc-meta">${esc(sub)}${lifecycleBadge(c,esc)}</div></div><span class="badge ${status.tone}" data-client-status="${id}">${esc(status.label)}</span></div>${tags}${extra}<div class="cc-pills">${kyc}${tax}${act}</div>${next}<div class="cc-foot"><button data-client="${id}">View details</button><button data-client-accounts="${id}">Client accounts</button><button class="primary" data-setup-guide="${id}">Continue setup</button></div></article>`;
 }
 
 export const chipRow=(counts,current,esc)=>`<div class="cc-chips" role="group" aria-label="Filter clients by status">${CLIENT_STATES.map(([k,l])=>`<button type="button" class="cc-chip${k===current?' on':''}" data-client-state="${k}" aria-pressed="${k===current}">${esc(l)}<em>${counts[k]??0}</em></button>`).join('')}</div>`;

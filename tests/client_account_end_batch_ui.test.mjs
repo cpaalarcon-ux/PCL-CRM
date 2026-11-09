@@ -25,6 +25,7 @@ const preview={needs_sheet:false,document_id:docId,file_name:'Fictional_Opening_
 globalThis.fetch=async(_url,options)=>{const p=JSON.parse(options.body);calls.push(p);let result={ok:true};
  if(p.action==='login')result={access_token:'qa',refresh_token:'refresh',expires_at:Date.now()/1000+3600,session_id:'qa'};
  if(p.action==='workspace')result=workspace;
+ if(p.action==='client_register_page')result={total:workspace.clients.length,page:0,page_size:25,pages:1,rows:workspace.clients.map(c=>({client_id:c.client_id,active_projects:0,open_tasks:0,overdue_tasks:0,next_deadline:null,kyc_complete:false,tax_verified:false,opening_done:false}))};
  if(p.action==='presence_heartbeat')result={status:'Not clocked in',server_time:'2026-10-29T12:00:00Z'};
  if(p.action==='v3_client_mapping_readiness')result=[{client_id:clientId,approved_account_count:mappings.filter(x=>x.status==='Active').length,pending_account_count:mappings.filter(x=>x.status==='Draft').length}];
  if(p.action==='v3_client_accounts_read')result=accountRead();
