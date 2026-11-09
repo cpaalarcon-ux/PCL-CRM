@@ -23,7 +23,8 @@ test('Legal structure: mandatory classification, accounting family, audit trail 
  assert.deepEqual([...new Set(rows.map(r=>r.structure))].sort(),[...STRUCTURES].sort());
  for(const s of ['NGO','CBO','PBO','Foundation','Self-Help Group'])assert.equal(familyFor(rows,'Non-Profit Organisation',s),'Non-profit organisation',s);
  assert.equal(familyFor(rows,'Individual','Sole Proprietor'),'Sole proprietor');assert.equal(familyFor(rows,'Individual','Individual Taxpayer'),'Other legal entity');
- for(const s of ['SACCO','Co-operative Union'])assert.equal(familyFor(rows,'Co-operative Society',s),'Other legal entity','not enabled for accounting yet: '+s);
+ for(const s of ['Deposit-taking SACCO','Non-withdrawable-deposit-taking SACCO','Co-operative Society','Co-operative Union'])assert.equal(familyFor(rows,'Co-operative Society',s),'Co-operative society','classified, not enabled for accounting yet: '+s);
+ assert.equal(familyFor(rows,'Co-operative Society','SACCO'),'Other legal entity','the old single SACCO row is retired, not changed');
  assert.equal(familyFor(rows,'Individual',null),null,'Individual alone is not enough to know the family');assert.equal(familyFor(rows,'Partnership',null),'Partnership');
  for(const r of rows)assert.equal(familyOf(rows,r.structure,r.subtype),r.engine_family,'screen and server agree');
 
@@ -108,5 +109,5 @@ test('Legal structure: mandatory classification, accounting family, audit trail 
  const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),options=(items,value,blank)=>`<option value="">${blank}</option>`+items.map(x=>`<option value="${esc(x)}"${x===value?' selected':''}>${esc(x)}</option>`).join('');
  const html=legalStructureFields({client:{legal_structure:'Non-Profit Organisation',legal_subtype:'CBO'},rows,isLeader:false,esc,options});
  assert.match(html,/name="legal_structure" required disabled/);assert.match(html,/Only a Manager or Partner can change a classified client/);
- assert.match(familyHint(rows,'Co-operative Society','SACCO'),/accounting engine is not enabled yet/);assert.match(familyHint(rows,'Non-Profit Organisation','NGO'),/available for this client/);
+ assert.match(familyHint(rows,'Co-operative Society','Deposit-taking SACCO'),/accounting engine is not enabled yet/);assert.match(familyHint(rows,'Non-Profit Organisation','NGO'),/available for this client/);
 });

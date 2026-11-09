@@ -1,5 +1,7 @@
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
 import {readSourceSheet} from './source-reader.mjs';
+import {regulatoryAction,regulatoryRead} from './regulatory-actions.ts';
+import {sasraAction,sasraOverview,sasraFileOverview,sasraSignoffIssues} from './sasra-actions.ts';
 
 const MODEL_SOURCE_NAME='Model-Audit-File(1).zip';
 const MODEL_SOURCE_SHA='4428b990cb486a08c31ab9576da4979885fb05684e8bca52141b9730a9ffa33f';
@@ -63,13 +65,15 @@ function parseRows(sheet:any,config:any){
 export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
  if(!String(p.action||'').startsWith('audit_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Intern accounts cannot access audit workpapers.');
+ { const reg=await regulatoryAction(tx,a,p);if(reg!==undefined)return reg; }
+ { const sas=await sasraAction(tx,a,p);if(sas!==undefined)return sas; }
 
  if(p.action==='audit_workspace'){
   const projects=await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,p.service_code,p.status,c.company_name,c.year_end_month,c.year_end_day,f.firm_code,af.audit_file_id,af.file_status as audit_file_status,af.ends_on as audit_file_ends_on,af.file_type as audit_file_type
    from erp_private.projects p join erp_private.clients c using(client_id) join erp_private.firms f on f.firm_id=p.handling_firm_id left join erp_private.audit_files af using(project_id)
    where p.service_code like 'AUD-%' and p.deleted_at is null and c.deleted_at is null and erp_private.project_allowed(p.project_id)
    order by c.company_name,p.project_name limit 300`;
-  if(!p.project_id)return {projects,firm_tiles:(await tx`select erp_private.audit_firm_tiles(14) t`)[0].t};
+  if(!p.project_id)return {projects,firm_tiles:(await tx`select erp_private.audit_firm_tiles(14) t`)[0].t,regulatory:await regulatoryRead(tx),sasra:await sasraOverview(tx)};
   const project=one(await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,p.service_code,p.status,c.company_name,c.year_end_month,c.year_end_day,f.firm_code
    from erp_private.projects p join erp_private.clients c using(client_id) join erp_private.firms f on f.firm_id=p.handling_firm_id
    where p.project_id=${uuid(p.project_id)} and p.service_code like 'AUD-%' and erp_private.project_allowed(p.project_id)`);
@@ -107,7 +111,8 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
   const analytics_alerts=await tx`select al.alert_id,al.run_id,al.test_kind,al.severity,al.title,al.detail,al.status,al.clear_note,al.cleared_at,cb.full_name cleared_by_name,al.created_at from erp_private.audit_analytic_alerts al left join erp_private.staff_members cb on cb.staff_id=al.cleared_by where al.audit_file_id=${file.audit_file_id} order by (al.status='Open') desc,case al.severity when 'High' then 1 when 'Medium' then 2 else 3 end,al.created_at limit 300`;
   const mgmt_points=await tx`select p.*,db.full_name decided_by_name from erp_private.audit_management_points p left join erp_private.staff_members db on db.staff_id=p.decided_by where p.audit_file_id=${file.audit_file_id} order by p.point_seq limit 300`;
   const tb_accounts=await tx`select distinct m.audit_account_id,m.legacy_account_code account_code,m.legacy_account_name account_name,m.audit_area,m.financial_statement_line from erp_private.audit_tb_lines l join erp_private.audit_tb_imports i on i.audit_tb_import_id=l.audit_tb_import_id join erp_private.audit_account_mappings m on m.audit_account_id=l.audit_account_id where i.audit_file_id=${file.audit_file_id} and i.status<>'Superseded' order by m.legacy_account_code limit 1000`;
-  return {projects,project,file,imports,tb_lines,tb_summaries,active_import_id:activeImport?.audit_tb_import_id||null,workpapers,workpaper_versions,completion,templates,materiality,risks,risk_links,planning_gate,adjustments,adjustment_lines,adjusted_tb,misstatements,tb_accounts,lead_schedule,reports,report_status,mgmt_points,analytics_runs,analytics_alerts,time_summary,my_tasks,billing_link,reports:[],report_status:[],mgmt_points:[],readiness:{framework_approved:file.framework_status==='Approved',current_tb_balanced:!!currentSummary&&currentSummary.balanced,current_tb_confirmed:!!currentSummary,all_lines_mapped:!!currentSummary&&Number(currentSummary.total)>0&&Number(currentSummary.unmapped)===0,workpapers_present:workpapers.length>0,workpapers_resolved:workpapers.length>0&&workpapers.every((x:any)=>x.status==='Approved'),completion_total:checklist[0]?.total||0,completion_reviewed:checklist[0]?.reviewed||0}};
+  const sasra=await sasraFileOverview(tx,file.audit_file_id);
+  return {sasra,projects,project,file,imports,tb_lines,tb_summaries,active_import_id:activeImport?.audit_tb_import_id||null,workpapers,workpaper_versions,completion,templates,materiality,risks,risk_links,planning_gate,adjustments,adjustment_lines,adjusted_tb,misstatements,tb_accounts,lead_schedule,reports,report_status,mgmt_points,analytics_runs,analytics_alerts,time_summary,my_tasks,billing_link,reports:[],report_status:[],mgmt_points:[],readiness:{framework_approved:file.framework_status==='Approved',current_tb_balanced:!!currentSummary&&currentSummary.balanced,current_tb_confirmed:!!currentSummary,all_lines_mapped:!!currentSummary&&Number(currentSummary.total)>0&&Number(currentSummary.unmapped)===0,workpapers_present:workpapers.length>0,workpapers_resolved:workpapers.length>0&&workpapers.every((x:any)=>x.status==='Approved'),completion_total:checklist[0]?.total||0,completion_reviewed:checklist[0]?.reviewed||0}};
  }
 
  if(p.action==='audit_tb_lines'){
@@ -370,12 +375,12 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
    const open=one(await tx`select count(*)::int count from erp_private.audit_workpapers where audit_file_id=${f.audit_file_id} and status in ('Draft','Returned')`);if(open.count)fail(400,'Submit or resolve every draft and returned workpaper before review.');
   }
   if(next==='Approved'){
-   if(a.category_code!=='PARTNER')fail(403,'Only the Engagement Partner can approve the audit file.');if(f.file_status!=='In Review')fail(400,'The file must be In Review before approval.');const pending=one(await tx`select count(*)::int count from erp_private.audit_workpapers where audit_file_id=${f.audit_file_id} and status<>'Approved'`);if(pending.count)fail(400,'Approve or return all submitted audit workpapers before approving the file.');if(f.created_by===a.staff_id)fail(403,'The file preparer cannot approve their own file.');
+   if(a.category_code!=='PARTNER')fail(403,'Only the Engagement Partner can approve the audit file.');{const issues=await sasraSignoffIssues(tx,f.audit_file_id);if(issues.length)fail(400,'SACCO sign-off is blocked: '+issues.join(' '));}if(f.file_status!=='In Review')fail(400,'The file must be In Review before approval.');const pending=one(await tx`select count(*)::int count from erp_private.audit_workpapers where audit_file_id=${f.audit_file_id} and status<>'Approved'`);if(pending.count)fail(400,'Approve or return all submitted audit workpapers before approving the file.');if(f.created_by===a.staff_id)fail(403,'The file preparer cannot approve their own file.');
   }
   if(next==='Completion'){
    if(a.category_code!=='PARTNER')fail(403,'Only the Engagement Partner can move an audit file to Completion.');if(f.file_status!=='Approved')fail(400,'The file must be approved before completion.');
    const tasks=one(await tx`select count(*)::int total,count(*) filter(where status='Reviewed')::int reviewed from erp_private.audit_completion_items where audit_file_id=${f.audit_file_id}`);if(!tasks.total||tasks.total!==tasks.reviewed)fail(400,'Review every completion item before closing the audit file.');
-   const controls=(await tx`select e.eqr_required,e.eqr_document_id,e.eqr_cleared_by,e.eqr_reviewer_id from erp_private.engagement_controls e where e.project_id=${f.project_id}`)[0];if(controls?.eqr_required&&(!controls.eqr_document_id||!controls.eqr_cleared_by||controls.eqr_cleared_by!==controls.eqr_reviewer_id))fail(400,'The assigned independent EQR reviewer must record clearance before completion.');
+   const controls=(await tx`select e.eqr_required,e.eqr_document_id,e.eqr_cleared_by,e.eqr_reviewer_id from erp_private.engagement_controls e where e.project_id=${f.project_id}`)[0];const eqcr=(await tx`select erp_private.audit_eqcr_status(${f.audit_file_id}::uuid) s`)[0].s;if(controls?.eqr_required&&!eqcr?.approved&&(!controls.eqr_document_id||!controls.eqr_cleared_by||controls.eqr_cleared_by!==controls.eqr_reviewer_id))fail(400,'The assigned independent EQR reviewer must record clearance before completion.');
   }
   if(next==='Returned'&&f.file_status!=='In Review')fail(400,'Only a file in independent review can be returned to its preparer.');const reason=text(p.reason||'',1000,next==='Returned');await tx`update erp_private.audit_files set file_status=${next},archive_reason=case when ${next}='Returned' then ${reason} else null end where audit_file_id=${f.audit_file_id}`;return {ok:true};
  }
