@@ -31,7 +31,7 @@ test("client lifecycle and contact routing",async t=>{
  await life('MANAGER','Pause','Client asked us to stop for now');
  assert.deepEqual(await row().then(x=>[x.s,x.r,x.lr]),['Paused','Lead','Client asked us to stop for now']);
  await rejects(()=>life('MANAGER','Pause','Pausing a second time now'),/Only an Active client/);
- await db.exec('alter table erp_private.projects disable trigger projects_guard');// the KYC and engagement-letter gate has its own tests
+ await db.exec('alter table erp_private.projects disable trigger projects_guard;alter table erp_private.projects disable trigger zz_opening_gate');// the KYC and engagement-letter gate has its own tests
  // 3. A paused client cannot receive newly activated projects.
  await tx`update erp_private.clients set legal_entity_type='Limited company',entity_evidence='Certificate of incorporation seen',year_end_month=12,year_end_day=31 where client_id=${C}`;
  await rejects(()=>tx`update erp_private.projects set status='Active' where project_id=${P}`,/paused; resume it/);
