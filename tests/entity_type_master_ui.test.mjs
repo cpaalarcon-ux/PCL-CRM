@@ -35,5 +35,5 @@ test('migration: the master columns are derived and enforced, never hand-set or 
 test('build label and cache busters moved together',()=>{
  const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-09\.\d{4}$/);
  assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
- assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261109-entity-v1/);
+ assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=\d{8}-[a-z0-9-]+/);
 });

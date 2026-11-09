@@ -6,7 +6,7 @@
 export const STAFF_RIGHTS=Object.freeze([
  {code:'client.details',area:'clients',group:'Client records',label:'Change client details (name, PIN, sector, legal structure)',roles:['PARTNER','MANAGER'],actions:['client_save','client_classify_save','v3_identity_save']},
  {code:'client.contacts',area:'clients',group:'Client records',label:'Add or change client contacts',roles:['PARTNER','MANAGER'],actions:['contact_save']},
- {code:'client.owners',area:'clients',group:'Client records',label:'Record owners, beneficial owners and partners',roles:['PARTNER','MANAGER'],actions:['owner_add','v3_partners_add']},
+ {code:'client.owners',area:'clients',group:'Client records',label:'Record owners, beneficial owners, partners, directors, shareholders, trustees and the group profile',roles:['PARTNER','MANAGER'],actions:['owner_add','party_add','party_end','group_profile_save','v3_partners_add']},
  {code:'client.setup',area:'clients',group:'Client records',label:'Client set-up: activities, VAT categories and the draft tax profile',roles:['PARTNER','MANAGER'],actions:['tax_profile_save','tax_profile_dependency_preview','v3_activity_add','v3_activities_preview','v3_activities_submit','v3_vat_categories_save']},
  {code:'client.tax_verify',area:'clients',group:'Client records',label:'Verify the client tax profile',roles:['PARTNER','MANAGER'],actions:['tax_profile_verify']},
  {code:'kyc.file',area:'clients',group:'KYC',label:'Edit the KYC file and record evidence',roles:['PARTNER','MANAGER'],actions:['compliance_save','compliance_evidence_save','compliance_evidence_remove']},

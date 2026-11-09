@@ -17,7 +17,9 @@ async function kycSnapshot(tx:any,cid:string){
  const compliance=(await tx`select entity_type,risk_rating,is_pep,sanctions_date,sanctions_result,conflict_checked,review_due,notes from erp_private.client_compliance where client_id=${cid}`)[0]||null;
  const evidence=await tx`select evidence_id,document_type,evidence_form,covered_items,document_id,document_reference,evidence_date,expires_on from erp_private.client_kyc_evidence where client_id=${cid} and deleted_at is null order by evidence_id`;
  const owners=await tx`select owner_id,full_name,ownership_percentage,control_basis from erp_private.beneficial_owners where client_id=${cid} and deleted_at is null order by owner_id`;
- return {compliance,evidence,owners};
+ const parties=await tx`select party_id,role,full_name,holder_client_id,shareholding_percentage,appointed_on from erp_private.client_parties where client_id=${cid} and ceased_on is null order by party_id`;
+ const group=(await tx`select group_status,ultimate_parent_client_id,ultimate_parent_name,ultimate_parent_country,operates_in_other_countries from erp_private.client_group_profile where client_id=${cid}`)[0]||null;
+ return {compliance,evidence,owners,parties,group};
 }
 async function kycChanged(tx:any,a:any,cid:string,before:any,changed:string[],reason:string){
  if(!changed.length)return null;
@@ -65,12 +67,51 @@ async function addEvidence(tx:any,a:any,cid:string,p:any,rules:any[]){
   values(${cid},${type},${form},${tx.array(covered)},${doc},${ref},${evidenceDate},${expires},${location},${copy},${form==='physical'?a.staff_id:null},${form==='physical'?evidenceDate:null},${onlineSource},${onlineRef},${form==='online'?a.staff_id:null},${form==='online'?evidenceDate:null},${a.staff_id}) returning evidence_id,covered_items`);
 }
 export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
- if(!['compliance_save','compliance_evidence_save','compliance_evidence_remove','compliance_verify','edd_approve','owner_add','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
+ if(!['compliance_save','compliance_evidence_save','compliance_evidence_remove','compliance_verify','edd_approve','owner_add','party_add','party_end','group_profile_save','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
  leader(a);
  if(p.action==='owner_add'){
   const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);const before=await kycSnapshot(tx,cid);
   await tx`insert into erp_private.beneficial_owners(client_id,full_name,identity_reference,kra_pin,ownership_percentage,control_basis) values(${cid},${text(p.full_name,160)},${text(p.identity_reference,100)},${text(p.kra_pin||'',11,false)||null},${number(p.ownership_percentage,0,100)},${text(p.control_basis,1000)})`;
   await kycChanged(tx,a,cid,before,['BENEFICIAL_OWNERSHIP'],text(p.change_reason||'',2000,false)||'Owner or controller added');return {ok:true};
+ }
+ // Step 3: directors, shareholders and trustees as data, the ownership link between entities, and the group profile. The database repeats
+ // every rule below (see 20261109260000_ownership_parties.sql); these messages are the friendly versions.
+ if(p.action==='party_add'){
+  const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid} and deleted_at is null`);const before=await kycSnapshot(tx,cid);
+  const role=choice(p.role,['Director','Shareholder','Trustee']),kind=choice(p.party_kind,['Individual','Entity']),appointed=date(p.appointed_on);
+  if(!appointed||appointed>today())fail(400,'Enter the date the person or entity was appointed or acquired the shares (not in the future).');
+  const holder=p.holder_client_id?uuid(p.holder_client_id):null;
+  if(holder){if(role!=='Shareholder'||kind!=='Entity')fail(400,'Only a shareholder that is an entity can be linked to another client.');if(holder===cid)fail(400,'A client cannot be its own shareholder.');one(await tx`select client_id from erp_private.clients where client_id=${holder} and deleted_at is null`);
+   if((await tx`select erp_private.ownership_reaches(${holder}::uuid,${cid}::uuid) as loop`)[0].loop)fail(400,'That would make the ownership chain a loop: this client already holds that shareholder, directly or through other entities.');}
+  const identity=text(p.identity_reference||'',100,false)||null;if(kind==='Individual'&&!identity)fail(400,'Record the identity reference (national ID or passport) of the individual.');
+  let pct:number|null=null;
+  if(role==='Shareholder'){pct=number(p.shareholding_percentage,0.0001,100);const total=Number((await tx`select coalesce(sum(shareholding_percentage),0) as t from erp_private.client_parties where client_id=${cid} and role='Shareholder' and ceased_on is null`)[0].t);if(total+pct>100.00001)fail(400,`Current shareholdings already add up to ${total} percent; adding ${pct} would exceed 100 percent.`);}
+  else if(p.shareholding_percentage!==undefined&&p.shareholding_percentage!==''&&p.shareholding_percentage!==null)fail(400,'A shareholding percentage applies to shareholders only.');
+  const evidence=p.evidence_id?uuid(p.evidence_id):null;if(evidence)one(await tx`select evidence_id from erp_private.client_kyc_evidence where evidence_id=${evidence} and client_id=${cid} and deleted_at is null`);
+  const [row]=await tx`insert into erp_private.client_parties(client_id,role,party_kind,full_name,identity_reference,kra_pin,holder_client_id,shareholding_percentage,share_class,appointed_on,evidence_id,created_by)
+   values(${cid},${role},${kind},${text(p.full_name,160)},${identity},${text(p.kra_pin||'',11,false)||null},${holder},${pct},${role==='Shareholder'?(text(p.share_class||'',60,false)||null):null},${appointed},${evidence},${a.staff_id}) returning party_id`;
+  await kycChanged(tx,a,cid,before,['PARTIES_'+role.toUpperCase()],text(p.change_reason||'',2000,false)||(role+' recorded'));return {ok:true,party_id:row.party_id};
+ }
+ if(p.action==='party_end'){
+  const row=one(await tx`select * from erp_private.client_parties where party_id=${uuid(p.party_id)} for update`);if(String(row.revision)!==revision(p.revision))fail(409,'This record changed. Refresh first.');
+  if(row.ceased_on)fail(400,'This record has already ended.');const before=await kycSnapshot(tx,row.client_id);
+  const ended=date(p.ceased_on);if(!ended||ended>today())fail(400,'Enter the end date (not in the future).');if(ended<String(row.appointed_on).slice(0,10))fail(400,'The end date cannot be before the appointment date.');
+  const reason=text(p.end_reason,1000);if(reason.length<10)fail(400,'Record why this ended or was entered in error (at least 10 characters).');
+  await tx`update erp_private.client_parties set ceased_on=${ended},end_reason=${reason},ended_by=${a.staff_id} where party_id=${row.party_id}`;
+  await kycChanged(tx,a,row.client_id,before,['PARTIES_'+String(row.role).toUpperCase()],reason);return {ok:true};
+ }
+ if(p.action==='group_profile_save'){
+  const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid} and deleted_at is null`);const before=await kycSnapshot(tx,cid);
+  const old=(await tx`select * from erp_private.client_group_profile where client_id=${cid} for update`)[0];if(old&&String(old.revision)!==revision(p.revision))fail(409,'The group profile changed. Refresh first.');
+  const status=choice(p.group_status,['Standalone','Part of a group']),other=choice(p.operates_in_other_countries||'To confirm',['Yes','No','To confirm']);
+  const parentClient=status==='Part of a group'&&p.ultimate_parent_client_id?uuid(p.ultimate_parent_client_id):null;
+  if(parentClient){if(parentClient===cid)fail(400,'A client cannot be its own ultimate parent.');one(await tx`select client_id from erp_private.clients where client_id=${parentClient} and deleted_at is null`);}
+  const pname=status==='Part of a group'?(text(p.ultimate_parent_name||'',200,false)||null):null,pcountry=status==='Part of a group'?(text(p.ultimate_parent_country||'',100,false)||null):null;
+  if(status==='Part of a group'&&!parentClient&&(!pname||!pcountry))fail(400,'Name the ultimate parent and its country, or choose the parent from your clients.');
+  await tx`insert into erp_private.client_group_profile(client_id,group_status,ultimate_parent_client_id,ultimate_parent_name,ultimate_parent_country,operates_in_other_countries,note,assessed_by)
+   values(${cid},${status},${parentClient},${pname},${pcountry},${other},${text(p.note||'',2000,false)},${a.staff_id})
+   on conflict(client_id) do update set group_status=excluded.group_status,ultimate_parent_client_id=excluded.ultimate_parent_client_id,ultimate_parent_name=excluded.ultimate_parent_name,ultimate_parent_country=excluded.ultimate_parent_country,operates_in_other_countries=excluded.operates_in_other_countries,note=excluded.note,assessed_by=excluded.assessed_by`;
+  await kycChanged(tx,a,cid,before,['GROUP_PROFILE'],text(p.change_reason||'',2000,false)||'Group profile updated');return {ok:true};
  }
  if(p.action==='compliance_evidence_save'||p.action==='compliance_evidence_remove'){
   const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);
