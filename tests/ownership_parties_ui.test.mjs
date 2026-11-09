@@ -48,7 +48,7 @@ test('forms offer the right fields',()=>{
 test('server: actions, snapshot, and friendly checks mirror the database',()=>{
  const s=rd(fx+'engagement-actions.ts');
  for(const act of ['party_add','party_end','group_profile_save'])assert.match(s,new RegExp("p\\.action==='"+act+"'"));
- assert.match(s,/'owner_add','party_add','party_end','group_profile_save','engagement_read'/);
+ assert.match(s,/'owner_add','party_add','party_end','group_profile_save','licence_add','licence_end','engagement_read'/);
  assert.match(s,/const parties=await tx`select party_id,role,full_name,holder_client_id,shareholding_percentage,appointed_on from erp_private\.client_parties/);
  assert.match(s,/ownership_reaches/);assert.match(s,/exceed 100 percent/);assert.match(s,/Record why this ended or was entered in error/);
  assert.match(s,/kycChanged\(tx,a,cid,before,\['PARTIES_'\+role\.toUpperCase\(\)\]/,'a verified KYC file goes back for re-verification');
@@ -58,7 +58,7 @@ test('rights: a Manager or Partner records the register; nobody below does',()=>
  for(const act of ['party_add','party_end','group_profile_save']){assert.equal(rightForAction(act),'client.owners',act);}
  assert.deepEqual(STAFF_RIGHTS.find(r=>r.code==='client.owners').roles,['PARTNER','MANAGER']);
  assert.equal(rd('staff-rights-catalog.mjs'),rd(fx+'staff-rights-catalog.mjs'));
- assert.match(rd(fx+'staff-access-control.mjs'),/owner_add\|party_add\|party_end\|group_profile_save\|contact_save/);
+ assert.match(rd(fx+'staff-access-control.mjs'),/owner_add\|party_add\|party_end\|group_profile_save\|licence_add\|licence_end\|contact_save/);
 });
 test('read path and release counts',()=>{
  const r=rd(fx+'suite-actions.ts');assert.match(r,/'parties',\(select/);assert.match(r,/'group_profiles',\(select/);assert.match(r,/'ownership_status',\(select coalesce\(jsonb_agg\(x\),'\[\]'\) from \(select \* from erp_private\.ownership_status_all\(\)\)x\)/);
