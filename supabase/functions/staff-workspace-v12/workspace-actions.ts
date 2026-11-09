@@ -265,17 +265,20 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   await tx`select pg_advisory_xact_lock(hashtextextended(${a.staff_id+':'+v.work_date},0))`;
   const [total]=await tx`select coalesce(sum(hours),0) hours from erp_private.timesheets where staff_id=${a.staff_id} and work_date=${v.work_date} and deleted_at is null and status<>'Rejected' and timesheet_id<>coalesce(${tid}::uuid,'00000000-0000-0000-0000-000000000000'::uuid)`;
   if(Number(total.hours)+v.hours>24)fail(400,'Total time for a day cannot exceed 24 hours.');
-  if(tid){const rows=await tx`update erp_private.timesheets set work_date=${v.work_date},hours=${v.hours},description=${v.description},billable=${v.billable},status=${v.status},reviewed_by=null,reviewed_at=null,review_note=null
-   where timesheet_id=${tid} and staff_id=${a.staff_id} and task_id=${v.task_id} and revision=${revision(p.revision)} returning timesheet_id`;if(!rows.length)fail(409,'Only your draft or rejected time can be edited. Refresh first.');return {ok:true};}
+  // Partner time exemption: once a Partner has signed the Partner Time Policy, a Partner's own time is saved approved and locked (flagged auto-approved).
+  const [ex]=a.category_code==='PARTNER'?await tx`select erp_private.partner_time_exempt() ok`:[{ok:false}];
+  const auto=ex.ok===true,note='Partner time, auto-approved';
+  if(tid){const rows=await tx`update erp_private.timesheets set work_date=${v.work_date},hours=${v.hours},description=${v.description},billable=${v.billable},status=${auto?'Approved':v.status},reviewed_by=${auto?a.staff_id:null},reviewed_at=${auto?new Date().toISOString():null},review_note=${auto?note:null},is_auto_approved=${auto}
+   where timesheet_id=${tid} and staff_id=${a.staff_id} and task_id=${v.task_id} and revision=${revision(p.revision)} returning timesheet_id`;if(!rows.length)fail(409,'Only your draft or rejected time can be edited. Refresh first.');return {ok:true,auto_approved:auto};}
   // Recorded time is always the hours keyed in. A stopped timer may only be referenced as a suggestion, and only if it is this person's own, for this task.
   let timerSeconds:number|null=null;
   if(p.timer_seconds!==undefined&&p.timer_seconds!==null&&p.timer_seconds!==''){
    const tm=(await tx`select suggested_seconds from erp_private.task_timers where staff_id=${a.staff_id} and status='Stopped' and suggested_task_id=${v.task_id} and suggested_seconds=${Math.round(Number(p.timer_seconds))} and timesheet_id is null for update`)[0];
    if(tm)timerSeconds=tm.suggested_seconds;
   }
-  const saved=one(await tx`insert into erp_private.timesheets(staff_id,project_id,task_id,work_date,hours,description,billable,status,timer_seconds,time_source) values(${a.staff_id},${task.project_id},${v.task_id},${v.work_date},${v.hours},${v.description},${v.billable},${v.status},${timerSeconds},${timerSeconds===null?'Manual':'Manual with timer'}) returning timesheet_id`);
+  const saved=one(await tx`insert into erp_private.timesheets(staff_id,project_id,task_id,work_date,hours,description,billable,status,timer_seconds,time_source,reviewed_by,reviewed_at,review_note,is_auto_approved) values(${a.staff_id},${task.project_id},${v.task_id},${v.work_date},${v.hours},${v.description},${v.billable},${auto?'Approved':v.status},${timerSeconds},${timerSeconds===null?'Manual':'Manual with timer'},${auto?a.staff_id:null},${auto?new Date().toISOString():null},${auto?note:null},${auto}) returning timesheet_id`);
   if(timerSeconds!==null)await tx`update erp_private.task_timers set timesheet_id=${saved.timesheet_id} where staff_id=${a.staff_id}`;
-  return saved;
+  return auto?{...saved,auto_approved:true}:saved;
  }
  if(p.action==='timesheet_review'){
   if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must review timesheets.');
@@ -284,10 +287,16 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
    where timesheet_id=${uuid(p.timesheet_id)} and staff_id<>${a.staff_id} and status='Submitted' and revision=${revision(p.revision)} returning timesheet_id`;
   if(!rows.length)fail(409,'This entry cannot be reviewed. Refresh the queue.');return {ok:true};
  }
+ if(p.action==='timesheet_partner_list'){
+  if(a.category_code!=='PARTNER')fail(403,'Only a Partner can see Partner time.');
+  const days=Math.round(Number(p.days||90));if(!Number.isFinite(days)||days<1||days>730)fail(400,'Choose between 1 and 730 days.');
+  return {entries:await tx`select * from erp_private.partner_time_list(${days}::integer)`};
+ }
  if(p.action==='timesheet_reverse'){
   if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Partner or Manager must reverse approved time.');
   const t=one(await tx`select * from erp_private.timesheets where timesheet_id=${uuid(p.timesheet_id)} and status='Approved' and reverses_id is null`);
-  if(t.staff_id===a.staff_id)fail(403,'Another Manager must reverse your approved time.');
+  if(t.staff_id===a.staff_id)fail(403,t.is_auto_approved?'A second Partner must correct your auto-approved time.':'Another Manager must reverse your approved time.');
+  if(t.is_auto_approved&&(a.category_code!=='PARTNER'||text(p.reason||'',2000,true).trim().length<10))fail(403,'Only a second Partner can correct a Partner\'s auto-approved time, with a reason of at least 10 characters.');
   return one(await tx`insert into erp_private.timesheets(staff_id,project_id,task_id,work_date,hours,description,billable,status,reviewed_by,reviewed_at,review_note,reverses_id)
    values(${t.staff_id},${t.project_id},${t.task_id},${t.work_date},${-Number(t.hours)},${text(p.reason,2000)},${t.billable},'Approved',${a.staff_id},now(),${text(p.reason,2000)},${t.timesheet_id}) returning timesheet_id`);
  }

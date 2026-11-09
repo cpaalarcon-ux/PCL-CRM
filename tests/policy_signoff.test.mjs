@@ -22,7 +22,7 @@ test('policy sign-off: Assistants are locked out until the Partner signs; only a
  // 1. Seeded as Pending.
  let p=await pol();assert.equal(p.policy_code,'ASSISTANT_DATA_ENTRY');assert.equal(p.status,'Pending');assert.equal(p.signed_by,null);assert.match(p.statement,/I authorize Audit Assistants to enter client data/);
  // 1b. The assignment, leave and security policies are recorded as Pending too, with their own wording.
- const all=await as('MANAGER',()=>policiesRead(tx));assert.deepEqual(all.map(x=>x.policy_code).sort(),['ASSIGNMENT_POLICY','ASSISTANT_DATA_ENTRY','LEAVE_HANDOVER_POLICY','SECURITY_POLICY']);assert.ok(all.every(x=>x.status==='Pending'));assert.match(all.find(x=>x.policy_code==='SECURITY_POLICY').statement,/second factor/);
+ const all=await as('MANAGER',()=>policiesRead(tx));assert.deepEqual(all.map(x=>x.policy_code).sort(),['ASSIGNMENT_POLICY','ASSISTANT_DATA_ENTRY','LEAVE_HANDOVER_POLICY','PARTNER_TIME_POLICY','SECURITY_POLICY']);assert.ok(all.every(x=>x.status==='Pending'));assert.match(all.find(x=>x.policy_code==='SECURITY_POLICY').statement,/second factor/);
  // 2. Locked: an Assistant cannot propose client data; a Supervisor is not affected by this policy.
  const entry={action:'contact_save',client_id:C,full_name:'Fictional Contact'};
  await assert.rejects(()=>as('ASSISTANT',a=>createProposal(tx,a,entry)),/locked pending Partner authorization/);
