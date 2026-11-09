@@ -341,6 +341,15 @@ BEGIN
  RETURN erp_private.audit_report_status_calc(p_file);
 END $$;
 
+-- What each kind of report would be built on now, for the workspace to compare with the saved versions.
+CREATE FUNCTION erp_private.audit_report_bases(p_file uuid) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO '' AS $$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM erp_private.audit_files f WHERE f.audit_file_id=p_file AND erp_private.project_allowed(f.project_id)) THEN RETURN '{}'::jsonb; END IF;
+ RETURN jsonb_build_object('Financial statements',erp_private.audit_report_basis(p_file,'Financial statements'),'Management letter',erp_private.audit_report_basis(p_file,'Management letter'),
+  'Representation letter',erp_private.audit_report_basis(p_file,'Representation letter'),'Completion memorandum',erp_private.audit_report_basis(p_file,'Completion memorandum'));
+END $$;
+
 -- The audit file cannot be approved until the required reports are approved and still current.
 CREATE FUNCTION erp_private.audit_file_report_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
 DECLARE x jsonb;missing text;
@@ -354,5 +363,5 @@ END $$;
 CREATE TRIGGER report_guard BEFORE UPDATE OF file_status ON erp_private.audit_files FOR EACH ROW EXECUTE FUNCTION erp_private.audit_file_report_guard();
 
 REVOKE ALL ON FUNCTION erp_private.audit_report_guard(),erp_private.audit_fs_calc(uuid),erp_private.audit_report_basis(uuid,text),erp_private.audit_report_build(uuid,text,jsonb),erp_private.audit_report_status_calc(uuid),erp_private.audit_file_report_guard() FROM PUBLIC,anon,authenticated,service_role,erp_api;
-REVOKE ALL ON FUNCTION erp_private.audit_mgmt_points_suggest(uuid),erp_private.audit_mgmt_point_save(uuid,uuid,text,text,text,text,text,text),erp_private.audit_mgmt_point_decide(uuid,text,text),erp_private.audit_report_draft(uuid,text,jsonb),erp_private.audit_report_submit(uuid),erp_private.audit_report_review(uuid,text,text),erp_private.audit_report_status(uuid) FROM PUBLIC,anon,authenticated,service_role;
-GRANT EXECUTE ON FUNCTION erp_private.audit_mgmt_points_suggest(uuid),erp_private.audit_mgmt_point_save(uuid,uuid,text,text,text,text,text,text),erp_private.audit_mgmt_point_decide(uuid,text,text),erp_private.audit_report_draft(uuid,text,jsonb),erp_private.audit_report_submit(uuid),erp_private.audit_report_review(uuid,text,text),erp_private.audit_report_status(uuid) TO erp_api;
+REVOKE ALL ON FUNCTION erp_private.audit_mgmt_points_suggest(uuid),erp_private.audit_mgmt_point_save(uuid,uuid,text,text,text,text,text,text),erp_private.audit_mgmt_point_decide(uuid,text,text),erp_private.audit_report_draft(uuid,text,jsonb),erp_private.audit_report_submit(uuid),erp_private.audit_report_review(uuid,text,text),erp_private.audit_report_status(uuid),erp_private.audit_report_bases(uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION erp_private.audit_mgmt_points_suggest(uuid),erp_private.audit_mgmt_point_save(uuid,uuid,text,text,text,text,text,text),erp_private.audit_mgmt_point_decide(uuid,text,text),erp_private.audit_report_draft(uuid,text,jsonb),erp_private.audit_report_submit(uuid),erp_private.audit_report_review(uuid,text,text),erp_private.audit_report_status(uuid),erp_private.audit_report_bases(uuid) TO erp_api;
