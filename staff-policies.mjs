@@ -13,7 +13,7 @@ const nairobiDay=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}
 export function reviewLine(p,esc=v=>String(v??''),today=nairobiDay()){
  if(p.status==='Pending')return '';
  const live=p.go_live_date?String(p.go_live_date).slice(0,10):'';
- if(p.status==='Expired')return `<p class="missing" role="status"><b>Expired.</b> The review was due on ${esc(String(p.review_due_date||'').slice(0,10))}. Actions that depend on this policy are blocked until a Partner signs it again.</p>`;
+ if(p.status==='Expired')return `<p class="missing" role="status"><b>Expired.</b> The review was due on ${esc(String(p.review_due_date||'').slice(0,10))}. ${p.policy_code===ASSISTANT_ENTRY_POLICY?'Assistant data entry is blocked until a Partner signs it again.':'This policy is advisory: nothing is blocked. Sign it again to clear the warning.'}</p>`;
  if(!live||!p.review_due_date)return '<p class="muted">Review timer paused until Go-Live.</p>';
  const due=String(p.review_due_date).slice(0,10),days=Math.round((Date.parse(due+'T00:00:00Z')-Date.parse(today+'T00:00:00Z'))/86400000);
  return `<p class="${days<=3?'missing':'muted'}">${days>0?`Review due in ${days} day${days===1?'':'s'}`:'Review due today'} (Based on Go-Live Date: ${esc(live)}).</p>`;
@@ -56,4 +56,15 @@ export function bindGoLive(ctx){
   const b=e.target.closest('[data-golive]');if(!b)return;
   modal('Go-live date',form(field('go_live_date','Go-live date (leave empty to pause the review timers)',b.dataset.date||'','date')+`<label class="full">Why? * <textarea name="note" required minlength="10" maxlength="1000"></textarea></label>`,'Save go-live date'),f=>request({action:'go_live_save',go_live_date:f.get('go_live_date')||null,note:f.get('note')}),undefined,{successMessage:'Go-live date saved. Policy review dates were recalculated.'});
  });
+}
+
+// Red warning on the Partner's Home for any policy that has expired (amber when a review is due within 3 days). Only the Assistant data entry
+// policy blocks anything; for every other policy this is a reminder and no system function is stopped.
+export function policyWarnings(data,esc=v=>String(v??''),today=nairobiDay()){
+ if(data.me?.category_code!=='PARTNER')return '';
+ const soon=p=>{if(p.status!=='Signed_Off'||!p.review_due_date)return false;const days=Math.round((Date.parse(String(p.review_due_date).slice(0,10)+'T00:00:00Z')-Date.parse(today+'T00:00:00Z'))/86400000);return days<=3;};
+ const expired=(data.policies||[]).filter(p=>p.status==='Expired'),due=(data.policies||[]).filter(soon);
+ if(!expired.length&&!due.length)return '';
+ const row=p=>`<li><b>${esc(p.policy_name)}</b>${p.policy_code===ASSISTANT_ENTRY_POLICY?' — Assistant data entry is blocked until you sign it again':' — advisory, nothing is blocked'}</li>`;
+ return `<div class="notice ${expired.length?'error':'warn'}" id="policyWarnings" role="alert">${expired.length?`<b>${expired.length===1?'A policy has':'Policies have'} expired.</b> Open Settings, read ${expired.length===1?'it':'each one'} and sign again.<ul>${expired.map(row).join('')}</ul>`:''}${due.length?`<b>Review due within 3 days:</b><ul>${due.map(p=>`<li>${esc(p.policy_name)} (${esc(String(p.review_due_date).slice(0,10))})</li>`).join('')}</ul>`:''}</div>`;
 }
