@@ -114,7 +114,7 @@ test('S3 gates: SASRA eligibility, EQCR, ratio breach, policy and the sign-off b
  const timeConflict=(await st('PARTNER2')).my_conflicts.includes('logged time on the engagement');
  if(timeConflict){await assert.rejects(()=>decide('PARTNER2','Approve'),/logged time/);await tx`update erp_private.timesheets set deleted_at=now() where staff_id=${actors.PARTNER2.staff_id}`;}
  await decide('PARTNER2','Approve');eq=await st('PARTNER');assert.equal(eq.approved,true);assert.equal(eq.last_by,'Fictional PARTNER2');
- assert.deepEqual(await issues(),[],'eligibility, acknowledged breach and EQCR: nothing blocks sign-off');
+ assert.deepEqual((await issues()).filter(i=>!/SACCO statement layout|Section 10 item/.test(i)),[],'eligibility, acknowledged breach and EQCR: nothing blocks sign-off (the S4 layout and section-10 items are tested in sacco_statements.test.mjs)');
  // Returning the file withdraws the approval.
  await tx`update erp_private.audit_files set file_status='Returned' where audit_file_id=${FILE}`;
  eq=await st('PARTNER');assert.equal(eq.approved,false);assert.equal(eq.last_kind,'EQCR approval void');assert.ok((await issues()).some(i=>/EQCR Partner approval required/.test(i)));

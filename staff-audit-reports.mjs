@@ -1,5 +1,6 @@
 // Audit build D: draft financial statements, management letter, representation letter and completion memorandum.
 // Reports are built on the server from the adjusted trial balance and the file's records. Each is a saved version with a different reviewer.
+import {saccoFsView} from './staff-audit-sacco.mjs?v=20261109-sacco-v1';
 export const KINDS=['Financial statements','Management letter','Representation letter','Completion memorandum'];
 const PARTNER_ONLY=['Financial statements','Representation letter'];
 const MAKERS=['ASSISTANT','SUPERVISOR','MANAGER','PARTNER'];
@@ -14,6 +15,7 @@ export function createReportsUI(ctx){
  const canReviewKind=(role,kind)=>PARTNER_ONLY.includes(kind)?role==='PARTNER':['MANAGER','PARTNER'].includes(role);
 
  function fsView(b){
+  if(b.layout==='SACCO')return saccoFsView(b);
   const t=b.totals||{};
   const sec=s=>`<tr><td colspan="3"><b>${esc(s.line)}</b></td></tr>${(s.items||[]).map(i=>`<tr><td>${esc(i.account_code)} · ${esc(i.account_name)}</td><td>${money(i.current)}</td><td>${i.comparative==null?'':money(i.comparative)}</td></tr>`).join('')}<tr><td><b>Total ${esc(s.line.toLowerCase())}</b></td><td><b>${money(s.total)}</b></td><td>${s.comparative_total==null?'':'<b>'+money(s.comparative_total)+'</b>'}</td></tr>`;
   return `<p class="muted">${esc(b.entity)} · period ended ${esc(b.period_end)} · ${esc(b.framework)} · framework ${esc(b.framework_status)}</p>

@@ -128,7 +128,7 @@ test('sections map tabs, and the SASRA tab shows only on a SACCO file', () => {
   assert.deepEqual(sectionTabs('setup',false),['Materiality & risk']);
   assert.deepEqual(sectionTabs('setup',true),['Materiality & risk','SASRA & quality']);
   const all=SECTIONS.flatMap(s=>s.tabs);
-  for(const t of ['Materiality & risk','Trial balance','Adjustments','Lead schedules','Populations','Analytics','Reports','Time & billing','Working papers','Completion','Template register','SASRA & quality'])assert.ok(all.includes(t),t);
+  for(const t of ['Materiality & risk','Trial balance','Adjustments','Lead schedules','Populations','SACCO statements','Analytics','Reports','Time & billing','Working papers','Completion','Template register','SASRA & quality'])assert.ok(all.includes(t),t);
 });
 
 test('sign-off strips: file level and per paper', () => {
@@ -160,7 +160,7 @@ test('the rendered home names the next step, links every item to a tab and escap
 
 test('Reports data is no longer overwritten by empty placeholders in the file snapshot', () => {
   const src=readFileSync(new URL('../supabase/functions/staff-workspace-v12/audit-actions.ts',import.meta.url),'utf8');
-  const lines=src.split('\n').filter(l=>l.includes('return {sasra,populations,population_policy,projects,project,file'));
+  const lines=src.split('\n').filter(l=>l.includes('return {sasra,sacco,populations,population_policy,projects,project,file'));
   assert.equal(lines.length,1);
   assert.doesNotMatch(lines[0],/reports:\[\]|report_status:\[\]|mgmt_points:\[\]/);
   assert.match(lines[0],/reports,report_status,mgmt_points/);
@@ -168,7 +168,7 @@ test('Reports data is no longer overwritten by empty placeholders in the file sn
 
 test('the full audit screen renders every tab for a SACCO file without error', async () => {
   const {createAuditUI}=await import('../staff-audit.mjs');
-  const snap={...base({sasra:sacco()}),projects:[{project_id:'p',company_name:'Acme',project_name:'AUD',firm_code:'F1'}],project:{project_id:'p',company_name:'Acme',project_name:'AUD 2026',firm_code:'F1',client_id:'c',handling_firm_id:'h'},imports:[],tb_lines:[],templates:[],file:{audit_file_id:'f1',file_status:'In Review',reporting_framework:'IFRS for SMEs',starts_on:'2026-01-01',ends_on:'2026-12-31',framework_status:'Approved',file_type:'First-year',revision:1},workpaper_versions:[],materiality:[],risks:[],risk_links:[],adjustment_lines:[],adjusted_tb:[],tb_accounts:[],analytics_runs:[],billing_link:null};
+  const snap={...base({sasra:sacco(),sacco:{layout:{layout_id:'L1',version:1,status:'Approved',source_note:'',lines:[]},draft:null,versions:[],accounts:[],moves:[],preview:{position:[],income:[],soce:{columns:[],rows:[]},statistics:[],ratios:[],checks:[],blocking:[],warnings:[],note:''}}}),projects:[{project_id:'p',company_name:'Acme',project_name:'AUD',firm_code:'F1'}],project:{project_id:'p',company_name:'Acme',project_name:'AUD 2026',firm_code:'F1',client_id:'c',handling_firm_id:'h'},imports:[],tb_lines:[],templates:[],file:{audit_file_id:'f1',file_status:'In Review',reporting_framework:'IFRS for SMEs',starts_on:'2026-01-01',ends_on:'2026-12-31',framework_status:'Approved',file_type:'First-year',revision:1},workpaper_versions:[],materiality:[],risks:[],risk_links:[],adjustment_lines:[],adjusted_tb:[],tb_accounts:[],analytics_runs:[],billing_link:null};
   const field=(n,l)=>`<input name="${n}" aria-label="${l}">`;
   const ctx={esc,field,select:(n)=>`<select name="${n}"></select>`,form:(b)=>`<form>${b}</form>`,modal(){},request:async()=>snap,notice(){},shortDate:v=>String(v||'').slice(0,10),empty:t=>`<p>${t}</p>`,data:()=>({me:partner,documents:[]})};
   const ui=createAuditUI(ctx);
