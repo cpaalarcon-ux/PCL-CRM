@@ -141,6 +141,7 @@ export async function clientChartAction(tx:any,a:any,p:any){
   await requireClassified(tx,cid,'proposing the chart of accounts');
   const prop=await proposal(tx,cid,from);
   if(!['Limited company','Partnership','Sole proprietor','Non-profit organisation','Foreign branch','Other legal entity'].includes(prop.client.legal_entity_type))fail(400,'Confirm the legal entity type before proposing the client chart.');
+  if(prop.client.legal_entity_type==='Co-operative society')fail(409,'The chart of accounts for co-operative societies and SACCOs is not enabled yet. The client can be set up and tracked; the SACCO chart is a separate build.');
   if(!prop.packs.length)fail(400,'Approve at least one business activity before proposing the client chart.');
   const extras:any[]=[],seen=new Set<string>();
   for(const x of Array.isArray(p.extra_accounts)?p.extra_accounts.slice(0,200):[]){

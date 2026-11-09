@@ -7,7 +7,7 @@ test('Legal structure Builds 2 and 3: every pair has a KYC checklist and a sugge
  t.after(()=>db.close());
  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create table auth.sessions(id uuid primary key,user_id uuid references auth.users);create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb) $$;create function auth.uid() returns uuid language sql stable as $$ select (auth.jwt()->>'sub')::uuid $$;`);
  for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.readFileSync(root+'/supabase/migrations/'+f,'utf8').replace('CREATE EXTENSION IF NOT EXISTS pg_cron;','').replace(/SELECT cron.schedule[^\n]+/g,'');await db.exec(q);}
- const pairs=await tx`select structure,subtype from erp_private.legal_structure_types order by 1,2`;assert.equal(pairs.length,31);
+ const pairs=await tx`select structure,subtype from erp_private.legal_structure_types order by 1,2`;assert.equal(pairs.length,33);
  const req=async(st,sub)=>await tx`select rule_code,requirement,note from erp_private.legal_structure_requirements where structure=${st} and subtype=${sub} order by sort_order`;
  const required=async(st,sub)=>(await req(st,sub)).filter(r=>r.requirement==='Required').map(r=>r.rule_code);
  // Every pair has a checklist, every checklist asks for a KRA PIN, and every pair has a suggested classification.

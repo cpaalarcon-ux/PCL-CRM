@@ -3,7 +3,8 @@
 const ACCOUNTING=['Limited company','Partnership','Sole proprietor','Non-profit organisation','Foreign branch'];
 export const structureRows=data=>data?.legal_structure_types||[];
 export const structuresOf=rows=>[...new Set(rows.map(r=>r.structure))];
-export const subtypesOf=(rows,structure)=>rows.filter(r=>r.structure===structure).map(r=>r.subtype);
+// Retired subcategories are hidden from the pickers, except the one a client already has.
+export const subtypesOf=(rows,structure,keep)=>rows.filter(r=>r.structure===structure&&(!r.retired||r.subtype===keep)).map(r=>r.subtype);
 export function familyOf(rows,structure,subtype){
  if(!structure)return null;
  if(subtype)return rows.find(r=>r.structure===structure&&r.subtype===subtype)?.engine_family||null;
@@ -19,7 +20,7 @@ export function familyHint(rows,structure,subtype){
 }
 export function legalStructureFields({client,rows,isLeader,esc,options}){
  const c=client||{},structures=structuresOf(rows),classified=!!(c.legal_structure&&c.legal_subtype),locked=classified&&!isLeader;
- const subs=subtypesOf(rows,c.legal_structure);
+ const subs=subtypesOf(rows,c.legal_structure,c.legal_subtype);
  return `<fieldset class="full" data-legal-structure="${esc(c.legal_structure||'')}|${esc(c.legal_subtype||'')}"><legend>Legal structure</legend><div class="form-grid">
   <label>Legal structure *<select name="legal_structure" required${locked?' disabled':''}>${options(structures,c.legal_structure,'Choose…')}</select></label>
   <label>Subcategory *<select name="legal_subtype" required${locked?' disabled':''}>${options(subs,c.legal_subtype,c.legal_structure?'Choose…':'Choose a legal structure first')}</select></label>
