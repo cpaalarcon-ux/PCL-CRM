@@ -128,7 +128,7 @@ test('sections map tabs, and the SASRA tab shows only on a SACCO file', () => {
   assert.deepEqual(sectionTabs('setup',false),['Materiality & risk']);
   assert.deepEqual(sectionTabs('setup',true),['Materiality & risk','SASRA & quality']);
   const all=SECTIONS.flatMap(s=>s.tabs);
-  for(const t of ['Materiality & risk','Trial balance','Adjustments','Lead schedules','Analytics','Reports','Time & billing','Working papers','Completion','Template register','SASRA & quality'])assert.ok(all.includes(t),t);
+  for(const t of ['Materiality & risk','Trial balance','Adjustments','Lead schedules','Populations','Analytics','Reports','Time & billing','Working papers','Completion','Template register','SASRA & quality'])assert.ok(all.includes(t),t);
 });
 
 test('sign-off strips: file level and per paper', () => {
@@ -160,7 +160,7 @@ test('the rendered home names the next step, links every item to a tab and escap
 
 test('Reports data is no longer overwritten by empty placeholders in the file snapshot', () => {
   const src=readFileSync(new URL('../supabase/functions/staff-workspace-v12/audit-actions.ts',import.meta.url),'utf8');
-  const lines=src.split('\n').filter(l=>l.includes('return {sasra,projects,project,file'));
+  const lines=src.split('\n').filter(l=>l.includes('return {sasra,populations,population_policy,projects,project,file'));
   assert.equal(lines.length,1);
   assert.doesNotMatch(lines[0],/reports:\[\]|report_status:\[\]|mgmt_points:\[\]/);
   assert.match(lines[0],/reports,report_status,mgmt_points/);
@@ -173,7 +173,7 @@ test('the full audit screen renders every tab for a SACCO file without error', a
   const ctx={esc,field,select:(n)=>`<select name="${n}"></select>`,form:(b)=>`<form>${b}</form>`,modal(){},request:async()=>snap,notice(){},shortDate:v=>String(v||'').slice(0,10),empty:t=>`<p>${t}</p>`,data:()=>({me:partner,documents:[]})};
   const ui=createAuditUI(ctx);
   await ui.refresh('p');
-  for(const tab of ['Overview','Issues','Materiality & risk','Trial balance','Adjustments','Lead schedules','Analytics','Reports','Time & billing','Working papers','Completion','Template register','SASRA & quality']){
+  for(const tab of ['Overview','Issues','Materiality & risk','Trial balance','Adjustments','Lead schedules','Populations','Analytics','Reports','Time & billing','Working papers','Completion','Template register','SASRA & quality']){
     assert.ok(await ui.handle({hasAttribute:()=>false,dataset:{auditTab:tab}}),tab);
     const html=ui.render();
     assert.match(html,/Next step:/,tab);

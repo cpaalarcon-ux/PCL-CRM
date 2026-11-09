@@ -4,7 +4,7 @@
 export const SECTIONS=[
  {key:'setup',title:'Set-up',tabs:['Materiality & risk','SASRA & quality']},
  {key:'managing',title:'Managing',tabs:['Time & billing','Issues']},
- {key:'papers',title:'Working papers',tabs:['Trial balance','Adjustments','Lead schedules','Analytics','Working papers']},
+ {key:'papers',title:'Working papers',tabs:['Trial balance','Adjustments','Lead schedules','Populations','Analytics','Working papers']},
  {key:'completion',title:'Completion',tabs:['Reports','Completion']},
  {key:'archive',title:'Archive & templates',tabs:['Template register']}
 ];
@@ -21,12 +21,16 @@ export function homeModel(s,me={}){
  const reports=s.reports||[],rstat=s.report_status||[],comp=s.completion||[],ms=s.misstatements||null,time=s.time_summary||null;
  const openAlerts=alerts.filter(a=>a.status==='Open'),highAlerts=openAlerts.filter(a=>a.severity==='High');
  const openPoints=points.filter(p=>p.status==='Open');
+ const pops=(s.populations||[]).filter(x=>x.status!=='Withdrawn'),popPolicy=s.population_policy||null,requiredAreas=(popPolicy?.areas||[]);
  const pendingAdj=adj.filter(a=>['Draft','Submitted','Returned'].includes(a.status));
  const activeLeads=leads.filter(l=>l.active),missingLeads=activeLeads.filter(l=>!l.lead),badTie=leads.filter(l=>l.lead&&['Not stated','Difference'].includes(l.lead.tie));
  const reqReports=rstat.filter(x=>x.required),okReports=reqReports.filter(x=>x.approved_report_id&&x.current);
  const staleReports=reqReports.filter(x=>x.approved_report_id&&!x.current),missingReports=reqReports.filter(x=>!x.approved_report_id);
  const compDone=comp.filter(x=>x.status==='Reviewed').length;
  const mat=!!gate.materiality;
+ const popProblem=x=>x.state==='Difference'?`${x.pop_ref} for ${x.audit_area} differs from the adjusted trial balance by ${x.residual} after reconciling items`:x.state==='Needs note'?`${x.pop_ref} for ${x.audit_area} has reconciling items without a note of at least 20 characters`:'';
+ const popMissing=requiredAreas.filter(a=>activeLeads.some(l=>l.audit_area===a)&&!pops.some(x=>x.audit_area===a&&x.status==='Approved'));
+ const popBad=pops.filter(x=>popProblem(x)),popOpen=pops.filter(x=>x.status!=='Approved');
  const exceeds=!!(ms&&ms.exceeds_overall),concluded=!!(ms&&ms.conclusion&&ms.conclusion.current);
  const eq=sasra?.eqcr||null,eqRequired=!!eq?.required,eqApproved=!!eq?.approved;
  const ratios=sasra?.ratios||[],breaches=ratios.filter(r=>r.state==='Breach'),unack=breaches.filter(r=>!r.acknowledged);
@@ -52,6 +56,7 @@ export function homeModel(s,me={}){
  items.papers.push(it('wps','Working papers independently approved',read.workpapers_resolved?'done':'todo',wps.length?`${wps.filter(w=>w.status==='Approved').length} of ${wps.length} approved`:'No working paper yet','Working papers',''));
  if(adj.length)items.papers.push(it('adj','Audit entries submitted and reviewed',pendingAdj.length?'todo':'done',pendingAdj.length?`${pendingAdj.length} not yet approved`:'','Adjustments',''));
  if(activeLeads.length)items.papers.push(it('leads','Lead schedules made and tying to the adjusted trial balance',missingLeads.length||badTie.length?(badTie.length?'blocked':'todo'):'done',missingLeads.length?`${missingLeads.length} area(s) without a lead schedule`:badTie.length?`${badTie.length} schedule(s) do not tie`:'','Lead schedules',''));
+ if(pops.length||requiredAreas.length)items.papers.push(it('populations','Populations approved and reconciled to the trial balance',popBad.length?'blocked':(popOpen.length||popMissing.length)?'todo':'done',popBad.length?popProblem(popBad[0]):popMissing.length?`Required but not approved: ${popMissing.join(', ')}`:popOpen.length?`${popOpen.length} not yet approved`:`${pops.length} approved`,'Populations',''));
  items.papers.push(it('analytics','Analytics run and every alert cleared',openAlerts.length?(highAlerts.length?'blocked':'todo'):runs.length?'done':'todo',openAlerts.length?`${openAlerts.length} alert(s) open${highAlerts.length?`, ${highAlerts.length} high`:''}`:runs.length?'':'Not run yet','Analytics',''));
 
  items.completion.push(it('checklist','Completion checklist independently reviewed',read.completion_total>0&&read.completion_total===read.completion_reviewed?'done':'todo',comp.length?`${compDone} of ${comp.length} reviewed`:'','Completion','Manager'));
@@ -83,6 +88,10 @@ export function homeModel(s,me={}){
  if(pendingAdj.length)block('adjustments','papers','Submit and review every audit entry',`${pendingAdj.length} entr${pendingAdj.length===1?'y':'ies'} not yet approved.`,'Adjustments','');
  if(missingLeads.length)block('leads','papers','Create a lead schedule for each trial-balance area',missingLeads.map(l=>l.audit_area).join(', '),'Lead schedules','');
  if(badTie.length)block('tie','papers','Make the lead schedules tie to the adjusted trial balance',badTie.map(l=>l.audit_area).join(', '),'Lead schedules','');
+ popBad.forEach(x=>block('population','papers',`Reconcile population ${x.pop_ref}`,popProblem(x)+'.','Populations',''));
+ pops.filter(x=>['Draft','Returned'].includes(x.status)&&!popProblem(x)).forEach(x=>block('population','papers',`Submit or withdraw population ${x.pop_ref}`,`${x.audit_area} · ${x.status.toLowerCase()}.`,'Populations',''));
+ pops.filter(x=>x.status==='Submitted'&&!popProblem(x)).forEach(x=>block('population','papers',`Review population ${x.pop_ref}`,`${x.audit_area} is waiting for a Manager or Partner.`,'Populations','Manager'));
+ popMissing.filter(a=>!pops.some(x=>x.audit_area===a)).forEach(a=>block('population','papers',`Record the ${a.toLowerCase()} population`,'The firm requires an approved, reconciled population for this area.','Populations',''));
  if(openAlerts.length)block('analytics','papers','Clear every analytics alert with a note',`${openAlerts.length} open${highAlerts.length?`, ${highAlerts.length} high`:''}.`,'Analytics','');
  if(exceeds&&!concluded)block('misstatement','completion','Record the conclusion on unadjusted misstatements','They exceed overall materiality.','Adjustments','Partner');
  ratioIssues.forEach(x=>block('ratio','completion',/not acknowledged/.test(x)?'Acknowledge the regulatory breach':'Complete the SASRA ratios',x,'SASRA & quality','Partner'));
@@ -96,7 +105,7 @@ export function homeModel(s,me={}){
  const next=B[0]||stageStep||null;
 
  // Role-aware view: what this person should look at first.
- const focus=roleFocus({role,myId,s,wps,adj,comp,reports,points,gate,mat,file,unack,exceeds,concluded,read});
+ const focus=roleFocus({role,myId,s,wps,adj,comp,reports,points,gate,mat,file,unack,exceeds,concluded,read,pops});
 
  const toolbar=[
   {key:'issues',label:'Issues',tab:'Issues',count:B.length,tone:B.length?'bad':'ok'},
@@ -121,11 +130,12 @@ function planningGate(g){
  const uncovered=g.uncovered||[];
  return {materiality:!!g.materiality_approved,risksOpen:n(g.risks_open),fraud:!!g.fraud_risk_recorded,uncovered,ready:!!g.materiality_approved&&n(g.risks_open)>0&&!!g.fraud_risk_recorded&&!uncovered.length};
 }
-function roleFocus({role,myId,s,wps,adj,comp,reports,points,gate,mat,file,unack,exceeds,concluded,read}){
+function roleFocus({role,myId,s,wps,adj,comp,reports,points,gate,mat,file,unack,exceeds,concluded,read,pops}){
  const rows=[];const add=(text,tab)=>rows.push({text,tab});
  if(role==='ASSISTANT'||role==='INTERN'){
   wps.filter(w=>w.prepared_by===myId&&['Draft','Returned'].includes(w.status)).forEach(w=>add(`${w.workpaper_ref} · ${w.status==='Returned'?`returned${w.review_note?`: ${w.review_note}`:''}`:'draft, not submitted'}`,'Working papers'));
   adj.filter(a=>a.prepared_by===myId&&['Draft','Returned'].includes(a.status)).forEach(a=>add(`Audit entry ${a.adj_seq??''} · ${a.status==='Returned'?'returned':'draft, not submitted'}`,'Adjustments'));
+  pops.filter(x=>x.prepared_by===myId&&['Draft','Returned'].includes(x.status)).forEach(x=>add(`${x.pop_ref} · ${x.status==='Returned'?`returned${x.review_note?`: ${x.review_note}`:''}`:'draft, not submitted'}`,'Populations'));
   (s.my_tasks||[]).forEach(t=>add(`Task: ${t.task_name}`,'Overview'));
   return {title:'My papers',empty:'Nothing of yours is waiting.',rows};
  }
@@ -142,6 +152,7 @@ function roleFocus({role,myId,s,wps,adj,comp,reports,points,gate,mat,file,unack,
  // Manager and Supervisor
  wps.filter(w=>w.status==='Submitted'&&w.prepared_by!==myId).forEach(w=>add(`Review ${w.workpaper_ref}`,'Working papers'));
  adj.filter(a=>a.status==='Submitted'&&a.prepared_by!==myId).forEach(a=>add(`Review audit entry ${a.adj_seq??''}`,'Adjustments'));
+ pops.filter(x=>x.status==='Submitted'&&x.prepared_by!==myId).forEach(x=>add(`Review population ${x.pop_ref} (${x.audit_area})`,'Populations'));
  comp.filter(c=>c.status==='Prepared'&&c.prepared_by!==myId).forEach(c=>add(`Review control: ${c.label}`,'Completion'));
  reports.filter(r=>r.status==='Submitted').forEach(r=>add(`Review the ${String(r.kind).toLowerCase()} (version ${r.version_number})`,'Reports'));
  points.filter(p=>p.status==='Open').forEach(p=>add(`Decide management point ${p.point_ref||''}`.trim(),'Reports'));

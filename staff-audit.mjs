@@ -1,12 +1,13 @@
 import {createPlanningUI} from './staff-audit-planning.mjs?v=20261109-audit-a-v1';
 import {createAdjustmentsUI} from './staff-audit-adjustments.mjs?v=20261109-audit-b-v1';
-import {createLeadsUI} from './staff-audit-leads.mjs?v=20261109-home-v1';
-import {createReportsUI} from './staff-audit-reports.mjs?v=20261109-home-v1';
-import {createAnalyticsUI} from './staff-audit-analytics.mjs?v=20261109-home-v1';
-import {createFirmUI} from './staff-audit-firm.mjs?v=20261109-home-v1';
-import {createRegulatoryUI} from './staff-audit-regulatory.mjs?v=20261109-home-v1';
-import {createSasraUI} from './staff-audit-sasra.mjs?v=20261109-home-v1';
-import {createHomeUI,homeModel,paperStrip} from './staff-audit-home.mjs?v=20261109-home-v1';
+import {createLeadsUI} from './staff-audit-leads.mjs?v=20261109-pop-v1';
+import {createReportsUI} from './staff-audit-reports.mjs?v=20261109-pop-v1';
+import {createAnalyticsUI} from './staff-audit-analytics.mjs?v=20261109-pop-v1';
+import {createFirmUI} from './staff-audit-firm.mjs?v=20261109-pop-v1';
+import {createRegulatoryUI} from './staff-audit-regulatory.mjs?v=20261109-pop-v1';
+import {createSasraUI} from './staff-audit-sasra.mjs?v=20261109-pop-v1';
+import {createPopulationsUI} from './staff-audit-populations.mjs?v=20261109-pop-v1';
+import {createHomeUI,homeModel,paperStrip} from './staff-audit-home.mjs?v=20261109-pop-v1';
 export function createAuditUI(ctx){
  const {esc,field,select,form,modal,request,notice,shortDate,empty,data}=ctx;
  const areas=['Permanent file','Acceptance and ethics','Planning','Risk assessment','Cash and bank','Trade receivables','Inventories','Property, plant and equipment','Trade payables','Borrowings','Taxation','Revenue','Payroll and expenses','Equity','Commitments and contingencies','Completion','Reporting and quality'];
@@ -24,6 +25,7 @@ export function createAuditUI(ctx){
  const regulatory=createRegulatoryUI({...ctx,snapshot:()=>snapshot,register:()=>snapshot?.regulatory,refresh:()=>refresh(selected)});
  const analytics=createAnalyticsUI({...ctx,snapshot:()=>snapshot,refresh:()=>refresh(selected)});
  const reports=createReportsUI({...ctx,snapshot:()=>snapshot,refresh:()=>refresh(selected)});
+ const populations=createPopulationsUI({...ctx,snapshot:()=>snapshot,refresh:()=>refresh(selected)});
  const leads=createLeadsUI({...ctx,snapshot:()=>snapshot,refresh:()=>refresh(selected)});
  const adjustments=createAdjustmentsUI({...ctx,snapshot:()=>snapshot,refresh:()=>refresh(selected)});
  const planning=createPlanningUI({...ctx,snapshot:()=>snapshot,refresh:()=>refresh(selected)});
@@ -43,7 +45,7 @@ export function createAuditUI(ctx){
   const model=homeModel(s,staff()),imports=(s?.imports||[]),active=imports.filter(i=>i.status!=='Superseded'),activeImport=active.find(i=>i.audit_tb_import_id===selectedImport),tb=(lineData?.rows||[]).filter(x=>x.audit_tb_import_id===selectedImport),wp=s?.workpapers||[],completion=s?.completion||[],templates=s?.templates||[];
   return `<div class="audit-shell"><div class="workspace-breadcrumb"><button data-audit-back>← Audit engagements</button><span>/</span><span>${esc(p.company_name)}</span></div>
    <section class="card audit-file-head"><div class="section-head"><div><span class="eyebrow">AUDIT FILE · ${esc(p.firm_code)}</span><h2>${esc(p.project_name)}</h2><p>${esc(p.company_name)} · ${esc(shortDate(file.starts_on))} to ${esc(shortDate(file.ends_on))} · ${esc(file.reporting_framework)}</p></div>${status(file.file_status)}</div>${file.is_demonstration?`<div class="audit-demo-warning"><b>${esc(file.demonstration_warning)}</b><small>Historical period ended 31 December 2006. This file cannot issue an audit opinion or be used as a current-year audit.</small></div>`:''}${home.head(file,p,model)}${home.sectionBar(model,activeTab)}</section>
-   ${activeTab==='Overview'?home.homePanel(model)+overview(file,p,s,imports,wp,completion):activeTab==='Issues'?home.issuesPanel(model):activeTab==='Materiality & risk'?planning.panel(file,s):activeTab==='Adjustments'?adjustments.panel(file,s):activeTab==='Lead schedules'?leads.panel(file,s):activeTab==='Analytics'?analytics.panel(file,s):activeTab==='Reports'?reports.panel(file,s):activeTab==='Time & billing'?firm.panel(file,s):activeTab==='SASRA & quality'?sasra.filePanel(file,s):activeTab==='Trial balance'?trialBalance(file,p,imports,activeImport,tb,lineData):activeTab==='Working papers'?workpaperPanel(file,wp,s?.workpaper_versions||[]):activeTab==='Completion'?completionPanel(file,completion):templatePanel(p,templates)}
+   ${activeTab==='Overview'?home.homePanel(model)+overview(file,p,s,imports,wp,completion):activeTab==='Issues'?home.issuesPanel(model):activeTab==='Materiality & risk'?planning.panel(file,s):activeTab==='Adjustments'?adjustments.panel(file,s):activeTab==='Lead schedules'?leads.panel(file,s):activeTab==='Populations'?populations.panel(file,s):activeTab==='Analytics'?analytics.panel(file,s):activeTab==='Reports'?reports.panel(file,s):activeTab==='Time & billing'?firm.panel(file,s):activeTab==='SASRA & quality'?sasra.filePanel(file,s):activeTab==='Trial balance'?trialBalance(file,p,imports,activeImport,tb,lineData):activeTab==='Working papers'?workpaperPanel(file,wp,s?.workpaper_versions||[]):activeTab==='Completion'?completionPanel(file,completion):templatePanel(p,templates)}
   </div>`;
  }
  function overview(file,p,s,imports,wp,completion){
@@ -119,6 +121,7 @@ export function createAuditUI(ctx){
   if(await planning.handle(b,selectedFile(),areas))return true;
   if(await adjustments.handle(b,selectedFile()))return true;
   if(await leads.handle(b,selectedFile()))return true;
+  if(await populations.handle(b,selectedFile()))return true;
   if(await analytics.handle(b,selectedFile()))return true;
   if(await firm.handle(b,selectedFile()))return true;
   if(await regulatory.handle(b))return true;
