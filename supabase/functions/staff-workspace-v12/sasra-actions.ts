@@ -1,7 +1,7 @@
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
 // S3: Partner gates for SACCO audits. The rules live in the database functions (erp_private.sasra_*, audit_eqcr_*, audit_policy_save);
 // this file validates the input and passes it on. Nothing here holds a SASRA figure.
-export const POLICY_KEYS=['AUDIT_FILE_LOCK_DAYS','AUDIT_FILE_LOCK_ANCHOR','SACCO_DT_REQUIRES_EQCR','SACCO_DT_REQUIRES_STATUTORY_REPORT'];
+export const POLICY_KEYS=['AUDIT_FILE_LOCK_DAYS','AUDIT_FILE_LOCK_ANCHOR','SACCO_DT_REQUIRES_EQCR','SACCO_DT_REQUIRES_STATUTORY_REPORT','AUDIT_DEADLINE_LOCK_ENFORCED'];
 export const SACCO_TYPES=['DT_SACCO','NWDT_SACCO'];
 export const MEASURES=['Percentage','Amount KES'];
 export const COMPARATORS=['At least','At most'];
@@ -18,7 +18,7 @@ export async function sasraAction(tx:any,a:any,p:any):Promise<any>{
   partner();const key=choice(p.key,POLICY_KEYS);let value=text(String(p.value??''),20);
   if(key==='AUDIT_FILE_LOCK_DAYS'&&(!/^\d{1,3}$/.test(value)||Number(value)<1||Number(value)>365))fail(400,'Enter the number of days, from 1 to 365.');
   if(key==='AUDIT_FILE_LOCK_ANCHOR')choice(value,['REPORT_DATE','YEAR_END']);
-  if(key==='SACCO_DT_REQUIRES_EQCR'||key==='SACCO_DT_REQUIRES_STATUTORY_REPORT')choice(value,['true','false']);
+  if(key==='SACCO_DT_REQUIRES_EQCR'||key==='SACCO_DT_REQUIRES_STATUTORY_REPORT'||key==='AUDIT_DEADLINE_LOCK_ENFORCED')choice(value,['true','false']);
   return (await tx`select erp_private.audit_policy_save(${key},${value},${text(p.note||'',1000,false)}) r`)[0].r;
  }
  if(act==='audit_report_date_save'){

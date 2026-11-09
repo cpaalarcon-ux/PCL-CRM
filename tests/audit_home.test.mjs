@@ -160,7 +160,7 @@ test('the rendered home names the next step, links every item to a tab and escap
 
 test('Reports data is no longer overwritten by empty placeholders in the file snapshot', () => {
   const src=readFileSync(new URL('../supabase/functions/staff-workspace-v12/audit-actions.ts',import.meta.url),'utf8');
-  const lines=src.split('\n').filter(l=>l.includes('return {sasra,sacco,pack,populations,population_policy,projects,project,file'));
+  const lines=src.split('\n').filter(l=>l.includes('return {sasra,sacco,pack,assembly,populations,population_policy,projects,project,file'));
   assert.equal(lines.length,1);
   assert.doesNotMatch(lines[0],/reports:\[\]|report_status:\[\]|mgmt_points:\[\]/);
   assert.match(lines[0],/reports,report_status,mgmt_points/);

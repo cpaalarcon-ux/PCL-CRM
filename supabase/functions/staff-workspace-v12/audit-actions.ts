@@ -4,6 +4,7 @@ import {regulatoryAction,regulatoryRead} from './regulatory-actions.ts';
 import {sasraAction,sasraOverview,sasraFileOverview,sasraSignoffIssues} from './sasra-actions.ts';
 import {saccoStatementAction,saccoWorkspace} from './sacco-statement-actions.ts';
 import {packAction,packWorkspace,REPORT_KINDS as PACK_REPORT_KINDS} from './sacco-pack-actions.ts';
+import {assemblyAction,assemblyWorkspace} from './assembly-actions.ts';
 
 const MODEL_SOURCE_NAME='Model-Audit-File(1).zip';
 const MODEL_SOURCE_SHA='4428b990cb486a08c31ab9576da4979885fb05684e8bca52141b9730a9ffa33f';
@@ -72,6 +73,7 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
  { const sas=await sasraAction(tx,a,p);if(sas!==undefined)return sas; }
  { const sacc=await saccoStatementAction(tx,a,p);if(sacc!==undefined)return sacc; }
  { const pk=await packAction(tx,a,p);if(pk!==undefined)return pk; }
+ { const asm=await assemblyAction(tx,a,p);if(asm!==undefined)return asm; }
 
  if(p.action==='audit_workspace'){
   const projects=await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,p.service_code,p.status,c.company_name,c.year_end_month,c.year_end_day,f.firm_code,af.audit_file_id,af.file_status as audit_file_status,af.ends_on as audit_file_ends_on,af.file_type as audit_file_type
@@ -83,7 +85,7 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
    from erp_private.projects p join erp_private.clients c using(client_id) join erp_private.firms f on f.firm_id=p.handling_firm_id
    where p.project_id=${uuid(p.project_id)} and p.service_code like 'AUD-%' and erp_private.project_allowed(p.project_id)`);
   const file=(await tx`select * from erp_private.audit_files where project_id=${project.project_id}`)[0]||null;
-  if(!file)return {sacco:null,pack:null,populations:[],population_policy:null,projects,project,file:null,imports:[],tb_lines:[],workpapers:[],completion:[],materiality:[],risks:[],risk_links:[],planning_gate:null,adjustments:[],adjustment_lines:[],adjusted_tb:[],misstatements:null,tb_accounts:[],lead_schedule:[],reports:[],report_status:[],mgmt_points:[],analytics_runs:[],analytics_alerts:[],time_summary:null,my_tasks:[],billing_link:null,readiness:{file_ready:false}};
+  if(!file)return {sacco:null,pack:null,assembly:null,populations:[],population_policy:null,projects,project,file:null,imports:[],tb_lines:[],workpapers:[],completion:[],materiality:[],risks:[],risk_links:[],planning_gate:null,adjustments:[],adjustment_lines:[],adjusted_tb:[],misstatements:null,tb_accounts:[],lead_schedule:[],reports:[],report_status:[],mgmt_points:[],analytics_runs:[],analytics_alerts:[],time_summary:null,my_tasks:[],billing_link:null,readiness:{file_ready:false}};
   const imports=await tx`select * from erp_private.audit_tb_imports where audit_file_id=${file.audit_file_id} order by created_at desc`;
   const active=imports.filter((x:any)=>x.status!=='Superseded'),activeIds=active.map((x:any)=>x.audit_tb_import_id),activeImport=active[0]||null;
   const tb_lines=activeImport?await tx`select l.audit_tb_line_id,l.audit_tb_import_id,l.source_row,l.legacy_account_code,l.legacy_account_name,l.source_debit,l.source_credit,l.audit_account_id,l.audit_area,l.financial_statement_line,l.mapping_confidence,i.status as import_status,i.period_kind,i.revision as import_revision
@@ -119,9 +121,10 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
   const sasra=await sasraFileOverview(tx,file.audit_file_id);
   const sacco=await saccoWorkspace(tx,file.audit_file_id);
   const pack=await packWorkspace(tx,file.audit_file_id);
+  const assembly=await assemblyWorkspace(tx,file.audit_file_id);
   const populations=(await tx`select erp_private.audit_population_list(${file.audit_file_id}::uuid) s`)[0].s;
   const population_policy=(await tx`select erp_private.audit_population_policy() s`)[0].s;
-  return {sasra,sacco,pack,populations,population_policy,projects,project,file,imports,tb_lines,tb_summaries,active_import_id:activeImport?.audit_tb_import_id||null,workpapers,workpaper_versions,completion,templates,materiality,risks,risk_links,planning_gate,adjustments,adjustment_lines,adjusted_tb,misstatements,tb_accounts,lead_schedule,reports,report_status,mgmt_points,analytics_runs,analytics_alerts,time_summary,my_tasks,billing_link,readiness:{framework_approved:file.framework_status==='Approved',current_tb_balanced:!!currentSummary&&currentSummary.balanced,current_tb_confirmed:!!currentSummary,all_lines_mapped:!!currentSummary&&Number(currentSummary.total)>0&&Number(currentSummary.unmapped)===0,workpapers_present:workpapers.length>0,workpapers_resolved:workpapers.length>0&&workpapers.every((x:any)=>x.status==='Approved'),completion_total:checklist[0]?.total||0,completion_reviewed:checklist[0]?.reviewed||0}};
+  return {sasra,sacco,pack,assembly,populations,population_policy,projects,project,file,imports,tb_lines,tb_summaries,active_import_id:activeImport?.audit_tb_import_id||null,workpapers,workpaper_versions,completion,templates,materiality,risks,risk_links,planning_gate,adjustments,adjustment_lines,adjusted_tb,misstatements,tb_accounts,lead_schedule,reports,report_status,mgmt_points,analytics_runs,analytics_alerts,time_summary,my_tasks,billing_link,readiness:{framework_approved:file.framework_status==='Approved',current_tb_balanced:!!currentSummary&&currentSummary.balanced,current_tb_confirmed:!!currentSummary,all_lines_mapped:!!currentSummary&&Number(currentSummary.total)>0&&Number(currentSummary.unmapped)===0,workpapers_present:workpapers.length>0,workpapers_resolved:workpapers.length>0&&workpapers.every((x:any)=>x.status==='Approved'),completion_total:checklist[0]?.total||0,completion_reviewed:checklist[0]?.reviewed||0}};
  }
 
  if(p.action==='audit_tb_lines'){

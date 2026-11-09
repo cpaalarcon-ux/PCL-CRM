@@ -167,13 +167,13 @@ test('wiring: migration, server, snapshot, tabs, report view and cache busters',
  assert.match(mig,/CREATE TRIGGER sacco_report_guard BEFORE UPDATE OF status ON erp_private\.audit_reports/);assert.match(mig,/CREATE OR REPLACE FUNCTION erp_private\.sasra_signoff_issues/);
  assert.doesNotMatch(mig,/\b(\d{1,2}(\.\d+)?)\s*%\s*(of|capital)/i,'no regulatory percentage is written into the migration');
  const act=rd(fx+'audit-actions.ts');
- assert.match(act,/saccoStatementAction\(tx,a,p\)/);assert.match(act,/const sacco=await saccoWorkspace\(tx,file\.audit_file_id\)/);assert.match(act,/return \{sasra,sacco,pack,populations/);assert.match(act,/if\(!file\)return \{sacco:null,/);
+ assert.match(act,/saccoStatementAction\(tx,a,p\)/);assert.match(act,/const sacco=await saccoWorkspace\(tx,file\.audit_file_id\)/);assert.match(act,/return \{sasra,sacco,pack,assembly,populations/);assert.match(act,/if\(!file\)return \{sacco:null,/);
  const aud=rd('staff-audit.mjs');
  assert.match(aud,/import \{createSaccoUI\} from '\.\/staff-audit-sacco\.mjs\?v=/);assert.match(aud,/activeTab==='SACCO statements'\?saccoStatements\.panel\(file,s\)/);assert.match(aud,/await saccoStatements\.handle\(b,selectedFile\(\)\)/);
  const rep=rd('staff-audit-reports.mjs');assert.match(rep,/import \{saccoFsView\} from '\.\/staff-audit-sacco\.mjs\?v=/);assert.match(rep,/if\(b\.layout==='SACCO'\)return saccoFsView\(b\)/);
  const rel=JSON.parse(rd(fx+'release.json')),buster=rd('staff-audit.mjs').match(/staff-audit-sacco\.mjs\?v=([\w-]+)/)[1];
  for(const f of ['staff-pilot.html','staff-pilot.mjs','staff-improvements.mjs','staff-pilot-auth.js','staff-audit.mjs','staff-audit-reports.mjs'])assert.ok(!/20261109-pop-v1/.test(rd(f)),f+' still has the old cache buster');
- assert.match(buster,/^20261109-pack-v1$/);assert.match(rel.build||rel.label||JSON.stringify(rel),/2026-11-09\.1104/);
+ assert.match(buster,/^20261109-assembly-v1$/);assert.match(rel.build||rel.label||JSON.stringify(rel),/2026-11-09\.1105/);
 });
 
 test('the Reports tab shows a SACCO version with the SACCO layout and a general version with the general one',()=>{
