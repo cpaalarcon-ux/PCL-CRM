@@ -397,3 +397,11 @@ label.inline{display:inline-flex;align-items:center;gap:6px}
 .att-card{border:1px solid var(--line,#d9dee5);border-radius:10px;padding:.6rem .75rem;display:grid;gap:.15rem;background:var(--surface,#fff)}
 .att-card small{color:var(--muted,#5b6674);text-transform:capitalize}
 .att-card.att-alert{border-color:#c0392b;box-shadow:0 0 0 2px rgba(192,57,43,.18)}
+
+/* Client Register toolbar, pager and card figures (Managers and Partners) */
+.reg-bar{display:flex;flex-wrap:wrap;gap:.6rem 1rem;align-items:flex-end;margin:.5rem 0}
+.reg-bar label{display:flex;flex-direction:column;gap:.2rem;font-size:.8rem}
+.reg-bar select{min-width:9rem}
+.reg-pager{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:.6rem;margin:.8rem 0}
+.reg-pager .actions{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+.cc-figures{display:flex;flex-wrap:wrap;gap:.2rem .9rem;font-size:.8rem;margin-top:.3rem}
