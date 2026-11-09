@@ -67,7 +67,7 @@ async function addEvidence(tx:any,a:any,cid:string,p:any,rules:any[]){
   values(${cid},${type},${form},${tx.array(covered)},${doc},${ref},${evidenceDate},${expires},${location},${copy},${form==='physical'?a.staff_id:null},${form==='physical'?evidenceDate:null},${onlineSource},${onlineRef},${form==='online'?a.staff_id:null},${form==='online'?evidenceDate:null},${a.staff_id}) returning evidence_id,covered_items`);
 }
 export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
- if(!['compliance_save','compliance_evidence_save','compliance_evidence_remove','compliance_verify','edd_approve','owner_add','party_add','party_end','group_profile_save','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
+ if(!['compliance_save','compliance_evidence_save','compliance_evidence_remove','compliance_verify','edd_approve','owner_add','party_add','party_end','group_profile_save','licence_add','licence_end','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
  leader(a);
  if(p.action==='owner_add'){
   const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);const before=await kycSnapshot(tx,cid);
@@ -112,6 +112,34 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
    values(${cid},${status},${parentClient},${pname},${pcountry},${other},${text(p.note||'',2000,false)},${a.staff_id})
    on conflict(client_id) do update set group_status=excluded.group_status,ultimate_parent_client_id=excluded.ultimate_parent_client_id,ultimate_parent_name=excluded.ultimate_parent_name,ultimate_parent_country=excluded.ultimate_parent_country,operates_in_other_countries=excluded.operates_in_other_countries,note=excluded.note,assessed_by=excluded.assessed_by`;
   await kycChanged(tx,a,cid,before,['GROUP_PROFILE'],text(p.change_reason||'',2000,false)||'Group profile updated');return {ok:true};
+ }
+ // Step 4: licences and permits per client. The database repeats the rules below (see 20261109261000_client_licences.sql).
+ // A licence change does not send the KYC file back for re-verification: a yearly renewal should not undo a verified KYC file.
+ if(p.action==='licence_add'){
+  const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid} and deleted_at is null`);
+  const type=one(await tx`select type_code,authority from erp_private.licence_types where type_code=${text(p.licence_type,30)} and rule_status<>'Retired'`);
+  const number=text(p.licence_number,100);if(number.length<2)fail(400,'Enter the licence or permit number.');
+  const authority=text(p.issuing_authority||'',200,false)||String(type.authority||'');if(authority.length<2)fail(400,'Enter the issuing authority.');
+  const description=text(p.description||'',300,false)||'';if(type.type_code==='OTHER'&&description.length<3)fail(400,'Describe what this licence or permit is for.');
+  const issued=p.issued_on?date(p.issued_on):null,expires=date(p.expires_on);
+  if(!expires)fail(400,'Enter the expiry date.');if(issued&&issued>today())fail(400,'The issue date cannot be in the future.');if(issued&&expires<=issued)fail(400,'The expiry date must be after the issue date.');
+  const evidence=p.evidence_id?uuid(p.evidence_id):null;if(evidence)one(await tx`select evidence_id from erp_private.client_kyc_evidence where evidence_id=${evidence} and client_id=${cid} and deleted_at is null`);
+  const renews=p.renews_licence_id?uuid(p.renews_licence_id):null;
+  let old:any=null;
+  if(renews){old=one(await tx`select * from erp_private.client_licences where licence_id=${renews} and client_id=${cid} and ended_on is null for update`);
+   if(old.licence_type!==type.type_code)fail(400,'A renewal must be for the same type of licence.');if(String(expires)<=String(old.expires_on).slice(0,10))fail(400,'A renewal must expire after the licence it renews.');}
+  // The old entry is ended first, so a renewal can keep the same licence number (only one current entry per number is allowed).
+  if(old)await tx`update erp_private.client_licences set ended_on=${today()},end_reason=${'Renewed by licence '+number+', expiring '+expires},ended_by=${a.staff_id} where licence_id=${old.licence_id}`;
+  const [row]=await tx`insert into erp_private.client_licences(client_id,licence_type,licence_number,issuing_authority,description,issued_on,expires_on,evidence_id,renews_licence_id,created_by)
+   values(${cid},${type.type_code},${number},${authority},${description},${issued},${expires},${evidence},${renews},${a.staff_id}) returning licence_id`;
+  return {ok:true,licence_id:row.licence_id};
+ }
+ if(p.action==='licence_end'){
+  const row=one(await tx`select * from erp_private.client_licences where licence_id=${uuid(p.licence_id)} for update`);if(String(row.revision)!==revision(p.revision))fail(409,'This record changed. Refresh first.');
+  if(row.ended_on)fail(400,'This licence has already been ended.');
+  const reason=text(p.end_reason,1000);if(reason.length<10)fail(400,'Record why this licence is being ended: surrendered, cancelled, no longer needed or entered in error (at least 10 characters).');
+  await tx`update erp_private.client_licences set ended_on=${today()},end_reason=${reason},ended_by=${a.staff_id} where licence_id=${row.licence_id}`;
+  return {ok:true};
  }
  if(p.action==='compliance_evidence_save'||p.action==='compliance_evidence_remove'){
   const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);

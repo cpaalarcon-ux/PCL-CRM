@@ -1,6 +1,7 @@
 // Audit build S7: one home for every audit file.
 // The model below is pure: it reads the snapshot the server already sends and works out the five sections,
 // the traffic lights, the blocking sign-offs and the single next step. It never decides anything itself.
+import {auditFlagHtml} from './staff-licences.mjs?v=20261109-licences-v1';
 export const SECTIONS=[
  {key:'setup',title:'Set-up',tabs:['Materiality & risk','SASRA & quality']},
  {key:'managing',title:'Managing',tabs:['Time & billing','Issues']},
@@ -150,7 +151,7 @@ export function homeModel(s,me={}){
   const a=sasra.assembly;
   gates.push({key:'lock',label:'Lock',state:a?.deadline?'ok':'pending',text:a?.deadline?`${a.anchor==='YEAR_END'?'year end':'report date'} + ${a.days} days = ${a.deadline}`:`set the ${a?.anchor==='YEAR_END'?'year end':'report date'}`});
  }
- return {role,header:{status:st,framework:file.reporting_framework,sacco_type:sasra?.sacco_type||null,financial_year:sasra?.financial_year||null,gates},next,blockers:B,toolbar,sections,focus,signoff:signoffStrip(file,s)};
+ return {role,licences:s.licences||[],header:{status:st,framework:file.reporting_framework,sacco_type:sasra?.sacco_type||null,financial_year:sasra?.financial_year||null,gates},next,blockers:B,toolbar,sections,focus,signoff:signoffStrip(file,s)};
 }
 function planningGate(g){
  if(!g)return {materiality:false,risksOpen:0,fraud:false,uncovered:[],ready:false};
@@ -251,7 +252,7 @@ export function createHomeUI(ctx){
   return `<section class="card"><div class="section-head"><div><h3>Issues blocking sign-off</h3><p class="muted">Each line names what is missing and who normally acts. Open it to go straight to the work. The server still checks every gate when the file moves on.</p></div><span class="badge ${m.blockers.length?'warn':'good'}">${m.blockers.length}</span></div>${bySec.length?bySec.map(([sec,rows])=>`<h4>${esc(sec.title)}</h4><ul class="audit-blockers">${rows.map(b=>`<li><div><b>${esc(b.action)}</b>${b.owner?` <small>(${esc(b.owner)})</small>`:''}${b.detail?`<small class="block">${esc(b.detail)}</small>`:''}</div><button data-audit-tab="${esc(b.tab)}">Open</button></li>`).join('')}</ul>`).join(''):'<p class="muted">Nothing is blocking sign-off.</p>'}<p class="muted section-space">Changes since you last looked, and populations that have not been reconciled, are not tracked here yet.</p></section>`;
  }
  function homePanel(m){
-  return `${sectionCards(m)}<div class="two-col section-space"><section class="card"><h3>Blocking sign-off</h3>${blockerList(m,6)}</section>${focusCard(m,'')}</div><section class="card section-space"><h3>Sign-off</h3>${strip(m.signoff)}<p class="muted">Prepared, reviewed and Partner approval for the file. Each working paper shows its own prepared and reviewed marks. EQCR is shown only when it is required.</p></section>`;
+  return `${sectionCards(m)}<div class="two-col section-space"><section class="card"><h3>Blocking sign-off</h3>${blockerList(m,6)}</section>${focusCard(m,'')}</div>${auditFlagHtml(m.licences)}<section class="card section-space"><h3>Sign-off</h3>${strip(m.signoff)}<p class="muted">Prepared, reviewed and Partner approval for the file. Each working paper shows its own prepared and reviewed marks. EQCR is shown only when it is required.</p></section>`;
  }
  return {head,sectionBar,homePanel,issuesPanel,strip,paperStrip};
 }
