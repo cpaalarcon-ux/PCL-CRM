@@ -25,7 +25,7 @@ test('helpers: lock state, policy text, and the lists the screen and server shar
  assert.deepEqual(lockState(work()),{label:'Open for work',tone:''});assert.equal(lockState(sealed()).label,'Locked: assembly complete');assert.equal(lockState(open()).label,'Late change open');
  assert.equal(lockState(work({lock:{...work().lock,locked:true,locked_by:'Assembly deadline'}})).label,'Locked: deadline passed');assert.equal(lockState(null).label,'Unknown');
  assert.equal(policyValueText('AUDIT_FILE_LOCK_DAYS','60'),'60 days');assert.equal(policyValueText('AUDIT_DEADLINE_LOCK_ENFORCED','true'),'On');assert.equal(anchorText('YEAR_END'),'the financial year end');
- assert.deepEqual(MANUAL_KINDS,MILESTONE_KINDS);assert.equal(Object.keys(POLICY_LABELS).length,3);
+ assert.deepEqual(MANUAL_KINDS,MILESTONE_KINDS);assert.equal(Object.keys(POLICY_LABELS).length,4);
 });
 
 test('an unsealed file in completion: a Partner can record assembly; nobody else can; nothing says locked',()=>{
@@ -119,7 +119,7 @@ test('wiring: migration, server, snapshot, tabs and cache busters',()=>{
  assert.doesNotMatch(mig,/\b\d+\s+(years|months)\b/i,'no retention period in years or months');
  const act=rd(fx+'audit-actions.ts');
  assert.match(act,/assemblyAction\(tx,a,p\)/);assert.match(act,/assemblyWorkspace\(tx,file\.audit_file_id\)/);assert.match(act,/return \{sasra,sacco,pack,assembly,populations/);assert.match(act,/if\(!file\)return \{sacco:null,pack:null,assembly:null/);
- assert.match(rd(fx+'sasra-actions.ts'),/'AUDIT_DEADLINE_LOCK_ENFORCED'\]/);
+ assert.match(rd(fx+'sasra-actions.ts'),/'AUDIT_DEADLINE_LOCK_ENFORCED'(,'AUDIT_LOCK_EXTENSION_ALLOWED')?\]/);
  const aud=rd('staff-audit.mjs');
  assert.match(aud,/import \{createAssemblyUI\} from '\.\/staff-audit-assembly\.mjs\?v=/);assert.match(aud,/activeTab==='Assembly & milestones'\?assembly\.panel\(file,s\)/);assert.match(aud,/await assembly\.handle\(b,selectedFile\(\)\)/);
  const busters=new Set([...aud.matchAll(/staff-audit-(?:pack|sacco|assembly)\.mjs\?v=([\w-]+)/g)].map(x=>x[1]));assert.equal(busters.size,1,[...busters].join());
