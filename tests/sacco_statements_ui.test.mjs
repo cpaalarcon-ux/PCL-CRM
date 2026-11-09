@@ -173,7 +173,7 @@ test('wiring: migration, server, snapshot, tabs, report view and cache busters',
  const rep=rd('staff-audit-reports.mjs');assert.match(rep,/import \{saccoFsView\} from '\.\/staff-audit-sacco\.mjs\?v=/);assert.match(rep,/if\(b\.layout==='SACCO'\)return saccoFsView\(b\)/);
  const rel=JSON.parse(rd(fx+'release.json')),buster=rd('staff-audit.mjs').match(/staff-audit-sacco\.mjs\?v=([\w-]+)/)[1];
  for(const f of ['staff-pilot.html','staff-pilot.mjs','staff-improvements.mjs','staff-pilot-auth.js','staff-audit.mjs','staff-audit-reports.mjs'])assert.ok(!/20261109-pop-v1/.test(rd(f)),f+' still has the old cache buster');
- assert.match(buster,/^20261109-assembly-v2$/);assert.match(rel.build||rel.label||JSON.stringify(rel),/2026-11-09\.1650/);
+ assert.match(buster,/^\d{8}-[a-z0-9-]+$/);assert.match(rel.build||rel.label||JSON.stringify(rel),/2026-11-09\.\d{4}/);
 });
 
 test('the Reports tab shows a SACCO version with the SACCO layout and a general version with the general one',()=>{

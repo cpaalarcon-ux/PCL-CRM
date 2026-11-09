@@ -68,9 +68,13 @@ test('Step 1: server-only rules are also enforced by the database',async t=>{
  // ---- 5. Accounting family locks once records exist ------------------------------------------------------------------------------------------
  const C2=id();
  await tx`insert into erp_private.clients(client_id,company_name,kra_pin,primary_sector,branch_location,client_category,legal_structure,legal_subtype,legal_entity_type) values(${C2},'UAT Fictional Family Ltd','B123456789Z','Energy','Nairobi','Corporate','Limited Company','Private Limited Company','Limited company')`;
+ await db.exec('alter table erp_private.clients disable trigger zz_family_follows_structure');// this test is about the records lock, not about the family following the structure (its own test)
  await tx`update erp_private.clients set legal_entity_type='Partnership' where client_id=${C2}`;
+ await db.exec('alter table erp_private.clients enable trigger zz_family_follows_structure');
+ await db.exec('alter table erp_private.clients disable trigger zz_family_follows_structure');
  await assert.rejects(()=>tx`update erp_private.clients set legal_entity_type='Sole proprietor' where client_id=${C}`,/accounting family cannot change/,'tax cases exist for this client');
  await tx`update erp_private.clients set legal_entity_type='Limited company' where client_id=${C}`;
+ await db.exec('alter table erp_private.clients enable trigger zz_family_follows_structure');
 
  // ---- 6. Legal structure revision needs a Manager or Partner and a reason --------------------------------------------------------------------
  const revise=(role,note,at)=>asActor(role,`update erp_private.clients set legal_structure='Partnership',legal_subtype='General Partnership',legal_structure_note=$2,legal_structure_changed_at=$3 where client_id=$1`,[C2,note,at]);
