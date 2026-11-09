@@ -128,7 +128,7 @@ test('sections map tabs, and the SASRA tab shows only on a SACCO file', () => {
   assert.deepEqual(sectionTabs('setup',false),['Materiality & risk']);
   assert.deepEqual(sectionTabs('setup',true),['Materiality & risk','SASRA & quality']);
   const all=SECTIONS.flatMap(s=>s.tabs);
-  for(const t of ['Materiality & risk','Trial balance','Adjustments','Lead schedules','Populations','SACCO statements','Analytics','Reports','Time & billing','Working papers','Completion','Template register','SASRA & quality'])assert.ok(all.includes(t),t);
+  for(const t of ['Materiality & risk','Trial balance','Adjustments','Lead schedules','Populations','SACCO statements','SACCO audit pack','Analytics','Reports','Time & billing','Working papers','Completion','Template register','SASRA & quality'])assert.ok(all.includes(t),t);
 });
 
 test('sign-off strips: file level and per paper', () => {
@@ -160,7 +160,7 @@ test('the rendered home names the next step, links every item to a tab and escap
 
 test('Reports data is no longer overwritten by empty placeholders in the file snapshot', () => {
   const src=readFileSync(new URL('../supabase/functions/staff-workspace-v12/audit-actions.ts',import.meta.url),'utf8');
-  const lines=src.split('\n').filter(l=>l.includes('return {sasra,sacco,populations,population_policy,projects,project,file'));
+  const lines=src.split('\n').filter(l=>l.includes('return {sasra,sacco,pack,populations,population_policy,projects,project,file'));
   assert.equal(lines.length,1);
   assert.doesNotMatch(lines[0],/reports:\[\]|report_status:\[\]|mgmt_points:\[\]/);
   assert.match(lines[0],/reports,report_status,mgmt_points/);
