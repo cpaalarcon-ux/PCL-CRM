@@ -6,7 +6,7 @@ export const SECTIONS=[
  {key:'managing',title:'Managing',tabs:['Time & billing','Issues']},
  {key:'papers',title:'Working papers',tabs:['Trial balance','Adjustments','Lead schedules','Populations','SACCO statements','SACCO audit pack','Analytics','Working papers']},
  {key:'completion',title:'Completion',tabs:['Reports','Completion']},
- {key:'archive',title:'Archive & templates',tabs:['Template register']}
+ {key:'archive',title:'Archive & templates',tabs:['Assembly & milestones','Template register']}
 ];
 const n=v=>Number(v||0);
 export function sectionOf(tab){return SECTIONS.find(x=>x.tabs.includes(tab))?.key||'home';}
@@ -78,6 +78,10 @@ export function homeModel(s,me={}){
  const st=file.file_status;
  items.archive.push(it('approved','Audit file approved by a Partner',['Approved','Completion','Archived'].includes(st)?'done':'todo','','Overview','Partner'));
  items.archive.push(it('completed','Audit file completed',['Completion','Archived'].includes(st)?'done':'todo','','Overview','Partner'));
+ {
+  const asm=s.assembly||null,openAm=(asm?.amendments||[]).find(x=>x.status==='Open');
+  if(asm)items.archive.push(it('assembly','Assembly recorded as complete by a Partner',asm.lock?.sealed?'done':'todo',asm.lock?.sealed?(openAm?'A late change is open':''):(['Completion','Archived'].includes(st)?'':'After the file is completed'),'Assembly & milestones','Partner'));
+ }
  items.archive.push(it('archived','Audit file archived',st==='Archived'?'done':'todo','','Overview','Partner'));
 
  const sections=SECTIONS.map(sec=>{
@@ -88,6 +92,10 @@ export function homeModel(s,me={}){
 
  // Blocking sign-offs, in the order the work normally happens.
  const B=[];const block=(kind,section,action,detail,tab,owner)=>B.push({kind,section,action,detail:detail||'',tab,owner:owner||''});
+ {
+  const am=(s.assembly?.amendments||[]).find(x=>x.status==='Open');
+  if(am)block('amendment','archive','Review and close the late change',`Opened by ${am.opened_by_name}: ${am.reason}`,'Assembly & milestones','Manager');
+ }
  if(!read.framework_approved)block('framework','setup','Confirm the reporting framework','Staff cannot import or confirm a trial balance until it is confirmed.','Overview','Partner');
  if(!mat)block('materiality','setup','Approve materiality','Calculate it, then a Partner who did not prepare it approves it.','Materiality & risk','Partner');
  if(!gate.ready&&mat)block('risks','setup',gate.fraud?'Link every open risk to a working paper':'Record risks, including a fraud risk',gate.uncovered.length?`${gate.uncovered.length} open risk(s) have no working paper.`:'','Materiality & risk','');
@@ -118,8 +126,9 @@ export function homeModel(s,me={}){
  staleReports.forEach(r=>block('report','completion',`Re-approve the ${String(r.kind).toLowerCase()}`,'The file changed after it was approved.','Reports','Partner'));
  if(openPoints.length)block('points','managing','Decide every management point',`${openPoints.length} open.`,'Reports','Manager');
  eqIssues.forEach(x=>block('eqcr','completion','Get EQCR Partner approval',x,'SASRA & quality','Partner'));
- const stageNext={Draft:'Mark the file Prepared',Prepared:'Send the file for review','In Review':'Partner to approve the file',Returned:'Correct the file and send it for review again',Approved:'Partner to complete the file',Completion:'Partner to archive the file'}[st];
- const stageStep=!B.length&&stageNext?{kind:'stage',section:'archive',action:stageNext,detail:'Nothing is blocking this file.',tab:'Overview',owner:['Draft','Prepared','Returned'].includes(st)?'Manager':'Partner'}:null;
+ const asmS=s.assembly||null;
+ const stageNext={Draft:'Mark the file Prepared',Prepared:'Send the file for review','In Review':'Partner to approve the file',Returned:'Correct the file and send it for review again',Approved:'Partner to complete the file',Completion:asmS&&!asmS.lock?.sealed?'Partner to record that assembly is complete':'Partner to archive the file'}[st];
+ const stageStep=!B.length&&stageNext?{kind:'stage',section:'archive',action:stageNext,detail:'Nothing is blocking this file.',tab:st==='Completion'&&asmS&&!asmS.lock?.sealed?'Assembly & milestones':'Overview',owner:['Draft','Prepared','Returned'].includes(st)?'Manager':'Partner'}:null;
  const next=B[0]||stageStep||null;
 
  // Role-aware view: what this person should look at first.
@@ -169,6 +178,8 @@ function roleFocus({role,myId,s,wps,adj,comp,reports,points,gate,mat,file,unack,
   (s.pack?.matters||[]).filter(m=>m.status==='Active'&&(!m.decision||m.decision_stale)).forEach(m=>add(`Decide whether ${m.matter_ref} is a key audit matter`,'SACCO audit pack'));
   if(s.sacco?.layout?.status==='Draft'||s.sacco?.draft)add('Approve the SACCO statement layout','SACCO statements');
   if((s.sacco?.accounts||[]).some(a=>a.map_status==='Proposed'))add('Approve the proposed account mappings','SACCO statements');
+  if(file.file_status==='Completion'&&s.assembly&&!s.assembly.lock?.sealed)add('Record that assembly is complete','Assembly & milestones');
+  { const am=(s.assembly?.amendments||[]).find(x=>x.status==='Open');if(am&&am.opened_by!==myId)add('Review and close the late change','Assembly & milestones'); }
   if(file.file_status==='In Review')add('Approve or return the audit file','Overview');
   return {title:'Waiting for you',empty:'No Partner decision is waiting.',rows};
  }
@@ -180,6 +191,7 @@ function roleFocus({role,myId,s,wps,adj,comp,reports,points,gate,mat,file,unack,
  (s.sacco?.preview?.checks||[]).filter(c=>c.status==='Prepared'&&c.prepared_by!==myId).forEach(c=>add(`Review section 10: ${c.caption}`,'SACCO statements'));
  (s.pack?.file_steps||[]).filter(x=>x.status==='Prepared'&&x.prepared_by!==myId).forEach(x=>add(`Review programme step ${x.step_code}`,'SACCO audit pack'));
  (s.pack?.compliance||[]).filter(x=>x.status==='Prepared'&&x.prepared_by!==myId).forEach(x=>add(`Review compliance item: ${x.title}`,'SACCO audit pack'));
+ { const am=(s.assembly?.amendments||[]).find(x=>x.status==='Open');if(am&&am.opened_by!==myId)add('Review and close the late change','Assembly & milestones'); }
  reports.filter(r=>r.status==='Submitted').forEach(r=>add(`Review the ${String(r.kind).toLowerCase()} (version ${r.version_number})`,'Reports'));
  points.filter(p=>p.status==='Open').forEach(p=>add(`Decide management point ${p.point_ref||''}`.trim(),'Reports'));
  return {title:'Review queue',empty:'Nothing is waiting for your review.',rows};

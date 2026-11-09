@@ -145,7 +145,7 @@ test('wiring: migration, server, snapshot, tabs, report views and cache busters'
  assert.match(mig,/CREATE TRIGGER pack_report_guard BEFORE UPDATE OF status ON erp_private\.audit_reports/);
  assert.doesNotMatch(mig,/\b(\d{1,2}(\.\d+)?)\s*%\s*(of|capital)/i,'no regulatory percentage is written into the migration');
  const act=rd(fx+'audit-actions.ts');
- assert.match(act,/packAction\(tx,a,p\)/);assert.match(act,/packWorkspace\(tx,file\.audit_file_id\)/);assert.match(act,/return \{sasra,sacco,pack,populations/);assert.match(act,/if\(!file\)return \{sacco:null,pack:null/);
+ assert.match(act,/packAction\(tx,a,p\)/);assert.match(act,/packWorkspace\(tx,file\.audit_file_id\)/);assert.match(act,/return \{sasra,sacco,pack,assembly,populations/);assert.match(act,/if\(!file\)return \{sacco:null,pack:null/);
  assert.match(rd(fx+'sasra-actions.ts'),/SACCO_DT_REQUIRES_STATUTORY_REPORT/);
  const aud=rd('staff-audit.mjs');
  assert.match(aud,/import \{createPackUI\} from '\.\/staff-audit-pack\.mjs\?v=/);assert.match(aud,/activeTab==='SACCO audit pack'\?auditPack\.panel\(file,s\)/);assert.match(aud,/await auditPack\.handle\(b,selectedFile\(\)\)/);
