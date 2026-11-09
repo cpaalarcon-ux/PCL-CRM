@@ -4,13 +4,13 @@
 export const SECTIONS=[
  {key:'setup',title:'Set-up',tabs:['Materiality & risk','SASRA & quality']},
  {key:'managing',title:'Managing',tabs:['Time & billing','Issues']},
- {key:'papers',title:'Working papers',tabs:['Trial balance','Adjustments','Lead schedules','Populations','SACCO statements','Analytics','Working papers']},
+ {key:'papers',title:'Working papers',tabs:['Trial balance','Adjustments','Lead schedules','Populations','SACCO statements','SACCO audit pack','Analytics','Working papers']},
  {key:'completion',title:'Completion',tabs:['Reports','Completion']},
  {key:'archive',title:'Archive & templates',tabs:['Template register']}
 ];
 const n=v=>Number(v||0);
 export function sectionOf(tab){return SECTIONS.find(x=>x.tabs.includes(tab))?.key||'home';}
-export function sectionTabs(key,hasSasra){const sec=SECTIONS.find(x=>x.key===key);return sec?sec.tabs.filter(t=>(t!=='SASRA & quality'&&t!=='SACCO statements')||hasSasra):[];}
+export function sectionTabs(key,hasSasra){const sec=SECTIONS.find(x=>x.key===key);return sec?sec.tabs.filter(t=>(t!=='SASRA & quality'&&t!=='SACCO statements'&&t!=='SACCO audit pack')||hasSasra):[];}
 // Items: state is done | todo | blocked | na. "blocked" means a concrete problem, not just work still to do.
 export function homeModel(s,me={}){
  const file=s?.file;
@@ -35,7 +35,8 @@ export function homeModel(s,me={}){
  const eq=sasra?.eqcr||null,eqRequired=!!eq?.required,eqApproved=!!eq?.approved;
  const ratios=sasra?.ratios||[],breaches=ratios.filter(r=>r.state==='Breach'),unack=breaches.filter(r=>!r.acknowledged);
  const sIssues=(sasra?.issues||[]).map(String);
- const eligIssues=sIssues.filter(x=>/eligibility/i.test(x)),eqIssues=sIssues.filter(x=>/EQCR/.test(x)),stmtIssues=sIssues.filter(x=>/SACCO statement layout|Section 10 item/.test(x)),ratioIssues=sIssues.filter(x=>!eligIssues.includes(x)&&!eqIssues.includes(x)&&!stmtIssues.includes(x));
+ const eligIssues=sIssues.filter(x=>/eligibility/i.test(x)),eqIssues=sIssues.filter(x=>/EQCR/.test(x)),stmtIssues=sIssues.filter(x=>/SACCO statement layout|Section 10 item|audit programme|programme step|compliance register|compliance item|^Matter TM-/.test(x)),ratioIssues=sIssues.filter(x=>!eligIssues.includes(x)&&!eqIssues.includes(x)&&!stmtIssues.includes(x));
+ const pack=s.pack||null,packSteps=pack?.file_steps||[],packStepsOpen=packSteps.filter(x=>x.required&&x.status!=='Reviewed'),packComp=pack?.compliance||[],packCompOpen=packComp.filter(x=>x.status!=='Reviewed'),packMatters=(pack?.matters||[]).filter(m=>m.status==='Active'),packUndecided=packMatters.filter(m=>!m.decision||m.decision_stale),packProgOk=(pack?.programmes||[]).some(x=>x.status==='Approved'),packItemsOk=(pack?.compliance_items||[]).some(x=>x.status==='Approved');
  const sacco=s.sacco||null,saccoBlock=(sacco?.preview?.blocking||[]).map(String),saccoChecks=sacco?.preview?.checks||[],saccoUnreviewed=saccoChecks.filter(c=>c.status!=='Reviewed');
  const it=(key,label,state,detail,tab,owner)=>({key,label,state,detail:detail||'',tab,owner:owner||''});
 
@@ -59,12 +60,17 @@ export function homeModel(s,me={}){
  if(activeLeads.length)items.papers.push(it('leads','Lead schedules made and tying to the adjusted trial balance',missingLeads.length||badTie.length?(badTie.length?'blocked':'todo'):'done',missingLeads.length?`${missingLeads.length} area(s) without a lead schedule`:badTie.length?`${badTie.length} schedule(s) do not tie`:'','Lead schedules',''));
  if(pops.length||requiredAreas.length)items.papers.push(it('populations','Populations approved and reconciled to the trial balance',popBad.length?'blocked':(popOpen.length||popMissing.length)?'todo':'done',popBad.length?popProblem(popBad[0]):popMissing.length?`Required but not approved: ${popMissing.join(', ')}`:popOpen.length?`${popOpen.length} not yet approved`:`${pops.length} approved`,'Populations',''));
  if(sacco)items.papers.push(it('sacco','SACCO statements ready: layout approved, accounts mapped, equity reconciled',saccoBlock.length?'todo':'done',saccoBlock[0]||'','SACCO statements','Partner'));
+ if(pack){
+  items.papers.push(it('programme','Audit programme approved, adopted and every required step reviewed',!packProgOk||!packSteps.length||packStepsOpen.length?'todo':'done',!packProgOk?'No programme approved by a Partner yet':!packSteps.length?'Not adopted on this file':packStepsOpen.length?`${packStepsOpen.length} required step(s) not reviewed`:'','SACCO audit pack','Manager'));
+  items.papers.push(it('compliance','Compliance register assessed and reviewed',!packItemsOk||!packComp.length||packCompOpen.length?'todo':'done',!packItemsOk?'No item approved by a Partner yet':!packComp.length?'Not started on this file':packCompOpen.length?`${packCompOpen.length} of ${packComp.length} not reviewed`:'','SACCO audit pack','Manager'));
+ }
  items.papers.push(it('analytics','Analytics run and every alert cleared',openAlerts.length?(highAlerts.length?'blocked':'todo'):runs.length?'done':'todo',openAlerts.length?`${openAlerts.length} alert(s) open${highAlerts.length?`, ${highAlerts.length} high`:''}`:runs.length?'':'Not run yet','Analytics',''));
 
  items.completion.push(it('checklist','Completion checklist independently reviewed',read.completion_total>0&&read.completion_total===read.completion_reviewed?'done':'todo',comp.length?`${compDone} of ${comp.length} reviewed`:'','Completion','Manager'));
  if(rstat.length)items.completion.push(it('reports','Required reports approved and up to date',staleReports.length?'blocked':okReports.length===reqReports.length?'done':'todo',staleReports.length?`${staleReports.length} changed since approval`:`${okReports.length} of ${reqReports.length} approved`,'Reports','Partner'));
  if(exceeds)items.completion.push(it('misstatement','Partner conclusion on unadjusted misstatements',concluded?'done':'blocked',concluded?'':'Unadjusted misstatements exceed overall materiality','Adjustments','Partner'));
  if(sacco&&saccoChecks.length)items.completion.push(it('sec10','Section 10 matters prepared and reviewed',saccoUnreviewed.length?'todo':'done',`${saccoChecks.length-saccoUnreviewed.length} of ${saccoChecks.length} reviewed`,'SACCO statements','Manager'));
+ if(pack&&packMatters.length)items.completion.push(it('matters','Matters communicated have a Partner key audit matter decision',packUndecided.length?'todo':'done',`${packMatters.length-packUndecided.length} of ${packMatters.length} decided`,'SACCO audit pack','Partner'));
  if(sasra){
   items.completion.push(it('ratios','SASRA ratios entered and any breach acknowledged',!ratios.length||ratioIssues.length?(unack.length?'blocked':'todo'):'done',unack.length?`${unack.length} breach(es) not acknowledged`:!ratios.length?'No ratio confirmed yet':'','SASRA & quality','Partner'));
   if(eqRequired)items.completion.push(it('eqcr','EQCR Partner approval',eqApproved?'done':'todo',eqApproved?'':'Required before final sign-off','SASRA & quality','Partner'));
@@ -92,6 +98,12 @@ export function homeModel(s,me={}){
  if(missingLeads.length)block('leads','papers','Create a lead schedule for each trial-balance area',missingLeads.map(l=>l.audit_area).join(', '),'Lead schedules','');
  if(badTie.length)block('tie','papers','Make the lead schedules tie to the adjusted trial balance',badTie.map(l=>l.audit_area).join(', '),'Lead schedules','');
  saccoBlock.forEach(x=>block('sacco','papers',/draft/.test(x)?'Approve the SACCO statement layout':/Partner approval/.test(x)?'Approve the proposed account mappings':'Fix the SACCO statements',x,'SACCO statements',/draft|Partner approval/.test(x)?'Partner':''));
+ if(pack&&!packProgOk)block('programme','papers','Approve the SACCO audit programme','A Partner has not approved a version yet.','SACCO audit pack','Partner');
+ if(pack&&packProgOk&&!packSteps.length)block('programme','papers','Adopt the audit programme on this file','The programme steps are not on this file yet.','SACCO audit pack','');
+ if(pack&&packSteps.length&&packStepsOpen.length)block('programme','papers','Perform and review the programme steps',`${packStepsOpen.length} required step(s) not reviewed.`,'SACCO audit pack','');
+ if(pack&&!packItemsOk)block('compliance','papers','Approve compliance register items','A Partner has not approved any item yet.','SACCO audit pack','Partner');
+ if(pack&&packItemsOk&&!packComp.length)block('compliance','papers','Start the compliance register on this file','The approved items are not on this file yet.','SACCO audit pack','');
+ if(pack&&packComp.length&&packCompOpen.length)block('compliance','papers','Assess and review the compliance items',`${packCompOpen.length} of ${packComp.length} not reviewed.`,'SACCO audit pack','');
  popBad.forEach(x=>block('population','papers',`Reconcile population ${x.pop_ref}`,popProblem(x)+'.','Populations',''));
  pops.filter(x=>['Draft','Returned'].includes(x.status)&&!popProblem(x)).forEach(x=>block('population','papers',`Submit or withdraw population ${x.pop_ref}`,`${x.audit_area} · ${x.status.toLowerCase()}.`,'Populations',''));
  pops.filter(x=>x.status==='Submitted'&&!popProblem(x)).forEach(x=>block('population','papers',`Review population ${x.pop_ref}`,`${x.audit_area} is waiting for a Manager or Partner.`,'Populations','Manager'));
@@ -99,6 +111,7 @@ export function homeModel(s,me={}){
  if(openAlerts.length)block('analytics','papers','Clear every analytics alert with a note',`${openAlerts.length} open${highAlerts.length?`, ${highAlerts.length} high`:''}.`,'Analytics','');
  if(exceeds&&!concluded)block('misstatement','completion','Record the conclusion on unadjusted misstatements','They exceed overall materiality.','Adjustments','Partner');
  if(sacco&&saccoUnreviewed.length)block('sacco10','completion','Prepare and review the section 10 matters',`${saccoUnreviewed.length} of ${saccoChecks.length} not yet reviewed.`,'SACCO statements','Manager');
+ if(pack&&packUndecided.length)block('matters','completion','Decide which matters are key audit matters',`${packUndecided.length} of ${packMatters.length} matter(s) have no current decision.`,'SACCO audit pack','Partner');
  ratioIssues.forEach(x=>block('ratio','completion',/not acknowledged/.test(x)?'Acknowledge the regulatory breach':'Complete the SASRA ratios',x,'SASRA & quality','Partner'));
  if(comp.length&&read.completion_total!==read.completion_reviewed)block('checklist','completion','Review every completion control',`${comp.length-compDone} not yet reviewed.`,'Completion','Manager');
  missingReports.forEach(r=>block('report','completion',`Approve the ${String(r.kind).toLowerCase()}`,'Not approved yet.','Reports','Partner'));
@@ -151,6 +164,9 @@ function roleFocus({role,myId,s,wps,adj,comp,reports,points,gate,mat,file,unack,
   if(exceeds&&!concluded)add('Record the conclusion on unadjusted misstatements','Adjustments');
   reports.filter(r=>r.status==='Submitted').forEach(r=>add(`Review the ${String(r.kind).toLowerCase()} (version ${r.version_number})`,'Reports'));
   adj.filter(a=>a.status==='Submitted'&&a.prepared_by!==myId).forEach(a=>add(`Review audit entry ${a.adj_seq??''}`,'Adjustments'));
+  if((s.pack?.programmes||[]).some(x=>x.status==='Draft'))add('Approve the SACCO audit programme','SACCO audit pack');
+  if((s.pack?.compliance_items||[]).some(x=>x.status==='Proposed'))add('Approve proposed compliance items','SACCO audit pack');
+  (s.pack?.matters||[]).filter(m=>m.status==='Active'&&(!m.decision||m.decision_stale)).forEach(m=>add(`Decide whether ${m.matter_ref} is a key audit matter`,'SACCO audit pack'));
   if(s.sacco?.layout?.status==='Draft'||s.sacco?.draft)add('Approve the SACCO statement layout','SACCO statements');
   if((s.sacco?.accounts||[]).some(a=>a.map_status==='Proposed'))add('Approve the proposed account mappings','SACCO statements');
   if(file.file_status==='In Review')add('Approve or return the audit file','Overview');
@@ -162,6 +178,8 @@ function roleFocus({role,myId,s,wps,adj,comp,reports,points,gate,mat,file,unack,
  pops.filter(x=>x.status==='Submitted'&&x.prepared_by!==myId).forEach(x=>add(`Review population ${x.pop_ref} (${x.audit_area})`,'Populations'));
  comp.filter(c=>c.status==='Prepared'&&c.prepared_by!==myId).forEach(c=>add(`Review control: ${c.label}`,'Completion'));
  (s.sacco?.preview?.checks||[]).filter(c=>c.status==='Prepared'&&c.prepared_by!==myId).forEach(c=>add(`Review section 10: ${c.caption}`,'SACCO statements'));
+ (s.pack?.file_steps||[]).filter(x=>x.status==='Prepared'&&x.prepared_by!==myId).forEach(x=>add(`Review programme step ${x.step_code}`,'SACCO audit pack'));
+ (s.pack?.compliance||[]).filter(x=>x.status==='Prepared'&&x.prepared_by!==myId).forEach(x=>add(`Review compliance item: ${x.title}`,'SACCO audit pack'));
  reports.filter(r=>r.status==='Submitted').forEach(r=>add(`Review the ${String(r.kind).toLowerCase()} (version ${r.version_number})`,'Reports'));
  points.filter(p=>p.status==='Open').forEach(p=>add(`Decide management point ${p.point_ref||''}`.trim(),'Reports'));
  return {title:'Review queue',empty:'Nothing is waiting for your review.',rows};

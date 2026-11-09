@@ -1,8 +1,9 @@
 // Audit build D: draft financial statements, management letter, representation letter and completion memorandum.
 // Reports are built on the server from the adjusted trial balance and the file's records. Each is a saved version with a different reviewer.
-import {saccoFsView} from './staff-audit-sacco.mjs?v=20261109-sacco-v1';
+import {saccoFsView} from './staff-audit-sacco.mjs?v=20261109-pack-v1';
+import {PACK_KINDS,statutoryView,kamView} from './staff-audit-pack.mjs?v=20261109-pack-v1';
 export const KINDS=['Financial statements','Management letter','Representation letter','Completion memorandum'];
-const PARTNER_ONLY=['Financial statements','Representation letter'];
+const PARTNER_ONLY=['Financial statements','Representation letter',...PACK_KINDS];
 const MAKERS=['ASSISTANT','SUPERVISOR','MANAGER','PARTNER'];
 export const reportTitle=r=>`${r.kind} · version ${r.version_number}`;
 export function createReportsUI(ctx){
@@ -42,7 +43,7 @@ export function createReportsUI(ctx){
   ${(b.completion_items||[]).length?`<ul>${b.completion_items.map(i=>`<li>${esc(i.label)} · ${esc(i.status)}${i.note?' · '+esc(i.note):''}</li>`).join('')}</ul>`:''}
   ${b.overall_conclusion?`<p><b>Overall conclusion:</b> ${esc(b.overall_conclusion)}</p>`:'<p class="muted">No overall conclusion recorded yet.</p>'}`;
  }
- const VIEW={'Financial statements':fsView,'Management letter':mlView,'Representation letter':rlView,'Completion memorandum':cmView};
+ const VIEW={'Financial statements':fsView,'Management letter':mlView,'Representation letter':rlView,'Completion memorandum':cmView,'Statutory report to regulator':statutoryView,'Key audit matters':kamView};
 
  function panel(file,s){
   const role=staff().category_code,me=staff().staff_id,canMake=MAKERS.includes(role)&&open(file),leader=['MANAGER','PARTNER'].includes(role)&&open(file);
@@ -60,8 +61,8 @@ export function createReportsUI(ctx){
    <div class="actions">${actions}</div></article>`;
   };
   const pointRow=p=>`<tr><td><b>${esc(p.point_ref)}</b><small>${esc(p.source_kind)}</small></td><td>${esc(p.title)}<small>${esc(p.observation)}</small>${p.management_response?`<small>Management: ${esc(p.management_response)}</small>`:''}</td><td>${badge(p.rating,p.rating==='High'?'warn':'')}</td><td>${badge(p.status,p.status==='Included'?'ok':'')}${p.decision_note?`<small>${esc(p.decision_note)}</small>`:''}</td><td>${canMake?`<button data-audit-point-edit="${esc(p.point_id)}">Edit</button>`:''}${leader?`<button data-audit-point-decide="${esc(p.point_id)}">Decide</button>`:''}</td></tr>`;
-  return `<section class="card"><div class="section-head"><div><h3>Reports</h3><p class="muted">Built from the adjusted trial balance and this file's records. Each version is saved and cannot be edited. The financial statements and representation letter are approved by a Partner; the management letter and completion memorandum by a Manager or Partner. The file cannot be approved until the required reports are approved and still current.</p></div></div></section>
-  ${KINDS.map(kindCard).join('')}
+  return `<section class="card"><div class="section-head"><div><h3>Reports</h3><p class="muted">Built from the adjusted trial balance and this file's records. Each version is saved and cannot be edited. The financial statements and representation letter (and, for a SACCO, the statutory report to the regulator and the key audit matters report) are approved by a Partner; the management letter and completion memorandum by a Manager or Partner. The file cannot be approved until the required reports are approved and still current.</p></div></div></section>
+  ${KINDS.map(kindCard).join('')}${s?.pack?PACK_KINDS.map(kindCard).join(''):''}
   <section class="card section-space"><div class="section-head"><div><h3>Management letter points</h3><p class="muted">Suggested from adjustments, uncorrected misstatements, reconciling differences and deviations. A Manager or Partner includes or drops each one.</p></div><div class="actions">${canMake?'<button data-audit-points-suggest>Suggest points</button><button data-audit-point-new>Add a point</button>':''}</div></div>
    ${points.length?`<div class="scroll"><table><thead><tr><th>Ref</th><th>Matter</th><th>Rating</th><th>Status</th><th></th></tr></thead><tbody>${points.map(pointRow).join('')}</tbody></table></div>`:'<p class="muted">No points yet.</p>'}</section>`;
  }
@@ -78,6 +79,7 @@ export function createReportsUI(ctx){
    const kind=b.dataset.auditReportDraft;
    if(kind==='Representation letter'){modal('Draft the representation letter',form(field('signatory_name','Name of the person signing for management *','','text','required maxlength="120"')+field('signatory_title','Their title *','','text','required maxlength="120"')+field('letter_date','Date of the letter','','date')+field('addressee','Addressed to (default: the firm)','','text','maxlength="200"'),'Draft letter'),f=>request({action:'audit_report_draft',audit_file_id:file.audit_file_id,kind,...Object.fromEntries(f)}),()=>ctx.refresh(),{refreshWorkspace:false});return true;}
    if(kind==='Completion memorandum'){modal('Draft the completion memorandum',form(textArea('overall_conclusion','Overall conclusion (optional; the Partner can complete it later)','',3000,false),'Draft memorandum'),f=>request({action:'audit_report_draft',audit_file_id:file.audit_file_id,kind,overall_conclusion:f.get('overall_conclusion')}),()=>ctx.refresh(),{refreshWorkspace:false});return true;}
+   if(kind==='Statutory report to regulator'){modal('Draft the statutory report to the regulator',form(field('addressee','Addressed to *','','text','required maxlength="200"')+textArea('partner_conclusion','The Partner\'s conclusion, in the Partner\'s own words *','',3000)+'<p class="info full">The system assembles the ratios, compliance results and section 10 matters. It does not write the conclusion or state the legal test.</p>','Draft report'),f=>request({action:'audit_report_draft',audit_file_id:file.audit_file_id,kind,addressee:f.get('addressee'),partner_conclusion:f.get('partner_conclusion')}),()=>ctx.refresh(),{refreshWorkspace:false});return true;}
    await run({action:'audit_report_draft',audit_file_id:file.audit_file_id,kind});return true;
   }
   if(b.dataset.auditReportSubmit){await run({action:'audit_report_submit',report_id:b.dataset.auditReportSubmit});return true;}
