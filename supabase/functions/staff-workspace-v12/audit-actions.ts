@@ -8,6 +8,7 @@ const MODEL_DEMO_WARNING='DEMONSTRATION DATA — NOT A REAL AUDIT / NOT FOR ISSU
 const AREAS=['Permanent file','Acceptance and ethics','Planning','Risk assessment','Cash and bank','Trade receivables','Inventories','Property, plant and equipment','Trade payables','Borrowings','Taxation','Revenue','Payroll and expenses','Equity','Commitments and contingencies','Completion','Reporting and quality'];
 const FS_LINES=['Assets','Liabilities','Equity','Revenue','Cost of sales','Operating expenses','Finance costs','Tax expense','Cash flows','Disclosure only','Not applicable'];
 const isoDay=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
+const one2=(r:any[])=>r[0]?.g;
 const one=(r:any[])=>{if(!r.length)fail(403,'Audit record or engagement unavailable.');return r[0];};
 const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'A Manager or Engagement Partner must complete this audit control.');};
 const editor=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'An Audit Supervisor, Manager or Partner must complete this review.');};
@@ -73,7 +74,7 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
    from erp_private.projects p join erp_private.clients c using(client_id) join erp_private.firms f on f.firm_id=p.handling_firm_id
    where p.project_id=${uuid(p.project_id)} and p.service_code like 'AUD-%' and erp_private.project_allowed(p.project_id)`);
   const file=(await tx`select * from erp_private.audit_files where project_id=${project.project_id}`)[0]||null;
-  if(!file)return {projects,project,file:null,imports:[],tb_lines:[],workpapers:[],completion:[],readiness:{file_ready:false}};
+  if(!file)return {projects,project,file:null,imports:[],tb_lines:[],workpapers:[],completion:[],materiality:[],risks:[],risk_links:[],planning_gate:null,readiness:{file_ready:false}};
   const imports=await tx`select * from erp_private.audit_tb_imports where audit_file_id=${file.audit_file_id} order by created_at desc`;
   const active=imports.filter((x:any)=>x.status!=='Superseded'),activeIds=active.map((x:any)=>x.audit_tb_import_id),activeImport=active[0]||null;
   const tb_lines=activeImport?await tx`select l.audit_tb_line_id,l.audit_tb_import_id,l.source_row,l.legacy_account_code,l.legacy_account_name,l.source_debit,l.source_credit,l.audit_account_id,l.audit_area,l.financial_statement_line,l.mapping_confidence,i.status as import_status,i.period_kind,i.revision as import_revision
@@ -86,7 +87,11 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
   const checklist=await tx`select count(*)::int total,count(*) filter(where status='Reviewed')::int reviewed from erp_private.audit_completion_items where audit_file_id=${file.audit_file_id}`;
   const currentSummary=(await tx`select i.audit_tb_import_id,i.status,i.difference,i.difference=0 as balanced,count(l.audit_tb_line_id)::int total,count(l.audit_tb_line_id) filter(where l.audit_account_id is null)::int unmapped from erp_private.audit_tb_imports i left join erp_private.audit_tb_lines l using(audit_tb_import_id) where i.audit_file_id=${file.audit_file_id} and i.period_kind='Current' and i.status='Confirmed' group by i.audit_tb_import_id limit 1`)[0]||null;
   const templates=await tx`select * from erp_private.audit_templates where handling_firm_id=${file.handling_firm_id} order by audit_area,title,template_version desc`;
-  return {projects,project,file,imports,tb_lines,tb_summaries,active_import_id:activeImport?.audit_tb_import_id||null,workpapers,workpaper_versions,completion,templates,readiness:{framework_approved:file.framework_status==='Approved',current_tb_balanced:!!currentSummary&&currentSummary.balanced,current_tb_confirmed:!!currentSummary,all_lines_mapped:!!currentSummary&&Number(currentSummary.total)>0&&Number(currentSummary.unmapped)===0,workpapers_present:workpapers.length>0,workpapers_resolved:workpapers.length>0&&workpapers.every((x:any)=>x.status==='Approved'),completion_total:checklist[0]?.total||0,completion_reviewed:checklist[0]?.reviewed||0}};
+  const materiality=await tx`select m.*,ps.full_name prepared_by_name,ap.full_name approved_by_name from erp_private.audit_materiality m join erp_private.staff_members ps on ps.staff_id=m.prepared_by left join erp_private.staff_members ap on ap.staff_id=m.approved_by where m.audit_file_id=${file.audit_file_id} order by m.version_number desc`;
+  const risks=await tx`select r.*,cs.full_name created_by_name from erp_private.audit_risks r join erp_private.staff_members cs on cs.staff_id=r.created_by where r.audit_file_id=${file.audit_file_id} order by r.risk_seq`;
+  const risk_links=await tx`select l.audit_workpaper_id,l.risk_id from erp_private.audit_workpaper_risks l where l.audit_file_id=${file.audit_file_id} and l.unlinked_at is null`;
+  const planning_gate=(await tx`select erp_private.audit_planning_gate(${file.audit_file_id}) g`)[0].g;
+  return {projects,project,file,imports,tb_lines,tb_summaries,active_import_id:activeImport?.audit_tb_import_id||null,workpapers,workpaper_versions,completion,templates,materiality,risks,risk_links,planning_gate,readiness:{framework_approved:file.framework_status==='Approved',current_tb_balanced:!!currentSummary&&currentSummary.balanced,current_tb_confirmed:!!currentSummary,all_lines_mapped:!!currentSummary&&Number(currentSummary.total)>0&&Number(currentSummary.unmapped)===0,workpapers_present:workpapers.length>0,workpapers_resolved:workpapers.length>0&&workpapers.every((x:any)=>x.status==='Approved'),completion_total:checklist[0]?.total||0,completion_reviewed:checklist[0]?.reviewed||0}};
  }
 
  if(p.action==='audit_tb_lines'){
@@ -123,6 +128,32 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
   await tx`insert into erp_private.audit_completion_items(audit_file_id,project_id,handling_firm_id,item_key,label)
    select ${saved.audit_file_id},${pid},${project.handling_firm_id},x.key,x.label from jsonb_to_recordset(${tx.json([...planning,...completionItems].map(([key,label])=>({key,label})))}::jsonb) x(key text,label text) on conflict(audit_file_id,item_key) do nothing`;
   return {ok:true,audit_file_id:saved.audit_file_id};
+ }
+
+ if(p.action==='audit_materiality_save'){
+  editor(a);const num=(v:any,label:string)=>{const n=Number(String(v??'').replace(/,/g,''));if(!Number.isFinite(n)||n<=0)fail(400,`${label} must be a number above zero.`);return n;};
+  const benchmark=choice(p.benchmark,['Revenue','Total assets','Profit before tax','Total expenses','Equity','Other']);
+  const [r]=await tx`select erp_private.audit_materiality_save(${uuid(p.audit_file_id)}::uuid,${benchmark},${text(p.benchmark_other||'',120,false)},${num(p.base_amount,'The benchmark amount')}::numeric,${num(p.overall_pct,'Overall percentage')}::numeric,${num(p.performance_pct,'Performance percentage')}::numeric,${num(p.trivial_pct,'Clearly trivial percentage')}::numeric,${text(p.rationale,2000)}) id`;
+  return {ok:true,materiality_id:r.id};
+ }
+ if(p.action==='audit_materiality_approve'){
+  if(a.category_code!=='PARTNER')fail(403,'Only a Partner can approve materiality.');
+  await tx`select erp_private.audit_materiality_approve(${uuid(p.materiality_id)}::uuid)`;return {ok:true};
+ }
+ if(p.action==='audit_risk_save'){
+  editor(a);const area=choice(p.audit_area,AREAS),level=choice(p.risk_level,['Low','Medium','High']),fraud=p.fraud_risk===true||p.fraud_risk==='on'||p.fraud_risk==='true',significant=fraud||p.significant===true||p.significant==='on'||p.significant==='true';
+  const [r]=await tx`select erp_private.audit_risk_save(${uuid(p.audit_file_id)}::uuid,${p.risk_id?uuid(p.risk_id):null}::uuid,${text(p.description,1500)},${area},${text(p.assertion,200)},${level},${significant},${fraud},${text(p.planned_response,1500)}) id`;
+  return {ok:true,risk_id:r.id};
+ }
+ if(p.action==='audit_risk_close'){
+  leader(a);await tx`select erp_private.audit_risk_close(${uuid(p.risk_id)}::uuid,${text(p.note,1000)})`;return {ok:true};
+ }
+ if(p.action==='audit_risk_link'){
+  await tx`select erp_private.audit_risk_link(${uuid(p.audit_workpaper_id)}::uuid,${uuid(p.risk_id)}::uuid,${p.link!==false&&p.link!=='false'})`;return {ok:true};
+ }
+ if(p.action==='audit_planning_gate'){
+  const f=one(await tx`select audit_file_id from erp_private.audit_files where audit_file_id=${uuid(p.audit_file_id)}`);
+  return one2(await tx`select erp_private.audit_planning_gate(${f.audit_file_id}::uuid) g`);
  }
 
  if(p.action==='audit_framework_approve'){
