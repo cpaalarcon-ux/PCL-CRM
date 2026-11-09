@@ -41,6 +41,7 @@ setPdfLib(PDFLib);
 import {taxAction} from './tax-review-actions.ts';
 import {engagementAction} from './engagement-actions.ts';
 import {aupAction} from './aup-actions.ts';
+import {kraAction} from './kra-actions.ts';
 import {auditAction} from './audit-actions.ts';
 import {suiteExport} from './suite-export.ts';
 import {masterImport} from './master-import.ts';
@@ -359,6 +360,7 @@ async function action(id:any,p:any){
   const tax=await taxAction(tx,a,p);if(tax!==undefined)return tax;
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const aup=await aupAction(tx,a,p);if(aup!==undefined)return aup;
+  const kra=await kraAction(tx,a,p);if(kra!==undefined)return kra;
   const audit=await auditAction(tx,a,p,admin.storage.from(BUCKET));if(audit!==undefined)return audit;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
   // The review queue must come before improvementAction: that handler claims every v3_ action and rejects ones it does not know.

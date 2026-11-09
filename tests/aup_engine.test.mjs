@@ -205,5 +205,5 @@ test('Step 6: procedures engine (library, draft scope, Partner lock, scope chang
   assert.ok((await tx`select count(*)::int n from pg_trigger where tgrelid=${'erp_private.'+tname}::regclass and not tgisinternal and tgname='no_delete'`)[0].n===1,tname+' cannot be deleted from');
  }
  assert.ok((await tx`select count(*)::int n from erp_private.audit_events where table_name in('aup_scopes','aup_scope_items','aup_scope_changes','aup_item_evidence')`)[0].n>=15);
- assert.deepEqual((await tx`select engine_state from erp_private.service_profiles where service_code in('ADV-AUP','TAX-KRA') order by service_code`).map(r=>r.engine_state),['Built','Partly built']);
+ assert.deepEqual((await tx`select engine_state from erp_private.service_profiles where service_code in('ADV-AUP','TAX-KRA') order by service_code`).map(r=>r.engine_state),['Built','Built']);
 });
