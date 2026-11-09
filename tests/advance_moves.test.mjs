@@ -26,7 +26,7 @@ test('advances can be refunded or moved to another firm, and posted invoices car
  const post=async inv=>(await act('PARTNER',{action:'invoice_post',invoice_id:inv,revision:1})).invoice_number;
  const invA=await draft(P,{description:'Return filing',quantity:1,unit_price:10000,vat_rate:16}),numA=await post(invA);
  const invA2=await draft(P,{description:'Second fee',quantity:1,unit_price:1000,vat_rate:16});
- const invB=await draft(P2,{description:'Advisory',quantity:1,unit_price:5000,vat_rate:0}),numB=await post(invB);
+ const invB=await draft(P2,{description:'Advisory',quantity:1,unit_price:5000,vat_rate:0,line_type:'Disbursement'}),numB=await post(invB);
  const adv=await act('PARTNER',{action:'advance_receive',request_id:id(),client_id:C,firm_id:F,amount:4000,method:'Bank',received_date:'2026-10-02',reference:'BANK-1'});
  await act('PARTNER',{action:'advance_apply',request_id:id(),advance_id:adv.advance_id,invoice_id:invA,amount:1000,payment_date:'2026-10-05'});
  const bal=async advId=>num((await as('PARTNER',()=>suiteRead(tx))).advances.find(a=>a.advance_id===advId).balance);

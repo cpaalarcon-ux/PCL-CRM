@@ -38,7 +38,7 @@ test('The invoice PDF carries the Alarcon-style layout, and drafts are watermark
  assert.ok(t.includes('Café'),'accents and curly apostrophes survive');
  const draft=text(await invoicePdf({...base,invoice:{...base.invoice,status:'Draft',invoice_number:null,brought_forward:0}},PDFLib));assert.match(draft,/DRAFT/);
  const noLogo=await invoicePdf({...base,logo:null,etims:{etims_invoice_no:'ETIMS-1',etims_issued_on:'2026-11-01',qr_url:'https://etims.example.test/v/1'}},PDFLib);assert.ok(text(noLogo).includes('eTIMS invoice no: ETIMS-1'));
- const many=await invoicePdf({...base,invoice:{...base.invoice,lines:rules.invoiceLines(Array.from({length:50},(_,n)=>({description:'Line '+(n+1)+' '+'long wording '.repeat(8),quantity:1,unit_price:100,vat_rate:0}))),net_amount:5000,vat_amount:0}},PDFLib);
+ const many=await invoicePdf({...base,invoice:{...base.invoice,lines:rules.invoiceLines(Array.from({length:50},(_,n)=>({description:'Line '+(n+1)+' '+'long wording '.repeat(8),quantity:1,unit_price:100,vat_rate:0,line_type:'Disbursement'}))),net_amount:5000,vat_amount:0}},PDFLib);
  assert.ok((await PDFLib.PDFDocument.load(many)).getPageCount()>1,'long invoices flow onto more pages');assert.ok(text(many).includes('Total Amount Due'));
  assert.deepEqual(invoiceTotals({net_amount:100,vat_amount:16,paid_amount:20,brought_forward:30}),{net:100,vat:16,total:116,paid:20,brought_forward:30,due:126});
 });
@@ -72,7 +72,7 @@ test('Invoices: period, duplicate warning, continuous numbering, balance brought
  const other=(await save('PARTNER',{service_from:'2026-11-15',service_to:'2026-11-20',confirm_not_duplicate:true})).invoice_id;
  assert.ok(other);
  // A different project is not a duplicate.
- assert.ok((await act('PARTNER',{action:'invoice_save',project_id:P2,request_id:id(),description:'Other',invoice_date:'2026-11-01',due_date:'2026-11-15',service_from:'2026-11-01',service_to:'2026-11-30',lines:[{description:'x',quantity:1,unit_price:100,vat_rate:0}]})).invoice_id);
+ assert.ok((await act('PARTNER',{action:'invoice_save',project_id:P2,request_id:id(),description:'Other',invoice_date:'2026-11-01',due_date:'2026-11-15',service_from:'2026-11-01',service_to:'2026-11-30',lines:[{description:'x',quantity:1,unit_price:100,vat_rate:0,line_type:'Disbursement'}]})).invoice_id);
 
  // Continuous numbering, carrying on from the old system (last used 322).
  await assert.rejects(()=>act('PARTNER',{action:'firm_details',firm_id:F,legal_name:'Fictional Mlima Consultants Ltd',kra_pin:'P000000001A',vat_registered:true,invoice_prefix:'INV/MLI',invoice_numbering:'yearly',invoice_last_number:'322'}),/continuous/);

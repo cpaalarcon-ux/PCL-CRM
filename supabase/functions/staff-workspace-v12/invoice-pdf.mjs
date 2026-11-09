@@ -49,7 +49,7 @@ export async function invoicePdf(d,{PDFDocument,StandardFonts,rgb}){
  page.drawRectangle({x:M,y:y-18,width:CW,height:18,color:pale});page.drawText('To our professional fees:',{x:colDesc,y:y-13,size:10,font:bold});right('KShs.',10,bold,colAmt,y-13);y-=18;
  const lines=Array.isArray(i.lines)?i.lines:[];
  lines.forEach((l,n)=>{
-  let text=String(l.description||'');if(Number(l.quantity)!==1)text+=` (${l.quantity} × ${money(l.unit_price)}${l.includes_vat?' incl. VAT':''})`;
+  let text=String(l.description||'');if(l.line_type==='Disbursement')text+=' (disbursement, no VAT)';if(Number(l.quantity)!==1)text+=` (${l.quantity} × ${money(l.unit_price)}${l.includes_vat?' incl. VAT':''})`;
   if(l.milestone)text+=` · ${l.milestone}`;
   const wrapped=wrap(font,9.5,text,descW),h=Math.max(20,wrapped.length*12+8);
   if(y-h<M+230){newPage();head();}
