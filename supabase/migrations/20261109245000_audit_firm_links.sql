@@ -32,7 +32,7 @@ BEGIN
  SELECT COALESCE(sum(t.hours*r.billable_rate),0) INTO std FROM erp_private.timesheets t
   JOIN LATERAL(SELECT x.billable_rate FROM erp_private.staff_rates x WHERE x.staff_id=t.staff_id AND t.work_date BETWEEN x.effective_from AND x.effective_to ORDER BY x.effective_from DESC LIMIT 1) r ON true
   WHERE t.project_id=f.project_id AND t.status='Approved' AND t.billable AND t.deleted_at IS NULL;
- SELECT COALESCE(sum(net_amount),0) INTO billed FROM erp_private.invoices WHERE project_id=f.project_id AND status='Posted' AND deleted_at IS NULL;
+ SELECT COALESCE(sum((l->>'net')::numeric),0) INTO billed FROM erp_private.invoices i CROSS JOIN LATERAL jsonb_array_elements(i.lines) l WHERE i.project_id=f.project_id AND i.status='Posted' AND i.deleted_at IS NULL AND COALESCE(l->>'line_type','Fee')<>'Disbursement';
  SELECT jsonb_build_object(
    'approved_hours',COALESCE(sum(hours) FILTER(WHERE status='Approved'),0),'submitted_hours',COALESCE(sum(hours) FILTER(WHERE status='Submitted'),0),'draft_hours',COALESCE(sum(hours) FILTER(WHERE status='Draft'),0),
    'budgeted_hours',bud.budgeted_hours,
@@ -76,17 +76,16 @@ BEGIN
  act:=COALESCE((erp_private.actor()).staff_id,NEW.created_by);
  SELECT company_name INTO cname FROM erp_private.clients WHERE client_id=NEW.client_id;
  SELECT agreed_fee INTO agreed FROM erp_private.project_budgets WHERE project_id=NEW.project_id AND effective_from<=today ORDER BY effective_from DESC LIMIT 1;
- SELECT COALESCE(sum(net_amount),0) INTO billed FROM erp_private.invoices WHERE project_id=NEW.project_id AND status<>'Void' AND deleted_at IS NULL;
+ SELECT COALESCE(sum((l->>'net')::numeric),0) INTO billed FROM erp_private.invoices i CROSS JOIN LATERAL jsonb_array_elements(i.lines) l WHERE i.project_id=NEW.project_id AND i.status<>'Void' AND i.deleted_at IS NULL AND COALESCE(l->>'line_type','Fee')<>'Disbursement';
  IF agreed IS NULL OR agreed<=0 THEN outcome:='No agreed fee on record'; note:='No draft invoice was raised because the project has no agreed fee. Raise the invoice manually.';
  ELSIF agreed-billed<=0 THEN outcome:='Agreed fee already invoiced'; note:='The agreed fee has already been invoiced, so no draft was raised.';
  ELSE
   remaining:=agreed-billed;net:=round(remaining,2);
-  SELECT (l->>'vat_rate')::numeric INTO vr FROM erp_private.invoices i CROSS JOIN LATERAL jsonb_array_elements(i.lines) l WHERE i.project_id=NEW.project_id AND i.status<>'Void' AND i.deleted_at IS NULL AND l->>'vat_rate' IS NOT NULL ORDER BY i.created_at DESC LIMIT 1;
-  vr:=COALESCE(vr,16);vat:=round(net*vr/100,2);
+  vr:=16;vat:=round(net*vr/100,2);
   INSERT INTO erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,created_by)
    VALUES(md5('audit-file-invoice:'||NEW.audit_file_id)::uuid,NEW.project_id,NEW.client_id,NEW.handling_firm_id,'Statutory audit for the period ended '||NEW.ends_on,today,today+30,
-    jsonb_build_array(jsonb_build_object('description','Audit fee: remaining agreed fee for the period '||NEW.starts_on||' to '||NEW.ends_on,'quantity',1,'unit_price',net,'vat_rate',vr,'net',net,'vat',vat,'total',net+vat)),net,vat,act) RETURNING invoice_id INTO inv;
-  outcome:='Draft invoice raised';note:='VAT at '||vr||'% (taken from the last invoice on this project, else 16%). Check the amount, then a Partner posts it or voids it.';
+    jsonb_build_array(jsonb_build_object('description','Audit fee: remaining agreed fee for the period '||NEW.starts_on||' to '||NEW.ends_on,'line_type','Fee','quantity',1,'unit_price',net,'vat_rate',vr,'net',net,'vat',vat,'total',net+vat)),net,vat,act) RETURNING invoice_id INTO inv;
+  outcome:='Draft invoice raised';note:='VAT at the firm rate of 16%. Disbursements already invoiced are not counted against the agreed fee. Check the amount, then a Partner posts it or voids it.';
  END IF;
  INSERT INTO erp_private.audit_billing_links(audit_file_id,project_id,invoice_id,outcome,amount_net,note,created_by) VALUES(NEW.audit_file_id,NEW.project_id,inv,outcome,net,note,act);
  PERFORM erp_private.alert_partners('audit-billing:'||NEW.audit_file_id::text,'Audit file for '||COALESCE(cname,'a client')||' was approved. '||CASE WHEN inv IS NOT NULL THEN 'A draft invoice of KES '||net||' (before VAT) is waiting for a Partner to post.' ELSE note END);
