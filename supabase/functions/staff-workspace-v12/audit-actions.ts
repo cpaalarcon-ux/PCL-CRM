@@ -74,7 +74,7 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
    from erp_private.projects p join erp_private.clients c using(client_id) join erp_private.firms f on f.firm_id=p.handling_firm_id
    where p.project_id=${uuid(p.project_id)} and p.service_code like 'AUD-%' and erp_private.project_allowed(p.project_id)`);
   const file=(await tx`select * from erp_private.audit_files where project_id=${project.project_id}`)[0]||null;
-  if(!file)return {projects,project,file:null,imports:[],tb_lines:[],workpapers:[],completion:[],materiality:[],risks:[],risk_links:[],planning_gate:null,adjustments:[],adjustment_lines:[],adjusted_tb:[],misstatements:null,tb_accounts:[],readiness:{file_ready:false}};
+  if(!file)return {projects,project,file:null,imports:[],tb_lines:[],workpapers:[],completion:[],materiality:[],risks:[],risk_links:[],planning_gate:null,adjustments:[],adjustment_lines:[],adjusted_tb:[],misstatements:null,tb_accounts:[],lead_schedule:[],readiness:{file_ready:false}};
   const imports=await tx`select * from erp_private.audit_tb_imports where audit_file_id=${file.audit_file_id} order by created_at desc`;
   const active=imports.filter((x:any)=>x.status!=='Superseded'),activeIds=active.map((x:any)=>x.audit_tb_import_id),activeImport=active[0]||null;
   const tb_lines=activeImport?await tx`select l.audit_tb_line_id,l.audit_tb_import_id,l.source_row,l.legacy_account_code,l.legacy_account_name,l.source_debit,l.source_credit,l.audit_account_id,l.audit_area,l.financial_statement_line,l.mapping_confidence,i.status as import_status,i.period_kind,i.revision as import_revision
@@ -95,8 +95,9 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
   const adjustment_lines=await tx`select l.adjustment_id,l.line_no,l.audit_account_id,m.legacy_account_code account_code,m.legacy_account_name account_name,m.financial_statement_line,l.debit,l.credit,l.memo from erp_private.audit_adjustment_lines l join erp_private.audit_account_mappings m on m.audit_account_id=l.audit_account_id where l.audit_file_id=${file.audit_file_id} order by l.adjustment_id,l.line_no`;
   const adjusted_tb=await tx`select * from erp_private.audit_adjusted_tb(${file.audit_file_id}::uuid)`;
   const misstatements=(await tx`select erp_private.audit_misstatement_schedule(${file.audit_file_id}::uuid) s`)[0].s;
+  const lead_schedule=(await tx`select erp_private.audit_lead_schedule(${file.audit_file_id}::uuid) s`)[0].s;
   const tb_accounts=await tx`select distinct m.audit_account_id,m.legacy_account_code account_code,m.legacy_account_name account_name,m.audit_area,m.financial_statement_line from erp_private.audit_tb_lines l join erp_private.audit_tb_imports i on i.audit_tb_import_id=l.audit_tb_import_id join erp_private.audit_account_mappings m on m.audit_account_id=l.audit_account_id where i.audit_file_id=${file.audit_file_id} and i.status<>'Superseded' order by m.legacy_account_code limit 1000`;
-  return {projects,project,file,imports,tb_lines,tb_summaries,active_import_id:activeImport?.audit_tb_import_id||null,workpapers,workpaper_versions,completion,templates,materiality,risks,risk_links,planning_gate,adjustments,adjustment_lines,adjusted_tb,misstatements,tb_accounts,readiness:{framework_approved:file.framework_status==='Approved',current_tb_balanced:!!currentSummary&&currentSummary.balanced,current_tb_confirmed:!!currentSummary,all_lines_mapped:!!currentSummary&&Number(currentSummary.total)>0&&Number(currentSummary.unmapped)===0,workpapers_present:workpapers.length>0,workpapers_resolved:workpapers.length>0&&workpapers.every((x:any)=>x.status==='Approved'),completion_total:checklist[0]?.total||0,completion_reviewed:checklist[0]?.reviewed||0}};
+  return {projects,project,file,imports,tb_lines,tb_summaries,active_import_id:activeImport?.audit_tb_import_id||null,workpapers,workpaper_versions,completion,templates,materiality,risks,risk_links,planning_gate,adjustments,adjustment_lines,adjusted_tb,misstatements,tb_accounts,lead_schedule,readiness:{framework_approved:file.framework_status==='Approved',current_tb_balanced:!!currentSummary&&currentSummary.balanced,current_tb_confirmed:!!currentSummary,all_lines_mapped:!!currentSummary&&Number(currentSummary.total)>0&&Number(currentSummary.unmapped)===0,workpapers_present:workpapers.length>0,workpapers_resolved:workpapers.length>0&&workpapers.every((x:any)=>x.status==='Approved'),completion_total:checklist[0]?.total||0,completion_reviewed:checklist[0]?.reviewed||0}};
  }
 
  if(p.action==='audit_tb_lines'){
@@ -172,6 +173,14 @@ export async function auditAction(tx:any,a:any,p:any,storage:any):Promise<any>{
  if(p.action==='audit_misstatement_conclude'){
   if(a.category_code!=='PARTNER')fail(403,'Only a Partner records the conclusion on unadjusted misstatements.');
   await tx`select erp_private.audit_misstatement_conclude(${uuid(p.audit_file_id)}::uuid,${text(p.note,2000)})`;return {ok:true};
+ }
+
+ if(p.action==='audit_lead_create'){
+  const [r]=await tx`select erp_private.audit_lead_create(${uuid(p.audit_file_id)}::uuid,${text(p.audit_area,120)}) id`;return {ok:true,audit_workpaper_id:r.id};
+ }
+ if(p.action==='audit_lead_tieout_save'){
+  const n=Number(String(p.supported_balance??'').replace(/,/g,'').replace(/^\((.*)\)$/,'-$1'));if(!String(p.supported_balance??'').trim()||!Number.isFinite(n))fail(400,'Enter the balance as a number. Use a minus sign or brackets for a credit balance.');
+  await tx`select erp_private.audit_lead_tieout_save(${uuid(p.audit_workpaper_id)}::uuid,${n}::numeric,${text(p.reconciling_note||'',1500,false)})`;return {ok:true};
  }
 
  if(p.action==='audit_framework_approve'){
