@@ -1,6 +1,7 @@
 import {createPlanningUI,planningGateSummary} from './staff-audit-planning.mjs?v=20261109-audit-a-v1';
 import {createAdjustmentsUI} from './staff-audit-adjustments.mjs?v=20261109-audit-b-v1';
-import {createLeadsUI} from './staff-audit-leads.mjs?v=20261109-audit-c-v1';
+import {createLeadsUI} from './staff-audit-leads.mjs?v=20261109-audit-d-v1';
+import {createReportsUI} from './staff-audit-reports.mjs?v=20261109-audit-d-v1';
 export function createAuditUI(ctx){
  const {esc,field,select,form,modal,request,notice,shortDate,empty,data}=ctx;
  const areas=['Permanent file','Acceptance and ethics','Planning','Risk assessment','Cash and bank','Trade receivables','Inventories','Property, plant and equipment','Trade payables','Borrowings','Taxation','Revenue','Payroll and expenses','Equity','Commitments and contingencies','Completion','Reporting and quality'];
@@ -12,6 +13,7 @@ export function createAuditUI(ctx){
  const selectedDocs=pid=>(data()?.documents||[]).filter(x=>x.project_id===pid&&x.category==='Working Papers'&&!x.archived_at);
  const selectedProject=()=>snapshot?.project||snapshot?.projects?.find(p=>p.project_id===selected)||null;
  const selectedFile=()=>snapshot?.file||null;
+ const reports=createReportsUI({...ctx,snapshot:()=>snapshot,refresh:()=>refresh(selected)});
  const leads=createLeadsUI({...ctx,snapshot:()=>snapshot,refresh:()=>refresh(selected)});
  const adjustments=createAdjustmentsUI({...ctx,snapshot:()=>snapshot,refresh:()=>refresh(selected)});
  const planning=createPlanningUI({...ctx,snapshot:()=>snapshot,refresh:()=>refresh(selected)});
@@ -30,8 +32,8 @@ export function createAuditUI(ctx){
   if(!file)return `<section class="card"><div class="workspace-breadcrumb"><button data-audit-back>← Audit engagements</button><span>/</span><span>${esc(p.company_name)}</span></div><span class="eyebrow">AUDIT FILE SETUP</span><h2>${esc(p.project_name)}</h2><p>${esc(p.company_name)} · ${esc(p.firm_code)}</p><div class="info">Set the reporting period and framework first. The Partner must confirm the framework before staff can import or confirm a trial balance.</div><button class="primary" data-audit-file-create="${p.project_id}">Create audit file</button></section>`;
   const imports=(s?.imports||[]),active=imports.filter(i=>i.status!=='Superseded'),activeImport=active.find(i=>i.audit_tb_import_id===selectedImport),tb=(lineData?.rows||[]).filter(x=>x.audit_tb_import_id===selectedImport),wp=s?.workpapers||[],completion=s?.completion||[],templates=s?.templates||[];
   return `<div class="audit-shell"><div class="workspace-breadcrumb"><button data-audit-back>← Audit engagements</button><span>/</span><span>${esc(p.company_name)}</span></div>
-   <section class="card audit-file-head"><div class="section-head"><div><span class="eyebrow">AUDIT FILE · ${esc(p.firm_code)}</span><h2>${esc(p.project_name)}</h2><p>${esc(p.company_name)} · ${esc(shortDate(file.starts_on))} to ${esc(shortDate(file.ends_on))} · ${esc(file.reporting_framework)}</p></div>${status(file.file_status)}</div>${file.is_demonstration?`<div class="audit-demo-warning"><b>${esc(file.demonstration_warning)}</b><small>Historical period ended 31 December 2006. This file cannot issue an audit opinion or be used as a current-year audit.</small></div>`:''}<div class="audit-tabs" role="tablist">${['Overview','Materiality & risk','Trial balance','Adjustments','Lead schedules','Working papers','Completion','Template register'].map(t=>`<button role="tab" aria-selected="${activeTab===t}" class="${activeTab===t?'active':''}" data-audit-tab="${esc(t)}">${esc(t)}</button>`).join('')}</div></section>
-   ${activeTab==='Overview'?overview(file,p,s,imports,wp,completion):activeTab==='Materiality & risk'?planning.panel(file,s):activeTab==='Adjustments'?adjustments.panel(file,s):activeTab==='Lead schedules'?leads.panel(file,s):activeTab==='Trial balance'?trialBalance(file,p,imports,activeImport,tb,lineData):activeTab==='Working papers'?workpaperPanel(file,wp,s?.workpaper_versions||[]):activeTab==='Completion'?completionPanel(file,completion):templatePanel(p,templates)}
+   <section class="card audit-file-head"><div class="section-head"><div><span class="eyebrow">AUDIT FILE · ${esc(p.firm_code)}</span><h2>${esc(p.project_name)}</h2><p>${esc(p.company_name)} · ${esc(shortDate(file.starts_on))} to ${esc(shortDate(file.ends_on))} · ${esc(file.reporting_framework)}</p></div>${status(file.file_status)}</div>${file.is_demonstration?`<div class="audit-demo-warning"><b>${esc(file.demonstration_warning)}</b><small>Historical period ended 31 December 2006. This file cannot issue an audit opinion or be used as a current-year audit.</small></div>`:''}<div class="audit-tabs" role="tablist">${['Overview','Materiality & risk','Trial balance','Adjustments','Lead schedules','Reports','Working papers','Completion','Template register'].map(t=>`<button role="tab" aria-selected="${activeTab===t}" class="${activeTab===t?'active':''}" data-audit-tab="${esc(t)}">${esc(t)}</button>`).join('')}</div></section>
+   ${activeTab==='Overview'?overview(file,p,s,imports,wp,completion):activeTab==='Materiality & risk'?planning.panel(file,s):activeTab==='Adjustments'?adjustments.panel(file,s):activeTab==='Lead schedules'?leads.panel(file,s):activeTab==='Reports'?reports.panel(file,s):activeTab==='Trial balance'?trialBalance(file,p,imports,activeImport,tb,lineData):activeTab==='Working papers'?workpaperPanel(file,wp,s?.workpaper_versions||[]):activeTab==='Completion'?completionPanel(file,completion):templatePanel(p,templates)}
   </div>`;
  }
  function overview(file,p,s,imports,wp,completion){
@@ -109,6 +111,7 @@ export function createAuditUI(ctx){
   if(await planning.handle(b,selectedFile(),areas))return true;
   if(await adjustments.handle(b,selectedFile()))return true;
   if(await leads.handle(b,selectedFile()))return true;
+  if(await reports.handle(b,selectedFile()))return true;
   if(b.dataset.auditFileCreate){const p=snapshot?.projects?.find(x=>x.project_id===b.dataset.auditFileCreate);if(p)newFile(p);return true;}
   if(b.dataset.auditFramework){const fid=b.dataset.auditFramework,revn=b.dataset.revision;modal('Partner confirmation · reporting framework',`<p>Confirm that <b>${esc(selectedFile()?.reporting_framework)}</b> is appropriate for this client and audit period, based on your technical review.</p><p class="info">The system will not infer or approve the framework automatically. Confirming enables TB import and mapping only; it does not approve the audit opinion.</p><button class="primary" id="auditConfirmFramework">Confirm framework</button>`);document.querySelector('#auditConfirmFramework').onclick=async()=>{try{await request({action:'audit_framework_approve',audit_file_id:fid,revision:revn});document.querySelector('#editor').close();await refresh(selected);}catch(e){document.querySelector('#editorNotice').textContent=e.message;}};return true;}
   if(b.dataset.auditTbNew){openSource(selectedFile());return true;}
