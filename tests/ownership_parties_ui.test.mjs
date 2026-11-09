@@ -48,7 +48,7 @@ test('forms offer the right fields',()=>{
 test('server: actions, snapshot, and friendly checks mirror the database',()=>{
  const s=rd(fx+'engagement-actions.ts');
  for(const act of ['party_add','party_end','group_profile_save'])assert.match(s,new RegExp("p\\.action==='"+act+"'"));
- assert.match(s,/'owner_add','party_add','party_end','group_profile_save','licence_add','licence_end','engagement_read'/);
+ assert.match(s,/'owner_add','party_add','party_end','group_profile_save','licence_add','licence_end','engagement_checklist','reference_service_add','reference_service_confirm','engagement_read'/);
  assert.match(s,/const parties=await tx`select party_id,role,full_name,holder_client_id,shareholding_percentage,appointed_on from erp_private\.client_parties/);
  assert.match(s,/ownership_reaches/);assert.match(s,/exceed 100 percent/);assert.match(s,/Record why this ended or was entered in error/);
  assert.match(s,/kycChanged\(tx,a,cid,before,\['PARTIES_'\+role\.toUpperCase\(\)\]/,'a verified KYC file goes back for re-verification');
