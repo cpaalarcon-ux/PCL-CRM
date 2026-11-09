@@ -359,8 +359,9 @@ async function action(id:any,p:any){
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const audit=await auditAction(tx,a,p,admin.storage.from(BUCKET));if(audit!==undefined)return audit;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
-  const improvements=await improvementAction(tx,a,p,admin.storage.from(BUCKET));if(improvements!==undefined)return improvements;
+  // The review queue must come before improvementAction: that handler claims every v3_ action and rejects ones it does not know.
   const queue=await reviewQueueAction(tx,a,p);if(queue!==undefined)return queue;
+  const improvements=await improvementAction(tx,a,p,admin.storage.from(BUCKET));if(improvements!==undefined)return improvements;
   const handover=await handoverAction(tx,a,p);if(handover!==undefined)return handover;
   const team=await teamAction(tx,a,p);if(team!==undefined)return team;
   const lifecycle=await clientLifecycleAction(tx,a,p);if(lifecycle!==undefined)return lifecycle;
