@@ -27,7 +27,7 @@ import {uploadChoices} from './staff-pilot-upload.mjs';
 import {clientProgress,nextStep,clientStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261109-reg-v1';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261105-check-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
-import {createAuditUI} from './staff-audit.mjs?v=20261029-audit-start-flow-v1';
+import {createAuditUI} from './staff-audit.mjs?v=20261109-audit-a-v1';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261105-check-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 import {renderAccessGuide} from './staff-access-guide.mjs?v=20261106-rights-v1';
