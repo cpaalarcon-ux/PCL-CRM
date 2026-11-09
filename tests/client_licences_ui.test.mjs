@@ -61,7 +61,7 @@ test('audit home: the flag is on the overview and changes no sign-off',()=>{
 test('server: actions mirror the database and do not touch KYC verification',()=>{
  const s=rd(fx+'engagement-actions.ts');
  for(const act of ['licence_add','licence_end'])assert.match(s,new RegExp("p\\.action==='"+act+"'"));
- assert.match(s,/'group_profile_save','licence_add','licence_end','engagement_read'/);
+ assert.match(s,/'group_profile_save','licence_add','licence_end','engagement_checklist','reference_service_add','reference_service_confirm','engagement_read'/);
  assert.match(s,/A renewal must expire after the licence it renews/);assert.match(s,/Record why this licence is being ended/);assert.match(s,/Describe what this licence or permit is for/);
  assert.match(s,/for update/);assert.ok(s.indexOf('set ended_on=${today()},end_reason=${\'Renewed by licence')<s.indexOf('insert into erp_private.client_licences(client_id,licence_type'),'old entry is ended before the renewal is inserted');assert.match(s,/ended_on=\$\{today\(\)\}/,'Nairobi date');
  assert.doesNotMatch(s,/delete from erp_private\.client_licences/);

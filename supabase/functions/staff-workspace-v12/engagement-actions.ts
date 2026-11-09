@@ -67,7 +67,7 @@ async function addEvidence(tx:any,a:any,cid:string,p:any,rules:any[]){
   values(${cid},${type},${form},${tx.array(covered)},${doc},${ref},${evidenceDate},${expires},${location},${copy},${form==='physical'?a.staff_id:null},${form==='physical'?evidenceDate:null},${onlineSource},${onlineRef},${form==='online'?a.staff_id:null},${form==='online'?evidenceDate:null},${a.staff_id}) returning evidence_id,covered_items`);
 }
 export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
- if(!['compliance_save','compliance_evidence_save','compliance_evidence_remove','compliance_verify','edd_approve','owner_add','party_add','party_end','group_profile_save','licence_add','licence_end','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
+ if(!['compliance_save','compliance_evidence_save','compliance_evidence_remove','compliance_verify','edd_approve','owner_add','party_add','party_end','group_profile_save','licence_add','licence_end','engagement_checklist','reference_service_add','reference_service_confirm','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
  leader(a);
  if(p.action==='owner_add'){
   const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);const before=await kycSnapshot(tx,cid);
@@ -139,6 +139,33 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   if(row.ended_on)fail(400,'This licence has already been ended.');
   const reason=text(p.end_reason,1000);if(reason.length<10)fail(400,'Record why this licence is being ended: surrendered, cancelled, no longer needed or entered in error (at least 10 characters).');
   await tx`update erp_private.client_licences set ended_on=${today()},end_reason=${reason},ended_by=${a.staff_id} where licence_id=${row.licence_id}`;
+  return {ok:true};
+ }
+ // Step 5: service profiles, the references for each service and the project file checklist. The checklist only shows what is present or
+ // missing; it blocks nothing. The database repeats the Partner rules (see 20261109262000_service_profiles.sql).
+ if(p.action==='engagement_checklist'){
+  const pid=uuid(p.project_id);const project=one(await tx`select p.project_id,p.service_code,p.status,s.service_name,s.service_group from erp_private.projects p join erp_private.services s using(service_code) where p.project_id=${pid} and p.deleted_at is null and erp_private.project_allowed(p.project_id)`);
+  const profile=(await tx`select engine,engine_state,note from erp_private.service_profiles where service_code=${project.service_code}`)[0]||null;
+  const references=await tx`select reference_id,kind,reference,rule_status,source_note,confirmed_at,revision from erp_private.service_references where service_code=${project.service_code} and rule_status<>'Retired' order by kind,reference`;
+  const items=await tx`select * from erp_private.project_file_checklist(${pid}::uuid)`;
+  const missing=items.filter((x:any)=>x.required&&!x.present).length;
+  const letter=items.find((x:any)=>x.item_key==='letter');
+  return {service:{service_code:project.service_code,service_name:project.service_name,service_group:project.service_group},profile,references,items,required_missing:missing,billing_locked:!!letter&&!letter.present};
+ }
+ if(p.action==='reference_service_add'){
+  if(a.category_code!=='PARTNER')fail(403,'Only a Partner can add a standard or law reference to a service.');
+  const svc=one(await tx`select service_code from erp_private.services where service_code=${text(p.service_code,20)}`);
+  const kind=choice(p.kind,['Standard','Law','Guidance']),ref=text(p.reference,500);if(ref.length<3)fail(400,'Describe the standard, law or guidance.');
+  const [row]=await tx`insert into erp_private.service_references(service_code,kind,reference,created_by) values(${svc.service_code},${kind},${ref},${a.staff_id}) returning reference_id`;
+  return {ok:true,reference_id:row.reference_id};
+ }
+ if(p.action==='reference_service_confirm'){
+  if(a.category_code!=='PARTNER')fail(403,'Only a Partner can record the Compliance Lead\'s confirmation of a reference.');
+  const row=one(await tx`select * from erp_private.service_references where reference_id=${uuid(p.reference_id)} for update`);if(String(row.revision)!==revision(p.revision))fail(409,'This reference changed. Refresh first.');
+  if(row.rule_status==='Retired')fail(400,'A retired reference stays retired.');
+  const status=choice(p.rule_status,['Confirmed','Retired']);if(status==='Confirmed'&&row.rule_status==='Confirmed')fail(400,'This reference is already confirmed.');
+  const source=text(p.source_note,1000);if(source.length<10)fail(400,status==='Confirmed'?'Record where the Compliance Lead confirmed this in writing (for example a memo and its date), at least 10 characters.':'Record why this reference is retired, at least 10 characters.');
+  await tx`update erp_private.service_references set rule_status=${status},source_note=${source},confirmed_by=${a.staff_id} where reference_id=${row.reference_id}`;
   return {ok:true};
  }
  if(p.action==='compliance_evidence_save'||p.action==='compliance_evidence_remove'){
