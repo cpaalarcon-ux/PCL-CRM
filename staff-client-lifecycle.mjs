@@ -52,3 +52,13 @@ export function routingCard(c,contacts,leader,esc){
  const sel=(field,cur)=>`<select name="${field}"><option value="">No one chosen</option>${mine.map(x=>`<option value="${esc(x.contact_id)}"${x.contact_id===cur?' selected':''}>${esc(x.full_name)}${x.email_address?' · '+esc(x.email_address):''}</option>`).join('')}</select>`;
  return `<h3>Contact routing</h3>${read}<form data-routing-form="${esc(c.client_id)}" class="form-grid"><label>Receives document requests ${sel('doc_request_contact_id',c.doc_request_contact_id)}</label><label>Receives reports ${sel('report_delivery_contact_id',c.report_delivery_contact_id)}</label><button type="submit" class="primary full">Save routing</button></form>`;
 }
+
+// Communication access: who may record and see EXTERNAL client communications. Internal notes stay open to anyone working on the client.
+export const COMM_LEVELS=[['SUPERVISORS_AND_ABOVE','Supervisors, Managers and Partners'],['MANAGERS_AND_PARTNERS','Managers and Partners only']];
+export const commExternalAllowed=(role,level)=>role==='PARTNER'||role==='MANAGER'||(role==='SUPERVISOR'&&(level||'SUPERVISORS_AND_ABOVE')==='SUPERVISORS_AND_ABOVE');
+export function commAccessCard(c,role,esc){
+ const level=c.comm_access_level||'SUPERVISORS_AND_ABOVE',label=COMM_LEVELS.find(([k])=>k===level)?.[1]||level,ok=commExternalAllowed(role,level);
+ const state=ok?`<p class="muted">External communications with this client (letters, emails, calls, meetings, visits) can be recorded and read by <b>${esc(label)}</b>. Internal notes are open to everyone working on the client.</p>`:`<p class="info" role="status">External client communications are locked for your role. You can still record internal notes. Ask a Supervisor, Manager or Partner to contact the client.</p>`;
+ if(!['PARTNER','MANAGER'].includes(role))return `<h3>Communication access</h3>${state}`;
+ return `<h3>Communication access</h3>${state}<form data-comm-form="${esc(c.client_id)}" class="form-grid"><label>Who may record external communications <select name="level">${COMM_LEVELS.map(([k,t])=>`<option value="${k}"${k===level?' selected':''}>${esc(t)}</option>`).join('')}</select></label><label>Reason for the setting * <input name="reason" required minlength="10" maxlength="1000" placeholder="For example: sensitive dispute, Partner handles all contact"></label><button type="submit" class="primary full">Save communication access</button></form>`;
+}

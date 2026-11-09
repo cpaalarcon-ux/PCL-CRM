@@ -13,5 +13,11 @@ export async function clientLifecycleAction(tx:any,a:any,p:any){
   const pick=(v:any)=>v?uuid(v):null;
   await tx`select erp_private.client_routing_save(${uuid(p.client_id)}::uuid,${pick(p.doc_request_contact_id)}::uuid,${pick(p.report_delivery_contact_id)}::uuid)`;return {ok:true};
  }
+ if(p.action==='client_comm_access_save'){
+  if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'Only a Manager or Partner can change communication access.');
+  const level=String(p.level||'');if(!['SUPERVISORS_AND_ABOVE','MANAGERS_AND_PARTNERS'].includes(level))fail(400,'Choose who may record client communications.');
+  const reason=text(p.reason||'',1000,false).trim();if(reason.length<10)fail(400,'Write the reason in at least 10 characters.');
+  await tx`select erp_private.client_comm_access_save(${uuid(p.client_id)}::uuid,${level},${reason})`;return {ok:true};
+ }
  return undefined;
 }

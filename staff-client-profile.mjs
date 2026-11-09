@@ -1,7 +1,7 @@
 // Client profile page: one place per client with six tabs. It reuses the data the workspace already loaded and the existing screens
 // (edit client, KYC and contacts, tax profile, set-up guide, projects, tasks), so access rules do not change: the server already
 // trims what each role receives. Tabs: Overview, Contacts, Projects & Tasks, Documents/KYC, Communication & Activity, Tax Obligations.
-import {lifecycleBar,routingCard,lifecycleBadge} from './staff-client-lifecycle.mjs?v=20261109-cf-v2';
+import {lifecycleBar,routingCard,lifecycleBadge,commAccessCard,commExternalAllowed} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';
 export const PROFILE_TABS=[['overview','Overview'],['contacts','Contacts'],['projects','Projects & Tasks'],['documents','Documents / KYC'],['activity','Communication & Activity'],['tax','Tax Obligations']];
 
 export function clientProfile(ctx){
@@ -29,10 +29,10 @@ export function clientProfile(ctx){
    return `<p>${comp?.verified_at?`<span class="badge good">KYC verified</span> ${esc(shortDate(comp.verified_at))}`:'<span class="badge warn">KYC not verified</span>'}</p><h3>KYC evidence</h3>${table(['Document','Form','Covers'],ev.map(x=>`<tr><td>${esc(x.document_type||'')}</td><td>${esc(x.evidence_form||'')}</td><td>${esc(Array.isArray(x.covered_items)?x.covered_items.join(', '):x.covered_items||'')}</td></tr>`),'No KYC evidence recorded yet.')}${leader?`<div class="actions section-space">${btn(`data-suite="compliance" data-id="${id}"`,'Open KYC &amp; evidence'.replace('&amp;','&'),'primary')}</div>`:''}<h3>Files</h3>${table(['File','Category','Added','Action'],files.slice(0,50).map(f=>`<tr><td>${esc(f.file_name)}</td><td>${esc(f.category||'')}</td><td>${esc(f.uploaded_at?shortDate(f.uploaded_at):'')}</td><td>${btn(`data-download="${esc(f.document_id)}"`,'Download')}</td></tr>`),'No files linked to this client yet.')}`;
   },
   activity:()=>{
-   const comms=(suite.communications||[]).filter(x=>x.client_id===c.client_id).map(x=>({at:x.communication_date,kind:x.channel,text:x.subject,note:x.channel==='Internal note'?'Internal':'Client communication'}));
+   const role=d.me.category_code,locked=!commExternalAllowed(role,c.comm_access_level),comms=(suite.communications||[]).filter(x=>x.client_id===c.client_id&&(!locked||x.channel==='Internal note')).map(x=>({at:x.communication_date,kind:x.channel,text:x.subject,note:x.channel==='Internal note'?'Internal':'Client communication'}));
    const kyc=(suite.kyc_changes||[]).filter(x=>x.client_id===c.client_id).map(x=>({at:x.recorded_at,kind:'KYC change',text:x.change_reason||'KYC record changed',note:'Internal'}));
    const items=[...comms,...kyc].sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,60);
-   return items.length?items.map(i=>`<div class="task"><div><b>${esc(i.kind)}</b> · ${esc(i.text)}<small>${esc(shortDate(i.at))} · ${esc(i.note)}</small></div></div>`).join(''):'<p class="empty">No communication or changes recorded for this client yet.</p>';
+   return `<div class="section-space">${commAccessCard(c,role,esc)}</div>`+(items.length?items.map(i=>`<div class="task"><div><b>${esc(i.kind)}</b> · ${esc(i.text)}<small>${esc(shortDate(i.at))} · ${esc(i.note)}</small></div></div>`).join(''):'<p class="empty">No communication or changes recorded for this client yet.</p>');
   },
   tax:()=>{
    const tps=(suite.tax_profiles||[]).filter(x=>x.client_id===c.client_id);

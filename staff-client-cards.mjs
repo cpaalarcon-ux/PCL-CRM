@@ -1,4 +1,4 @@
-import {lifecycleBadge} from './staff-client-lifecycle.mjs?v=20261109-cf-v2';
+import {lifecycleBadge} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';
 // Client list as cards: three set-up pillars, one computed next step, one status badge.
 // Pure functions so the rules can be tested without a browser. The page passes in its own helpers.
 
