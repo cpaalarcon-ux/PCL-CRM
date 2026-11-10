@@ -36,6 +36,59 @@ CREATE INDEX IF NOT EXISTS documents_reviewer_queue_idx
 CREATE INDEX IF NOT EXISTS documents_source_channel_idx
   ON documents (source_channel, received_at DESC);
 
+CREATE OR REPLACE FUNCTION enforce_document_metadata_scope()
+RETURNS TRIGGER LANGUAGE plpgsql AS $
+DECLARE
+  parent_client_id BIGINT;
+  parent_firm_id BIGINT;
+  source_client_id BIGINT;
+  source_firm_id BIGINT;
+BEGIN
+  IF NEW.engagement_id IS NOT NULL THEN
+    SELECT client_id, handling_firm_id INTO parent_client_id, parent_firm_id
+    FROM engagements WHERE engagement_id = NEW.engagement_id;
+    IF parent_client_id IS NULL OR parent_client_id <> NEW.client_id OR parent_firm_id <> NEW.handling_firm_id THEN
+      RAISE EXCEPTION 'Document, client and engagement must share the same client and handling firm.';
+    END IF;
+  ELSE
+    SELECT default_firm_id INTO parent_firm_id FROM clients WHERE client_id = NEW.client_id;
+    IF parent_firm_id IS NOT NULL AND parent_firm_id <> NEW.handling_firm_id THEN
+      RAISE EXCEPTION 'A client-level document must use the client handling firm.';
+    END IF;
+  END IF;
+
+  IF NEW.source_contact_id IS NOT NULL THEN
+    SELECT client_id INTO source_client_id FROM client_contacts WHERE contact_id = NEW.source_contact_id;
+    IF source_client_id IS DISTINCT FROM NEW.client_id THEN
+      RAISE EXCEPTION 'The source contact must belong to the document client.';
+    END IF;
+  END IF;
+
+  IF NEW.source_communication_id IS NOT NULL THEN
+    SELECT client_id, handling_firm_id INTO source_client_id, source_firm_id
+    FROM communication_hub WHERE hub_communication_id = NEW.source_communication_id;
+    IF source_firm_id IS DISTINCT FROM NEW.handling_firm_id
+       OR (source_client_id IS NOT NULL AND source_client_id <> NEW.client_id) THEN
+      RAISE EXCEPTION 'The source communication must belong to the document client and handling firm.';
+    END IF;
+  END IF;
+
+  IF NEW.assigned_reviewer_user_id IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM user_firm_access
+       WHERE user_id = NEW.assigned_reviewer_user_id AND firm_id = NEW.handling_firm_id
+     ) THEN
+    RAISE EXCEPTION 'The assigned reviewer must have access to the handling firm.';
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS documents_metadata_scope_check ON documents;
+CREATE TRIGGER documents_metadata_scope_check
+BEFORE INSERT OR UPDATE OF client_id, engagement_id, handling_firm_id, source_contact_id, source_communication_id, assigned_reviewer_user_id
+ON documents FOR EACH ROW EXECUTE FUNCTION enforce_document_metadata_scope();
+
 CREATE TABLE IF NOT EXISTS engagement_task_document_links (
   engagement_task_document_link_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   task_id BIGINT NOT NULL REFERENCES active_engagement_tasks(task_id) ON DELETE RESTRICT,
@@ -94,9 +147,10 @@ CREATE TABLE IF NOT EXISTS document_access_grants (
   granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ,
   revoked_at TIMESTAMPTZ,
+  revoked_by_user_id BIGINT REFERENCES users(user_id) ON DELETE RESTRICT,
   revocation_note TEXT,
   CHECK (expires_at IS NULL OR expires_at > granted_at),
-  CHECK ((revoked_at IS NULL AND revocation_note IS NULL) OR revoked_at IS NOT NULL)
+  CHECK ((revoked_at IS NULL AND revoked_by_user_id IS NULL AND revocation_note IS NULL) OR (revoked_at IS NOT NULL AND revoked_by_user_id IS NOT NULL AND revocation_note IS NOT NULL AND length(trim(revocation_note)) > 0))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS document_access_grants_active_user_idx
@@ -146,6 +200,7 @@ AS $$
     WHERE document.document_id = target_document_id
       AND document.deleted_at IS NULL
       AND document.malware_scan_status IN ('CLEAN','NOT_APPLICABLE')
+      AND actor.is_active
       AND app_has_firm_access(document.handling_firm_id)
       AND (
         actor_role.hierarchy_level <= 2
@@ -251,6 +306,7 @@ AS $$
       SELECT 1
       FROM users actor JOIN roles actor_role ON actor_role.role_id = actor.role_id
       WHERE actor.user_id = app_user_id()
+        AND actor.is_active
         AND (
           actor_role.hierarchy_level <= 2
           OR EXISTS (
@@ -361,6 +417,16 @@ DROP POLICY IF EXISTS documents_by_firm_access ON documents;
 DROP POLICY IF EXISTS documents_select_by_assignment ON documents;
 DROP POLICY IF EXISTS documents_insert_by_assignment ON documents;
 DROP POLICY IF EXISTS documents_update_by_reviewer ON documents;
+DROP POLICY IF EXISTS engagement_task_document_links_select ON engagement_task_document_links;
+DROP POLICY IF EXISTS engagement_task_document_links_manage ON engagement_task_document_links;
+DROP POLICY IF EXISTS engagement_task_document_links_update ON engagement_task_document_links;
+DROP POLICY IF EXISTS document_access_grants_select ON document_access_grants;
+DROP POLICY IF EXISTS document_access_grants_manage ON document_access_grants;
+DROP POLICY IF EXISTS document_access_grants_update ON document_access_grants;
+DROP POLICY IF EXISTS document_review_events_select ON document_review_events;
+DROP POLICY IF EXISTS document_review_events_insert ON document_review_events;
+DROP POLICY IF EXISTS document_access_logs_select_by_assignment ON document_access_logs;
+DROP POLICY IF EXISTS document_access_logs_insert_by_actor ON document_access_logs;
 CREATE POLICY documents_select_by_assignment ON documents FOR SELECT
 USING (app_can_access_document(document_id));
 CREATE POLICY documents_insert_by_assignment ON documents FOR INSERT
@@ -372,7 +438,7 @@ WITH CHECK (app_can_manage_document(document_id));
 CREATE POLICY engagement_task_document_links_select ON engagement_task_document_links FOR SELECT
 USING (app_can_access_document(document_id));
 CREATE POLICY engagement_task_document_links_manage ON engagement_task_document_links FOR INSERT
-WITH CHECK (app_can_manage_document(document_id));
+WITH CHECK (app_can_manage_document(document_id) AND linked_by_user_id = app_user_id());
 CREATE POLICY engagement_task_document_links_update ON engagement_task_document_links FOR UPDATE
 USING (app_can_manage_document(document_id))
 WITH CHECK (app_can_manage_document(document_id));
@@ -381,21 +447,42 @@ CREATE POLICY document_access_grants_select ON document_access_grants FOR SELECT
 USING (app_can_access_document(document_id));
 CREATE POLICY document_access_grants_manage ON document_access_grants FOR INSERT
 WITH CHECK (
-  app_has_firm_access((SELECT handling_firm_id FROM documents WHERE documents.document_id = document_id))
+  app_has_firm_access((SELECT handling_firm_id FROM documents WHERE documents.document_id = document_access_grants.document_id))
+  AND granted_by_user_id = app_user_id()
   AND EXISTS (SELECT 1 FROM users actor JOIN roles role ON role.role_id = actor.role_id
-              WHERE actor.user_id = app_user_id() AND role.hierarchy_level <= 2)
+              WHERE actor.user_id = app_user_id() AND actor.is_active AND role.hierarchy_level <= 2)
 );
 CREATE POLICY document_access_grants_update ON document_access_grants FOR UPDATE
 USING (
-  app_has_firm_access((SELECT handling_firm_id FROM documents WHERE documents.document_id = document_id))
+  app_has_firm_access((SELECT handling_firm_id FROM documents WHERE documents.document_id = document_access_grants.document_id))
   AND EXISTS (SELECT 1 FROM users actor JOIN roles role ON role.role_id = actor.role_id
               WHERE actor.user_id = app_user_id() AND role.hierarchy_level <= 2)
 )
 WITH CHECK (
-  app_has_firm_access((SELECT handling_firm_id FROM documents WHERE documents.document_id = document_id))
+  app_has_firm_access((SELECT handling_firm_id FROM documents WHERE documents.document_id = document_access_grants.document_id))
   AND EXISTS (SELECT 1 FROM users actor JOIN roles role ON role.role_id = actor.role_id
               WHERE actor.user_id = app_user_id() AND role.hierarchy_level <= 2)
 );
+
+ALTER TABLE document_access_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS document_access_logs_select_by_assignment ON document_access_logs;
+DROP POLICY IF EXISTS document_access_logs_insert_by_actor ON document_access_logs;
+CREATE POLICY document_access_logs_select_by_assignment ON document_access_logs FOR SELECT
+USING (app_can_access_document(document_id));
+CREATE POLICY document_access_logs_insert_by_actor ON document_access_logs FOR INSERT
+WITH CHECK (app_can_access_document(document_id) AND user_id = app_user_id());
+
+CREATE OR REPLACE FUNCTION prevent_document_access_log_mutation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $
+BEGIN
+  RAISE EXCEPTION 'Document access history is append-only.';
+END;
+$;
+
+DROP TRIGGER IF EXISTS document_access_logs_immutable ON document_access_logs;
+CREATE TRIGGER document_access_logs_immutable
+BEFORE UPDATE OR DELETE ON document_access_logs
+FOR EACH ROW EXECUTE FUNCTION prevent_document_access_log_mutation();
 
 CREATE POLICY document_review_events_select ON document_review_events FOR SELECT
 USING (app_can_access_document(document_id));
