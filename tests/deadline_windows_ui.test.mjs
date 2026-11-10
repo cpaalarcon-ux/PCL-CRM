@@ -57,7 +57,7 @@ test('wiring: server action, area, suite, Settings and the nightly job',()=>{
  for(const a of ['deadline_settings_read','deadline_setting_set','deadline_setting_confirm'])assert.equal(areaForStaffAction(a),'settings',a);
  assert.match(ts,/Filing windows are shown to Managers and Partners/);assert.match(ts,/Only a Partner can change a filing window/);assert.match(ts,/Only a Partner can confirm a filing window/);
  assert.match(idx,/import \{deadlineAction\} from '\.\/deadline-actions\.ts'/);assert.match(idx,/const deadline=await deadlineAction\(tx,a,p\);if\(deadline!==undefined\)return deadline;/);
- assert.match(su,/import \{createDeadlineUI\} from '\.\/staff-deadlines\.mjs\?v=/);assert.match(su,/if\(await deadlines\.handle\(action,id\)\)return;/);assert.match(su,/\$\{deadlines\.card\(\)\}\$\{taxConfig\.rates\(\)\}/);
+ assert.match(su,/import \{createDeadlineUI\} from '\.\/staff-deadlines\.mjs\?v=/);assert.match(su,/if\(await deadlines\.handle\(action,id\)\)return;/);assert.match(su,/\$\{deadlines\.card\(\)\}\$\{taxRoles\.card\(\)\}\$\{taxConfig\.rates\(\)\}/);
  assert.match(mig,/SELECT cron\.schedule\('pcl-filing-late-scan'/);assert.match(mig,/REVOKE ALL ON FUNCTION erp_private\.filing_late_scan\(\) FROM PUBLIC,anon,authenticated,service_role,erp_api/);
  assert.doesNotMatch(mig+ts+rd('staff-deadlines.mjs'),/ISRS\s*4000/);
  assert.doesNotMatch(mig,/INSERT INTO erp_private\.tax_rates|tax_rules/,'no tax rate or rule is stored');
