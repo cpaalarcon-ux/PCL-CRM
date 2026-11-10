@@ -94,14 +94,14 @@ test('server: every action is routed, mapped to an access area, and checks the s
 });
 test('wiring: screen is imported, routed, reachable from Projects and from the Partner Home page',()=>{
  const su=rd('staff-suite.mjs'),pi=rd('staff-pilot.mjs'),dash=rd('staff-dashboard.mjs'),css=rd('staff-pilot.css');
- assert.match(su,/import \{createKraUI\} from '\.\/staff-kra\.mjs\?v=20261110-taxlead-v1'/);
+ assert.match(su,/import \{createKraUI\} from '\.\/staff-kra\.mjs\?v=20261110-taxrole-v1'/);
  assert.match(su,/const kra=createKraUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await kra\.handle\(action,id\)\)return;/);assert.match(su,/return \{[^}]*openReference,kra,incoming(,forensic)?(,deadlines)?\}/);
  assert.match(pi,/id="kraNoticesCard"[^]*suite\.button\('kra-open','Open the KRA notice log'\)/);
  assert.match(pi,/data\.me\.category_code==='PARTNER'\)\{void v6\.paintPartnerEscalations\(\);void suite\.kra\.paintBanner\(\);\}/);
  assert.match(dash,/role==='PARTNER'\?'<section class="home-kra" id="homeKraFlags"/);
  assert.match(css,/\.kra-banner\{[^}]*background:#b3261e/);
  const html=rd('staff-pilot.html'),rel=JSON.parse(rd(fx+'release.json'));
- assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-10.2760');
+ assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-10.2770');
  for(const f of ['staff-pilot.mjs','staff-suite.mjs','staff-pilot-auth.js','staff-pilot.html','staff-improvements.mjs','staff-audit.mjs','staff-audit-home.mjs','staff-audit-reports.mjs'])assert.doesNotMatch(rd(f),/20261109-aup-v1/,f+' carries the new cache-buster');
 });
 test('migration: the rules that must not be loosened',()=>{
