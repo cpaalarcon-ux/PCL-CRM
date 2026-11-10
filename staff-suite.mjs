@@ -9,6 +9,7 @@ import {createIncomingUI} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {createForensicUI} from './staff-forensic.mjs?v=20261110-taxrole-v3';
 import {createDeadlineUI} from './staff-deadlines.mjs?v=20261110-taxrole-v3';
 import {createTaxRolesUI} from './staff-tax-roles.mjs?v=20261110-taxrole-v3';
+import {createDueBacklogUI} from './staff-due-backlog.mjs?v=20261110-duebacklog-v1';
 import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261110-taxrole-v3';
 import {createDocumentReviewUI} from './staff-document-review.mjs?v=20261110-taxrole-v3';
 import {createClientSupportUI} from './staff-client-support.mjs?v=20261110-taxrole-v3';
@@ -30,6 +31,7 @@ export function createSuiteUI(ctx){
  const forensic=createForensicUI({...ctx,button,area,check});
  const deadlines=createDeadlineUI({...ctx,button,area,check});
  const taxRoles=createTaxRolesUI({...ctx,button,area,check});
+ const dueBacklog=createDueBacklogUI({...ctx,button,area,check});
  const docReview=createDocumentReviewUI({...ctx,button,area,check});
  const clientSupport=createClientSupportUI({...ctx,button,area,check});
  const credits=createCreditUI({...ctx,button,area,check,openTax:id=>taxOpen(id)});
@@ -57,7 +59,7 @@ export function createSuiteUI(ctx){
  }
  function support(){return `<div class="section-head"><p>Raise an internal support request and track its first-response deadline. Notifications remain inside the ERP.</p>${button('ticket-new','+ New ticket')}</div>${table(['Ticket','Subject','Assigned to','Priority / response due','Status','Action'],s().tickets.map(t=>[esc('ALC-'+t.ticket_number),esc(t.subject),esc(staffName(t.assigned_to)),`${badge(t.priority)}<small>${new Date(t.sla_due_at).toLocaleString('en-GB',{timeZone:'Africa/Nairobi'})}</small>${!t.first_response_at&&new Date(t.sla_due_at)<new Date()?'<span class="missing">Response overdue</span>':''}`,badge(t.status),button('ticket','Open',t.ticket_id)]))}`;}
  function adminSettings(){return `<section class="card"><div class="section-head"><h2>System settings</h2></div><p class="muted">A System Administrator keeps the application lists and reference material up to date. You do not see or change client records, and you cannot approve anything. Tax rules, chart of accounts changes and release decisions stay with Managers and Partners.</p><div class="actions"><button type="button" data-v6="sector">+ Add sector</button>${button('references','Private reference documents')}${button('release-read','Go-live readiness (read only)')}</div></section><section class="card section-space"><h3>Sectors</h3>${(d().sectors||[]).map(x=>`<span class="badge">${esc(x.name)}</span>`).join(' ')||empty('No sectors yet.')}</section>`;}
- function settings(){if(d().me.category_code==='ADMIN')return adminSettings();return `<section class="card"><div class="section-head"><h2>Reference documents & change control</h2>${button('references','Open private reference documents')}</div><p>Review the consolidated Word specifications and retain each approved version inside the ERP.</p></section><section class="card"><h2>Chart of accounts</h2><p>Attached account master, controlled additions and separate tax rules.</p><button type="button" data-accounting="catalog">Browse chart of accounts</button></section>${deadlines.card()}${taxRoles.card()}${taxConfig.rates()}
+ function settings(){if(d().me.category_code==='ADMIN')return adminSettings();return `<section class="card"><div class="section-head"><h2>Reference documents & change control</h2>${button('references','Open private reference documents')}</div><p>Review the consolidated Word specifications and retain each approved version inside the ERP.</p></section><section class="card"><h2>Chart of accounts</h2><p>Attached account master, controlled additions and separate tax rules.</p><button type="button" data-accounting="catalog">Browse chart of accounts</button></section>${deadlines.card()}${taxRoles.card()}${dueBacklog.card()}${taxConfig.rates()}
   ${partner()?`<section class="card section-space"><div class="section-head"><h2>Staff cost & billing rates</h2>${button('staff-rate','+ Add rate period')}</div>${table(['Staff','Effective dates','Cost / hour','Billable / hour'],s().staff_rates.map(r=>[esc(staffName(r.staff_id)),`${shortDate(r.effective_from)} – ${shortDate(r.effective_to)}`,money(r.cost_rate),money(r.billable_rate)]))}</section><section class="card section-space"><div class="section-head"><h2>Handling firms</h2><button data-new="firm">+ Add firm</button></div>${table(['Firm','Registered name','Invoice prefix','Action'],d().firms.map(f=>[esc(f.firm_code),esc(f.legal_name),esc(f.invoice_prefix||'INV/'+f.firm_code),button('firm','Edit details',f.firm_id)]))}</section>`:''}`;}
  function hr(){
   const me=d().me.staff_id,open=s().attendance.find(x=>x.staff_id===me&&date(x.work_date)===today()),mine=s().leave.filter(l=>l.staff_id===me),team=leader();
@@ -186,6 +188,7 @@ export function createSuiteUI(ctx){
   if(await forensic.handle(action,id))return;
   if(await deadlines.handle(action,id))return;
   if(await taxRoles.handle(action,id))return;
+  if(await dueBacklog.handle(action,id))return;
   if(await credits.handle(action,id))return;
   if(action==='finance-tab'){financeTab=id;ctx.render();return;}if(action==='comms-tab'){commsTab=id;ctx.render();return;}if(action==='hr-tab'){timeTab=id;ctx.render();return;}
   if(action==='add-line'){$('#invoiceLines').insertAdjacentHTML('beforeend',lineInputs());invoiceTotals();return;}if(action==='add-employee'){$('#employeeRows').insertAdjacentHTML('beforeend',employeeInputs());return;}if(action==='add-partner'){$('#partnerRows').insertAdjacentHTML('beforeend',partnerInputs());return;}if(action==='print'){window.print();return;}
