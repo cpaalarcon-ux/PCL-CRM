@@ -36,14 +36,14 @@ test('Tax Manager role gate and annual due_month_offset rules',async t=>{
  assert.equal(base.rules.length,3);assert.equal(base.candidates.length,2,'a Partner can pick from the active Managers');
  for(const role of ['PARTNER','MANAGER','MANAGER2'])assert.equal(await lead(role),false);
  await assert.rejects(approve('MANAGER2',R),/designated Tax Manager/);
- // 2. Only a Partner assigns; only to an active Manager; one per engagement; with a reason
+ // 2. Only a Partner assigns; only to an active Manager; the same person once per scope; with a reason
  const assign=(role,project,staff,reason='Designated Tax Manager for this engagement')=>tm(role,{action:'tax_manager_assign',project_id:project,staff_id:staff,reason});
  await assert.rejects(assign('MANAGER',PJ,M2),/Only an Engagement Partner/);
  await assert.rejects(assign('PARTNER',PJ,SUP),/The Tax Manager is a Manager/,'a Supervisor cannot hold the role');
  await assert.rejects(assign('PARTNER',PJ,actors.ASSISTANT.staff_id),/The Tax Manager is a Manager/);
  await assert.rejects(assign('PARTNER',PJ,M2,'short'),/at least 10/);
  const a1=(await assign('PARTNER',PJ,M2)).assignment_id;
- await assert.rejects(assign('PARTNER',PJ,M),/already has a Tax Manager/);
+ await assert.rejects(assign('PARTNER',PJ,M2),/already a Tax Manager for this scope/);
  // 3. Assigned but the permission is still OFF: still cannot approve
  assert.equal(await lead('MANAGER2'),false,'assignment alone does not give the permission');
  await assert.rejects(approve('MANAGER2',R),/designated Tax Manager/);
@@ -71,6 +71,28 @@ test('Tax Manager role gate and annual due_month_offset rules',async t=>{
  await tm('PARTNER',{action:'tax_role_permission_set',allowed:false,revision:await rev(),source_note:'Partner decision to switch off'});
  assert.equal(await lead('MANAGER2'),false,'permission off');
  await tm('PARTNER',{action:'tax_role_permission_set',allowed:true,revision:await rev(),source_note:'Partner decision to switch on again'});
+ assert.equal(await lead('MANAGER2'),true);
+ // 6. One firm-wide Tax Manager covers every client (build 2772)
+ await tm('PARTNER',{action:'tax_manager_end',assignment_id:a2,reason:'Fictional: moving to a firm-wide Tax Manager'});
+ assert.equal(await lead('MANAGER2'),false,'engagement assignment ended');
+ await assert.rejects(tm('MANAGER',{action:'tax_manager_assign',project_id:'ALL',staff_id:M2,reason:'Handles all clients of the firm'}),/Only an Engagement Partner/);
+ const fw=(await tm('PARTNER',{action:'tax_manager_assign',project_id:'ALL',staff_id:M2,reason:'Handles all clients of the firm'})).assignment_id;
+ assert.equal(await lead('MANAGER2'),true,'a firm-wide assignment counts for every client');
+ await assert.rejects(tm('PARTNER',{action:'tax_manager_assign',project_id:'',staff_id:M2,reason:'The same person twice firm-wide'}),/already a Tax Manager for this scope/);
+ const fread=await tm('PARTNER',{action:'tax_manager_read'});
+ assert.equal(fread.assignments.filter(x=>!x.ended_at&&x.project_id===null).length,1,'the firm-wide row is read back without an engagement');
+ // a firm may have as many Tax Managers as it needs: a second firm-wide Manager and a second Manager on the same engagement
+ const fw2=(await tm('PARTNER',{action:'tax_manager_assign',project_id:'ALL',staff_id:M,reason:'A second firm-wide Tax Manager for a larger firm'})).assignment_id;
+ const pj2=(await assign('PARTNER',PJ,M2)).assignment_id;const pj3=(await assign('PARTNER',PJ,M)).assignment_id;
+ assert.equal((await tm('PARTNER',{action:'tax_manager_read'})).assignments.filter(x=>!x.ended_at).length,4,'two firm-wide and two on one engagement');
+ assert.equal(await lead('MANAGER'),true,'the second firm-wide Manager can approve too');
+ for(const id of [fw2,pj2,pj3])await tm('PARTNER',{action:'tax_manager_end',assignment_id:id,reason:'Fictional: end of the many-Tax-Managers test'});
+ assert.equal(await lead('MANAGER'),false,'back to one Tax Manager');
+ assert.equal((await tm('MANAGER',{action:'tax_manager_read'})).assignments.filter(x=>x.project_id===null).length,1,'a Manager can see it');
+ await assert.rejects(assign('PARTNER','00000000-0000-4000-8000-000000000000',M),/unavailable|violates foreign key|Choose/,'a made-up engagement is still refused');
+ await tm('PARTNER',{action:'tax_manager_end',assignment_id:fw,reason:'Fictional: end of the firm-wide test'});
+ assert.equal(await lead('MANAGER2'),false,'ending the firm-wide assignment removes the ability');
+ await tm('PARTNER',{action:'tax_manager_assign',project_id:'ALL',staff_id:M2,reason:'Firm-wide again for the rest of the test'});
  assert.equal(await lead('MANAGER2'),true);
  // the individual named-person right still works beside the role
  await q('PARTNER',`select erp_private.staff_right_grant('${M}'::uuid,'APPROVE_TAX_RULES','Named Tax Manager formally assigned','${new Date(Date.now()+100*86400000).toISOString().slice(0,10)}'::date)`);

@@ -48,6 +48,6 @@ test('wiring: documents screen, suite dispatch, cache busters, server action and
  const codes=Object.fromEntries(STAFF_RIGHTS.map(r=>[r.code,r]));
  assert.deepEqual(codes['document.grant'].roles,['PARTNER','MANAGER']);assert.ok(!codes['document.review'].roles.includes('ASSISTANT'));
  assert.equal(read('staff-rights-catalog.mjs'),read('supabase/functions/staff-workspace-v12/staff-rights-catalog.mjs'));
- for(const f of ['staff-pilot.mjs','staff-suite.mjs'])assert.match(read(f),/20261110-taxrole-v2/);
+ for(const f of ['staff-pilot.mjs','staff-suite.mjs'])assert.match(read(f),/20261110-taxrole-v3/);
  assert.equal(SCAN_TEXT.PENDING_MANUAL_REVIEW,'Scan pending manual review');
 });
