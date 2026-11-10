@@ -7,8 +7,10 @@ import {MODULE_LINKS,NO_LINK_MODULES,GROUP_ENGAGEMENTS,moduleLinks,readOpen,writ
 const rd=f=>readFileSync(new URL('../'+f,import.meta.url),'utf8');
 const me=c=>({category_code:c});
 test('built modules get one link under their parent, for the right roles',()=>{
-  assert.deepEqual(moduleLinks(me('PARTNER'),'engagements').map(x=>x.key),['kra','forensic']);
-  assert.deepEqual(moduleLinks(me('ASSISTANT'),'engagements').map(x=>x.key),['kra','forensic']);
+  assert.deepEqual(moduleLinks(me('PARTNER'),'engagements').map(x=>x.key),['kra'],'Forensic files stay hidden until the database says this person may see the entry');
+  assert.deepEqual(moduleLinks(me('PARTNER'),'engagements',()=>true,{forensic:true}).map(x=>x.key),['kra','forensic']);
+  assert.deepEqual(moduleLinks(me('ASSISTANT'),'engagements',()=>true,{forensic:true}).map(x=>x.key),['kra','forensic']);
+  assert.deepEqual(moduleLinks(me('ASSISTANT'),'engagements',()=>true,{forensic:false}).map(x=>x.key),['kra']);
   assert.deepEqual(moduleLinks(me('INTERN'),'engagements'),[]);
   assert.deepEqual(moduleLinks(me('ADMIN'),'engagements'),[]);
   for(const r of ['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'])assert.deepEqual(moduleLinks(me(r),'projects'),[],'Projects & Tasks holds no module links: it is the project and task manager');
@@ -18,12 +20,12 @@ test('built modules get one link under their parent, for the right roles',()=>{
   }
   assert.equal(moduleLinks(me('PARTNER'),'documents')[0].suite,'incoming-open');
   assert.equal(moduleLinks(me('PARTNER'),'communications')[0].suite,'incoming-timeline-pick');
-  assert.equal(moduleLinks(me('PARTNER'),'engagements')[0].suite,'kra-open');assert.equal(moduleLinks(me('PARTNER'),'engagements')[1].suite,'forensic-open');
+  assert.equal(moduleLinks(me('PARTNER'),'engagements')[0].suite,'kra-open');assert.equal(moduleLinks(me('PARTNER'),'engagements',()=>true,{forensic:true})[1].suite,'forensic-open');
 });
 test('a link needs the area to be allowed',()=>{
   assert.deepEqual(moduleLinks(me('PARTNER'),'documents',a=>a!=='documents'),[]);
-  assert.deepEqual(moduleLinks(me('PARTNER'),'engagements',a=>a!=='audit').map(x=>x.key),['kra'],'without the audit area a person keeps KRA notices but not Forensic files');
-  assert.deepEqual(moduleLinks(me('PARTNER'),'engagements',a=>a!=='projects').map(x=>x.key),['forensic']);
+  assert.deepEqual(moduleLinks(me('PARTNER'),'engagements',a=>a!=='audit',{forensic:true}).map(x=>x.key),['kra'],'without the audit area a person keeps KRA notices but not Forensic files');
+  assert.deepEqual(moduleLinks(me('PARTNER'),'engagements',a=>a!=='projects',{forensic:true}).map(x=>x.key),['forensic']);
 });
 test('Engagements & Delivery is a group with no page of its own',()=>{
   assert.deepEqual([GROUP_ENGAGEMENTS.key,GROUP_ENGAGEMENTS.title],['engagements','Engagements & Delivery']);
@@ -46,13 +48,13 @@ test('every link points at an action its screen really handles',()=>{
 });
 test('the sidebar draws the links as sub-items that open the module, never as a page or a current page',()=>{
   const app=rd('staff-pilot.mjs');
-  assert.match(app,/from '\.\/staff-nav\.mjs\?v=20261110-card-v1'/);
+  assert.match(app,/from '\.\/staff-nav\.mjs\?v=20261110-card-v2'/);
   assert.match(app,/parent\('projects','Projects & Tasks','▣',modLinks\('projects'\)\)/);
   assert.match(app,/parent\('documents','Documents','▤',modLinks\('documents'\)\)/);
   assert.match(app,/parent\('communications','Communications Hub','◉',modLinks\('communications'\)\)/);
   assert.match(app,/subs=\[audit,\.\.\.modLinks\('engagements'\)\]\.filter\(Boolean\)/,'Audit files, KRA notices and Forensic files are the links under Engagements & Delivery');
   assert.match(app,/item\.suite\?`<button class="side-item side-sub side-module" type="button" data-suite="\$\{item\.suite\}"/);
-  assert.match(rd('staff-pilot.html'),/data-build="2026-11-10\.2690"/);
+  assert.match(rd('staff-pilot.html'),/data-build="2026-11-10\.2700"/);
 });
 test('the order matches the agreed list: Engagements & Delivery follows Communications and precedes Finance & Reports',()=>{
   const app=rd('staff-pilot.mjs');

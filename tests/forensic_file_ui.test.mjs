@@ -123,12 +123,12 @@ test('server module, upload and download routes, areas',()=>{
 
 test('menu link, wiring and cache busters',()=>{
  const f=MODULE_LINKS.find(m=>m.key==='forensic');assert.equal(f.built,true);assert.equal(f.action,'forensic-open');assert.equal(f.parent,'engagements');
- for(const r of ['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'])assert.ok(moduleLinks(me(r),'engagements').some(x=>x.key==='forensic'&&x.suite==='forensic-open'),r);
- for(const r of ['INTERN','ADMIN'])assert.ok(!moduleLinks(me(r),'engagements').some(x=>x.key==='forensic'),r);
+ for(const r of ['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'])assert.ok(moduleLinks(me(r),'engagements',()=>true,{forensic:true}).some(x=>x.key==='forensic'&&x.suite==='forensic-open'),r);
+ for(const r of ['INTERN','ADMIN'])assert.ok(!moduleLinks(me(r),'engagements',()=>true,{forensic:true}).some(x=>x.key==='forensic'),r);
  const su=rd('staff-suite.mjs');
- assert.match(su,/import \{createForensicUI\} from '\.\/staff-forensic\.mjs\?v=20261110-card-v1'/);assert.match(su,/const forensic=createForensicUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await forensic\.handle\(action,id\)\)return;/);assert.match(su,/incoming,forensic\}/);
+ assert.match(su,/import \{createForensicUI\} from '\.\/staff-forensic\.mjs\?v=20261110-card-v2'/);assert.match(su,/const forensic=createForensicUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await forensic\.handle\(action,id\)\)return;/);assert.match(su,/incoming,forensic\}/);
  assert.match(rd('staff-forensic.mjs'),/request\(f,\{file:true,uploadKind:'forensic'\}\)/);
- const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-10\.2690$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
+ const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-10\.2700$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
  assert.doesNotMatch(rd('staff-forensic.mjs')+rd(fx+'forensic-actions.ts')+rd('supabase/migrations/20261110266000_forensic_file.sql'),/ISRS\s*4000/,'the unverified standard number appears nowhere in the code');
 });
 
@@ -139,4 +139,21 @@ test('migration rules',()=>{
  assert.doesNotMatch(m,/log_change\(/,'no general change-audit trigger on any forensic table');assert.doesNotMatch(m,/CREATE TRIGGER change_audit/);
  assert.doesNotMatch(m,/GRANT (INSERT|UPDATE|DELETE)[^;]*forensic_(cases|access|evidence|custody|findings|reports|holds|events)/);
  assert.match(m,/Administrators and Interns cannot be added/);assert.match(m,/PENDING COMPLIANCE REVIEW/);
+});
+
+test('visibility decision (10 Nov 2026): no forensic hint on ordinary screens, the menu entry is gated by the database, the log is separate',()=>{
+ const pilot=rd('staff-pilot.mjs'),nav=rd('staff-nav.mjs'),ts=rd(fx+'forensic-actions.ts');
+ assert.equal(MODULE_LINKS.find(m=>m.key==='forensic').gate,'forensic');
+ assert.deepEqual(moduleLinks(me('PARTNER'),'engagements').map(x=>x.key),['kra'],'hidden until the database answers yes');
+ assert.match(pilot,/modLinks=v=>moduleLinks\(data\.me,v,canArea,navFlags\)/);
+ assert.match(pilot,/request\(\{action:'forensic_menu'\}\),show=r\.show===true/);
+ assert.match(pilot,/navFlags=\{forensic:false\};forensicMenuAt=0;/,'signing out clears it');
+ assert.match(pilot,/catch\{forensicMenuAt=Date\.now\(\);\}/,'if the check fails the entry simply stays hidden');
+ assert.match(ts,/if\(p\.action==='forensic_menu'\)\{if\(!\['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'\]\.includes\(a\.category_code\)\)return \{show:false\}/);
+ assert.equal(areaForStaffAction('forensic_menu'),'audit');
+ // nothing on the home, task, client or register screens mentions a forensic file
+ for(const f of ['staff-client-cards.mjs','staff-client-register.mjs','staff-client-profile.mjs','staff-home.mjs','staff-work.mjs'])try{assert.doesNotMatch(rd(f),/orensic/,f);}catch(e){if(e.code==='ENOENT')continue;throw e;}
+ const mig=rd('supabase/migrations/20261110269000_forensic_visibility.sql');
+ assert.match(mig,/DROP FUNCTION erp_private\.client_card_flags/);assert.doesNotMatch(mig.slice(mig.indexOf('CREATE FUNCTION erp_private.client_card_flags'),mig.indexOf('REVOKE')),/forensic/);
+ assert.match(mig,/CHECK \(table_name !~\* 'forensic' AND action !~\* 'forensic'\)/);
 });

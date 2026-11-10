@@ -54,13 +54,18 @@ test('Forensic file: hidden from everyone off the list, evidence, custody, findi
  assert.match(k1.case_ref,/^FOR-\d{4}-\d{4}$/);
  const lst=await call('PARTNER','forensic_list');assert.equal(lst.length,1);assert.equal(lst[0].my_level,'Lead');assert.equal(lst[0].client_name,'UAT Fictional Services Ltd');assert.equal(lst[0].hold_active,false);
 
- // ---- 2b. The client card tells the lead, and only the lead, that a forensic file exists for the client (build 2690) --------------------------------
- const cardFor=(role,ids)=>q(role,`select client_id,forensic_file from erp_private.client_card_flags($1::uuid[])`,[ids]);
- assert.deepEqual(await cardFor('PARTNER',[A]),[{client_id:A,forensic_file:true}],'the lead Partner is told');
- for(const role of ['PARTNER2','MANAGER','MANAGER2','SUPERVISOR'])assert.ok((await cardFor(role,[A])).every(r=>r.forensic_file===false),role+' is told nothing, even though the file is for a client they can see');
- for(const role of ['ASSISTANT','INTERN','ADMIN','OUTSIDER'])assert.deepEqual(await cardFor(role,[A]),[],role+' gets no row at all');
- assert.deepEqual(await cardFor('PARTNER',[B]),[{client_id:B,forensic_file:false}],'another client of the same Partner shows no forensic file');
- assert.equal((await tx`select count(*)::int n from erp_private.audit_events where table_name like 'forensic%'`)[0].n,0,'asking the card question writes nothing to the general log');
+ // ---- 2b. The client card says nothing about a forensic file to anyone, the lead included (decision of 10 Nov 2026, build 2700) ---------------------
+ const cardCols=await q('PARTNER',`select * from erp_private.client_card_flags($1::uuid[])`,[[A]]);
+ assert.equal(cardCols.length,1);assert.ok(!Object.keys(cardCols[0]).some(k=>/forensic/i.test(k)),'the card question has no forensic column at all');
+ assert.deepEqual(Object.keys(cardCols[0]).sort(),['client_id','incoming_overdue','incoming_waiting','kra_days','kra_open']);
+ assert.equal((await tx`select count(*)::int n from erp_private.audit_events where table_name ~* 'forensic' or action ~* 'forensic'`)[0].n,0,'nothing forensic is in the general log');
+ await assert.rejects(tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key) values(${actors.PARTNER.auth_user_id},'x','forensic_cases','INSERT','k')`,/audit_events_no_forensic/,'the general log refuses a forensic table');
+ await assert.rejects(tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key) values(${actors.PARTNER.auth_user_id},'x','clients','VIEW_FORENSIC','k')`,/audit_events_no_forensic/,'the general log refuses a forensic action');
+ // The menu entry: a Partner (who can open a first file) or anyone on an access list; nobody else.
+ const menu=role=>q(role,`select erp_private.forensic_menu() r`).then(r=>r[0].r);
+ assert.equal(await menu('PARTNER'),true);assert.equal(await menu('PARTNER2'),true);
+ for(const role of ['MANAGER','MANAGER2','SUPERVISOR','ASSISTANT','INTERN','ADMIN','OUTSIDER'])assert.equal(await menu(role),false,role+' off every list gets no menu entry');
+ assert.deepEqual((await tx`select has_function_privilege('anon','erp_private.forensic_menu()','execute') a,has_function_privilege('erp_api','erp_private.forensic_menu()','execute') b`)[0],{a:false,b:true});
  // ---- 3. Hidden from everyone off the list (other Partners, Managers, Supervisors, the administrator) ------------------------------------------
  for(const role of ['PARTNER2','MANAGER','MANAGER2','SUPERVISOR','ASSISTANT','INTERN','ADMIN','OUTSIDER']){
   assert.deepEqual(await call(role,'forensic_list'),[],role+' sees no forensic file');
@@ -85,6 +90,7 @@ test('Forensic file: hidden from everyone off the list, evidence, custody, findi
  await assert.rejects(call('PARTNER','forensic_access_add',[k1.case_id,M,'Lead']),/Investigator or Viewer/);
  await call('PARTNER','forensic_access_add',[k1.case_id,M,'Investigator']);
  await call('PARTNER','forensic_access_add',[k1.case_id,AST,'Viewer']);
+ assert.equal(await menu('MANAGER'),true,'an Investigator on the list gets the menu entry');assert.equal(await menu('ASSISTANT'),true,'a Viewer on the list gets it too');assert.equal(await menu('MANAGER2'),false,'a Manager not on the list still does not');
  await assert.rejects(call('PARTNER','forensic_access_add',[k1.case_id,M,'Viewer']),/already on the list/);
  const opts=await call('PARTNER','forensic_staff_options',[k1.case_id]);
  assert.ok(opts.some(o=>o.staff_id===PT2)&&opts.some(o=>o.staff_id===SUP));

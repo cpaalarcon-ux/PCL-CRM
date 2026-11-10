@@ -2,13 +2,13 @@ let documentKind='Evidence';
 import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261110-card-v1';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261110-card-v2';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261109-ptm-v1';
 import {clientProfile} from './staff-client-profile.mjs?v=20261109-dr-v1';
 import {paintDocRequests,bindDocRequests} from './staff-doc-requests.mjs?v=20261109-dr-v1';
 import {LIFECYCLE_WORDS,lifecycleForm,isArchived} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';
-import {DEFAULT_QUERY,queryToRequest,toolbar as registerBar,pager as registerPager,rowMeta} from './staff-client-register.mjs?v=20261110-card-v1';
+import {DEFAULT_QUERY,queryToRequest,toolbar as registerBar,pager as registerPager,rowMeta} from './staff-client-register.mjs?v=20261110-card-v2';
 import {createPresenceUI} from './staff-presence.mjs?v=20261109-hol-v1';
 import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-check-v1';
 import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261109-ptm-v1';
@@ -20,16 +20,16 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261110-card-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261110-card-v2';
 import {createMessenger} from './staff-messenger.mjs?v=20261108-nav-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261110-card-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261110-card-v2';
 import {uploadChoices} from './staff-pilot-upload.mjs';
-import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-card-v1';
-import {moduleLinks,GROUP_ENGAGEMENTS,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261110-card-v1';
-import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261110-card-v1';
-import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-card-v1';
+import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-card-v2';
+import {moduleLinks,GROUP_ENGAGEMENTS,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261110-card-v2';
+import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261110-card-v2';
+import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-card-v2';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
-import {createAuditUI} from './staff-audit.mjs?v=20261110-card-v1';
+import {createAuditUI} from './staff-audit.mjs?v=20261110-card-v2';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261105-check-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 import {renderAccessGuide} from './staff-access-guide.mjs?v=20261106-rights-v1';
@@ -41,7 +41,7 @@ const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>
 const roles={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Audit Supervisor',ASSISTANT:'Audit Assistant',INTERN:'Intern',ADMIN:'System Administrator'};
 const sectors=['Agribusiness','Financial Services','Energy','Healthcare','NGO','Public Sector','SME/Startup','Legal','Education'];
 const branches=['Nairobi','Bungoma','Kisii','Other'],states=['Pending','In Progress','Waiting on client','Paused','In Review','Blocked','Completed','Cancelled'];
-let data=null,view='home',firm='',setupToken=null,presence=null,procedures=null,selectedTask='',selectedClient='',clientTab='overview',missingProject=false,clientMappingReadiness=null,clientMappingReadinessRequest=null,clientAccountReturn=null,clientAccountReturnLabel='Return to purchase mapping';
+let navFlags={forensic:false},pendingClientTab='',data=null,view='home',firm='',setupToken=null,presence=null,procedures=null,selectedTask='',selectedClient='',clientTab='overview',missingProject=false,clientMappingReadiness=null,clientMappingReadinessRequest=null,clientAccountReturn=null,clientAccountReturnLabel='Return to purchase mapping';
 // Preserve a renewable session across reloads; the server ends it after 30 minutes idle.
 if(!localStorage.getItem('pcl-staff-session-v2')&&sessionStorage.getItem('pcl-staff-session-v2'))localStorage.setItem('pcl-staff-session-v2',sessionStorage.getItem('pcl-staff-session-v2'));
 sessionStorage.removeItem('pcl-staff-session-v2');
@@ -56,7 +56,7 @@ const badge=v=>`<span class="badge ${['Completed','Active','Closed'].includes(v)
 const options=(items,value,blank='Choose…')=>`<option value="">${esc(blank)}</option>`+items.map(x=>{let [v,l]=Array.isArray(x)?x:[x,x];return `<option value="${esc(v)}"${String(v)===String(value)?' selected':''}>${esc(l)}</option>`;}).join('');
 function notice(message,error=false){$('#notice').textContent=message;$('#notice').className=error?'error':'';}
 function signedOut(message=''){session.end(message);}
-function showSignedOut(message=''){data=null;navBadges={};navOpenFor='';navBadgeAt=0;cardFlags=new Map();cardWip=new Map();cardFacts.key='';cardFacts.at=0;document.body.classList.remove('nav-open');presence?.clear();if(typeof bell!=='undefined')bell.paint();if(typeof holidaysUI!=='undefined')holidaysUI.reset();if(typeof suite!=='undefined')suite.chat?.clear();if(typeof messenger!=='undefined')messenger.stop();document.body.classList.remove('workspace-active');$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));}
+function showSignedOut(message=''){data=null;navFlags={forensic:false};forensicMenuAt=0;navBadges={};navOpenFor='';navBadgeAt=0;cardFlags=new Map();cardWip=new Map();cardFacts.key='';cardFacts.at=0;document.body.classList.remove('nav-open');presence?.clear();if(typeof bell!=='undefined')bell.paint();if(typeof holidaysUI!=='undefined')holidaysUI.reset();if(typeof suite!=='undefined')suite.chat?.clear();if(typeof messenger!=='undefined')messenger.stop();document.body.classList.remove('workspace-active');$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));}
 async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},timeoutMs=0}={}){
  const headers={apikey:KEY,...extra};if(uploadKind)headers['x-erp-upload-kind']=uploadKind;if(!file)headers['Content-Type']='application/json';
  const controller=timeoutMs?new AbortController():null;let timer,res;
@@ -69,7 +69,7 @@ async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},time
 async function request(p,{auth=true,...options}={}){
  if(!auth)return send(p,options);
  const ctx=await session.beforeRequest();
- try{const result=await send(p,{...options,headers:ctx.headers});session.accept(ctx);if(/^(?:kra_|incoming_|forensic_open$)/.test(String(p?.action||''))||options.uploadKind==='incoming')cardFacts.at=0;
+ try{const result=await send(p,{...options,headers:ctx.headers});session.accept(ctx);if(/^(?:kra_|incoming_)/.test(String(p?.action||''))||options.uploadKind==='incoming')cardFacts.at=0;
   if(/^incoming_(accept|archive|kyc_approve|choose_client|set_handling)$/.test(String(p?.action||''))||options.uploadKind==='incoming')setTimeout(()=>refreshNavBadges(true),500);return result;}
  catch(error){session.reject(ctx,error);throw error;}
 }
@@ -105,11 +105,22 @@ function toggleNavGroup(key){
 // The Incoming review count. The database applies the same visibility and role rules as the queue; a role that may not review gets zero.
 async function refreshNavBadges(force=false){
  if(!data?.me||navBadgeBusy||(!force&&Date.now()-navBadgeAt<45000))return;
+ void refreshForensicMenu(force);
  if(!moduleLinks(data.me,'documents',canArea).some(x=>x.badge==='incoming'))return;
  navBadgeBusy=true;
  try{const r=await request({action:'incoming_badge'});navBadges={...navBadges,incoming:{waiting:Number(r.waiting||0),overdue:Number(r.overdue||0)}};navBadgeAt=Date.now();nav();}
  catch{navBadgeAt=Date.now();/* a failed count must never stop the menu: leave the last number in place and try again later */}
  finally{navBadgeBusy=false;}
+}
+// The "Forensic files" menu entry shows only when the database says this person is on a forensic access list (or is a Partner, who can open one).
+// Until it answers, and if it fails, the entry stays hidden. Nothing about any file is returned: only yes or no.
+let forensicMenuAt=0,forensicMenuBusy=false;
+async function refreshForensicMenu(force=false){
+ if(!data?.me||forensicMenuBusy||!canArea('audit')||(!force&&Date.now()-forensicMenuAt<120000))return;
+ forensicMenuBusy=true;
+ try{const r=await request({action:'forensic_menu'}),show=r.show===true;forensicMenuAt=Date.now();if(show!==navFlags.forensic){navFlags={...navFlags,forensic:show};nav();}}
+ catch{forensicMenuAt=Date.now();}
+ finally{forensicMenuBusy=false;}
 }
 function setNavDrawer(open){document.body.classList.toggle('nav-open',!!open);$('#navToggle')?.setAttribute('aria-expanded',String(!!open));}
 function nav(){const catalog=[
@@ -126,7 +137,7 @@ function nav(){const catalog=[
 ],cards=catalog.filter(item=>canArea(item.area)).map(item=>`<button class="workspace-area-card tone-${item.tone}" type="button" data-view="${item.view}" data-area="${item.area}"><span class="workspace-area-icon" aria-hidden="true">${item.icon}</span><b>${esc(item.title)}</b><small>${esc(item.desc)}</small></button>`).join('');const by=v=>catalog.find(item=>item.view===v&&canArea(item.area)),leaf=(v,title,icon)=>{const it=by(v);return it?{view:v,title,icon:icon||it.icon}:null;},
   team=['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code)&&canArea('time_hr')?{view:'team',title:'Team & HR',icon:'♙'}:null,
   lead=leaf('leads','Leads & Pipeline','＋'),audit=leaf('audit','Audit files','✓'),staffLeaf=leaf('staff','Staff & access','♙'),settingsLeaf=leaf('firms','Settings','⚙'),
-  modLinks=v=>moduleLinks(data.me,v,canArea),
+  modLinks=v=>moduleLinks(data.me,v,canArea,navFlags),
   parent=(v,title,icon,subs)=>{const it=leaf(v,title,icon);return it?{...it,subs:subs.filter(Boolean)}:null;},
   engagements=(()=>{const subs=[audit,...modLinks('engagements')].filter(Boolean);return subs.length?{key:GROUP_ENGAGEMENTS.key,view:GROUP_ENGAGEMENTS.key,group:true,title:GROUP_ENGAGEMENTS.title,icon:GROUP_ENGAGEMENTS.icon,subs}:null;})(),
   admin=staffLeaf?{...staffLeaf,title:'Administration',icon:'⚙',subs:[staffLeaf,settingsLeaf].filter(Boolean)}:settingsLeaf?{...settingsLeaf,title:'Administration',subs:[]}:null,
@@ -179,7 +190,7 @@ async function fetchClientPage(){
  const el=document.activeElement,keep=el&&el.id==='search'?el.selectionStart:null;render();
  if(keep!==null){const n=$('#search');if(n){n.focus();n.setSelectionRange(keep,keep);}}
 }
-// Extra facts for the cards on screen: KRA notices near their deadline, files waiting in Incoming review, a forensic file (lead only) and WIP (Managers and Partners).
+// Extra facts for the cards on screen: KRA notices near their deadline, files waiting in Incoming review and WIP (Managers and Partners).
 // The database decides what each person may see; a failure leaves the cards as they are. Fetched at most once a minute for the same clients.
 async function ensureCardFacts(ids){
  if(!isLeader()||!ids.length||cardFacts.busy)return;
@@ -190,7 +201,7 @@ async function ensureCardFacts(ids){
   const list=ids.slice(0,500),f=await request({action:'client_card_flags',client_ids:list});let w=new Map();
   if(['PARTNER','MANAGER'].includes(data.me.category_code)&&canArea('billing_wip')){try{const r=await request({action:'client_card_wip',client_ids:list});w=new Map(r.rows.map(x=>[x.client_id,x]));}catch{/* the cards simply show no WIP */}}
   cardFlags=new Map(f.rows.map(r=>[r.client_id,r]));cardWip=w;cardFacts.key=key;cardFacts.at=Date.now();
-  if(view==='clients')repaintClientCards();
+  if(view==='clients')repaintClientCards();else if(view==='clientfile')render();
  }catch{cardFacts.key=key;cardFacts.at=Date.now();}
  finally{cardFacts.busy=false;}
 }
@@ -214,7 +225,7 @@ function clients(){
 }
 function renderClientProfile(){
  const c=data.clients.find(x=>x.client_id===selectedClient);let progress=null,step=null,status=null;
- if(c&&isLeader()){const missing=c.details_visible?clientMissing(c):[],stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB});step=nextStep(progress);status=clientStatus(progress,step);}
+ if(c&&isLeader()){const missing=c.details_visible?clientMissing(c):[],stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB});step=nextStep(progress);void ensureCardFacts([c.client_id]);status=cardStatus(progress,{flags:cardFlags.get(c.client_id)||null,meta:(clientPage?.rows||[]).find(r=>r.client_id===c.client_id)||null});}
  return clientProfile({category:data.me.category_code,data,clientId:selectedClient,tab:clientTab,esc,shortDate,badge,staffName,structureLabel,progress,status,step,leader:isLeader()});
 }
 function removeImportSource(documentId,after){const d=data.documents.find(x=>x.document_id===documentId);if(!d)throw Error('That upload is no longer available. Refresh and try again.');modal('Remove incorrect import upload',form(`<p class="info full"><b>${esc(d.file_name)}</b><br>This removes the source and its imported rows from active mapping. It does not permanently delete the file, imported data or accounting history. They remain available in Archived sources. If any row has been mapped, reviewed or posted, a Partner or Manager must archive it as a controlled correction.</p><label class="full">Why is this upload being removed? *<textarea name="reason" required minlength="3" maxlength="1000" placeholder="For example, the wrong client workbook was uploaded"></textarea></label><label class="full"><input name="confirm_remove" type="checkbox" required> I confirm this is the wrong upload and want to remove it from active mapping.</label>`,'Confirm removal'),f=>request({action:'document_archive',document_id:d.document_id,reason:f.get('reason'),confirmed:f.has('confirm_remove')}),result=>{documentKind='Archived sources';render();notice(`Removed from active mapping. ${result.retained_rows||0} imported row(s) and the original file remain available in Archived sources.`);if(after)after();});}
@@ -430,7 +441,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload,firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}
  if(b.dataset.clientSetup)await improvements.client(b.dataset.clientSetup);
  if(b.dataset.setupGuide)await setupGuide.open(b.dataset.setupGuide);
- if(b.dataset.clientOpen){navigateWorkspace('clientfile',b.dataset.clientOpen);return;}
+ if(b.dataset.clientOpen){pendingClientTab=b.dataset.clientTab||'';navigateWorkspace('clientfile',b.dataset.clientOpen);return;}
  if(b.dataset.cprofileTab){clientTab=b.dataset.cprofileTab;render();return;}
  if(b.dataset.cregPage){clientQuery.page=Math.max(0,clientQuery.page+(b.dataset.cregPage==='next'?1:-1));clientPage=null;render();return;}
  if(b.dataset.cregClear!==undefined){clientQuery=DEFAULT_QUERY();clientPage=null;render();return;}
@@ -513,7 +524,7 @@ function applyWorkspaceRoute(paint=true){
  if(!data)return;const route=workspaceRoute(location.hash);if(!route)return;
  view=route.view;missingProject=false;
  if(view==='task')selectedTask=route.id;
- if(view==='clientfile'){selectedClient=route.id;clientTab='overview';}
+ if(view==='clientfile'){selectedClient=route.id;clientTab=pendingClientTab||'overview';pendingClientTab='';}
  const projectId=route.view==='task'?data.tasks.find(t=>t.task_id===route.id)?.project_id:route.id;
  if(projectId){const p=data.projects.find(p=>p.project_id===projectId);if(p){if(firm&&firm!==p.handling_firm_id){firm=p.handling_firm_id;$('#firmFilter').value=firm;}v6.selectProject(p.project_id);}else if(view==='projects')v6.selectProject(projectId);}
  else if(view==='projects')v6.selectProject('');

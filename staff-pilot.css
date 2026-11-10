@@ -456,7 +456,6 @@ label.inline{display:inline-flex;align-items:center;gap:6px}
 button.cc-alert{cursor:pointer}
 .cc-alert.red{background:#b3261e;color:#fff;border-color:#b3261e}
 .cc-alert.amber{background:#fff4e0;color:#8a4b00;border-color:#f3c98b}
-.cc-alert.dark{background:#1f2937;color:#fff;border-color:#1f2937}
 .cc-figures .cc-wip b{font-weight:800;color:var(--green)}
 .cc-setup{display:flex;align-items:center;gap:10px}
 .cc-ring{position:relative;display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;cursor:help}
