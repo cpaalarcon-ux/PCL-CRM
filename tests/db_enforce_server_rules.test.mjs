@@ -48,6 +48,7 @@ test('Step 1: server-only rules are also enforced by the database',async t=>{
  await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${PR},${C},${F},'Fictional tax project','TAX-COMP',${M})`;
  const TC=id();
  await db.query(`insert into erp_private.tax_cases(case_id,project_id,kind,starts_on,ends_on,prepared_by,status) values($1,$2,'PAYE','2026-01-01','2026-01-31',$3,'Draft')`,[TC,PR,M]);
+ await db.query(`insert into erp_private.tax_computation_snapshots(case_id,project_id,stage,taken_by,inputs,result,rules_status,source_row_count,source_hash) values($1,$2,'SUBMITTED',$3,'{}','{}','CONFIRMED',0,$4)`,[TC,PR,M,'a'.repeat(64)]);
  await assert.rejects(()=>asActor('MANAGER2',`update erp_private.tax_cases set status='Submitted' where case_id=$1`,[TC]),/Only the preparer/);
  await asActor('MANAGER',`update erp_private.tax_cases set status='Submitted' where case_id=$1`,[TC]);
  await assert.rejects(()=>asActor('MANAGER',`update erp_private.tax_cases set status='Returned',reviewed_by=$2,review_note='Please check the PAYE totals again' where case_id=$1`,[TC,M]),/Another reviewer/,'the preparer cannot review');

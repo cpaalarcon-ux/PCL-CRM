@@ -44,6 +44,7 @@ import {aupAction} from './aup-actions.ts';
 import {kraAction} from './kra-actions.ts';
 import {incomingAction} from './incoming-actions.ts';
 import {deadlineAction} from './deadline-actions.ts';
+import {creditAction} from './credit-actions.ts';
 import {forensicAction} from './forensic-actions.ts';
 import {auditAction} from './audit-actions.ts';
 import {suiteExport} from './suite-export.ts';
@@ -419,6 +420,7 @@ async function action(id:any,p:any){
   const lead=await leadAction(tx,a,p);if(lead!==undefined)return lead;
   const procedure=await procedureAction(tx,a,p,taxAction);if(procedure!==undefined)return procedure;
   const suite=await suiteAction(tx,a,p);if(suite!==undefined)return suite;
+  const credit=await creditAction(tx,a,p);if(credit!==undefined)return credit; // before taxAction, which owns the tax_ prefix and rejects unknown tax_ actions
   const tax=await taxAction(tx,a,p);if(tax!==undefined)return tax;
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const aup=await aupAction(tx,a,p);if(aup!==undefined)return aup;

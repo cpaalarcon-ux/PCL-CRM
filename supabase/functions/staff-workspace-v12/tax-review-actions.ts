@@ -9,6 +9,7 @@ import {one,leader,today} from './suite-actions.ts';
 import {assertSupportedPeriod} from './supported-period.ts';
 import {annualTaxLedgerControl} from './ledger-actions.ts';
 import {stockGateIssues} from './stock-vat.ts';
+import {sourceTotals,rulesStatus,rowFingerprint,appliedRateSummary} from './snapshot-rules.mjs';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
 const editor=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner must review this work.');};
 const fresh=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'This record changed. Refresh before saving.');};
@@ -157,7 +158,20 @@ export async function taxSummary(tx:any,c:any){
  if(!c.inputs.return_tied)issues.push('Confirm that the draft return agrees to the reviewed computation.');
  if(applied.some(r=>r.approval_scope==='Testing'))result.testing_only=true;
  issues.push(...legalReviewIssues(applied));
+ // Credit register control: entries for this period that are not yet checked against iTax (or have an undecided difference) stop submission. It adds no figure to the computation.
+ const creditOpen=Number((await tx`select erp_private.tax_credit_open_count(${c.case_id}::uuid) n`)[0].n);
+ if(creditOpen>0)issues.push(`${creditOpen} tax credit ${creditOpen===1?'entry needs':'entries need'} the iTax check or a decision on a difference (Tax credits).`);
  return {result,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
+}
+
+// Numbered, immutable computation snapshots (20261110274000_computation_snapshots.sql). The server records what the reviewer is shown at the moment of submission and again at lock;
+// the database refuses a lock when the source rows no longer match the submission. Nothing here changes a figure.
+async function sha256Hex(textValue:string){const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(textValue));return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+async function takeSnapshot(tx:any,a:any,c:any,s:any,stage:'SUBMITTED'|'LOCKED'){
+ const hash=await sha256Hex(JSON.stringify(rowFingerprint(s.rows)));
+ const applied=appliedRateSummary(s.applied_rates);
+ const credits=await tx`select credit_type,applies_to,entries,claim_total::text from erp_private.tax_credit_claimed(${c.case_id}::uuid)`;
+ await tx`insert into erp_private.tax_computation_snapshots(case_id,project_id,stage,taken_by,inputs,result,applied_rates,rules_status,source_totals,source_row_count,source_hash,credits_claimed) values(${c.case_id},${c.project_id},${stage},${a.staff_id},${tx.json(c.inputs||{})},${tx.json(s.result||{})},${tx.json(applied)},${rulesStatus(s.applied_rates,s.result)},${tx.json(sourceTotals(s.rows))},${(s.rows||[]).length},${hash},${tx.json(credits)})`;
 }
 export async function taxAction(tx:any,a:any,p:any):Promise<any>{
  if(!String(p.action).startsWith('tax_'))return undefined;
@@ -202,7 +216,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
  const c=one(await tx`select * from erp_private.tax_cases where case_id=${uuid(p.case_id)} for update`);await tx`select pg_advisory_xact_lock(hashtextextended(${c.project_id+':tax'},0))`;
  if(p.action==='tax_read'){
   const summary=await taxSummary(tx,c),frozen=['Locked','Filed'].includes(c.status)?c.review_snapshot:null;
-  return {case:c,...summary,...(frozen?{result:frozen.result||c.result,source_application:frozen.source_application||summary.source_application,applied_rates:frozen.applied_rates||summary.applied_rates,profile:frozen.profile||summary.profile,reconciliation:frozen.reconciliation||summary.reconciliation}:{}),rows:summary.rows.map((r:any)=>({row_id:r.row_id,revision:r.revision,dataset:r.dataset,source_row:r.source_row,normalized:r.normalized,route:r.route,category_code:r.category_code,account_code:r.account_code,account_name:r.account_name,catalog_version:r.catalog_version,parent_row_id:r.parent_row_id,first_use_date:r.first_use_date,first_use_status:r.first_use_status,decision:r.decision,deductible_percentage:r.deductible_percentage,reviewed_by:r.reviewed_by,source_revision:r.source_revision,vat_rate_key:r.vat_rate_key,vat_difference_reason:r.vat_difference_reason,income_treatment:r.income_treatment,applied_rate:r.applied_rate}))};
+  return {case:c,credits_claimed:await tx`select * from erp_private.tax_credit_claimed(${c.case_id}::uuid)`,snapshots:await tx`select snapshot_id,snapshot_no,stage,taken_by,taken_at,rules_status,source_totals,source_row_count,source_hash,credits_claimed from erp_private.tax_computation_snapshots where case_id=${c.case_id} order by snapshot_no`,...summary,...(frozen?{result:frozen.result||c.result,source_application:frozen.source_application||summary.source_application,applied_rates:frozen.applied_rates||summary.applied_rates,profile:frozen.profile||summary.profile,reconciliation:frozen.reconciliation||summary.reconciliation}:{}),rows:summary.rows.map((r:any)=>({row_id:r.row_id,revision:r.revision,dataset:r.dataset,source_row:r.source_row,normalized:r.normalized,route:r.route,category_code:r.category_code,account_code:r.account_code,account_name:r.account_name,catalog_version:r.catalog_version,parent_row_id:r.parent_row_id,first_use_date:r.first_use_date,first_use_status:r.first_use_status,decision:r.decision,deductible_percentage:r.deductible_percentage,reviewed_by:r.reviewed_by,source_revision:r.source_revision,vat_rate_key:r.vat_rate_key,vat_difference_reason:r.vat_difference_reason,income_treatment:r.income_treatment,applied_rate:r.applied_rate}))};
  }
  fresh(c,p);
  if(p.action==='tax_save'||p.action==='tax_preview'){
@@ -223,6 +237,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
  }
  if(p.action==='tax_submit'){
   if(c.prepared_by!==a.staff_id||!['Draft','Returned'].includes(c.status))fail(403,'The preparer must submit a draft or returned case.');const s=await taxSummary(tx,c);if(s.issues.length)fail(400,s.issues.join(' '));
+  await takeSnapshot(tx,a,c,s,'SUBMITTED');
   await tx`update erp_private.tax_cases set status='Submitted',result=${tx.json(s.result)} where case_id=${c.case_id}`;return {ok:true};
  }
  if(p.action==='tax_review'){
@@ -236,6 +251,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
    if(pending.some((r:any)=>r.prepared_by===a.staff_id))fail(403,'You prepared a source summary used in this computation. A different Supervisor, Manager or Partner must approve it.');
    if(pending.length){const project=one(await tx`select project_id,client_id from erp_private.projects where project_id=${c.project_id}`);for(const r of pending)await confirmPeriodImport(tx,a,project,r,note||'Confirmed with the tax computation review',{exceptCaseId:c.case_id});confirmed=pending.length;}
   }
+  if(status==='Locked')await takeSnapshot(tx,a,c,s,'LOCKED');
   await tx`update erp_private.tax_cases set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note},result=${tx.json(s.result)},review_snapshot=${status==='Locked'?tx.json(snapshot):null} where case_id=${c.case_id}`;return {ok:true,confirmed_import_count:confirmed};
  }
  if(p.action==='tax_file')fail(400,'Open the linked task workspace to log written client approval, acknowledgment PDF and PRN before recording filing.');
