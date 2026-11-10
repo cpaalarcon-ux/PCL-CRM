@@ -152,6 +152,31 @@ CREATE TABLE IF NOT EXISTS tax_credit_entries (
 CREATE INDEX IF NOT EXISTS tax_credit_entries_obligation_status_idx
   ON tax_credit_entries (tax_project_obligation_id, verification_status, credit_type);
 
+CREATE OR REPLACE FUNCTION protect_reviewed_tax_credit_entry()
+RETURNS TRIGGER LANGUAGE plpgsql AS $
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Tax credit records are retained for audit; enter a correcting credit instead.';
+  END IF;
+  IF OLD.verification_status IN ('RECONCILED','MANAGER_APPROVED','REJECTED')
+     AND (NEW.tax_project_obligation_id IS DISTINCT FROM OLD.tax_project_obligation_id
+       OR NEW.credit_type IS DISTINCT FROM OLD.credit_type
+       OR NEW.erp_entered_amount IS DISTINCT FROM OLD.erp_entered_amount
+       OR NEW.itax_confirmed_amount IS DISTINCT FROM OLD.itax_confirmed_amount
+       OR NEW.applied_amount IS DISTINCT FROM OLD.applied_amount
+       OR NEW.external_reference IS DISTINCT FROM OLD.external_reference
+       OR NEW.evidence_document_id IS DISTINCT FROM OLD.evidence_document_id) THEN
+    RAISE EXCEPTION 'A reviewed tax credit is immutable; enter a correcting credit and link the history.';
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS tax_credit_entries_reviewed_immutable ON tax_credit_entries;
+CREATE TRIGGER tax_credit_entries_reviewed_immutable
+BEFORE UPDATE OR DELETE ON tax_credit_entries
+FOR EACH ROW EXECUTE FUNCTION protect_reviewed_tax_credit_entry();
+
 CREATE TABLE IF NOT EXISTS tax_credit_entry_events (
   tax_credit_entry_event_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   tax_credit_entry_id BIGINT NOT NULL
@@ -437,6 +462,46 @@ DROP TRIGGER IF EXISTS tax_computation_snapshots_validate ON tax_computation_sna
 CREATE TRIGGER tax_computation_snapshots_validate
 BEFORE INSERT OR UPDATE ON tax_computation_snapshots
 FOR EACH ROW EXECUTE FUNCTION validate_tax_computation_snapshot();
+
+CREATE OR REPLACE FUNCTION protect_tax_computation_snapshot_inputs()
+RETURNS TRIGGER LANGUAGE plpgsql AS $
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Tax computation snapshots are retained for audit; create a new version instead.';
+  END IF;
+  IF NEW.tax_project_obligation_id IS DISTINCT FROM OLD.tax_project_obligation_id
+     OR NEW.snapshot_no IS DISTINCT FROM OLD.snapshot_no
+     OR NEW.formula_version IS DISTINCT FROM OLD.formula_version
+     OR NEW.source_manifest IS DISTINCT FROM OLD.source_manifest
+     OR NEW.inputs_payload IS DISTINCT FROM OLD.inputs_payload
+     OR NEW.results_payload IS DISTINCT FROM OLD.results_payload
+     OR NEW.output_vat_amount IS DISTINCT FROM OLD.output_vat_amount
+     OR NEW.deductible_input_vat_amount IS DISTINCT FROM OLD.deductible_input_vat_amount
+     OR NEW.approved_vat_credits_applied IS DISTINCT FROM OLD.approved_vat_credits_applied
+     OR NEW.approved_vat_adjustments IS DISTINCT FROM OLD.approved_vat_adjustments
+     OR NEW.vat_payable IS DISTINCT FROM OLD.vat_payable
+     OR NEW.vat_excess_credit IS DISTINCT FROM OLD.vat_excess_credit
+     OR NEW.computed_by_user_id IS DISTINCT FROM OLD.computed_by_user_id
+     OR NEW.computed_at IS DISTINCT FROM OLD.computed_at THEN
+    RAISE EXCEPTION 'Calculation inputs and outputs are immutable; create a new snapshot version.';
+  END IF;
+  IF OLD.review_status = 'PREPARED' AND NEW.review_status NOT IN ('PREPARED','REVIEWED') THEN
+    RAISE EXCEPTION 'Review a prepared computation before approving it.';
+  END IF;
+  IF OLD.review_status = 'REVIEWED' AND NEW.review_status NOT IN ('REVIEWED','APPROVED') THEN
+    RAISE EXCEPTION 'A reviewed computation can only be approved.';
+  END IF;
+  IF OLD.review_status = 'APPROVED' AND NEW.review_status <> 'APPROVED' THEN
+    RAISE EXCEPTION 'An approved computation is immutable; prepare a new version.';
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS tax_computation_snapshots_inputs_immutable ON tax_computation_snapshots;
+CREATE TRIGGER tax_computation_snapshots_inputs_immutable
+BEFORE UPDATE OR DELETE ON tax_computation_snapshots
+FOR EACH ROW EXECUTE FUNCTION protect_tax_computation_snapshot_inputs();
 
 -- Filing records may remain pending acknowledgment after iTax submission, but a
 -- period cannot be marked FILED/locked until the PDF is attached or a Manager or
