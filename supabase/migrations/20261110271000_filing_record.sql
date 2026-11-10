@@ -101,36 +101,20 @@ BEGIN
  RETURN NEW;
 END;$$;
 
--- The procedure guard is unchanged except that filing evidence is now the filing record (an acknowledgment or an approved exception).
-CREATE OR REPLACE FUNCTION erp_private.task_procedure_guard() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
-DECLARE t erp_private.tasks;c erp_private.tax_cases;d uuid;target_client uuid;
+-- The procedure guard changes in two places only: filing evidence is now the filing record (an acknowledgment or an approved exception) instead of a bare document.
+-- It is patched in place (as the pool-timer migration did) so that every earlier patch to the same function is kept.
+DO $$
+DECLARE d text;n text;a1 text;b1 text;a2 text;b2 text;
 BEGIN
- SELECT * INTO t FROM erp_private.tasks WHERE task_id=NEW.task_id;
- IF t.project_id IS DISTINCT FROM NEW.project_id THEN RAISE EXCEPTION 'Procedure project mismatch' USING ERRCODE='23514';END IF;
- IF TG_OP='UPDATE' THEN
-  IF OLD.stage='Closed' THEN RAISE EXCEPTION 'Closed work is immutable; record a separate correction' USING ERRCODE='23514';END IF;
-  IF (NEW.task_id,NEW.project_id) IS DISTINCT FROM (OLD.task_id,OLD.project_id) THEN RAISE EXCEPTION 'Procedure identity is fixed' USING ERRCODE='23514';END IF;
-  IF OLD.stage NOT IN('Pending preparer','Pending client documents') AND (NEW.profile,NEW.case_id,NEW.reviewer_id,NEW.contact_id) IS DISTINCT FROM (OLD.profile,OLD.case_id,OLD.reviewer_id,OLD.contact_id) AND NEW.stage<>'Pending preparer' THEN RAISE EXCEPTION 'Return work before changing setup' USING ERRCODE='23514';END IF;
-  IF OLD.approval_document_id IS NOT NULL AND OLD.details->'approval' IS NOT NULL AND (NEW.approval_document_id,NEW.details->'approval') IS DISTINCT FROM (OLD.approval_document_id,OLD.details->'approval') THEN RAISE EXCEPTION 'Written approval is immutable' USING ERRCODE='23514';END IF;
- END IF;
- IF t.template_key IN('monthly-vat','monthly-paye','monthly-tot') AND NEW.profile<>'Tax filing' THEN RAISE EXCEPTION 'Statutory filing gates cannot be disabled' USING ERRCODE='23514';END IF;
- IF NEW.case_id IS NOT NULL THEN
-  SELECT * INTO c FROM erp_private.tax_cases WHERE case_id=NEW.case_id;
-  IF c.project_id IS DISTINCT FROM NEW.project_id OR NEW.profile<>'Tax filing' THEN RAISE EXCEPTION 'Tax case must match this filing project' USING ERRCODE='23514';END IF;
-  IF t.template_key IN('monthly-vat','monthly-paye','monthly-tot') AND (c.starts_on IS DISTINCT FROM t.period_start OR c.ends_on IS DISTINCT FROM t.period_end OR lower(c.kind) IS DISTINCT FROM replace(t.template_key,'monthly-','')) THEN RAISE EXCEPTION 'Tax type and return period must match the generated filing task' USING ERRCODE='23514';END IF;
- END IF;
- SELECT client_id INTO target_client FROM erp_private.projects WHERE project_id=NEW.project_id;
- IF NEW.contact_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM erp_private.client_contacts WHERE contact_id=NEW.contact_id AND client_id=target_client AND deleted_at IS NULL) THEN RAISE EXCEPTION 'Use this client representative' USING ERRCODE='23514';END IF;
- FOREACH d IN ARRAY ARRAY[NEW.approval_document_id,NEW.filing_document_id,NEW.payment_document_id,NEW.deliverable_document_id] LOOP
-  IF d IS NOT NULL AND NOT EXISTS(SELECT 1 FROM erp_private.documents WHERE document_id=d AND project_id=NEW.project_id AND deleted_at IS NULL AND is_locked) THEN RAISE EXCEPTION 'Evidence must be locked within the same project' USING ERRCODE='23514';END IF;
- END LOOP;
- IF NEW.stage IN('Ready to file','Ready to deliver','Filed - pending payment') AND (NEW.approval_document_id IS NULL OR NEW.contact_id IS NULL OR NEW.details->'approval' IS NULL) THEN RAISE EXCEPTION 'Written client approval required' USING ERRCODE='23514';END IF;
- IF NEW.stage='Ready to file' AND (NEW.case_id IS NULL OR c.status<>'Locked') THEN RAISE EXCEPTION 'Reviewed locked tax case required' USING ERRCODE='23514';END IF;
- IF NEW.stage='Filed - pending payment' AND (c.status IS DISTINCT FROM 'Filed' OR NOT EXISTS(SELECT 1 FROM erp_private.tax_filings f WHERE f.case_id=NEW.case_id)) THEN RAISE EXCEPTION 'Filing and acknowledgment required' USING ERRCODE='23514';END IF;
- IF NEW.stage='Closed' AND NEW.profile<>'Supporting task' AND (NEW.closed_by IS NULL OR NEW.closed_at IS NULL OR (erp_private.actor()).category_code NOT IN('PARTNER','MANAGER') OR NEW.closed_by=NEW.prepared_by) THEN RAISE EXCEPTION 'Independent Manager closure required' USING ERRCODE='42501';END IF;
- IF NEW.stage='Closed' AND NEW.profile='Tax filing' AND (NOT EXISTS(SELECT 1 FROM erp_private.tax_filings f WHERE f.case_id=NEW.case_id) OR c.status IS DISTINCT FROM 'Filed' OR (NEW.payment_document_id IS NULL AND coalesce(NEW.details->>'payment_outcome','')<>'Not payable')) THEN RAISE EXCEPTION 'Verify filing and payment or a documented nil liability' USING ERRCODE='23514';END IF;
- RETURN NEW;
-END;$$;
+ d:=pg_get_functiondef('erp_private.task_procedure_guard()'::regprocedure);
+ a1:='NEW.stage=''Filed - pending payment'' AND (c.status IS DISTINCT FROM ''Filed'' OR NEW.filing_document_id IS NULL)';
+ b1:='NEW.stage=''Filed - pending payment'' AND (c.status IS DISTINCT FROM ''Filed'' OR NOT EXISTS(SELECT 1 FROM erp_private.tax_filings f WHERE f.case_id=NEW.case_id))';
+ a2:='(NEW.filing_document_id IS NULL OR c.status IS DISTINCT FROM ''Filed'' OR';
+ b2:='(NOT EXISTS(SELECT 1 FROM erp_private.tax_filings f WHERE f.case_id=NEW.case_id) OR c.status IS DISTINCT FROM ''Filed'' OR';
+ IF position(a1 IN d)=0 OR position(a2 IN d)=0 THEN RAISE EXCEPTION 'task_procedure_guard text not found'; END IF;
+ n:=replace(replace(d,a1,b1),a2,b2);
+ EXECUTE n;
+END $$;
 
 REVOKE ALL ON FUNCTION erp_private.tax_filing_guard(),erp_private.tax_filing_exception_alert() FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION erp_private.tax_filing_guard() TO erp_api;
