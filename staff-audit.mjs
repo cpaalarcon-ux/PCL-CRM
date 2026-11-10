@@ -1,16 +1,16 @@
 import {createPlanningUI} from './staff-audit-planning.mjs?v=20261109-audit-a-v1';
 import {createAdjustmentsUI} from './staff-audit-adjustments.mjs?v=20261109-audit-b-v1';
-import {createLeadsUI} from './staff-audit-leads.mjs?v=20261110-credits-v1';
-import {createReportsUI} from './staff-audit-reports.mjs?v=20261110-credits-v1';
-import {createAnalyticsUI} from './staff-audit-analytics.mjs?v=20261110-credits-v1';
-import {createFirmUI} from './staff-audit-firm.mjs?v=20261110-credits-v1';
-import {createRegulatoryUI} from './staff-audit-regulatory.mjs?v=20261110-credits-v1';
-import {createSasraUI} from './staff-audit-sasra.mjs?v=20261110-credits-v1';
-import {createPopulationsUI} from './staff-audit-populations.mjs?v=20261110-credits-v1';
-import {createSaccoUI} from './staff-audit-sacco.mjs?v=20261110-credits-v1';
-import {createPackUI} from './staff-audit-pack.mjs?v=20261110-credits-v1';
-import {createAssemblyUI} from './staff-audit-assembly.mjs?v=20261110-credits-v1';
-import {createHomeUI,homeModel,paperStrip} from './staff-audit-home.mjs?v=20261110-credits-v1';
+import {createLeadsUI} from './staff-audit-leads.mjs?v=20261110-docs-v1';
+import {createReportsUI} from './staff-audit-reports.mjs?v=20261110-docs-v1';
+import {createAnalyticsUI} from './staff-audit-analytics.mjs?v=20261110-docs-v1';
+import {createFirmUI} from './staff-audit-firm.mjs?v=20261110-docs-v1';
+import {createRegulatoryUI} from './staff-audit-regulatory.mjs?v=20261110-docs-v1';
+import {createSasraUI} from './staff-audit-sasra.mjs?v=20261110-docs-v1';
+import {createPopulationsUI} from './staff-audit-populations.mjs?v=20261110-docs-v1';
+import {createSaccoUI} from './staff-audit-sacco.mjs?v=20261110-docs-v1';
+import {createPackUI} from './staff-audit-pack.mjs?v=20261110-docs-v1';
+import {createAssemblyUI} from './staff-audit-assembly.mjs?v=20261110-docs-v1';
+import {createHomeUI,homeModel,paperStrip} from './staff-audit-home.mjs?v=20261110-docs-v1';
 export function createAuditUI(ctx){
  const {esc,field,select,form,modal,request,notice,shortDate,empty,data}=ctx;
  const areas=['Permanent file','Acceptance and ethics','Planning','Risk assessment','Cash and bank','Trade receivables','Inventories','Property, plant and equipment','Trade payables','Borrowings','Taxation','Revenue','Payroll and expenses','Equity','Commitments and contingencies','Completion','Reporting and quality'];

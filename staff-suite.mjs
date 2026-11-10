@@ -1,16 +1,17 @@
 import {serviceNarration,formatDay} from './invoice-narration.mjs?v=20261107-annualpack-v3';
 import {createDiscussionUI} from './staff-discussion.mjs?v=20261026-v4';
 import {communicationQr,letterDetails,letterDetailsQr} from './staff-communication-qr.mjs?v=20261104-letter-details';
-import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-credits-v1';
-import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-credits-v1';
-import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-credits-v1';
-import {createKraUI} from './staff-kra.mjs?v=20261110-credits-v1';
-import {createIncomingUI} from './staff-incoming.mjs?v=20261110-credits-v1';
-import {createForensicUI} from './staff-forensic.mjs?v=20261110-credits-v1';
-import {createDeadlineUI} from './staff-deadlines.mjs?v=20261110-credits-v1';
-import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261110-credits-v1';
-import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-credits-v1';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261110-credits-v1';
+import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-docs-v1';
+import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-docs-v1';
+import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-docs-v1';
+import {createKraUI} from './staff-kra.mjs?v=20261110-docs-v1';
+import {createIncomingUI} from './staff-incoming.mjs?v=20261110-docs-v1';
+import {createForensicUI} from './staff-forensic.mjs?v=20261110-docs-v1';
+import {createDeadlineUI} from './staff-deadlines.mjs?v=20261110-docs-v1';
+import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261110-docs-v1';
+import {createDocumentReviewUI} from './staff-document-review.mjs?v=20261110-docs-v1';
+import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-docs-v1';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261110-docs-v1';
 import {defaultTaxReportingPeriod} from './staff-tax-period-defaults.mjs?v=20261031-tax-period-defaults-v1';
 export function createSuiteUI(ctx){
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,clientName,projectName,staffName,firmName,today,empty}=ctx;
@@ -26,6 +27,7 @@ export function createSuiteUI(ctx){
  const incoming=createIncomingUI({...ctx,button,area,check});
  const forensic=createForensicUI({...ctx,button,area,check});
  const deadlines=createDeadlineUI({...ctx,button,area,check});
+ const docReview=createDocumentReviewUI({...ctx,button,area,check});
  const credits=createCreditUI({...ctx,button,area,check,openTax:id=>taxOpen(id)});
  let financeTab='Invoices',timeTab='My HR',commsTab='Letters & QR',taxPage=0;
  const tabs=(name,values,current)=>`<div class="actions subnav">${values.map(v=>button(name,v,v,`class="${v===current?'primary':''}"`)).join('')}</div>`;
@@ -173,6 +175,7 @@ export function createSuiteUI(ctx){
   if(await taxConfig.handle(action,id))return;
   if(await aup.handle(action,id))return;
   if(await kra.handle(action,id))return;
+  if(await docReview.handle(action,id))return;
   if(await incoming.handle(action,id))return;
   if(await forensic.handle(action,id))return;
   if(await deadlines.handle(action,id))return;
@@ -270,5 +273,5 @@ export function createSuiteUI(ctx){
   if(b.dataset.suite==='reference-download'){const blob=await request({action:'reference_download',reference_id:b.dataset.id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=b.dataset.name||'Reference_document';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
  }catch(error){notice(error.message,true);}});
  document.addEventListener('click',async e=>{const b=e.target.closest('[data-suite]');if(!b||b.dataset.suite==='master-preview')return;try{b.disabled=true;await act(b.dataset.suite,b.dataset.id,b);}catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;}});
- return {chat,finance,communications,settings,hr,button,taxList,openReference,kra,incoming,forensic,deadlines};
+ return {docReview,chat,finance,communications,settings,hr,button,taxList,openReference,kra,incoming,forensic,deadlines};
 }

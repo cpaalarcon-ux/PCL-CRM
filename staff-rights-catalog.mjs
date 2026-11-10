@@ -37,6 +37,9 @@ export const STAFF_RIGHTS=Object.freeze([
  {code:'acct.journal_approve',area:'projects',group:'Accounting work',label:'Approve and post journals, and reverse entries',roles:['PARTNER','MANAGER'],actions:['ledger_journal_review','ledger_asset_review','ledger_reverse','ledger_bank_rule_review','ledger_bank_category_save','ledger_bank_category_retire']},
  {code:'tax.credit_prepare',area:'projects',group:'Tax credits',label:'Enter tax credits, record the iTax figure (by a different person from the one who entered it) and claim credits in a draft return',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['tax_credit_list','tax_credit_add','tax_credit_itax','tax_credit_claim','tax_credit_release']},
  {code:'tax.credit_decide',area:'projects',group:'Tax credits',label:'Approve a difference between the ERP and iTax, or reject a credit entry',roles:['PARTNER','MANAGER'],actions:['tax_credit_approve','tax_credit_reject']},
+ {code:'document.review',area:'documents',group:'Document review',label:'Review a document and record a decision with a comment (never your own upload)',roles:['PARTNER','MANAGER','SUPERVISOR'],actions:['document_review_submit']},
+ {code:'document.grant',area:'documents',group:'Document review',label:'Give or withdraw time-limited access to a single document',roles:['PARTNER','MANAGER'],actions:['document_grantees','document_grant_add','document_grant_revoke']},
+ {code:'document.scan',area:'documents',group:'Document review',label:'Request a malware scan of a document (the scanning service is not connected yet)',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['evidence_scan']},
 ]);
 const RIGHT_CODES=STAFF_RIGHTS.map(r=>r.code);
 const BY_ACTION=new Map(STAFF_RIGHTS.flatMap(r=>r.actions.map(a=>[a,r.code])));

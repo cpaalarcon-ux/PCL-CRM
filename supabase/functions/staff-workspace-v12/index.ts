@@ -45,6 +45,7 @@ import {kraAction} from './kra-actions.ts';
 import {incomingAction} from './incoming-actions.ts';
 import {deadlineAction} from './deadline-actions.ts';
 import {creditAction} from './credit-actions.ts';
+import {documentReviewAction} from './document-review-actions.ts';
 import {forensicAction} from './forensic-actions.ts';
 import {auditAction} from './audit-actions.ts';
 import {suiteExport} from './suite-export.ts';
@@ -425,6 +426,7 @@ async function action(id:any,p:any){
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const aup=await aupAction(tx,a,p);if(aup!==undefined)return aup;
   const kra=await kraAction(tx,a,p);if(kra!==undefined)return kra;
+  const docReview=await documentReviewAction(tx,a,p);if(docReview!==undefined)return docReview; // before the document_ prefix handlers
   const incoming=await incomingAction(tx,a,p);if(incoming!==undefined)return incoming;
   const deadline=await deadlineAction(tx,a,p);if(deadline!==undefined)return deadline;
   const forensic=await forensicAction(tx,a,p);if(forensic!==undefined)return forensic;
