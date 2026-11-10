@@ -58,7 +58,7 @@ export function legalReviewIssues(rates){
 }
 export function legalConfirmIssue(rate,input,actor){
  if(!rate)return 'Rate not found.';
- if(actor?.category_code!=='PARTNER')return 'Only an Engagement Partner may record the Tax Lead confirmation.';
+ if(actor?.category_code!=='PARTNER'&&actor?.tax_lead!==true)return 'Only an Engagement Partner or the designated Tax Lead may record the Tax Lead confirmation.';
  if(rate.legal_review_status!=='Pending')return 'Only a rate flagged Pending legal review can be confirmed.';
  if(!['Draft','Testing'].includes(rate.status))return 'Choose a draft or testing rate.';
  if(String(input?.lead_name||'').trim().length<3)return 'Enter the Tax Lead who gave the written confirmation.';

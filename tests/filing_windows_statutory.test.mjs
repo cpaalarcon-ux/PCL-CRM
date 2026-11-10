@@ -24,11 +24,13 @@ test('Statutory due date windows and the internal Urgent alert',async t=>{
  await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${PJ},${AST},${F},'ASSISTANT')`;
  let n=0;
  // a filing task in a monthly work period whose client period carries the statutory and internal dates
- const filing=async(key,taskDue,statutory,internal,assigned=null)=>{n++;const t=id(),w=id(),s=`2026-${String(n).padStart(2,'0')}-01`,e=`2026-${String(n).padStart(2,'0')}-28`;
+ const filing=async(key,taskDue,statutory,internal,assigned=null)=>{n++;const t=id(),w=id(),s=`2025-${String(n).padStart(2,'0')}-01`,e=`2025-${String(n).padStart(2,'0')}-28`;
   await tx`insert into erp_private.tasks(task_id,project_id,task_name,due_at,status,template_key,recurring_key,assigned_to) values(${t},${PJ},${'Fictional '+key+' '+n},(${D(taskDue)}::date + time '12:00') at time zone 'Africa/Nairobi','Pending',${key},${key+':'+t},${assigned})`;
   await tx`insert into erp_private.project_work_periods(work_period_id,project_id,period_kind,starts_on,ends_on) values(${w},${PJ},'Monthly',${s},${e})`;
   await tx`insert into erp_private.work_period_tasks(task_id,work_period_id) values(${t},${w})`;
-  if(statutory!==null)await tx`insert into erp_private.client_periods(client_id,starts_on,ends_on,return_due_date,internal_due_date,deadline_rule_reference,created_by) values(${A},${s},${e},${D(statutory)},${internal===null?null:D(internal)},'Fictional statutory calendar note',${M})`;
+  // The internal date is the client period's; the KRA date is the Tax Team's CONFIRMED date for this period and filing class. The period row's own (unconfirmed) return_due_date is deliberately wrong to prove it is ignored.
+  if(statutory!==null){await tx`insert into erp_private.client_periods(client_id,starts_on,ends_on,return_due_date,internal_due_date,deadline_rule_reference,created_by) values(${A},${s},${e},${D(statutory+30)},${internal===null?null:D(internal)},'Fictional statutory calendar note',${M})`;
+   await tx`insert into erp_private.period_due_dates(client_id,starts_on,ends_on,filing_class,kra_due_date,status,itax_confirmed,confirmed_by) values(${A},${s},${e},${key==='monthly-paye'?'PAYE':'VAT'},${D(statutory)},'CONFIRMED',true,${M})`;}
   return t;};
  const st=t=>tx`select * from erp_private.filing_state() where task_id=${t}`.then(r=>r[0]);
  // ---- 1. The window follows the statutory date, not the task's own date --------------------------------------------------------------------------------
@@ -66,6 +68,20 @@ test('Statutory due date windows and the internal Urgent alert',async t=>{
  const u5=await filing('monthly-vat',9,12,-1,AST);
  s=await st(u5);assert.deepEqual([s.internal_days_left,s.days_left],[-1,12]);
  assert.equal((await tx`select erp_private.filing_urgent_scan() n`)[0].n,1);
+ // ---- 4b. Only a CONFIRMED, per-class date counts ---------------------------------------------------------------------------------------------------------------
+ // a period with only the legacy return_due_date on the client period (never confirmed) uses the task date
+ {const t=id(),w=id();n++;const s0=`2025-${String(n).padStart(2,'0')}-01`,e0=`2025-${String(n).padStart(2,'0')}-28`;
+  await tx`insert into erp_private.tasks(task_id,project_id,task_name,due_at,status,template_key,recurring_key) values(${t},${PJ},'Fictional unconfirmed',(${D(2)}::date + time '12:00') at time zone 'Africa/Nairobi','Pending','monthly-vat',${'monthly-vat:'+t})`;
+  await tx`insert into erp_private.project_work_periods(work_period_id,project_id,period_kind,starts_on,ends_on) values(${w},${PJ},'Monthly',${s0},${e0})`;await tx`insert into erp_private.work_period_tasks(task_id,work_period_id) values(${t},${w})`;
+  await tx`insert into erp_private.client_periods(client_id,starts_on,ends_on,return_due_date,deadline_rule_reference,created_by) values(${A},${s0},${e0},${D(40)},'Fictional unconfirmed legacy date',${M})`;
+  assert.deepEqual([(await st(t)).due_source,(await st(t)).days_left],['TASK',2],'an unconfirmed legacy date is ignored');
+  // a VAT confirmation does not serve a PAYE filing in the same period (one period, two due dates)
+  await tx`insert into erp_private.period_due_dates(client_id,starts_on,ends_on,filing_class,kra_due_date,status,itax_confirmed,confirmed_by) values(${A},${s0},${e0},'PAYE',${D(6)},'CONFIRMED',true,${M})`;
+  assert.equal((await st(t)).due_source,'TASK','the PAYE date does not apply to a VAT task');
+  await tx`insert into erp_private.period_due_dates(client_id,starts_on,ends_on,filing_class,kra_due_date,status,itax_confirmed,confirmed_by,fallback_reason) values(${A},${s0},${e0},'VAT',NULL,'TASK_DATE_FALLBACK',false,${M},'Fictional: iTax calendar not yet published')`;
+  assert.equal((await st(t)).due_source,'TASK','the explicit task-date fallback keeps the task date');
+  await tx`update erp_private.period_due_dates set kra_due_date=${D(9)},status='CONFIRMED',itax_confirmed=true,fallback_reason=null where client_id=${A} and starts_on=${s0} and filing_class='VAT'`;
+  assert.deepEqual([(await st(t)).due_source,(await st(t)).days_left],['PERIOD',9],'the confirmed VAT date applies');}
  // ---- 5. Closed doors and defaults ------------------------------------------------------------------------------------------------------------------------------
  const priv=(await tx`select has_function_privilege('anon','erp_private.filing_urgent_scan()','execute') a,has_function_privilege('erp_api','erp_private.filing_urgent_scan()','execute') b,has_function_privilege('erp_api','erp_private.filing_state(uuid[])','execute') c`)[0];
  assert.deepEqual([priv.a,priv.b,priv.c],[false,false,false]);

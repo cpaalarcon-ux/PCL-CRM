@@ -2,13 +2,13 @@ let documentKind='Evidence';
 import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261110-support-v1';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261110-taxlead-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261109-ptm-v1';
 import {clientProfile} from './staff-client-profile.mjs?v=20261109-dr-v1';
 import {paintDocRequests,bindDocRequests} from './staff-doc-requests.mjs?v=20261109-dr-v1';
 import {LIFECYCLE_WORDS,lifecycleForm,isArchived} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';
-import {DEFAULT_QUERY,queryToRequest,toolbar as registerBar,pager as registerPager,rowMeta} from './staff-client-register.mjs?v=20261110-support-v1';
+import {DEFAULT_QUERY,queryToRequest,toolbar as registerBar,pager as registerPager,rowMeta} from './staff-client-register.mjs?v=20261110-taxlead-v1';
 import {createPresenceUI} from './staff-presence.mjs?v=20261109-hol-v1';
 import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-check-v1';
 import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261109-ptm-v1';
@@ -20,16 +20,16 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261110-support-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261110-taxlead-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261108-nav-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261110-support-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261110-taxlead-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
-import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-support-v1';
-import {moduleLinks,GROUP_ENGAGEMENTS,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261110-support-v1';
-import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261110-support-v1';
-import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-support-v1';
+import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxlead-v1';
+import {moduleLinks,GROUP_ENGAGEMENTS,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261110-taxlead-v1';
+import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261110-taxlead-v1';
+import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxlead-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
-import {createAuditUI} from './staff-audit.mjs?v=20261110-support-v1';
+import {createAuditUI} from './staff-audit.mjs?v=20261110-taxlead-v1';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261105-check-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 import {renderAccessGuide} from './staff-access-guide.mjs?v=20261106-rights-v1';
@@ -324,7 +324,7 @@ async function editClient(c={}){
 
 }
 function editStaff(s={}){const choices=Object.entries(roles).filter(([k])=>data.me.category_code==='PARTNER'||(data.me.category_code==='ADMIN'?['SUPERVISOR','ASSISTANT','INTERN'].includes(k):!['PARTNER','MANAGER','ADMIN'].includes(k)));modal(s.staff_id?'Edit staff profile and ERP role':'Add staff member and assign ERP role',form(field('staff_identifier','Staff ID *',s.staff_identifier,'text',s.staff_id?'readonly':'required maxlength="80"')+field('login_id','Login ID *',s.login_id,'text',s.staff_id?'readonly':'required pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,79}"')+field('full_name','Full name *',s.full_name,'text','required maxlength="160"')+select('category_code','ERP role *',choices,s.category_code||'ASSISTANT')+'<p class="info full">One person has one ERP role. You can assign any number of staff to the same role. Managers can assign team roles to their direct reports; only a Partner can assign Manager or Partner roles.</p>'+select('employment_type','Employment type *',['Permanent','Contract','Internship','Consultant'],s.employment_type||'Contract')+select('billing_status','Billing status',['Billable','Partially billable','Non-billable'],s.billing_status||'Billable')+select('branch_location','Branch',branches,s.branch_location)+field('contract_start_date','Contract start',s.contract_start_date?.slice(0,10),'date')+field('contract_end_date','Contract end (required for Contract / Intern)',s.contract_end_date?.slice(0,10),'date')+firmChecks(data.staff_firms.filter(l=>l.staff_id===s.staff_id).map(l=>l.firm_id))),f=>request({...Object.fromEntries(f),action:'staff_save',staff_id:s.staff_id,revision:s.revision,firm_ids:f.getAll('firm_ids')}));}
-const RIGHT_LABELS={FINANCE:'Finance (client advances, invoices and payments)',HR:'HR',MLRO:'MLRO',SYSTEM_ADMIN:'System administrator'};
+const RIGHT_LABELS={FINANCE:'Finance (client advances, invoices and payments)',APPROVE_TAX_RULES:'Tax Lead (approve tax rules, including VAT and credit rules)',HR:'HR',MLRO:'MLRO',SYSTEM_ADMIN:'System administrator'};
 async function additionalRights(){
  const o=await request({action:'staff_rights_read'}),rows=o.staff.filter(s=>s.grants.length).flatMap(s=>s.grants.map(g=>`<tr><td>${esc(s.full_name)}<small>${esc(s.staff_identifier)} · ${esc(roles[s.category_code]||s.category_code)}</small></td><td>${esc(RIGHT_LABELS[g.capability]||g.capability)}</td><td class="preserve-lines">${esc(g.reason||'Set before reasons were recorded')}<small>Granted by ${esc(g.granted_by_name||'earlier set-up')} on ${esc(shortDate(g.granted_at))}</small></td><td>${g.expires_on?esc(shortDate(g.expires_on)):'No end date'}${g.expired?' <span class="badge warn">Ended</span>':''}</td><td><button class="danger" data-right-revoke="${esc(g.grant_id)}">Withdraw</button></td></tr>`)).join('');
  const hist=(o.history||[]).slice(0,15).map(h=>`<tr><td>${esc(shortDate(h.at))}</td><td>${esc(h.event)}</td><td>${esc(h.staff_name)}</td><td>${esc(RIGHT_LABELS[h.capability]||h.capability)}</td><td>${esc(h.by||'')}</td><td class="preserve-lines">${esc(h.reason||'')}</td></tr>`).join('');
@@ -333,7 +333,7 @@ async function additionalRights(){
 }
 function grantRightForm(){
  const o=$('#editorBody')._rights;if(!o)return;const t=today(),max=new Date(Date.parse(t)+364*864e5).toISOString().slice(0,10);
- const people=o.staff.filter(s=>s.access_status==='Active'&&!['PARTNER','ADMIN'].includes(s.category_code)&&!s.grants.some(g=>g.capability==='FINANCE')&&s.staff_id!==data.me.staff_id).map(s=>[s.staff_id,`${s.full_name} · ${roles[s.category_code]||s.category_code}`]);
+ const people=o.staff.filter(s=>s.access_status==='Active'&&!['PARTNER','ADMIN'].includes(s.category_code)&&s.staff_id!==data.me.staff_id).map(s=>[s.staff_id,`${s.full_name} · ${roles[s.category_code]||s.category_code}`]);
  modal('Grant an additional right',form(select('staff_id','Staff member *',people)+select('capability','Right *',o.grantable.map(g=>[g.code,`${g.label}: ${g.effect}`]),'FINANCE','Choose…')+field('expires_on','Ends on *',t,'date',`required min="${t}" max="${max}"`)+`<label class="full">Reason *<textarea name="reason" required minlength="10" maxlength="1000" placeholder="For example: covers client advances while the Manager is on leave"></textarea></label><p class="muted full">The right stops by itself at the end of the date you choose (up to one year). You can withdraw it earlier.</p>`,'Grant right'),f=>request({action:'staff_right_grant',staff_id:f.get('staff_id'),capability:f.get('capability'),expires_on:f.get('expires_on'),reason:f.get('reason')}),async()=>{await additionalRights();},{refreshWorkspace:false,successMessage:'The right was granted.'});
 }
 function revokeRightForm(grantId){

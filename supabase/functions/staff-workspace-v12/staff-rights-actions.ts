@@ -6,7 +6,7 @@ export async function staffRightsAction(tx:any,a:any,p:any):Promise<any>{
  if(a.category_code!=='PARTNER')fail(403,'Only an Engagement Partner can manage additional rights.');
  if(p.action==='staff_rights_read'){
   const [r]=await tx`select erp_private.staff_rights_overview() as o`;
-  return {...r.o,grantable:[{code:'FINANCE',label:'Finance',effect:'Record client advances, invoices and payments.'}],reserved:[{code:'HR',label:'HR'},{code:'MLRO',label:'MLRO'},{code:'SYSTEM_ADMIN',label:'System administrator'}]};
+  return {...r.o,grantable:[{code:'FINANCE',label:'Finance',effect:'Record client advances, invoices and payments.'},{code:'APPROVE_TAX_RULES',label:'Tax Lead (approve tax rules)',effect:'Confirm and approve tax rules. VAT and credit rules can be approved only by someone who holds this right. Held by a Manager.'}],reserved:[{code:'HR',label:'HR'},{code:'MLRO',label:'MLRO'},{code:'SYSTEM_ADMIN',label:'System administrator'}]};
  }
  if(p.action==='staff_right_grant'){
   const reason=text(p.reason,1000,false),expires=/^\d{4}-\d{2}-\d{2}$/.test(String(p.expires_on||''))?String(p.expires_on):fail(400,'Choose the end date.');
