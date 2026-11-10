@@ -209,14 +209,19 @@ CREATE OR REPLACE FUNCTION validate_tax_credit_entry()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE
   obligation_tax_type TEXT;
+  obligation_locked_at TIMESTAMPTZ;
   reviewer_level SMALLINT;
 BEGIN
-  SELECT tax_type INTO obligation_tax_type
-  FROM tax_project_obligations
-  WHERE tax_project_obligation_id = NEW.tax_project_obligation_id;
+  SELECT o.tax_type, p.locked_at INTO obligation_tax_type, obligation_locked_at
+  FROM tax_project_obligations o
+  JOIN tax_period_projects p ON p.tax_period_project_id = o.tax_period_project_id
+  WHERE o.tax_project_obligation_id = NEW.tax_project_obligation_id;
 
   IF obligation_tax_type IS NULL THEN
     RAISE EXCEPTION 'Tax obligation was not found.';
+  END IF;
+  IF obligation_locked_at IS NOT NULL THEN
+    RAISE EXCEPTION 'Credits cannot be changed after the tax period is locked; use an amendment.';
   END IF;
 
   IF NEW.credit_type = 'WITHHOLDING_VAT' AND obligation_tax_type <> 'VAT' THEN
@@ -297,14 +302,20 @@ DECLARE
   batch_obligation_id BIGINT;
   batch_source_type TEXT;
   batch_status TEXT;
+  period_locked_at TIMESTAMPTZ;
 BEGIN
-  SELECT tax_project_obligation_id, source_type, status
-    INTO batch_obligation_id, batch_source_type, batch_status
-  FROM tax_upload_batches WHERE tax_upload_batch_id = NEW.tax_upload_batch_id;
+  SELECT b.tax_project_obligation_id, b.source_type, b.status, p.locked_at
+    INTO batch_obligation_id, batch_source_type, batch_status, period_locked_at
+  FROM tax_upload_batches b
+  JOIN tax_period_projects p ON p.tax_period_project_id = b.tax_period_project_id
+  WHERE b.tax_upload_batch_id = NEW.tax_upload_batch_id;
   IF batch_obligation_id IS DISTINCT FROM NEW.tax_project_obligation_id
      OR batch_source_type IS DISTINCT FROM NEW.source_type
      OR batch_status <> 'ACCEPTED' THEN
     RAISE EXCEPTION 'Source totals must match an accepted upload batch for the same obligation and source.';
+  END IF;
+  IF period_locked_at IS NOT NULL THEN
+    RAISE EXCEPTION 'Source totals cannot be changed after the tax period is locked; use an amendment.';
   END IF;
   RETURN NEW;
 END;
@@ -363,12 +374,17 @@ CREATE OR REPLACE FUNCTION validate_tax_period_adjustment()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE
   obligation_tax_type TEXT;
+  obligation_locked_at TIMESTAMPTZ;
   reviewer_level SMALLINT;
 BEGIN
-  SELECT tax_type INTO obligation_tax_type
-  FROM tax_project_obligations
-  WHERE tax_project_obligation_id = NEW.tax_project_obligation_id;
+  SELECT o.tax_type, p.locked_at INTO obligation_tax_type, obligation_locked_at
+  FROM tax_project_obligations o
+  JOIN tax_period_projects p ON p.tax_period_project_id = o.tax_period_project_id
+  WHERE o.tax_project_obligation_id = NEW.tax_project_obligation_id;
 
+  IF obligation_locked_at IS NOT NULL THEN
+    RAISE EXCEPTION 'Adjustments cannot be changed after the tax period is locked; use an amendment.';
+  END IF;
   IF obligation_tax_type <> 'VAT' THEN
     RAISE EXCEPTION 'Credit-note and VAT adjustments require a VAT obligation.';
   END IF;
@@ -449,12 +465,17 @@ CREATE OR REPLACE FUNCTION validate_tax_computation_snapshot()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE
   obligation_tax_type TEXT;
+  obligation_locked_at TIMESTAMPTZ;
   reviewer_level SMALLINT;
 BEGIN
-  SELECT tax_type INTO obligation_tax_type
-  FROM tax_project_obligations
-  WHERE tax_project_obligation_id = NEW.tax_project_obligation_id;
+  SELECT o.tax_type, p.locked_at INTO obligation_tax_type, obligation_locked_at
+  FROM tax_project_obligations o
+  JOIN tax_period_projects p ON p.tax_period_project_id = o.tax_period_project_id
+  WHERE o.tax_project_obligation_id = NEW.tax_project_obligation_id;
 
+  IF obligation_locked_at IS NOT NULL THEN
+    RAISE EXCEPTION 'Computation snapshots cannot be changed after the tax period is locked; use an amendment.';
+  END IF;
   IF NEW.output_vat_amount IS NOT NULL AND obligation_tax_type <> 'VAT' THEN
     RAISE EXCEPTION 'VAT calculation fields can only be used for a VAT obligation.';
   END IF;
