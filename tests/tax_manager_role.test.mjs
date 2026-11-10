@@ -86,7 +86,9 @@ test('Tax Manager role gate and annual due_month_offset rules',async t=>{
  const rd=(kind,ends)=>tx`select erp_private.period_due_suggest_kind(${kind},${ends}::date) d`.then(r=>day(r[0].d));
  assert.equal(await rd('Company','2026-12-31'),'2027-06-30','31 Dec year end: 30 June');
  assert.equal(await rd('Partnership','2026-12-31'),'2027-06-30');
- assert.equal(await rd('Company','2026-06-30'),'2026-12-30','a 30 June year end: six months later, on day 30');
+ assert.equal(await rd('Company','2026-06-30'),'2026-12-31','a 30 June year end: six months later, the last day of that month');
+ assert.equal(await rd('Company','2026-09-30'),'2027-03-31');assert.equal(await rd('Partnership','2026-06-30'),'2026-12-31');
+ assert.equal(await rd('Company','2027-08-31'),'2028-02-29','month end in a leap year');
  assert.equal(await rd('Individual','2026-12-31'),'2027-04-30','individual: 30 April of the following year');
  assert.equal(await rd('Individual','2025-12-31'),null,'no individual rule applies to periods before the 2026 year of income');
  assert.equal(await rd('VAT','2026-09-30'),'2026-10-20');assert.equal(await rd('WHT','2026-09-30'),null);
@@ -97,7 +99,7 @@ test('Tax Manager role gate and annual due_month_offset rules',async t=>{
  const dstate=(role,kind,s,e)=>as(role,a=>dueDateAction(tx,a,{action:'due_date_state',project_id:PJ,kind,starts_on:s,ends_on:e}));
  let st=(await dstate('MANAGER','Company','2026-01-01','2026-12-31')).state;
  assert.deepEqual([day(st.suggested_due_date),day(st.internal_suggestion),st.status],['2027-06-30','2027-05-31',null],'suggested only, nothing confirmed');
- assert.match(st.suggestion_rule,/Company: 6 months after the period end, on day 30 \(rule suggested, not yet confirmed by a Partner\)/);
+ assert.match(st.suggestion_rule,/Company: 6 months after the period end, on the last day of that month \(rule suggested, not yet confirmed by a Partner\)/);
  st=(await dstate('MANAGER','Individual','2025-01-01','2025-12-31')).state;assert.equal(st.suggested_due_date,null,'no suggestion for an earlier individual period');
  await as('MANAGER',a=>dueDateAction(tx,a,{action:'due_date_confirm',project_id:PJ,kind:'Company',starts_on:'2026-01-01',ends_on:'2026-12-31',kra_due_date:'2027-06-30',itax_confirmed:'on'}));
  const saved=(await tx`select filing_class,kra_due_date::text d,suggested_due_date::text s,suggestion_rule from erp_private.period_due_dates where client_id=${Z}`)[0];
@@ -112,8 +114,17 @@ test('Tax Manager role gate and annual due_month_offset rules',async t=>{
  const cur=(await tx`select revision from erp_private.annual_due_rules where rule_id=${rule.rule_id}`)[0].revision;
  await assert.rejects(tm('PARTNER',{action:'annual_due_rule_set',rule_id:rule.rule_id,revision:cur,due_month_offset:13,external_deadline_day:30,internal_month_offset:5,internal_deadline_day:31}),/between 1 and 12/);
  await tm('PARTNER',{action:'annual_due_rule_set',rule_id:rule.rule_id,revision:cur,due_month_offset:5,external_deadline_day:31,internal_month_offset:4,internal_deadline_day:30});
+ assert.equal((await tx`select external_deadline_day d from erp_private.annual_due_rules where rule_id=${rule.rule_id}`)[0].d,31);
+ const cur2=(await tx`select revision from erp_private.annual_due_rules where rule_id=${rule.rule_id}`)[0].revision;
+ await tm('PARTNER',{action:'annual_due_rule_set',rule_id:rule.rule_id,revision:cur2,due_month_offset:6,external_deadline_day:'',internal_month_offset:5,internal_deadline_day:31});
+ assert.equal((await tx`select external_deadline_day d from erp_private.annual_due_rules where rule_id=${rule.rule_id}`)[0].d,null,'a blank day means the last day of the month');
+ assert.equal(await rd('Company','2026-06-30'),'2026-12-31');
+ const cur3=(await tx`select revision from erp_private.annual_due_rules where rule_id=${rule.rule_id}`)[0].revision;
+ await tm('PARTNER',{action:'annual_due_rule_set',rule_id:rule.rule_id,revision:cur3,due_month_offset:5,external_deadline_day:31,internal_month_offset:4,internal_deadline_day:30});
  r2=(await tx`select rule_status,confirmed_by,due_month_offset from erp_private.annual_due_rules where rule_id=${rule.rule_id}`)[0];assert.deepEqual([r2.rule_status,r2.confirmed_by,r2.due_month_offset],['Suggested',null,5],'a change withdraws the confirmation');
  assert.equal(await rd('Company','2026-12-31'),'2027-05-31','the rule is data, not code');
+ // seeded values: companies and partnerships have no fixed day (month end); the individual rule keeps day 30 and its 2026 start
+ assert.deepEqual((await tx`select tax_kind,external_deadline_day d,applies_from_period_end::text a from erp_private.annual_due_rules order by tax_kind`).map(r=>r.tax_kind+':'+r.d+':'+r.a),['Company:31:null','Individual:30:2026-12-31','Partnership:null:null'],'Company shows the value set above; Partnership keeps the seeded month-end rule');
  // the Partner's rules are seeded as Suggested, never as confirmed
  assert.deepEqual((await tx`select tax_kind,rule_status from erp_private.annual_due_rules order by tax_kind`).map(r=>r.tax_kind+':'+r.rule_status),['Company:Suggested','Individual:Suggested','Partnership:Suggested']);
  // closed doors
