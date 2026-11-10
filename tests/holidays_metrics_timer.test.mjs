@@ -70,6 +70,18 @@ test('Partner-only holidays that drive the clocks, scoped metrics, and manual ti
  assert.equal(Number(pm.ageing.not_due),(15000+2400-5000)+(8000+1280),'invoices not yet due');
  assert.equal(Number(pm.ageing.over_90),70000,'an invoice 120 days overdue is in the over 90 bucket');
  assert.equal(Object.values(pm.ageing).reduce((x,y)=>x+Number(y),0),Number(pm.receivables_total),'ageing buckets add up to receivables');
+ // 3b. Client card WIP (build 2690): the same definition as the Finance page, one client at a time, for the same people.
+ const cw=(role,ids=[C,C2])=>as(role,async()=>(await tx`select client_id,wip_unbilled,hours_without_rate from erp_private.client_card_wip(${ids}::uuid[])`).map(r=>({client_id:r.client_id,wip:Number(r.wip_unbilled),noRate:Number(r.hours_without_rate)})));
+ const cwp=await cw('PARTNER');
+ assert.equal(cwp.reduce((x,r)=>x+r.wip,0),Number(pm.wip_unbilled),'the card figures add up to the firm WIP on the Finance page');
+ assert.equal(cwp.find(r=>r.client_id===C).wip,0,'billed fees above the approved time value leave no WIP');
+ assert.ok(cwp.find(r=>r.client_id===C2).wip>0,'a client with approved time and fewer fees billed carries WIP');
+ assert.deepEqual((await cw('MANAGER')).map(r=>r.client_id),[C],'a Manager gets only the clients they oversee');
+ for(const role of ['SUPERVISOR','ASSISTANT'])assert.deepEqual(await cw(role),[],role+' sees no money');
+ assert.deepEqual(await cw('PARTNER',[]),[],'an empty request returns nothing');
+ assert.deepEqual((await cw('PARTNER',[C])).map(r=>r.client_id),[C],'only the clients asked for come back');
+ await assert.rejects(cw('PARTNER',Array.from({length:501},()=>id())),/500 clients/);
+ const grants=await tx`select has_function_privilege('anon','erp_private.client_card_wip(uuid[])','execute') a,has_function_privilege('erp_api','erp_private.client_card_wip(uuid[])','execute') b`;assert.deepEqual([grants[0].a,grants[0].b],[false,true]);
  for(const role of ['SUPERVISOR','ASSISTANT'])await rejects(()=>m(role),/Managers and Partners only/);
  await rejects(()=>m('PARTNER','2026-11-30','2026-11-01'),/valid period/);
  // an unrelated Manager sees nothing of either client

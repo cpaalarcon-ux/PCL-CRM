@@ -20,7 +20,7 @@ test('request building, toolbar, pager and card figures',()=>{
  assert.equal(pager(null,esc),'');
  const m=rowMeta({active_projects:1,open_tasks:3,overdue_tasks:2,next_deadline:'2030-01-01T00:00:00Z'},esc,()=>'1 Jan 2030');
  assert.match(m,/1 active project</);assert.match(m,/3 open tasks/);assert.match(m,/2 overdue/);assert.match(m,/Next deadline 1 Jan 2030/);
- assert.match(rowMeta({active_projects:0,open_tasks:0,overdue_tasks:0,next_deadline:null},esc,()=>''),/No open deadline/);assert.equal(rowMeta(null,esc,()=>''),'');
+ assert.equal(rowMeta({active_projects:0,open_tasks:0,overdue_tasks:0,next_deadline:null},esc,()=>''),'','a row of zeros is not drawn (build 2690)');assert.equal(rowMeta(null,esc,()=>''),'');
 });
 test('page and server wiring',()=>{
  const pilot=rd('staff-pilot.mjs');assert.match(pilot,/staff-client-register\.mjs\?v=/);assert.match(pilot,/queryToRequest\(clientQuery,firm\)/);assert.match(pilot,/data-creg-page|cregPage/);

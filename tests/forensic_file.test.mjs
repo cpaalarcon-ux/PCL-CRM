@@ -54,6 +54,13 @@ test('Forensic file: hidden from everyone off the list, evidence, custody, findi
  assert.match(k1.case_ref,/^FOR-\d{4}-\d{4}$/);
  const lst=await call('PARTNER','forensic_list');assert.equal(lst.length,1);assert.equal(lst[0].my_level,'Lead');assert.equal(lst[0].client_name,'UAT Fictional Services Ltd');assert.equal(lst[0].hold_active,false);
 
+ // ---- 2b. The client card tells the lead, and only the lead, that a forensic file exists for the client (build 2690) --------------------------------
+ const cardFor=(role,ids)=>q(role,`select client_id,forensic_file from erp_private.client_card_flags($1::uuid[])`,[ids]);
+ assert.deepEqual(await cardFor('PARTNER',[A]),[{client_id:A,forensic_file:true}],'the lead Partner is told');
+ for(const role of ['PARTNER2','MANAGER','MANAGER2','SUPERVISOR'])assert.ok((await cardFor(role,[A])).every(r=>r.forensic_file===false),role+' is told nothing, even though the file is for a client they can see');
+ for(const role of ['ASSISTANT','INTERN','ADMIN','OUTSIDER'])assert.deepEqual(await cardFor(role,[A]),[],role+' gets no row at all');
+ assert.deepEqual(await cardFor('PARTNER',[B]),[{client_id:B,forensic_file:false}],'another client of the same Partner shows no forensic file');
+ assert.equal((await tx`select count(*)::int n from erp_private.audit_events where table_name like 'forensic%'`)[0].n,0,'asking the card question writes nothing to the general log');
  // ---- 3. Hidden from everyone off the list (other Partners, Managers, Supervisors, the administrator) ------------------------------------------
  for(const role of ['PARTNER2','MANAGER','MANAGER2','SUPERVISOR','ASSISTANT','INTERN','ADMIN','OUTSIDER']){
   assert.deepEqual(await call(role,'forensic_list'),[],role+' sees no forensic file');
