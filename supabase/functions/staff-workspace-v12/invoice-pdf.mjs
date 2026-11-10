@@ -4,6 +4,7 @@
 import {qrMatrix,safe,wrap} from './letter-pdf.mjs';
 import {formatDay} from './suite-rules.mjs';
 const money=v=>Number(v||0).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
+export const ETIMS_WATERMARK='DRAFT - NOT A VALID KRA eTIMS TAX INVOICE';
 export const THANKS='Thank you for your continued trust and partnership. We truly appreciate your business.';
 export function invoiceTotals(i){
  const net=Number(i.net_amount),vat=Number(i.vat_amount),total=Math.round((net+vat+Number.EPSILON)*100)/100,paid=Number(i.paid_amount||0),bf=Number(i.brought_forward||0);
@@ -17,7 +18,10 @@ export async function invoicePdf(d,{PDFDocument,StandardFonts,rgb}){
  let page=doc.addPage([W,H]),y=H-M,pageNo=1;
  const centre=(txt,size,f,yy,color=ink)=>{const s=safe(txt);page.drawText(s,{x:(W-f.widthOfTextAtSize(s,size))/2,y:yy,size,font:f,color});};
  const right=(txt,size,f,xr,yy,color=ink)=>{const s=safe(txt);page.drawText(s,{x:xr-f.widthOfTextAtSize(s,size),y:yy,size,font:f,color});};
- const watermark=()=>{if(!draft)return;const s='DRAFT — NOT ISSUED';page.drawText(safe(s),{x:95,y:290,size:44,font:bold,color:rgb(.88,.88,.88),rotate:{type:'degrees',angle:35}});};
+ // A draft says so. A posted invoice with no eTIMS number recorded says it is not a valid KRA eTIMS tax invoice; the mark goes once the number is recorded.
+ const etimsMissing=!draft&&i.status!=='Void'&&!d.etims?.etims_invoice_no;
+ const watermark=()=>{if(draft){page.drawText(safe('DRAFT — NOT ISSUED'),{x:95,y:290,size:44,font:bold,color:rgb(.88,.88,.88),rotate:{type:'degrees',angle:35}});}
+  else if(etimsMissing){page.drawText(safe(ETIMS_WATERMARK),{x:50,y:110,size:22,font:bold,color:rgb(.86,.86,.86),rotate:{type:'degrees',angle:28}});}};
  const header=first=>{
   if(!first){page.drawText(safe(`${d.firm.legal_name} · Invoice ${i.invoice_number||'DRAFT'} (continued)`),{x:M,y:H-M,size:9,font:bold,color:grey});y=H-M-24;return;}
   if(logo){const sc=Math.min(170/logo.width,56/logo.height,1),w=logo.width*sc,h=logo.height*sc;page.drawImage(logo,{x:(W-w)/2,y:y-h,width:w,height:h});y-=h+6;}

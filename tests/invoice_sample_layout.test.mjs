@@ -24,3 +24,12 @@ test('a long invoice runs to several pages and numbers them',async()=>{
  const bytes=await make(base({},40));const n=(await PDFLib.PDFDocument.load(bytes)).getPageCount();assert.ok(n>1);
  const t=text(bytes);assert.match(t,new RegExp('Page 1 of '+n));assert.match(t,new RegExp('Page '+n+' of '+n));
 });
+
+test('a posted invoice without an eTIMS number carries the not-valid watermark; a draft keeps its own; recording the number removes it',async()=>{
+ const {ETIMS_WATERMARK}=await import('../supabase/functions/staff-workspace-v12/invoice-pdf.mjs');
+ assert.equal(ETIMS_WATERMARK,'DRAFT - NOT A VALID KRA eTIMS TAX INVOICE');
+ const posted=text(await make(base()));assert.ok(posted.includes(ETIMS_WATERMARK),'posted, no eTIMS number');
+ const linked=text(await make(base({etims:{etims_invoice_no:'ETIMS-9',etims_issued_on:'2026-11-02'}})));assert.ok(!linked.includes(ETIMS_WATERMARK),'number recorded: no mark');
+ const draft=text(await make({...base(),invoice:{...base().invoice,status:'Draft',invoice_number:null}}));assert.ok(draft.includes('DRAFT'),'draft keeps its own mark');assert.ok(!draft.includes(ETIMS_WATERMARK));
+ const voided=text(await make({...base(),invoice:{...base().invoice,status:'Void'}}));assert.ok(!voided.includes(ETIMS_WATERMARK),'a void invoice is not marked as awaiting eTIMS');
+});
