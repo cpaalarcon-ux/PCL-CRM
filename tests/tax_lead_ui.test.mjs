@@ -35,7 +35,7 @@ test('the server pieces are wired and the actions belong to the projects area',(
  const cfg=read('supabase/functions/staff-workspace-v12/tax-config-actions.ts');
  assert.match(cfg,/const leadOnly=\['VAT','Withholding tax'\]/);assert.match(cfg,/rateAuthority\(tx,a,r\)/);
  const rel=JSON.parse(read('supabase/functions/staff-workspace-v12/release.json'));
- assert.equal(rel.build,'2026-11-11.2778');assert.match(read('staff-pilot.html'),/data-build="2026-11-11\.2778"/);
+ assert.equal(rel.build,'2026-11-11.2779');assert.match(read('staff-pilot.html'),/data-build="2026-11-11\.2779"/);
  assert.match(read('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261110-taxrole-v3/);assert.match(read('staff-suite.mjs'),/staff-tax-period-defaults\.mjs\?v=20261110-taxrole-v3/);
 });
 test('wording: nothing here says a Partner confirmed anything, and the banned standard name never appears',()=>{
