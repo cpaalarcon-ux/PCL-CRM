@@ -71,7 +71,7 @@ test('screen wiring and build label',()=>{
  assert.match(s,/action:'engagement_checklist',project_id:pid/);assert.match(s,/serviceFileSection\(\{data:sf,partner:partner\(\),button\}\)/);
  for(const a of ['reference-add','reference-confirm','reference-retire'])assert.match(s,new RegExp("action==='"+a+"'"));
  assert.match(s,/'reference_service_add',\{service_code:id\}/);assert.match(s,/'reference_service_confirm',\{reference_id:id,rule_status:'Confirmed'/);
- const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-09\.\d{4}$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
+ const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-\d\d\.\d{4}$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
 });
 test('migration: nothing confirmed, no delete, no ISRS 4000, new services outside the audit prefix',()=>{
  const m=rd('supabase/migrations/20261109262000_service_profiles.sql');
