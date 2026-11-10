@@ -16,7 +16,8 @@ test('the permission starts off and only a Partner sees the buttons',()=>{
 });
 test('text is escaped and the empty state is plain',()=>{
  const h=roleView({data:data(),partner:true,button});assert.match(h,/Fictional &lt;b&gt;Manager&lt;\/b&gt;/);assert.doesNotMatch(h,/<b>Manager<\/b>/);
- assert.match(roleView({data:data({assignments:[]}),partner:true,button}),/No engagement has a Tax Manager yet/);
+ assert.match(roleView({data:data({assignments:[]}),partner:true,button}),/No Tax Manager has been assigned yet/);
+ assert.match(roleView({data:data({assignments:[{assignment_id:'a9',project_id:null,staff_name:'TEST <2>',company_name:null,project_name:null,assigned_at:'2026-11-10T20:00:00Z'}]}),partner:true,button}),/All clients and engagements<\/b><br><small>firm-wide[\s\S]*TEST &lt;2&gt;/);
  assert.match(ROLE_NOTE,/A Partner cannot approve a VAT or credit rule without being assigned as it/);
 });
 test('rules: status wording, Partner-only buttons, no claim of confirmation',()=>{
@@ -28,12 +29,12 @@ test('rules: status wording, Partner-only buttons, no claim of confirmation',()=
 });
 test('wiring: server module, area, Settings card and cache busters',()=>{
  const su=read('staff-suite.mjs');
- assert.match(su,/import \{createTaxRolesUI\} from '\.\/staff-tax-roles\.mjs\?v=20261110-taxrole-v2'/);assert.match(su,/const taxRoles=createTaxRolesUI\(/);
+ assert.match(su,/import \{createTaxRolesUI\} from '\.\/staff-tax-roles\.mjs\?v=20261110-taxrole-v3'/);assert.match(su,/const taxRoles=createTaxRolesUI\(/);
  assert.match(su,/deadlines\.card\(\)\}\$\{taxRoles\.card\(\)\}/);assert.match(su,/if\(await taxRoles\.handle\(action,id\)\)return/);
  const idx=read('supabase/functions/staff-workspace-v12/index.ts');assert.match(idx,/const taxManager=await taxManagerAction\(tx,a,p\)/);
  assert.ok(idx.indexOf('taxManagerAction(tx,a,p)')<idx.indexOf('await taxAction(tx,a,p)'),'registered before the tax_ handler');
  for(const a of ['tax_manager_read','tax_manager_assign','tax_manager_end','tax_role_permission_set','annual_due_rule_set','annual_due_rule_confirm'])assert.equal(areaForStaffAction(a),'settings',a);
  assert.equal(areaForStaffAction('tax_create'),'projects');
- assert.equal(JSON.parse(read('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-10.2771');
+ assert.equal(JSON.parse(read('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-10.2772');
  for(const f of ['staff-tax-roles.mjs','supabase/migrations/20261110280000_tax_manager_role_annual_rules.sql','supabase/functions/staff-workspace-v12/tax-manager-actions.ts'])assert.doesNotMatch(read(f),/ISRS 4000/);
 });

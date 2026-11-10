@@ -13,7 +13,7 @@ export async function taxManagerAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='tax_manager_read'){
   leader(a);
   const [permission]=await tx`select permission_key,role_code,allowed,source_note,changed_at,revision from erp_private.tax_role_permissions where permission_key='APPROVE_TAX_RULES' and role_code='TAX_MANAGER'`;
-  const assignments=await tx`select e.assignment_id,e.project_id,e.staff_id,s.full_name as staff_name,pr.project_name,c.company_name,e.assigned_at,e.reason,e.ended_at,e.end_reason from erp_private.engagement_tax_managers e join erp_private.staff_members s on s.staff_id=e.staff_id join erp_private.projects pr on pr.project_id=e.project_id join erp_private.clients c on c.client_id=pr.client_id order by (e.ended_at is null) desc,e.assigned_at desc limit 200`;
+  const assignments=await tx`select e.assignment_id,e.project_id,e.staff_id,s.full_name as staff_name,pr.project_name,c.company_name,e.assigned_at,e.reason,e.ended_at,e.end_reason from erp_private.engagement_tax_managers e join erp_private.staff_members s on s.staff_id=e.staff_id left join erp_private.projects pr on pr.project_id=e.project_id left join erp_private.clients c on c.client_id=pr.client_id order by (e.ended_at is null) desc,e.assigned_at desc limit 200`;
   const rules=await tx`select rule_id,tax_kind,due_month_offset,external_deadline_day,internal_month_offset,internal_deadline_day,applies_from_period_end,rule_status,source_note,confirmed_at,revision from erp_private.annual_due_rules order by tax_kind,applies_from_period_end nulls first`;
   const candidates=a.category_code==='PARTNER'?await tx`select staff_id,full_name from erp_private.staff_members where category_code='MANAGER' and access_status='Active' and deleted_at is null order by full_name`:[];
   const [me]=await tx`select erp_private.tax_rules_approver() as ok`;
@@ -21,7 +21,8 @@ export async function taxManagerAction(tx:any,a:any,p:any):Promise<any>{
  }
  if(p.action==='tax_manager_assign'){
   partner(a,'Only an Engagement Partner assigns the Tax Manager.');
-  const [r]=await tx`select erp_private.tax_manager_assign(${uuid(p.project_id)}::uuid,${uuid(p.staff_id)}::uuid,${text(p.reason||'',500,false)}) as id`;
+  const firmWide=!p.project_id||p.project_id==='ALL';
+  const [r]=await tx`select erp_private.tax_manager_assign(${firmWide?null:uuid(p.project_id)}::uuid,${uuid(p.staff_id)}::uuid,${text(p.reason||'',500,false)}) as id`;
   return {ok:true,assignment_id:r.id};
  }
  if(p.action==='tax_manager_end'){

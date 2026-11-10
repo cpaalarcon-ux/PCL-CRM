@@ -1,9 +1,9 @@
 // Tax Manager role and annual due-date rules (Settings). The rules live in the database (20261110280000_tax_manager_role_annual_rules.sql); this file draws the screen.
-// A Partner assigns a Manager as the Tax Manager of an engagement and switches the role's APPROVE_TAX_RULES permission on (it starts off). Managers can read.
+// A Partner assigns Managers as Tax Managers of all clients (or of a single engagement) and switches the role's APPROVE_TAX_RULES permission on (it starts off). Managers can read.
 // Nothing on this screen approves a tax rule; approval stays on the tax rules screen, where the database checks this role again.
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const day=v=>v?String(v).slice(0,10):'';
-export const ROLE_NOTE='The Tax Manager is a Manager a Partner assigns to a client engagement. VAT, credit and other tax rules can be approved only by a Tax Manager while a Partner has switched the APPROVE_TAX_RULES permission on for the role. A Partner cannot approve a VAT or credit rule without being assigned as it; no other staff member can approve one.';
+export const ROLE_NOTE='Tax Managers are Managers a Partner assigns once for all clients, or to a single client engagement. A firm may have as many as it needs. VAT, credit and other tax rules can be approved only by a Tax Manager while a Partner has switched the APPROVE_TAX_RULES permission on for the role. A Partner cannot approve a VAT or credit rule without being assigned as it; no other staff member can approve one.';
 export const RULES_NOTE='Annual KRA due dates are suggested from these rules: the months after the period end and the day of the month (blank means the last day of the month; a fixed day is capped at the last day if the month is shorter). The Tax Team still confirms each annual period\'s date by hand. A rule shows "Suggested" until a Partner records its confirmation.';
 const KIND_LABEL={Individual:'Individual (resident)',Company:'Company',Partnership:'Partnership'};
 export const permissionStatus=p=>p?.allowed?'On':'Off (default: not yet switched on by a Partner)';
@@ -11,13 +11,13 @@ export const ruleStatus=r=>r.rule_status==='Confirmed'?`Confirmed${r.confirmed_a
 
 export function roleView({data,partner,button}){
  const p=data.permission,live=(data.assignments||[]).filter(x=>!x.ended_at),past=(data.assignments||[]).filter(x=>x.ended_at).slice(0,10);
- const rows=live.map(x=>`<tr><td>${esc(x.company_name)}<br><small>${esc(x.project_name)}</small></td><td>${esc(x.staff_name)}</td><td>${esc(day(x.assigned_at))}</td><td>${partner?button('taxrole-end','End',x.assignment_id):''}</td></tr>`).join('');
+ const rows=live.map(x=>`<tr><td>${x.project_id?esc(x.company_name)+'<br><small>'+esc(x.project_name)+'</small>':'<b>All clients and engagements</b><br><small>firm-wide</small>'}</td><td>${esc(x.staff_name)}</td><td>${esc(day(x.assigned_at))}</td><td>${partner?button('taxrole-end','End',x.assignment_id):''}</td></tr>`).join('');
  return `<p class="info full">${esc(ROLE_NOTE)}</p>
  <div class="section-head"><h3>Permission for the Tax Manager role</h3></div>
  <p><b>APPROVE_TAX_RULES: ${esc(permissionStatus(p))}</b>${p?.changed_at?'<br><small>Last changed '+esc(day(p.changed_at))+'. '+esc(p.source_note||'')+'</small>':''}${partner?'<br>'+button('taxrole-permission',p?.allowed?'Switch off':'Switch on'):''}</p>
- <div class="section-head"><h3>Tax Managers by engagement</h3>${partner?button('taxrole-assign','+ Assign a Tax Manager'):''}</div>
- ${live.length?`<div class="scroll"><table id="taxManagerTable"><thead><tr><th>Engagement</th><th>Tax Manager</th><th>Since</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">No engagement has a Tax Manager yet.</p>'}
- ${past.length?`<p class="muted">Ended: ${past.map(x=>esc(x.staff_name)+' · '+esc(x.company_name)).join('; ')}</p>`:''}
+ <div class="section-head"><h3>Tax Managers</h3>${partner?button('taxrole-assign','+ Assign a Tax Manager'):''}</div>
+ ${live.length?`<div class="scroll"><table id="taxManagerTable"><thead><tr><th>Engagement</th><th>Tax Manager</th><th>Since</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">No Tax Manager has been assigned yet.</p>'}
+ ${past.length?`<p class="muted">Ended: ${past.map(x=>esc(x.staff_name)+' · '+esc(x.project_id?x.company_name:'all clients')).join('; ')}</p>`:''}
  <p class="muted ${data.i_can_approve_tax_rules?'ok':''}">${data.i_can_approve_tax_rules?'You can approve tax rules.':'You cannot approve tax rules.'}</p>`;
 }
 export function rulesView({data,partner,button}){
@@ -49,7 +49,7 @@ export function createTaxRolesUI(ctx){
   }
   if(action==='taxrole-assign'){
    const projects=ctx.filtered().projects.map(p=>[p.project_id,`${(d().clients.find(c=>c.client_id===p.client_id)||{}).company_name||''} · ${p.project_name}`]),managers=(cur?.candidates||[]).map(m=>[m.staff_id,m.full_name]);
-   modal('Assign a Tax Manager',form(select('project_id','Engagement *',projects)+select('staff_id','Manager *',managers)+area('reason','Why this Manager is the Tax Manager for the engagement *','',true),'Assign'),
+   modal('Assign a Tax Manager',form(select('project_id','Covers *',[['ALL','All clients and engagements (firm-wide)'],...projects],'ALL')+select('staff_id','Manager *',managers)+area('reason','Why this Manager is the Tax Manager *','',true),'Assign'),
     f=>request({action:'tax_manager_assign',project_id:f.get('project_id'),staff_id:f.get('staff_id'),reason:f.get('reason')}),open);
    return true;
   }
