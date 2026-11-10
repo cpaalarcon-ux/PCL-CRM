@@ -6,7 +6,7 @@ const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').s
 export async function procedureAction(tx:any,a:any,p:any,taxAction:any){
  if(!['procedure_read','procedure_action'].includes(p.action))return undefined;
  const t=one(await tx`select * from erp_private.tasks where task_id=${uuid(p.task_id)} and deleted_at is null`),project=one(await tx`select * from erp_private.projects where project_id=${t.project_id} and deleted_at is null`),w=one(await tx`select * from erp_private.task_procedures where task_id=${t.task_id} for update`);
- if(p.action==='procedure_read')return {record:a.category_code==='INTERN'?{...w,contact_id:null,approval_document_id:null,filing_document_id:null,payment_document_id:null,details:{query:w.profile==='Supporting task'?w.details.query:null}}:w,events:await tx`select * from erp_private.procedure_events where task_id=${t.task_id} order by created_at desc limit 100`};
+ if(p.action==='procedure_read')return {filing:a.category_code==='INTERN'?null:(await tx`select * from erp_private.tax_filings where case_id=${w.case_id}`)[0]||null,record:a.category_code==='INTERN'?{...w,contact_id:null,approval_document_id:null,filing_document_id:null,payment_document_id:null,details:{query:w.profile==='Supporting task'?w.details.query:null}}:w,events:await tx`select * from erp_private.procedure_events where task_id=${t.task_id} order by created_at desc limit 100`};
  if(a.category_code==='INTERN'&&(w.profile!=='Supporting task'||p.operation==='setup'))fail(403,'A staff preparer must handle client approvals and filing.');
  if(String(w.revision)!==revision(p.revision))fail(409,'This workflow changed. Refresh the task workspace first.');
  if(['Completed','Cancelled'].includes(t.status)||w.stage==='Closed')fail(400,'Closed or cancelled work cannot change.');
@@ -57,8 +57,19 @@ export async function procedureAction(tx:any,a:any,p:any,taxAction:any){
    if(project.status!=='Active')fail(400,'Activate the engagement with verified onboarding and signed EL before recording a filing.');
    if(!c||c.status!=='Locked'||!w.approval_document_id)fail(400,'Independent review and written client approval are required.');
    const filed=date(p.filing_date);if(!filed||filed>today()||filed<day(c.ends_on)||filed<details.approval?.approved_on)fail(400,'Check the actual filing date against the period and client approval.');
-   const doc=await evidence(p.filing_document_id,true),prn=text(p.prn||'',100,false),noPrn=text(p.no_prn_reason||'',1000,false);if(!prn&&noPrn.length<10)fail(400,'Enter the PRN, or explain a nil return/no PRN issued.');
-   details.filing={test_only:c.result.testing_only===true,filing_date:filed,prn:prn||null,no_prn_reason:noPrn||null,recorded_by:a.staff_id,at:new Date().toISOString(),note};
+   // The filing record is the evidence: the iTax acknowledgment number with the locked KRA acknowledgment PDF, or an exception approved by a Manager or Partner who did not prepare or review the return.
+   const exception=p.acknowledgement_exception===true,reason=text(p.exception_reason||'',2000,false),itax=text(p.itax_reference||'',100,false),prn=text(p.prn||'',100,false),noPrn=text(p.no_prn_reason||'',1000,false);
+   if(!prn&&noPrn.length<10)fail(400,'Enter the PRN, or explain a nil return/no PRN issued.');
+   let doc:any=null;
+   if(exception){
+    if(!manager||[t.assigned_to,w.prepared_by,c.prepared_by,c.reviewed_by].includes(a.staff_id))fail(403,'An exception needs a Manager or Partner who did not prepare or review this return.');
+    if(reason.length<10)fail(400,'Explain why the KRA acknowledgment is not available (at least 10 characters).');
+   }else{
+    if(itax.length<3)fail(400,'Enter the iTax acknowledgment number shown on the KRA acknowledgment.');
+    doc=await evidence(p.filing_document_id,true);
+   }
+   details.filing={test_only:c.result.testing_only===true,filing_date:filed,itax_reference:itax||null,prn:prn||null,no_prn_reason:noPrn||null,acknowledgement_exception:exception,exception_reason:exception?reason:null,recorded_by:a.staff_id,at:new Date().toISOString(),note};
+   await tx`insert into erp_private.tax_filings(case_id,project_id,filed_on,itax_reference,prn,no_prn_reason,acknowledgement_status,acknowledgement_document_id,exception_reason,exception_approved_by,recorded_by) values(${c.case_id},${c.project_id},${filed},${itax||null},${prn||null},${noPrn||null},${exception?'MANAGER_EXCEPTION':'ACKNOWLEDGEMENT_RECEIVED'},${doc},${exception?reason:null},${exception?a.staff_id:null},${a.staff_id})`;
    await tx`update erp_private.task_procedures set filing_document_id=${doc},details=${tx.json(details)} where task_id=${t.task_id}`;
    await tx`update erp_private.tax_cases set status='Filed',filing_date=${filed} where case_id=${c.case_id}`;
   }

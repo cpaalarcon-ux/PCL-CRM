@@ -98,7 +98,7 @@ export async function taxSummary(tx:any,c:any){
   if(!batches.some((b:any)=>b.dataset==='Bank')&&salesReview?.result?.bank_status!=='Bank pending')issues.push('Upload the bank control source for this period.');
   if(unreviewed)issues.push(`${unreviewed} source rows require reviewer decisions.`);if(unmapped)issues.push(`${unmapped} purchase/expenditure rows need mapping.`);
   if(!c.inputs.bank_reconciliation)issues.push('Record the bank reconciliation explanation and resolved differences.');
-  const previous=(await tx`select result,ends_on,status from erp_private.tax_cases where project_id=${c.project_id} and kind='VAT' and ends_on<${c.starts_on} and status in ('Locked','Filed') order by ends_on desc limit 1`)[0];
+  const previous=(await tx`select result,ends_on,status from erp_private.tax_cases where project_id=${c.project_id} and kind='VAT' and ends_on<${c.starts_on} and status in ('Locked','Filed') order by ends_on desc, amendment_no desc limit 1`)[0];
   const opening=previous?amount(previous.result.carry_forward):amount(c.inputs.opening_credit||0);
   if(previous){const next=new Date(Date.parse(dateText(previous.ends_on))+86400000).toISOString().slice(0,10);if(next!==dateText(c.starts_on))issues.push('The preceding VAT period is not contiguous. Complete the intervening period first.');}
   else if(opening&&!c.inputs.opening_credit_basis)issues.push('Provide evidence for the opening VAT credit.');
@@ -167,6 +167,18 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
   if((await tx`select case_id from erp_private.tax_cases where project_id=${pid} and kind=${kind} and starts_on<=${end} and ends_on>=${start}`).length)fail(400,'A tax case already overlaps this period. Open the existing case.');
   return one(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values(${pid},${kind},${start},${end},${a.staff_id}) returning case_id`);
+ }
+ if(p.action==='tax_amend'){
+  editor(a);
+  const target=one(await tx`select * from erp_private.tax_cases where case_id=${uuid(p.case_id)} for update`);
+  await tx`select pg_advisory_xact_lock(hashtextextended(${target.project_id+':tax'},0))`;
+  if(target.status!=='Filed')fail(400,'Only a filed return can be amended. Finish the current review or filing first.');
+  const reason=text(p.reason,2000);if(reason.length<10)fail(400,'Explain what is being corrected and why (at least 10 characters).');
+  const newer=await tx`select case_id from erp_private.tax_cases where project_id=${target.project_id} and kind=${target.kind} and starts_on=${target.starts_on} and ends_on=${target.ends_on} and amendment_no>${target.amendment_no}`;
+  if(newer.length)fail(400,'A later version of this return exists. Amend the latest filed version.');
+  // The amendment starts from the filed inputs, but its approvals, tie-out and evidence start again.
+  const inputs={...(target.inputs||{}),return_tied:false,eligibility_confirmed:false};
+  return one(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by,inputs,amendment_no,amends_case_id,amendment_reason) values(${target.project_id},${target.kind},${target.starts_on},${target.ends_on},${a.staff_id},${tx.json(inputs)},${target.amendment_no+1},${target.case_id},${reason}) returning case_id,amendment_no`);
  }
  if(p.action==='tax_row_review'){
   editor(a);const target=one(await tx`select r.project_id from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=${uuid(p.row_id)} and b.archived_at is null`);await tx`select pg_advisory_xact_lock(hashtextextended(${target.project_id+':tax'},0))`;

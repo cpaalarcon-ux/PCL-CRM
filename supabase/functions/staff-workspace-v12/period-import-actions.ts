@@ -289,7 +289,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
  if(p.action==='period_import_payroll_tax'){
   if(r.kind!=='Payroll'||!['Submitted','Confirmed'].includes(r.status))fail(400,'Submit the payroll summary first. It is confirmed when the PAYE computation is approved.');
   await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
-  const cases=await tx`select * from erp_private.tax_cases where project_id=${pid} and kind='PAYE' and starts_on<=${r.ends_on} and ends_on>=${r.starts_on}`;
+  const cases=await tx`select * from erp_private.tax_cases where project_id=${pid} and kind='PAYE' and starts_on<=${r.ends_on} and ends_on>=${r.starts_on} order by amendment_no desc`;
   let c=cases[0];if(c&&(day(c.starts_on)!==day(r.starts_on)||day(c.ends_on)!==day(r.ends_on)||!['Draft','Returned'].includes(c.status)||c.prepared_by!==a.staff_id))fail(409,'Use the assigned preparer and matching open PAYE period.');
   if(!c)c=one(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values(${pid},'PAYE',${r.starts_on},${r.ends_on},${a.staff_id}) returning *`);
   const employees=r.payload.employees.map((e:any,i:number)=>({...e,source_paye:r.payload.calculated[i].paye}));
