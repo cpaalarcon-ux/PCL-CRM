@@ -281,6 +281,15 @@ test('Step 8: incoming review, sender matching, duplicates, accept and link, doc
  assert.deepEqual(await badge('SUPERVISOR'),{waiting:0,overdue:0},'a Supervisor who may not review gets no count');
  assert.ok((await badge('MANAGER')).waiting>0);
  await q('PARTNER',`update erp_private.incoming_settings set text_value='SUPERVISOR' where setting_key='accept_min_role'`);
+ // The card figures per client use the same rules: only files the person may open, only for a role that may review.
+ const cflags=(role,ids)=>q(role,`select client_id,incoming_waiting,incoming_overdue from erp_private.client_card_flags($1::uuid[])`,[ids]);
+ const perClient=async role=>{const m=new Map();for(const r of await q(role,`select client_id,count(*)::int n from erp_private.incoming_list(false) where client_id is not null group by client_id`))m.set(r.client_id,r.n);return m;};
+ for(const role of ['MANAGER','PARTNER','SUPERVISOR']){const want=await perClient(role);const got=await cflags(role,[...want.keys()]);
+  assert.ok(got.length>=1,role);for(const r of got)assert.equal(r.incoming_waiting,want.get(r.client_id),role+': the client card shows the same waiting files the person can open');}
+ assert.ok([...(await cflags('MANAGER',[A])).map(r=>r.incoming_waiting)][0]>(await cflags('SUPERVISOR',[A])).map(r=>r.incoming_waiting)[0],'a Restricted file counts on the card for a Manager, not for a Supervisor');
+ await q('PARTNER',`update erp_private.incoming_settings set text_value='MANAGER' where setting_key='accept_min_role'`);
+ assert.equal((await cflags('SUPERVISOR',[A]))[0].incoming_waiting,0,'a role that may not review sees no incoming figure on the card');
+ await q('PARTNER',`update erp_private.incoming_settings set text_value='SUPERVISOR' where setting_key='accept_min_role'`);
  // Overdue: a waiting file logged longer ago than the setting turns the count red; the number of waiting files does not change.
  const before=await badge('MANAGER');assert.equal(before.overdue,0,'nothing is overdue yet');
  const oldOne=(await tx`select item_id from erp_private.incoming_items where deleted_at is null and status in('Received','Needs Review') order by logged_at limit 1`)[0].item_id;

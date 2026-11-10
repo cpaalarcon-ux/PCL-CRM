@@ -233,6 +233,23 @@ test('Step 7: KRA notice log, verification task and flags',async t=>{
  const docs=j(await q('ASSISTANT',`select * from erp_private.kra_client_documents($1)`,[A]));assert.ok(docs.length>=2&&!docs.some(x=>x.document_id===kycDoc),'KYC files are never offered');
  assert.deepEqual(await q('INTERN',`select * from erp_private.kra_client_documents($1)`,[A]),[]);
 
+ // ---- 9b. Client card (build 2690): open notices inside the warning window, seen only by people who may see the client ------------------------------
+ const G=await mk('UAT Fictional Card Client Ltd','A400000009Z');
+ const cardRows=(role,ids)=>q(role,`select client_id,kra_open,kra_days from erp_private.client_card_flags($1::uuid[])`,[ids]);
+ assert.deepEqual(await cardRows('MANAGER',[G]),[{client_id:G,kra_open:0,kra_days:null}],'no notice, no warning');
+ await log('MANAGER',G,{dl:D(10)});
+ assert.deepEqual((await cardRows('MANAGER',[G]))[0],{client_id:G,kra_open:0,kra_days:null},'a notice 10 days away is outside the 3-day window (setting flag_b_days)');
+ await log('MANAGER',G,{dl:D(2)});await log('MANAGER',G,{rc:D(-5),nd:D(-5),dl:D(-3)});
+ const g1=(await cardRows('PARTNER',[G]))[0];assert.deepEqual([g1.kra_open,g1.kra_days],[2,-3],'the notice due in 2 days and the one that is 3 days past due count; the nearest is shown');
+ await q('PARTNER',`update erp_private.kra_check_settings set int_value=12 where setting_key='flag_b_days'`);
+ assert.equal((await cardRows('PARTNER',[G]))[0].kra_open,3,'the window follows the Partner setting');
+ await q('PARTNER',`update erp_private.kra_check_settings set int_value=3 where setting_key='flag_b_days'`);
+ assert.equal((await cardRows('SUPERVISOR',[G])).length,1,'a Supervisor sees the card facts for a client they may see');
+ for(const role of ['ASSISTANT','INTERN'])assert.deepEqual(await cardRows(role,[G]),[],role+' gets no card facts');
+ assert.deepEqual((await cardRows('MANAGER',[G,E])).map(r=>r.client_id).sort(),[E,G].sort(),'one row per client asked for');
+ assert.deepEqual(await cardRows('MANAGER',[]),[]);assert.deepEqual(await cardRows('MANAGER',[id()]),[],'an unknown client returns nothing');
+ await assert.rejects(cardRows('MANAGER',Array.from({length:501},()=>id())),/500 clients/);
+ assert.deepEqual((await tx`select has_function_privilege('anon','erp_private.client_card_flags(uuid[])','execute') a,has_function_privilege('erp_api','erp_private.client_card_flags(uuid[])','execute') b,(select prosecdef from pg_proc where proname='client_card_flags') d,(select proconfig::text from pg_proc where proname='client_card_flags') c`).map(r=>[r.a,r.b,r.d,/search_path/.test(r.c)])[0],[false,true,true,true]);
  // ---- 10. The service profile and wording --------------------------------------------------------------------------------------------------------
  const sp=j((await tx`select engine_state,note from erp_private.service_profiles where service_code='TAX-KRA'`)[0]);
  assert.equal(sp.engine_state,'Built');assert.match(sp.note,/not confirmed/);
