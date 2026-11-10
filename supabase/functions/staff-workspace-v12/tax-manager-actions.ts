@@ -40,7 +40,7 @@ export async function taxManagerAction(tx:any,a:any,p:any):Promise<any>{
  if(String(row.revision)!==String(p.revision))fail(409,'This rule changed. Refresh first.');
  if(p.action==='annual_due_rule_set'){
   partner(a,'Only a Partner can change an annual due-date rule.');
-  await tx`select erp_private.annual_due_rule_set(${row.rule_id}::uuid,${num(p.due_month_offset,'Enter the months after the period end.')},${num(p.external_deadline_day,'Enter the day of the month.')},${num(p.internal_month_offset,'Enter the internal months after the period end.')},${num(p.internal_deadline_day,'Enter the internal day of the month.')})`;
+  await tx`select erp_private.annual_due_rule_set(${row.rule_id}::uuid,${num(p.due_month_offset,'Enter the months after the period end.')},${String(p.external_deadline_day??'').trim()===''?null:num(p.external_deadline_day,'Enter the day of the month, or leave it blank for the last day of the month.')},${num(p.internal_month_offset,'Enter the internal months after the period end.')},${num(p.internal_deadline_day,'Enter the internal day of the month.')})`;
   return {ok:true};
  }
  partner(a,'Only a Partner can confirm an annual due-date rule.');
