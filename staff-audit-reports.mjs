@@ -1,7 +1,7 @@
 // Audit build D: draft financial statements, management letter, representation letter and completion memorandum.
 // Reports are built on the server from the adjusted trial balance and the file's records. Each is a saved version with a different reviewer.
-import {saccoFsView} from './staff-audit-sacco.mjs?v=20261110-deadline-v1';
-import {PACK_KINDS,statutoryView,kamView} from './staff-audit-pack.mjs?v=20261110-deadline-v1';
+import {saccoFsView} from './staff-audit-sacco.mjs?v=20261110-filing-v1';
+import {PACK_KINDS,statutoryView,kamView} from './staff-audit-pack.mjs?v=20261110-filing-v1';
 export const KINDS=['Financial statements','Management letter','Representation letter','Completion memorandum'];
 const PARTNER_ONLY=['Financial statements','Representation letter',...PACK_KINDS];
 const MAKERS=['ASSISTANT','SUPERVISOR','MANAGER','PARTNER'];

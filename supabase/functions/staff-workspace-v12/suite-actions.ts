@@ -68,7 +68,7 @@ export async function suiteRead(tx:any){const [r]=await tx`select jsonb_build_ob
  'legal_structure_tax_defaults',(select coalesce(jsonb_agg(x),'[]') from (select structure,subtype,taxpayer_class,profile_entity_type,suggested_obligations,note,rule_status from erp_private.legal_structure_tax_defaults order by structure,subtype)x),
  'kyc_changes',(select coalesce(jsonb_agg(x),'[]') from (select version_id,client_id,version_number,changed_items,change_reason,recorded_by,recorded_at,status,reviewed_by,reviewed_at from erp_private.client_kyc_change_versions order by recorded_at desc limit 1000)x),
  'engagements',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.engagement_controls where deleted_at is null)x),
- 'tax_cases',(select coalesce(jsonb_agg(x),'[]') from (select case_id,project_id,kind,starts_on,ends_on,status,prepared_by,reviewed_by,filing_date,revision from erp_private.tax_cases where deleted_at is null order by ends_on desc limit 500)x),
+ 'tax_cases',(select coalesce(jsonb_agg(x),'[]') from (select case_id,project_id,kind,starts_on,ends_on,status,prepared_by,reviewed_by,filing_date,revision,amendment_no,amends_case_id from erp_private.tax_cases where deleted_at is null order by ends_on desc limit 500)x),
  'leave',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.leave_requests where deleted_at is null order by starts_on desc limit 500)x),
  'attendance',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.attendance where deleted_at is null order by work_date desc limit 1000)x),
  'credentials',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.staff_credentials where deleted_at is null order by expiry_date limit 1000)x),

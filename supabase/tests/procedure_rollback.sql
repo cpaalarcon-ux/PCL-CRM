@@ -23,6 +23,8 @@ BEGIN
  BEGIN UPDATE erp_private.task_procedures SET stage='Ready to file' WHERE task_id=t;RAISE EXCEPTION 'Missing written approval passed';EXCEPTION WHEN check_violation THEN NULL;END;
  UPDATE erp_private.task_procedures SET approval_document_id=approval,details=details||'{"approval":{"approved_on":"2026-10-24","note":"Fictional written consent"}}'::jsonb,stage='Ready to file' WHERE task_id=t;
  UPDATE erp_private.task_procedures SET filing_document_id=receipt WHERE task_id=t;
+ BEGIN UPDATE erp_private.tax_cases SET status='Filed',filing_date=current_date WHERE case_id=tc;RAISE EXCEPTION 'Filing without a filing record passed';EXCEPTION WHEN check_violation THEN NULL;END;
+ INSERT INTO erp_private.tax_filings(case_id,project_id,filed_on,itax_reference,prn,acknowledgement_status,acknowledgement_document_id,recorded_by) VALUES(tc,p,current_date,'KRA-ACK-FICTIONAL-1','PRN-FICTIONAL-1','ACKNOWLEDGEMENT_RECEIVED',receipt,s);
  UPDATE erp_private.tax_cases SET status='Filed',filing_date=current_date WHERE case_id=tc;
  UPDATE erp_private.task_procedures SET stage='Filed - pending payment' WHERE task_id=t;
  BEGIN UPDATE erp_private.task_procedures SET stage='Closed',closed_by=s,closed_at=now(),payment_document_id=payment WHERE task_id=t;RAISE EXCEPTION 'Preparer closed own filing';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
