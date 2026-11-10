@@ -18,6 +18,7 @@ test('Amendments: numbered, linked, one at a time, only from a filed return, ori
  const proj=async(client,svc,status='Active',owner=M,master=false)=>{const p=id();await db.exec('alter table erp_private.projects disable trigger user');await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,status,owner_staff_id,tax_master) values(${p},${client},${F},${'UAT '+svc},${svc},${status},${owner},${master})`;await db.exec('alter table erp_private.projects enable trigger user');return p;};
  const Z=await mk('UAT Fictional Amend Client Ltd','A400000030Z'),PJ=await proj(Z,'TAX-KRA'),AST=actors.ASSISTANT.staff_id;
  const T0=(await tx`select (now() at time zone 'Africa/Nairobi')::date::text d`)[0].d;
+ const snap=(c,p,stage='SUBMITTED',hash='a'.repeat(64),rules='CONFIRMED')=>db.query(`insert into erp_private.tax_computation_snapshots(case_id,project_id,stage,taken_by,inputs,result,rules_status,source_row_count,source_hash) values($1,$2,$3,$4,'{}','{}',$5,0,$6)`,[c,p,stage,M,rules,hash]);
  const mk1=async(kind,s,e,status,no=0,amends=null,reason=null)=>{const c=id();await db.query(`insert into erp_private.tax_cases(case_id,project_id,kind,starts_on,ends_on,prepared_by,reviewed_by,review_snapshot,status,filing_date,amendment_no,amends_case_id,amendment_reason) values($1,$2,$3,$4,$5,$6,$7,'{}',$8,$9,$10,$11,$12)`,[c,PJ,kind,s,e,AST,M,status,status==='Filed'?'2026-10-05':null,no,amends,reason]);return c;};
  const ident=(c)=>tx`select amendment_no,case_id from erp_private.tax_return_identities where case_id=${c}`;
  // ---- 1. The original reserves the period; an amendment is a new, linked, numbered case ------------------------------------------------------------------
@@ -48,6 +49,7 @@ test('Amendments: numbered, linked, one at a time, only from a filed return, ori
  await assert.rejects(()=>tx`update erp_private.tax_cases set amendment_reason='Changed my mind about the reason' where case_id=${A1}`,/cannot change/);
  await assert.rejects(()=>tx`update erp_private.tax_cases set amendment_no=5 where case_id=${A1}`,/cannot change|check/i);
  await assert.rejects(()=>tx`update erp_private.tax_cases set amends_case_id=${B1} where case_id=${A1}`,/cannot change/);
+ await snap(A1,PJ);
  await tx`update erp_private.tax_cases set status='Submitted' where case_id=${A1}`;
  assert.equal((await tx`select status from erp_private.tax_cases where case_id=${A1}`)[0].status,'Submitted','an amendment moves through review like any return');
  // ---- 5. An amendment cannot be Filed without its own filing record ----------------------------------------------------------------------------------------

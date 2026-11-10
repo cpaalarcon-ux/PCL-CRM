@@ -35,6 +35,8 @@ export const STAFF_RIGHTS=Object.freeze([
  {code:'acct.journal_prepare',area:'projects',group:'Accounting work',label:'Prepare and submit journals, assets and stock',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['ledger_journal_save','ledger_journal_metadata','ledger_journal_line_fix','ledger_journal_refresh','ledger_journal_submit','ledger_asset_save','ledger_asset_submit','ledger_depreciation_create','ledger_stock_propose','ledger_report_submit','ledger_close_explanation_save']},
  {code:'acct.journal_check',area:'projects',group:'Accounting work',label:'Check journals and opening balances',roles:['PARTNER','MANAGER','SUPERVISOR'],actions:['ledger_journal_check']},
  {code:'acct.journal_approve',area:'projects',group:'Accounting work',label:'Approve and post journals, and reverse entries',roles:['PARTNER','MANAGER'],actions:['ledger_journal_review','ledger_asset_review','ledger_reverse','ledger_bank_rule_review','ledger_bank_category_save','ledger_bank_category_retire']},
+ {code:'tax.credit_prepare',area:'projects',group:'Tax credits',label:'Enter tax credits, record the iTax figure (by a different person from the one who entered it) and claim credits in a draft return',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['tax_credit_list','tax_credit_add','tax_credit_itax','tax_credit_claim','tax_credit_release']},
+ {code:'tax.credit_decide',area:'projects',group:'Tax credits',label:'Approve a difference between the ERP and iTax, or reject a credit entry',roles:['PARTNER','MANAGER'],actions:['tax_credit_approve','tax_credit_reject']},
 ]);
 const RIGHT_CODES=STAFF_RIGHTS.map(r=>r.code);
 const BY_ACTION=new Map(STAFF_RIGHTS.flatMap(r=>r.actions.map(a=>[a,r.code])));
