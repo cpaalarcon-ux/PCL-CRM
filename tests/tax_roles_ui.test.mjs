@@ -35,6 +35,6 @@ test('wiring: server module, area, Settings card and cache busters',()=>{
  assert.ok(idx.indexOf('taxManagerAction(tx,a,p)')<idx.indexOf('await taxAction(tx,a,p)'),'registered before the tax_ handler');
  for(const a of ['tax_manager_read','tax_manager_assign','tax_manager_end','tax_role_permission_set','annual_due_rule_set','annual_due_rule_confirm'])assert.equal(areaForStaffAction(a),'settings',a);
  assert.equal(areaForStaffAction('tax_create'),'projects');
- assert.equal(JSON.parse(read('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-11.2775');
+ assert.equal(JSON.parse(read('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-11.2776');
  for(const f of ['staff-tax-roles.mjs','supabase/migrations/20261110280000_tax_manager_role_annual_rules.sql','supabase/functions/staff-workspace-v12/tax-manager-actions.ts'])assert.doesNotMatch(read(f),/ISRS 4000/);
 });

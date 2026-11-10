@@ -331,7 +331,9 @@ body.workspace-active>footer{flex:0 0 auto;padding:7px 18px;border-top:1px solid
 .scroll:has(.rv){overflow:visible}
 .brand .mark.mark-logo,.sidebar-brand .mark.mark-logo{display:block;flex:0 0 auto;width:44px;height:44px;padding:0;border:0;border-radius:10px;object-fit:contain;letter-spacing:0}
 .sidebar-brand .mark.mark-logo{width:40px;height:40px}
-.login-logo{display:block;width:min(340px,100%);height:auto;margin:0 0 18px;mix-blend-mode:multiply}
+.login-logo{display:block;width:min(420px,100%);height:auto;margin:0 0 18px;mix-blend-mode:multiply}
+.brand-logo{display:block;flex:0 0 auto;box-sizing:border-box;height:60px;width:auto;max-width:46vw;padding:3px 8px;background:#fff;border-radius:10px;object-fit:contain}
+@media (max-width:640px){.brand-logo{height:46px;padding:2px 6px}}
 .stmt table td+td,.stmt table th+th{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.stmt table td:first-child{min-width:240px}
 /* Project page: summary cards, task chips, completed view (build .94) */
 .statusline{margin:12px 0;padding:9px 12px;background:var(--green-l,#e6f2ec);border-radius:9px;color:#164b36;font-size:13px}
