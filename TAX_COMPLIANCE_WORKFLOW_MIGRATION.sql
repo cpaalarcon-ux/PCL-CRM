@@ -975,4 +975,40 @@ REVOKE ALL ON TABLE tax_obligation_types, tax_compliance_years, tax_credit_entri
   tax_notice_procedures, tax_notice_procedure_results
 FROM PUBLIC, anon, authenticated;
 
+-- The trusted server role is the only Data API role with direct table access.
+-- Keep its secret key on the server and outside browser bundles.
+GRANT ALL ON TABLE tax_obligation_types, tax_compliance_years, tax_credit_entries,
+  tax_credit_entry_events, tax_obligation_source_totals, tax_period_adjustments,
+  tax_computation_snapshots, support_services, support_ticket_billing, tax_notices,
+  tax_notice_procedures, tax_notice_procedure_results
+TO service_role;
+
+DO $
+DECLARE
+  sequence_name TEXT;
+BEGIN
+  FOR sequence_name IN
+    SELECT pg_get_serial_sequence(format('%I.%I', table_schema, table_name), column_name)
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name IN (
+        'tax_compliance_years','tax_credit_entries','tax_credit_entry_events',
+        'tax_obligation_source_totals','tax_period_adjustments','tax_computation_snapshots',
+        'support_services','support_ticket_billing','tax_notices',
+        'tax_notice_procedures','tax_notice_procedure_results'
+      )
+      AND column_name IN (
+        'tax_compliance_year_id','tax_credit_entry_id','tax_credit_entry_event_id',
+        'tax_obligation_source_total_id','tax_period_adjustment_id','tax_computation_snapshot_id',
+        'support_service_id','support_ticket_billing_id','tax_notice_id',
+        'tax_notice_procedure_id','tax_notice_procedure_result_id'
+      )
+  LOOP
+    IF sequence_name IS NOT NULL THEN
+      EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE %s TO service_role', sequence_name);
+    END IF;
+  END LOOP;
+END;
+$;
+
 COMMIT;
