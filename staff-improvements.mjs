@@ -1,5 +1,5 @@
 // Connected V3 controls. Every command is authorised again on the server.
-import {familyOf} from './staff-legal-structure.mjs?v=20261110-credits-v1';
+import {familyOf} from './staff-legal-structure.mjs?v=20261110-support-v1';
 import {stockMethodChoices,stockCountChoices,stockPolicyStartDate} from './staff-stock-policy.mjs?v=20261028-stock-settings-date';
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261107-annualpack-v3';
 export function createImprovementUI(ctx){

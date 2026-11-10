@@ -1,16 +1,18 @@
 import {serviceNarration,formatDay} from './invoice-narration.mjs?v=20261107-annualpack-v3';
 import {createDiscussionUI} from './staff-discussion.mjs?v=20261026-v4';
 import {communicationQr,letterDetails,letterDetailsQr} from './staff-communication-qr.mjs?v=20261104-letter-details';
-import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-credits-v1';
-import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-credits-v1';
-import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-credits-v1';
-import {createKraUI} from './staff-kra.mjs?v=20261110-credits-v1';
-import {createIncomingUI} from './staff-incoming.mjs?v=20261110-credits-v1';
-import {createForensicUI} from './staff-forensic.mjs?v=20261110-credits-v1';
-import {createDeadlineUI} from './staff-deadlines.mjs?v=20261110-credits-v1';
-import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261110-credits-v1';
-import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-credits-v1';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261110-credits-v1';
+import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-support-v1';
+import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-support-v1';
+import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-support-v1';
+import {createKraUI} from './staff-kra.mjs?v=20261110-support-v1';
+import {createIncomingUI} from './staff-incoming.mjs?v=20261110-support-v1';
+import {createForensicUI} from './staff-forensic.mjs?v=20261110-support-v1';
+import {createDeadlineUI} from './staff-deadlines.mjs?v=20261110-support-v1';
+import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261110-support-v1';
+import {createDocumentReviewUI} from './staff-document-review.mjs?v=20261110-support-v1';
+import {createClientSupportUI} from './staff-client-support.mjs?v=20261110-support-v1';
+import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-support-v1';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261110-support-v1';
 import {defaultTaxReportingPeriod} from './staff-tax-period-defaults.mjs?v=20261031-tax-period-defaults-v1';
 export function createSuiteUI(ctx){
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,clientName,projectName,staffName,firmName,today,empty}=ctx;
@@ -26,6 +28,8 @@ export function createSuiteUI(ctx){
  const incoming=createIncomingUI({...ctx,button,area,check});
  const forensic=createForensicUI({...ctx,button,area,check});
  const deadlines=createDeadlineUI({...ctx,button,area,check});
+ const docReview=createDocumentReviewUI({...ctx,button,area,check});
+ const clientSupport=createClientSupportUI({...ctx,button,area,check});
  const credits=createCreditUI({...ctx,button,area,check,openTax:id=>taxOpen(id)});
  let financeTab='Invoices',timeTab='My HR',commsTab='Letters & QR',taxPage=0;
  const tabs=(name,values,current)=>`<div class="actions subnav">${values.map(v=>button(name,v,v,`class="${v===current?'primary':''}"`)).join('')}</div>`;
@@ -44,9 +48,10 @@ export function createSuiteUI(ctx){
  function communications(){
   const intern=d().me.category_code==='INTERN';if(intern&&commsTab!=='Internal chat')commsTab='Support';
   if(d().me.category_code==='ADMIN')return `<section class="card"><div class="section-head"><div><h2>Chat</h2><p class="muted">Create chat groups and choose who is in them. You cannot read a group’s messages unless you are a member.</p></div><button type="button" class="primary" data-messenger-open>Open chat</button></div></section>`;
-  if(commsTab==='Internal chat')return `<section class="card">${tabs('comms-tab',intern?['Internal chat','Support']:['Letters & QR','Communications','Internal chat','Support'],commsTab)}<p>One-to-one chats, groups and project discussions now live in the <b>Chat</b> button at the top of every page.</p><button type="button" class="primary" data-messenger-open>Open chat</button></section>`;
+  if(commsTab==='Client services'&&!intern)return `<section class="card"><div class="section-head"><h2>Client services</h2></div>${tabs('comms-tab',['Letters & QR','Communications','Client services','Internal chat','Support'],commsTab)}${clientSupport.view()}</section>`;
+  if(commsTab==='Internal chat')return `<section class="card">${tabs('comms-tab',intern?['Internal chat','Support']:['Letters & QR','Communications','Client services','Internal chat','Support'],commsTab)}<p>One-to-one chats, groups and project discussions now live in the <b>Chat</b> button at the top of every page.</p><button type="button" class="primary" data-messenger-open>Open chat</button></section>`;
   const letters=commsTab==='Letters & QR',list=s().communications.filter(c=>(!ctx.firm()||c.firm_id===ctx.firm())&&(!letters||c.channel==='Letter'));
-  return `<section class="card"><div class="section-head"><h2>Communication hub</h2>${!intern?button('letter-new','+ Create letter','','class="primary"'):''}</div>${tabs('comms-tab',intern?['Internal chat','Support']:['Letters & QR','Communications','Internal chat','Support'],commsTab)}${commsTab==='Support'?support():`<p class="muted">${letters?'Create and print client letters here. The ERP keeps a separate staff-only QR in the letter preview; it requires staff sign-in and is not printed on the client copy.':'Record calls, emails, meetings and visits. Logging a communication does not send an email. Open a record to review its details.'}</p>${!letters?button('communication-new','+ Log communication')+' '+(['PARTNER','MANAGER','SUPERVISOR'].includes(d().me.category_code)?button('incoming-timeline-pick','Client timeline'):''):''}${table(['Date / reference','Client / firm','Subject / purpose','Follow-up','Status','Action'],list.map(c=>[`${shortDate(c.communication_date)}<small>${esc(c.reference)}${c.channel!=='Letter'?' · '+esc(c.channel)+(c.direction?' ('+esc(c.direction.toLowerCase())+')':''):''}</small>`,`${esc(clientName(c.client_id))}<small>${esc(firmName(c.firm_id))}</small>`,`${esc(c.subject)}<small>${esc(c.purpose)}</small>`,shortDate(c.followup_date),badge(c.status),button(c.channel==='Letter'?'communication-qr':'communication-view',c.channel==='Letter'?'Open letter & staff QR':'Open record',c.communication_id)+button('communication-edit',c.channel==='Letter'?'Edit letter':'Edit',c.communication_id)]),'Status')}${!list.length?empty(letters?'No letters yet. Select Create letter to prepare one.':'No communications yet. Log a client call, email or meeting.'):''}`}</section>`;
+  return `<section class="card"><div class="section-head"><h2>Communication hub</h2>${!intern?button('letter-new','+ Create letter','','class="primary"'):''}</div>${tabs('comms-tab',intern?['Internal chat','Support']:['Letters & QR','Communications','Client services','Internal chat','Support'],commsTab)}${commsTab==='Support'?support():`<p class="muted">${letters?'Create and print client letters here. The ERP keeps a separate staff-only QR in the letter preview; it requires staff sign-in and is not printed on the client copy.':'Record calls, emails, meetings and visits. Logging a communication does not send an email. Open a record to review its details.'}</p>${!letters?button('communication-new','+ Log communication')+' '+(['PARTNER','MANAGER','SUPERVISOR'].includes(d().me.category_code)?button('incoming-timeline-pick','Client timeline'):''):''}${table(['Date / reference','Client / firm','Subject / purpose','Follow-up','Status','Action'],list.map(c=>[`${shortDate(c.communication_date)}<small>${esc(c.reference)}${c.channel!=='Letter'?' · '+esc(c.channel)+(c.direction?' ('+esc(c.direction.toLowerCase())+')':''):''}</small>`,`${esc(clientName(c.client_id))}<small>${esc(firmName(c.firm_id))}</small>`,`${esc(c.subject)}<small>${esc(c.purpose)}</small>`,shortDate(c.followup_date),badge(c.status),button(c.channel==='Letter'?'communication-qr':'communication-view',c.channel==='Letter'?'Open letter & staff QR':'Open record',c.communication_id)+button('communication-edit',c.channel==='Letter'?'Edit letter':'Edit',c.communication_id)]),'Status')}${!list.length?empty(letters?'No letters yet. Select Create letter to prepare one.':'No communications yet. Log a client call, email or meeting.'):''}`}</section>`;
  }
  function support(){return `<div class="section-head"><p>Raise an internal support request and track its first-response deadline. Notifications remain inside the ERP.</p>${button('ticket-new','+ New ticket')}</div>${table(['Ticket','Subject','Assigned to','Priority / response due','Status','Action'],s().tickets.map(t=>[esc('ALC-'+t.ticket_number),esc(t.subject),esc(staffName(t.assigned_to)),`${badge(t.priority)}<small>${new Date(t.sla_due_at).toLocaleString('en-GB',{timeZone:'Africa/Nairobi'})}</small>${!t.first_response_at&&new Date(t.sla_due_at)<new Date()?'<span class="missing">Response overdue</span>':''}`,badge(t.status),button('ticket','Open',t.ticket_id)]))}`;}
  function adminSettings(){return `<section class="card"><div class="section-head"><h2>System settings</h2></div><p class="muted">A System Administrator keeps the application lists and reference material up to date. You do not see or change client records, and you cannot approve anything. Tax rules, chart of accounts changes and release decisions stay with Managers and Partners.</p><div class="actions"><button type="button" data-v6="sector">+ Add sector</button>${button('references','Private reference documents')}${button('release-read','Go-live readiness (read only)')}</div></section><section class="card section-space"><h3>Sectors</h3>${(d().sectors||[]).map(x=>`<span class="badge">${esc(x.name)}</span>`).join(' ')||empty('No sectors yet.')}</section>`;}
@@ -173,6 +178,8 @@ export function createSuiteUI(ctx){
   if(await taxConfig.handle(action,id))return;
   if(await aup.handle(action,id))return;
   if(await kra.handle(action,id))return;
+  if(await docReview.handle(action,id))return;
+  if(await clientSupport.handle(action,id))return;
   if(await incoming.handle(action,id))return;
   if(await forensic.handle(action,id))return;
   if(await deadlines.handle(action,id))return;
@@ -270,5 +277,5 @@ export function createSuiteUI(ctx){
   if(b.dataset.suite==='reference-download'){const blob=await request({action:'reference_download',reference_id:b.dataset.id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=b.dataset.name||'Reference_document';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
  }catch(error){notice(error.message,true);}});
  document.addEventListener('click',async e=>{const b=e.target.closest('[data-suite]');if(!b||b.dataset.suite==='master-preview')return;try{b.disabled=true;await act(b.dataset.suite,b.dataset.id,b);}catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;}});
- return {chat,finance,communications,settings,hr,button,taxList,openReference,kra,incoming,forensic,deadlines};
+ return {docReview,chat,finance,communications,settings,hr,button,taxList,openReference,kra,incoming,forensic,deadlines};
 }
