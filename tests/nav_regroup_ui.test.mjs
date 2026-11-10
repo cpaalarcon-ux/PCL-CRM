@@ -48,13 +48,13 @@ test('every link points at an action its screen really handles',()=>{
 });
 test('the sidebar draws the links as sub-items that open the module, never as a page or a current page',()=>{
   const app=rd('staff-pilot.mjs');
-  assert.match(app,/from '\.\/staff-nav\.mjs\?v=20261110-taxlead-v1'/);
+  assert.match(app,/from '\.\/staff-nav\.mjs\?v=20261110-taxrole-v1'/);
   assert.match(app,/parent\('projects','Projects & Tasks','▣',modLinks\('projects'\)\)/);
   assert.match(app,/parent\('documents','Documents','▤',modLinks\('documents'\)\)/);
   assert.match(app,/parent\('communications','Communications Hub','◉',modLinks\('communications'\)\)/);
   assert.match(app,/subs=\[audit,\.\.\.modLinks\('engagements'\)\]\.filter\(Boolean\)/,'Audit files, KRA notices and Forensic files are the links under Engagements & Delivery');
   assert.match(app,/item\.suite\?`<button class="side-item side-sub side-module" type="button" data-suite="\$\{item\.suite\}"/);
-  assert.match(rd('staff-pilot.html'),/data-build="2026-11-10\.2760"/);
+  assert.match(rd('staff-pilot.html'),/data-build="2026-11-10\.2770"/);
 });
 test('the order matches the agreed list: Engagements & Delivery follows Communications and precedes Finance & Reports',()=>{
   const app=rd('staff-pilot.mjs');

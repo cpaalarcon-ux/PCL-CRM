@@ -29,8 +29,9 @@ export function defaultTaxReportingPeriod(kind,client={},asOf){
 }
 
 // The KRA return due date the ERP SUGGESTS when a tax period is set up: the 9th of the following month for PAYE and payroll levies, the 20th for VAT, TOT and MRI.
-// Annual and other taxes get no suggestion. A Tax Lead, Manager or Partner must confirm the date against the KRA iTax calendar; nothing here is a confirmed date.
+// Annual taxes are looked up on the server from the annual due-date rules (months after the period end); other taxes get no suggestion. A Tax Lead, Manager or Partner must confirm the date against the KRA iTax calendar; nothing here is a confirmed date.
 export function suggestedKraDueDate(kind,endsOn){
+ if(['Company','Individual','Partnership'].includes(kind))return {date:'',rule:'Looking up the firm\'s annual due-date rule for this period…'};
  const match=/^(\d{4})-(\d{2})-\d{2}$/.exec(String(endsOn||'')),payeKinds=['PAYE','NSSF','SHIF','Housing levy'],vatKinds=['VAT','TOT','MRI','Excise'];
  const day=payeKinds.includes(kind)?9:vatKinds.includes(kind)?20:0;
  if(!match||!day)return {date:'',rule:'No due date is suggested for this tax. Enter the KRA due date from the iTax calendar, or leave it blank and use the task-date fallback.'};

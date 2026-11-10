@@ -31,10 +31,10 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  const R1=await vat('KE_VAT_STANDARD','2030-01-01','2030-12-31');
  await tx`update erp_private.tax_rates set legal_review_status='Pending',legal_review_note='Pending the Tax Lead review of the provision',legal_citation='VAT Act, section 5' where rate_id=${R1}`;
  const approve=(role,rate)=>as(role,()=>db.query(`update erp_private.tax_rates set status='Approved',approved_by=$2,approved_at=now(),partner_source_verified_on=current_date where rate_id=$1`,[rate,actors[role].staff_id]));
- await assert.rejects(approve('PARTNER',R1),/designated Tax Lead/,'a Partner without the right cannot approve a VAT rule');
- await assert.rejects(approve('MANAGER2',R1),/designated Tax Lead/,'a Manager without the right cannot approve it either');
- await assert.rejects(cfg('PARTNER',{action:'rate_approve',rate_id:R1,revision:1,confirm_legal_basis:true}),/designated Tax Lead/,'the action says the same');
- await assert.rejects(cfg('PARTNER',{action:'rate_legal_confirm',rate_id:R1,revision:1,lead_name:'Fictional Lead',reference:'Memo fictional 2030',legal_citation:'Fictional Act s1',confirmed:true}),/designated Tax Lead/);
+ await assert.rejects(approve('PARTNER',R1),/designated Tax Manager/,'a Partner without the right cannot approve a VAT rule');
+ await assert.rejects(approve('MANAGER2',R1),/designated Tax Manager/,'a Manager without the right cannot approve it either');
+ await assert.rejects(cfg('PARTNER',{action:'rate_approve',rate_id:R1,revision:1,confirm_legal_basis:true}),/designated Tax Manager/,'the action says the same');
+ await assert.rejects(cfg('PARTNER',{action:'rate_legal_confirm',rate_id:R1,revision:1,lead_name:'Fictional Lead',reference:'Memo fictional 2030',legal_citation:'Fictional Act s1',confirmed:true}),/designated Tax Manager/);
  // only a Partner grants it, only to a Manager, with a reason and an end date
  const grant=(role,staff,extra={})=>rights(role,{action:'staff_right_grant',staff_id:staff,capability:'APPROVE_TAX_RULES',reason:'Designated Tax Lead for VAT and credit rules',expires_on:new Date(Date.now()+200*86400000).toISOString().slice(0,10),...extra});
  await assert.rejects(grant('MANAGER',M3),/Partner/);
@@ -55,7 +55,7 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  assert.equal((await tx`select status,approved_by from erp_private.tax_rates where rate_id=${R1}`)[0].approved_by,M3,'approved by the Tax Lead');
  // a credit (withholding tax) rule is gated the same way; other types keep the earlier path
  const W1=await vat('KE_FICT_WHT','2032-01-01','2032-12-31','Withholding tax');
- await assert.rejects(approve('PARTNER',W1),/designated Tax Lead/);
+ await assert.rejects(approve('PARTNER',W1),/designated Tax Manager/);
  const L1=await vat('KE_FICT_LEVY','2033-01-01','2033-12-31','Levy');
  await approve('PARTNER',L1);
  assert.equal((await tx`select status from erp_private.tax_rates where rate_id=${L1}`)[0].status,'Approved','a non-VAT, non-credit rule is still approved by a Partner');
@@ -63,7 +63,7 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  const grantRow=(await tx`select grant_id from erp_private.staff_capabilities where staff_id=${M3} and capability='APPROVE_TAX_RULES'`)[0].grant_id;
  await rights('PARTNER',{action:'staff_right_revoke',grant_id:grantRow,reason:'Fictional: Tax Lead changed'});
  assert.equal((await q('MANAGER2',`select erp_private.tax_rules_approver() ok`))[0].ok,false,'revoked');
- await assert.rejects(approve('MANAGER2',await vat('KE_FICT_VAT2','2034-01-01','2034-12-31')),/designated Tax Lead/);
+ await assert.rejects(approve('MANAGER2',await vat('KE_FICT_VAT2','2034-01-01','2034-12-31')),/designated Tax Manager/);
  // ============================ B. KRA due dates ===========================================================================================================================
  const sug=async(c,e)=>(await tx`select erp_private.period_due_suggest(${c},${e}::date) d`)[0].d;
  const day=d=>d instanceof Date?d.toISOString().slice(0,10):d;
