@@ -42,6 +42,7 @@ import {taxAction} from './tax-review-actions.ts';
 import {engagementAction} from './engagement-actions.ts';
 import {aupAction} from './aup-actions.ts';
 import {kraAction} from './kra-actions.ts';
+import {incomingAction} from './incoming-actions.ts';
 import {auditAction} from './audit-actions.ts';
 import {suiteExport} from './suite-export.ts';
 import {masterImport} from './master-import.ts';
@@ -238,12 +239,43 @@ async function referenceUpload(req:Request,id:any){
  });}catch(e){if(uploaded)await admin.storage.from(BUCKET).remove([key]);throw e;}
 }
 async function referenceDownload(id:any,p:any){return await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'settings');if(a.category_code!=='ADMIN')leader(a);const r=one(await tx`select * from erp_private.reference_documents where reference_id=${uuid(p.reference_id)}`),file=await admin.storage.from(BUCKET).download(r.object_key);if(file.error||!file.data)fail(404,'This private reference is unavailable.');await tx`insert into erp_private.reference_access_events(reference_id,actor_id,action) values(${r.reference_id},${a.staff_id},'DOWNLOAD')`;return {blob:file.data,name:r.file_name};});}
+async function incomingUpload(req:Request,id:any){
+ // Step 8: a staff member logs a file that arrived by WhatsApp, email, hand or post. The client may not be known yet.
+ const f=await req.formData(),file=f.get('file');if(!(file instanceof File))fail(400,'Choose the file that was received.');
+ const bytes=new Uint8Array(await file.arrayBuffer()),name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_'),mime=fileType(name,bytes);
+ const extensions:Record<string,string>={'application/pdf':'pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'xlsx','image/png':'png','image/jpeg':'jpg','text/csv':'csv','application/zip':'zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document':'docx'};
+ const source=choice(f.get('source_type'),['WhatsApp','Email','Hand delivered','Post or courier']);
+ const subject=text(f.get('subject'),200,true);if(subject.length<3)fail(400,'Give the file a subject of at least 3 characters.');
+ const day=date(String(f.get('received_on')||''));if(!day)fail(400,'Enter the date the file was received.');
+ const now=new Date(),todayKe=new Date(now.getTime()+3*3600*1000).toISOString().slice(0,10);
+ if(day>todayKe)fail(400,'The date received cannot be in the future.');
+ const receivedAt=day===todayKe?now:new Date(day+'T12:00:00+03:00');
+ const item=crypto.randomUUID(),key='incoming/'+item+'.'+extensions[mime],digest=await sha(bytes),client=f.get('client_id')?uuid(f.get('client_id')):null;
+ await bucket();let uploaded=false;
+ try{return await scoped(id,async(tx,a)=>{
+  await requireStaffArea(tx,a,'documents');
+  if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'Only a Supervisor, Manager or Partner can log an incoming file.');
+  const r=await tx`select erp_private.incoming_register(${item},${source},${f.get('sender_name')?text(f.get('sender_name'),200):null},${f.get('sender_address')?text(f.get('sender_address'),200):null},${receivedAt.toISOString()},${subject},${f.get('message_text')?text(f.get('message_text'),8000):''},${name},${key},${bytes.length},${digest},${mime},${String(f.get('is_kyc'))==='true'},${client}) r`;
+  const result=await admin.storage.from(BUCKET).upload(key,bytes,{contentType:mime,upsert:false});
+  if(result.error)fail(502,'The file could not be stored. Nothing was logged. Try again or ask your Manager.');uploaded=true;
+  return {ok:true,...r[0].r};
+ });}catch(e){if(uploaded)await admin.storage.from(BUCKET).remove([key]);throw e;}
+}
+async function incomingDownload(id:any,p:any){
+ return await scoped(id,async(tx,a)=>{
+  await requireStaffArea(tx,a,'documents');
+  const it=one(await tx`select item_id,object_key,file_name from erp_private.incoming_items where item_id=${uuid(p.item_id)}`);
+  const result=await admin.storage.from(BUCKET).download(it.object_key);if(result.error||!result.data)fail(404,'The file is unavailable.');
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'incoming_items','DOWNLOAD',${it.item_id},'{}')`;
+  return {blob:result.data,name:it.file_name};
+ });
+}
 async function upload(req:Request,id:any){
  const f=await req.formData(),file=f.get('file');if(!(file instanceof File))fail(400,'Choose a file.');
  const bytes=new Uint8Array(await file.arrayBuffer()),name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_'),mime=fileType(name,bytes);
  if(mime==='application/vnd.openxmlformats-officedocument.wordprocessingml.document')fail(400,'Upload Word policies through Settings → Reference documents. Project source files use CSV, XLSX or ZIP.');
  const cid=uuid(f.get('client_id')),firm=uuid(f.get('firm_id')),pid=f.get('project_id')?uuid(f.get('project_id')):null,tid=f.get('task_id')?uuid(f.get('task_id')):null;
- const cat=choice(f.get('category'),['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports','Import Sources','KYC Pending']);
+ const cat=choice(f.get('category'),['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports','Import Sources','KYC Pending','Correspondence','KRA Notices']);
  const importPurpose=cat==='Import Sources'?choice(f.get('import_purpose')||'General',['General','Opening TB']):'General';
  if(cat==='Import Sources'&&(!['text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mime)||!pid&&importPurpose!=='Opening TB'))fail(400,'Import sources require a project and a CSV, XLSX or ZIP file. Only an Opening TB workbook may be staged at client level.');
  if(importPurpose==='Opening TB'&&(pid||tid||mime!=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))fail(400,'Stage an opening TB as a client-level XLSX with no project or task link.');
@@ -361,6 +393,7 @@ async function action(id:any,p:any){
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const aup=await aupAction(tx,a,p);if(aup!==undefined)return aup;
   const kra=await kraAction(tx,a,p);if(kra!==undefined)return kra;
+  const incoming=await incomingAction(tx,a,p);if(incoming!==undefined)return incoming;
   const audit=await auditAction(tx,a,p,admin.storage.from(BUCKET));if(audit!==undefined)return audit;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
   // The review queue must come before improvementAction: that handler claims every v3_ action and rejects ones it does not know.
@@ -529,6 +562,7 @@ Deno.serve(async(req:Request)=>{
   await limit('request-global',2000);
   if(req.headers.get('content-type')?.startsWith('multipart/form-data')){
    const id=await identity(req);
+   if(req.headers.get('x-erp-upload-kind')==='incoming'){const result=await incomingUpload(req,id);return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='reference'){const result=await referenceUpload(req,id);return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData(),dataset=String(form.get('dataset')||''),area=dataset==='Staff'?'staff_access':'clients';const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,area);return masterImport(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
@@ -545,8 +579,8 @@ Deno.serve(async(req:Request)=>{
   else if(p.action==='refresh_session')result=await refreshSession(req,p);
   else{
    const id=await identity(req);
-   if(p.action==='download'||p.action==='reference_download'){
-    const file=p.action==='reference_download'?await referenceDownload(id,p):await download(id,p);const h={...headers,'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`};
+   if(p.action==='download'||p.action==='reference_download'||p.action==='incoming_download'){
+    const file=p.action==='reference_download'?await referenceDownload(id,p):p.action==='incoming_download'?await incomingDownload(id,p):await download(id,p);const h={...headers,'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`};
     return new Response(file.blob,{headers:h});
    }
    result=await action(id,p);

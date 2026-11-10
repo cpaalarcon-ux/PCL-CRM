@@ -69,7 +69,7 @@ test('screen wiring and build label',()=>{
  assert.match(s,/import \{partiesSection,partyFormFields,groupFormFields\} from '\.\/staff-parties\.mjs\?v=\d{8}-[a-z0-9-]+'/);
  for(const a of ['party-new','party-end','group-edit'])assert.match(s,new RegExp("action==='"+a+"'"));
  assert.match(s,/'party_add',\{client_id:id\}/);assert.match(s,/'party_end',\{party_id:p\.party_id,revision:p\.revision\}/);assert.match(s,/'group_profile_save',\{client_id:id,revision:g\?\.revision\}/);
- const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-09\.\d{4}$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
+ const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-\d\d\.\d{4}$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
 });
 test('migration: never deletes, never rewrites, tax thresholds untouched',()=>{
  const m=rd('supabase/migrations/20261109260000_ownership_parties.sql');

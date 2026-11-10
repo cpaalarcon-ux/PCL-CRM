@@ -90,18 +90,18 @@ test('server: every action is routed, mapped to an access area, and checks the s
  assert.match(ts,/partnerOf\(a,'Only a Partner can change a KRA check setting\.'\)/);
  assert.doesNotMatch(ts,/insert into erp_private\.projects|insert into erp_private\.tasks|delete from/i,'the server never creates the KRA project or a task, and never deletes');
  assert.doesNotMatch(ts,/kra_flag_dismiss|update erp_private\.kra_compliance_flags|insert into erp_private\.kra_compliance_flags/,'flags are written only by the database checks');
- const cfg=rd(fx+'tax-config-actions.ts');assert.match(cfg,/erp_private\.kra_counts\(\)/);assert.match(cfg,/\{aup,kra,\.\.\.rest\}/);
+ const cfg=rd(fx+'tax-config-actions.ts');assert.match(cfg,/erp_private\.kra_counts\(\)/);assert.match(cfg,/\{aup,kra,incoming,\.\.\.rest\}/);
 });
 test('wiring: screen is imported, routed, reachable from Projects and from the Partner Home page',()=>{
  const su=rd('staff-suite.mjs'),pi=rd('staff-pilot.mjs'),dash=rd('staff-dashboard.mjs'),css=rd('staff-pilot.css');
- assert.match(su,/import \{createKraUI\} from '\.\/staff-kra\.mjs\?v=20261109-kra-v1'/);
- assert.match(su,/const kra=createKraUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await kra\.handle\(action,id\)\)return;/);assert.match(su,/return \{[^}]*openReference,kra\}/);
+ assert.match(su,/import \{createKraUI\} from '\.\/staff-kra\.mjs\?v=20261110-incoming-v1'/);
+ assert.match(su,/const kra=createKraUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await kra\.handle\(action,id\)\)return;/);assert.match(su,/return \{[^}]*openReference,kra,incoming\}/);
  assert.match(pi,/id="kraNoticesCard"[^]*suite\.button\('kra-open','Open the KRA notice log'\)/);
  assert.match(pi,/data\.me\.category_code==='PARTNER'\)\{void v6\.paintPartnerEscalations\(\);void suite\.kra\.paintBanner\(\);\}/);
  assert.match(dash,/role==='PARTNER'\?'<section class="home-kra" id="homeKraFlags"/);
  assert.match(css,/\.kra-banner\{[^}]*background:#b3261e/);
  const html=rd('staff-pilot.html'),rel=JSON.parse(rd(fx+'release.json'));
- assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-09.2640');
+ assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-10.2650');
  for(const f of ['staff-pilot.mjs','staff-suite.mjs','staff-pilot-auth.js','staff-pilot.html','staff-improvements.mjs','staff-audit.mjs','staff-audit-home.mjs','staff-audit-reports.mjs'])assert.doesNotMatch(rd(f),/20261109-aup-v1/,f+' carries the new cache-buster');
 });
 test('migration: the rules that must not be loosened',()=>{

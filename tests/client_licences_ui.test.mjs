@@ -91,7 +91,7 @@ test('screen wiring and build label',()=>{
  for(const a of ['licence-new','licence-renew','licence-end'])assert.match(s,new RegExp("action==='"+a+"'"));
  assert.match(s,/'licence_add',\{client_id:id\}/);assert.match(s,/'licence_add',\{client_id:l\.client_id,renews_licence_id:l\.licence_id\}/);assert.match(s,/'licence_end',\{licence_id:l\.licence_id,revision:l\.revision\}/);
  assert.match(rd('staff-audit-home.mjs'),/import \{auditFlagHtml\} from '\.\/staff-licences\.mjs\?v=\d{8}-[a-z0-9-]+'/);
- const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-09\.\d{4}$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
+ const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-\d\d\.\d{4}$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
 });
 test('migration: no delete, no rewrite, forced row security, no invented requirement',()=>{
  const m=rd('supabase/migrations/20261109261000_client_licences.sql');

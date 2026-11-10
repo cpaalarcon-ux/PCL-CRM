@@ -429,3 +429,4 @@ label.inline{display:inline-flex;align-items:center;gap:6px}
 .kra-banner b{font-size:1.1rem}
 .kra-banner span{font-size:.9rem;opacity:.95}
 .kra-banner:hover,.kra-banner:focus-visible{background:#8c1d18;border-color:#8c1d18}
+.timeline-doc{margin:2px 0 0 12px}

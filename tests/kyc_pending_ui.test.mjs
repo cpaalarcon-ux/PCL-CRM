@@ -22,7 +22,7 @@ test('the action is proposable, summarised, and the server routes it',()=>{
  assert.ok(isProposableAction('compliance_evidence_save'));assert.ok(!isProposableAction('compliance_verify'));assert.ok(!isProposableAction('compliance_save'));
  assert.equal(proposalSummary('compliance_evidence_save',{document_type:'KRA_PIN',file_name:'pin.pdf'}),'Add KYC file: KRA_PIN (pin.pdf)');
  assert.equal(rd('staff-rights-catalog.mjs'),rd(fx+'staff-rights-catalog.mjs'),'both catalog copies match');
- const idx=rd(fx+'index.ts');assert.match(idx,/'Import Sources','KYC Pending'\]/);assert.match(idx,/requireAssistantEntryAuthorised\(tx,a\)/);assert.match(idx,/kycProposalAction\(tx,a,p\)/);
+ const idx=rd(fx+'index.ts');assert.match(idx,/'Import Sources','KYC Pending'(,'Correspondence','KRA Notices')?\]/);assert.match(idx,/requireAssistantEntryAuthorised\(tx,a\)/);assert.match(idx,/kycProposalAction\(tx,a,p\)/);
  assert.match(rd(fx+'kyc-upload-actions.ts'),/kyc_proposal_options/);
  assert.match(rd(fx+'staff-access-control.mjs'),/kyc_proposal_/);
  assert.match(rd(fx+'engagement-actions.ts'),/kyc_promote_document/);

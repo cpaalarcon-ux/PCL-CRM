@@ -42,8 +42,8 @@ const PREFIX_AREAS=[
   [/^(?:task_|partner_escalation_|project_|schedule_|generate_tasks|engagement_|aup_|kra_|procedure_|accounting_|ledger_|purchase_ledger_|non_etims_|workbook_|period_import_|wht_|tax_|work_|sales_|v3_mapping_|v3_project_|v3_review_|v3_export_|v3_period_add|v3_suggestions|suite_export)/,'projects'],
   [/^audit_/, 'audit'],
   [/^(?:presence_|view_staff_|timer_|clock$|attendance_|leave_|roster_|performance_|credential_|timesheet_)/,'time_hr'],
-  [/^(?:document_|doc_request_|upload$|download$|master_preview$|master_import$)/,'documents'],
-  [/^(?:discussion_|communication_|ticket_|notification_read$)/,'communications'],
+  [/^(?:document_|doc_request_|incoming_|upload$|download$|master_preview$|master_import$)/,'documents'],
+  [/^(?:discussion_|communication_|ticket_|notification_read$|client_timeline$)/,'communications'],
   [/^(?:invoice_|payment_|advance_|billing_|fee_schedule_|budget_|wip_report$|statement$|staff_rate_|metrics_)/,'billing_wip'],
 ];
 
