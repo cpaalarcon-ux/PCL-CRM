@@ -78,3 +78,29 @@ The authenticated identity returned by `/api/me` must include primary staff cate
 ## Phased production rollout
 
 See [PRODUCTION_ROLLOUT.md](PRODUCTION_ROLLOUT.md) for the proposed hosting arrangement, first live release, staff login without email delivery, browser-data migration, acceptance gates and remaining module sequence. This is a rollout plan; no production backend or subscription has been created by publishing it.
+
+
+## Document Vault API and workflow
+
+The vault is client-first. A document must belong to one client and handling firm; an engagement link is optional for permanent/KYC records. Keep one document record and use relationship records for its work context. Preserve the existing KYC check, audit attachment, tax task evidence, tax filing/source batch, and communication attachment relationships. Use engagement_task_document_links for documents attached to general engagement tasks.
+
+### Intake and review
+
+1. Accept inbound files only through an authenticated staff upload, approved client portal link, or configured email/WhatsApp connector.
+2. Stream the bytes into private quarantine storage. Validate file size and type, scan for malware, compute SHA-256, and retain the provider message ID or email Message-ID plus registered sender/contact.
+3. Create the metadata and relationship records in one transaction. Keep the original received time, file name and source; deduplicate by content hash within the client and linked task.
+4. Route the record to a named reviewer. Enforce the migration's review transitions and require a comment on each decision. The uploader cannot approve or finalise their own document.
+5. On final approval, lock the version. Corrections create a superseding version; final records are archived rather than hard-deleted. Check retention policy and legal holds before disposal.
+6. Serve bytes only through server-authorised, short-lived download URLs. Write access and review events to append-only records.
+
+### Permission rules
+
+The API and database must verify the handling firm and client relationship for every link. Partners and Managers can access documents within their authorised firm. Other staff need an active engagement assignment, an assigned task/role, named reviewer assignment or an unexpired individual access grant. Restricted categories and KYC/engagement-letter records require management-level access or an explicit individual grant. Client portal users see only documents expressly released to their contact; they never inherit staff access to workpapers or internal communications.
+
+### Email and WhatsApp linkage
+
+Store communication records in the Communication Hub and attach inbound files to those records. Match the sender against registered client contacts; unmatched senders go to a restricted classification queue. Preserve provider message identifiers for deduplication and threading. Do not place OAuth tokens, mailbox passwords, WhatsApp tokens or public file URLs in document metadata.
+
+### Release acceptance
+
+Before live use, verify that staff can only open assigned project/task documents; restricted KYC stays limited; task and communication links match the same client and firm; the uploader cannot approve their own file; every review change has a comment; locked files cannot be overwritten or unlocked; malware-pending files cannot be downloaded; portal release is explicit; and backups can restore both metadata and object versions. The browser-local preview is not evidence that these controls are active.
