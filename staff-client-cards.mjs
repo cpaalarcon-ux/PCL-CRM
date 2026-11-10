@@ -71,6 +71,7 @@ export function cardStatus(p,{flags=null,meta=null}={}){
  const reasons=[];
  if(flags?.kra_open>0)reasons.push('A KRA notice is due soon or past due');
  if(flags?.incoming_overdue>0)reasons.push('A file has waited too long in Incoming review');
+ if(flags?.filing_late>0)reasons.push(`${flags.filing_late===1?'A filing is':flags.filing_late+' filings are'} past the due date`);
  if(meta?.overdue_tasks>0)reasons.push(`${meta.overdue_tasks} overdue task${meta.overdue_tasks===1?'':'s'}`);
  if(reasons.length)return {key:'action',label:'Action needed',tone:'bad',icon:'●',reasons};
  const c=setupCompletion(p);
@@ -81,10 +82,13 @@ export function cardStatus(p,{flags=null,meta=null}={}){
 
 const dayText=d=>d<0?`overdue by ${-d} day${d===-1?'':'s'}`:d===0?'due today':`${d} day${d===1?'':'s'} left`;
 // Warnings on the card: KRA notices and Incoming review only.
-export function alertBadges(flags,esc){
+export function alertBadges(flags,esc,id=''){
  if(!flags)return '';
  const out=[];
  if(flags.kra_open>0)out.push(`<button type="button" class="cc-alert red" data-suite="kra-open" data-id=""><span aria-hidden="true">🚨</span> KRA notice: ${esc(dayText(flags.kra_days))}${flags.kra_open>1?` (+${flags.kra_open-1} more)`:''}</button>`);
+ const open=id?`data-client-open="${esc(id)}" data-client-tab="projects"`:'';
+ if(flags.filing_late>0)out.push(`<button type="button" class="cc-alert red" ${open}><span aria-hidden="true">🚨</span> Filing overdue: ${flags.filing_late_days} day${flags.filing_late_days===1?'':'s'}${flags.filing_late>1?` (+${flags.filing_late-1} more)`:''}</button>`);
+ if(flags.filing_soon>0)out.push(`<button type="button" class="cc-alert amber" ${open}><span aria-hidden="true">⏳</span> Filing ${flags.filing_soon_days===0?'due today':'due in '+flags.filing_soon_days+' day'+(flags.filing_soon_days===1?'':'s')}${flags.filing_soon>1?` (+${flags.filing_soon-1} more)`:''}</button>`);
  if(flags.incoming_waiting>0)out.push(`<button type="button" class="cc-alert amber" data-suite="incoming-open" data-id=""><span aria-hidden="true">⚠️</span> Incoming review: ${flags.incoming_waiting} file${flags.incoming_waiting===1?'':'s'}${flags.incoming_overdue>0?`, ${flags.incoming_overdue} overdue`:''}</button>`);
  return out.length?`<div class="cc-alerts" aria-label="Warnings for this client">${out.join('')}</div>`:'';
 }
@@ -116,7 +120,7 @@ export function clientCard({client:c,progress:p,esc,structureLabel,leader,lightA
  const target={profile:`data-v3="client" data-id="${id}"`,kyc:`data-suite="compliance" data-id="${id}"`,tax:`data-suite="tax-profile" data-id="${id}"`,activities:`data-setup-guide="${id}"`,'tb-post':`data-setup-guide="${id}"`,'tb-stage':`data-setup-guide="${id}"`,loading:`data-setup-guide="${id}"`,tasks:`data-client-open="${id}" data-client-tab="projects"`,file:`data-client-open="${id}"`}[act.step];
  const menu=[[`data-client-open="${id}"`,'Open client file'],[`data-client="${id}"`,'View details'],[`data-client-accounts="${id}"`,'Client accounts'],[`data-setup-guide="${id}"`,'Continue set-up'],[`data-suite="compliance" data-id="${id}"`,'Edit KYC and contacts'],[`data-suite="tax-profile" data-id="${id}"`,'Tax profile'],[`data-v3="client" data-id="${id}"`,'Entity and activities']]
   .map(([a,l])=>`<button type="button" role="menuitem" ${a}>${l}</button>`).join('');
- return `<article class="client-card" ${attrs}><div class="cc-head"><div><h3><button class="link" data-client-open="${id}">${esc(c.company_name)}</button></h3><div class="cc-meta">${esc(sub)}${lifecycleBadge(c,esc)}</div></div><span class="badge ${status.tone}" data-client-status="${id}"${status.reasons.length?` title="${esc(status.reasons.join('. '))}"`:''}><span aria-hidden="true">${status.icon}</span> ${esc(status.label)}</span></div>${tags}${alertBadges(flags,esc)}${extra}${setupRing(comp,id,esc)}<div class="cc-foot"><button type="button" class="primary cc-main" ${target}>${esc(act.label)}</button><details class="cc-more"><summary aria-label="More actions for ${esc(c.company_name)}" title="More actions"><span aria-hidden="true">⋯</span></summary><div class="cc-menu" role="menu" aria-label="More actions">${menu}</div></details></div></article>`;
+ return `<article class="client-card" ${attrs}><div class="cc-head"><div><h3><button class="link" data-client-open="${id}">${esc(c.company_name)}</button></h3><div class="cc-meta">${esc(sub)}${lifecycleBadge(c,esc)}</div></div><span class="badge ${status.tone}" data-client-status="${id}"${status.reasons.length?` title="${esc(status.reasons.join('. '))}"`:''}><span aria-hidden="true">${status.icon}</span> ${esc(status.label)}</span></div>${tags}${alertBadges(flags,esc,id)}${extra}${setupRing(comp,id,esc)}<div class="cc-foot"><button type="button" class="primary cc-main" ${target}>${esc(act.label)}</button><details class="cc-more"><summary aria-label="More actions for ${esc(c.company_name)}" title="More actions"><span aria-hidden="true">⋯</span></summary><div class="cc-menu" role="menu" aria-label="More actions">${menu}</div></details></div></article>`;
 }
 
 export const chipRow=(counts,current,esc)=>`<div class="cc-chips" role="group" aria-label="Filter clients by status">${CLIENT_STATES.map(([k,l])=>`<button type="button" class="cc-chip${k===current?' on':''}" data-client-state="${k}" aria-pressed="${k===current}">${esc(l)}<em>${counts[k]??0}</em></button>`).join('')}</div>`;
