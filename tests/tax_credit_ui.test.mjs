@@ -1,6 +1,6 @@
 // Tax credit register screen (build 2730): what each person sees on an entry, the panel text and the wiring.
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
-import {entryActions,panelView,appliesToKind,TYPES_FOR,CREDIT_LABELS,STATUS_TEXT} from '../staff-credits.mjs';
+import {entryActions,panelView,appliesToKind,TYPES_FOR,CREDIT_LABELS,STATUS_TEXT,snapshotsView,RULES_TEXT} from '../staff-credits.mjs';
 const read=f=>fs.readFileSync(new URL('../'+f,import.meta.url),'utf8');
 const btn=(a,l,id)=>`<button data-suite="${a}" data-id="${id}">${l}</button>`;
 const me=(cat,id)=>({category_code:cat,staff_id:id});
@@ -44,6 +44,16 @@ test('the panel shows only credits of this tax and period, warns about open entr
 test('the case screen and suite are wired, and nothing computes a credit',()=>{
  const suite=read('staff-suite.mjs'),src=read('staff-credits.mjs');
  assert.match(suite,/createCreditUI\(\{\.\.\.ctx,button,area,check,openTax:id=>taxOpen\(id\)\}\)/);assert.match(suite,/credits\.handle\(action,id\)/);assert.match(suite,/credits\.panel\(c,r\.credits_claimed\)/);assert.match(suite,/\$\{saPanel\}\$\{creditPanel\}/);
- assert.doesNotMatch(src,/\*\s*0\.\d|rate|percent/i,'the screen applies no rate or formula');
+ assert.doesNotMatch(src,/0\.16|\*\s*0?\.\d+|\*\s*1\.\d+|vatRate|percent\s*\*/i,'the screen applies no rate or formula');
  assert.ok(!/ISRS\s*4000/i.test(src));
+});
+
+test('the snapshots panel lists each numbered snapshot with its rules status, and warns when rates are unconfirmed',()=>{
+ assert.match(snapshotsView({snapshots:[]}),/None yet/);
+ const html=snapshotsView({staffName:id=>'Name of '+id,snapshots:[
+  {snapshot_no:1,stage:'SUBMITTED',taken_at:'2026-10-05T08:00:00Z',taken_by:'u1',source_row_count:3,source_totals:[{dataset:'Sales',rows:3,net:100,vat:16}],rules_status:'CONFIRMED',source_hash:'a'.repeat(64)},
+  {snapshot_no:2,stage:'LOCKED',taken_at:'2026-10-06T08:00:00Z',taken_by:'u2',source_row_count:3,source_totals:[],rules_status:'UNCONFIRMED',source_hash:'b'.repeat(64)}]});
+ assert.match(html,/<td>1<\/td><td>Submitted<\/td><td>2026-10-05<\/td><td>Name of u1<\/td>/);assert.match(html,/<td>2<\/td><td>Locked<\/td>/);
+ assert.match(html,/Sales: 3 rows/);assert.match(html,new RegExp(RULES_TEXT.UNCONFIRMED));assert.match(html,/badge red/);assert.match(html,/<code>aaaaaaaaaaaa<\/code>/);
+ assert.match(read('staff-suite.mjs'),/snapshotsView\(\{snapshots:r\.snapshots,staffName\}\)/);
 });

@@ -68,3 +68,11 @@ export function createCreditUI(ctx){
  }
  return {panel,handle};
 }
+
+// Numbered computation snapshots (20261110274000_computation_snapshots.sql): what the reviewer was shown when the return was submitted and when it was locked.
+export const RULES_TEXT={CONFIRMED:'Rates confirmed by the Tax Lead',UNCONFIRMED:'Rates not confirmed - cannot be filed',TESTING:'Test rates - not for filing'};
+export function snapshotsView({snapshots,staffName}){
+ if(!snapshots||!snapshots.length)return '<section class="card section-space" id="snapshotPanel"><h3>Computation snapshots</h3><p class="muted">A snapshot is recorded when the return is submitted and again when it is locked. None yet.</p></section>';
+ const totals=t=>(t||[]).map(x=>`${esc(x.dataset)}: ${esc(x.rows)} rows, net ${kes(x.net)}, VAT ${kes(x.vat)}`).join('<br>')||'—';
+ return `<section class="card section-space" id="snapshotPanel"><h3>Computation snapshots</h3><p class="muted">Recorded automatically and never changed. A return cannot be locked if its source rows differ from the last submission.</p><div class="scroll"><table><thead><tr><th>No.</th><th>Stage</th><th>Recorded</th><th>By</th><th>Source rows</th><th>Source totals</th><th>Rates and rules</th><th>Fingerprint</th></tr></thead><tbody>${snapshots.map(x=>`<tr><td>${esc(x.snapshot_no)}</td><td>${x.stage==='LOCKED'?'Locked':'Submitted'}</td><td>${esc(day(x.taken_at))}</td><td>${esc(staffName?staffName(x.taken_by):x.taken_by)}</td><td>${esc(x.source_row_count)}</td><td><small>${totals(x.source_totals)}</small></td><td><span class="badge ${x.rules_status==='CONFIRMED'?'good':x.rules_status==='TESTING'?'warn':'red'}">${esc(RULES_TEXT[x.rules_status]||x.rules_status)}</span></td><td><code>${esc(String(x.source_hash||'').slice(0,12))}</code></td></tr>`).join('')}</tbody></table></div></section>`;
+}

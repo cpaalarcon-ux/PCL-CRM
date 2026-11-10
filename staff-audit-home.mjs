@@ -1,7 +1,7 @@
 // Audit build S7: one home for every audit file.
 // The model below is pure: it reads the snapshot the server already sends and works out the five sections,
 // the traffic lights, the blocking sign-offs and the single next step. It never decides anything itself.
-import {auditFlagHtml} from './staff-licences.mjs?v=20261110-filing-v1';
+import {auditFlagHtml} from './staff-licences.mjs?v=20261110-credits-v1';
 export const SECTIONS=[
  {key:'setup',title:'Set-up',tabs:['Materiality & risk','SASRA & quality']},
  {key:'managing',title:'Managing',tabs:['Time & billing','Issues']},
