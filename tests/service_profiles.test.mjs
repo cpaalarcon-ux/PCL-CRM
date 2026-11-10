@@ -29,7 +29,7 @@ test('Step 5: service profiles, references, file checklist',async t=>{
  for(const s of svc)assert.ok((await tx`select count(*)::int n from erp_private.service_checklist_items where service_code=${s.service_code} and required`)[0].n>=5,`${s.service_code} has a checklist`);
  assert.equal((await tx`select count(*)::int n from erp_private.service_references where rule_status<>'Suggested'`)[0].n,0,'nothing is confirmed at the start');
  assert.equal((await tx`select count(*)::int n from erp_private.service_references where reference ~* 'ISRS 4000'`)[0].n,0,'no unverified standard number');
- assert.deepEqual((await tx`select engine,engine_state from erp_private.service_profiles where service_code in('ADV-FOR','ADV-AUP','TAX-KRA') order by service_code`).map(r=>r.engine+'/'+r.engine_state),['Procedures engine/Built','Restricted file/Planned','Procedures engine/Built']);
+ assert.deepEqual((await tx`select engine,engine_state from erp_private.service_profiles where service_code in('ADV-FOR','ADV-AUP','TAX-KRA') order by service_code`).map(r=>r.engine+'/'+r.engine_state),['Procedures engine/Built','Restricted file/Built','Procedures engine/Built']);
 
  // ---- 2. The checklist reads the project, not a promise -----------------------------------------------------------------------------------------
  const P=await proj(A,'ADV-PLAN');
