@@ -238,7 +238,7 @@ test('Step 8: incoming review, sender matching, duplicates, accept and link, doc
  await assert.rejects(link('MANAGER',ok1.document_id,{comm:cm2,proj:pA}),/one record at a time/);
  await assert.rejects(link('MANAGER',ok1.document_id,{}),/one record at a time/);
  await assert.rejects(link('ASSISTANT',ok1.document_id,{proj:pA}),/Only a Supervisor, Manager or Partner/);
- await assert.rejects(link('MANAGER',okR.document_id.replace(/^./,'0'),{proj:pA}),/not available/);
+ await assert.rejects(link('MANAGER','00000000-0000-0000-0000-000000000000',{proj:pA}),/not available/);
  await assert.rejects(link('SUPERVISOR',okR.document_id,{proj:pA}),/not available/);
  // The trigger refuses a cross-client link even from a direct insert (definer or superuser).
  await assert.rejects(tx`insert into erp_private.document_links(document_id,project_id,created_by) values(${ok1.document_id},${pB},${M})`,/same client and the same firm/);

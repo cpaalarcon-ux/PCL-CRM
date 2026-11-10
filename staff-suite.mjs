@@ -1,13 +1,13 @@
 import {serviceNarration,formatDay} from './invoice-narration.mjs?v=20261107-annualpack-v3';
 import {createDiscussionUI} from './staff-discussion.mjs?v=20261026-v4';
 import {communicationQr,letterDetails,letterDetailsQr} from './staff-communication-qr.mjs?v=20261104-letter-details';
-import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-incoming-v1';
-import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-incoming-v1';
-import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-incoming-v1';
-import {createKraUI} from './staff-kra.mjs?v=20261110-incoming-v1';
-import {createIncomingUI} from './staff-incoming.mjs?v=20261110-incoming-v1';
-import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-incoming-v1';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261110-incoming-v1';
+import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-nav-v1';
+import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-nav-v1';
+import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-nav-v1';
+import {createKraUI} from './staff-kra.mjs?v=20261110-nav-v1';
+import {createIncomingUI} from './staff-incoming.mjs?v=20261110-nav-v1';
+import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-nav-v1';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261110-nav-v1';
 import {defaultTaxReportingPeriod} from './staff-tax-period-defaults.mjs?v=20261031-tax-period-defaults-v1';
 export function createSuiteUI(ctx){
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,clientName,projectName,staffName,firmName,today,empty}=ctx;

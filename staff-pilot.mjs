@@ -2,7 +2,7 @@ let documentKind='Evidence';
 import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261110-incoming-v1';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261110-nav-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261109-ptm-v1';
 import {clientProfile} from './staff-client-profile.mjs?v=20261109-dr-v1';
@@ -20,15 +20,16 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261110-incoming-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261110-nav-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261108-nav-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261110-incoming-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261110-nav-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
-import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-incoming-v1';
+import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-nav-v1';
+import {moduleLinks} from './staff-nav.mjs?v=20261110-nav-v1';
 import {clientProgress,nextStep,clientStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261109-reg-v1';
-import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-incoming-v1';
+import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-nav-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
-import {createAuditUI} from './staff-audit.mjs?v=20261110-incoming-v1';
+import {createAuditUI} from './staff-audit.mjs?v=20261110-nav-v1';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261105-check-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 import {renderAccessGuide} from './staff-access-guide.mjs?v=20261106-rights-v1';
@@ -102,12 +103,13 @@ function nav(){const catalog=[
 ],cards=catalog.filter(item=>canArea(item.area)).map(item=>`<button class="workspace-area-card tone-${item.tone}" type="button" data-view="${item.view}" data-area="${item.area}"><span class="workspace-area-icon" aria-hidden="true">${item.icon}</span><b>${esc(item.title)}</b><small>${esc(item.desc)}</small></button>`).join('');const by=v=>catalog.find(item=>item.view===v&&canArea(item.area)),leaf=(v,title,icon)=>{const it=by(v);return it?{view:v,title,icon:icon||it.icon}:null;},
   team=['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code)&&canArea('time_hr')?{view:'team',title:'Team & HR',icon:'♙'}:null,
   lead=leaf('leads','Leads & Pipeline','＋'),audit=leaf('audit','Audit files','✓'),staffLeaf=leaf('staff','Staff & access','♙'),settingsLeaf=leaf('firms','Settings','⚙'),
+  modLinks=v=>moduleLinks(data.me,v,canArea),
   parent=(v,title,icon,subs)=>{const it=leaf(v,title,icon);return it?{...it,subs:subs.filter(Boolean)}:null;},
   admin=staffLeaf?{...staffLeaf,title:'Administration',icon:'⚙',subs:[staffLeaf,settingsLeaf].filter(Boolean)}:settingsLeaf?{...settingsLeaf,title:'Administration',subs:[]}:null,
   // Audit is a project type, so it sits under Projects & Tasks (shown when that section is open), not in the main menu. Leads sit under Clients.
-  sideItems=[{view:'home',title:'Home',icon:'⌂',subs:[]},parent('clients','Clients','▦',[lead])||(lead&&{...lead,subs:[]}),parent('projects','Projects & Tasks','▣',[audit])||(audit&&{...audit,subs:[]}),leaf('time','Time & Attendance','◷'),team,leaf('documents','Documents','▤'),leaf('communications','Communications Hub','◉'),leaf('finance','Finance & Reports','£'),admin].filter(Boolean),
+  sideItems=[{view:'home',title:'Home',icon:'⌂',subs:[]},parent('clients','Clients','▦',[lead])||(lead&&{...lead,subs:[]}),parent('projects','Projects & Tasks','▣',[audit,...modLinks('projects')])||(audit&&{...audit,subs:[]}),leaf('time','Time & Attendance','◷'),team,parent('documents','Documents','▤',modLinks('documents')),parent('communications','Communications Hub','◉',modLinks('communications')),leaf('finance','Finance & Reports','£'),admin].filter(Boolean),
   sideActive=item=>view===item.view||(item.view==='projects'&&view==='task')||(item.view==='clients'&&view==='clientfile'),
-  btnHtml=(item,sub)=>`<button class="side-item${sub?' side-sub':''}" type="button" data-view="${item.view}"${sideActive(item)?' aria-current="page"':''}><span class="side-icon" aria-hidden="true">${sub?'':item.icon}</span><span>${esc(item.title)}</span></button>`;
+  btnHtml=(item,sub)=>item.suite?`<button class="side-item side-sub side-module" type="button" data-suite="${item.suite}" data-id=""><span class="side-icon" aria-hidden="true"></span><span>${esc(item.title)}</span></button>`:`<button class="side-item${sub?' side-sub':''}" type="button" data-view="${item.view}"${sideActive(item)?' aria-current="page"':''}><span class="side-icon" aria-hidden="true">${sub?'':item.icon}</span><span>${esc(item.title)}</span></button>`;
 $('#sideNav').innerHTML=sideItems.map(item=>{const open=(item.subs||[]).length&&(sideActive(item)||item.subs.some(sideActive));return btnHtml(item,false)+(open?item.subs.map(x=>btnHtml(x,true)).join(''):'');}).join('');$('#areasLauncher').hidden=view!=='home';$('#nav').innerHTML=cards||'<p class="empty">No workspace areas are assigned to this account. Ask your Manager to check access.</p>';const home=$('#areasHome');if(view==='home')home.setAttribute('aria-current','page');else home.removeAttribute('aria-current');}
 
 const empty=t=>`<div class="empty">${esc(t)}</div>`;
