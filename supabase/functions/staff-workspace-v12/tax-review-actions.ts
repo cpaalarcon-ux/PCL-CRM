@@ -180,6 +180,14 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   const pid=uuid(p.project_id),proj=one(await tx`select project_id,client_id from erp_private.projects where project_id=${pid}`);const [start,end]=range(p.starts_on,p.ends_on),kind=choice(p.kind,taxKinds);await assertSupportedPeriod(tx,proj.client_id,start);
   await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
   if((await tx`select case_id from erp_private.tax_cases where project_id=${pid} and kind=${kind} and starts_on<=${end} and ends_on>=${start}`).length)fail(400,'A tax case already overlaps this period. Open the existing case.');
+  // The Tax Team confirms the KRA due date (or explicitly chooses the task-date fallback) before the period is opened for work. The ERP only suggests a date.
+  if(p.use_task_date_fallback===true||p.use_task_date_fallback==='on'){
+   if(String(p.kra_due_date||'').trim())fail(400,'Clear the KRA due date to use the task-date fallback, or untick the fallback.');
+   await tx`select erp_private.period_due_fallback(${proj.client_id}::uuid,${start}::date,${end}::date,${kind},${text(p.fallback_reason||'',500,false)})`;
+  }else if(String(p.kra_due_date||'').trim()){
+   await tx`select erp_private.period_due_confirm(${proj.client_id}::uuid,${start}::date,${end}::date,${kind},${day(p.kra_due_date)}::date,${p.itax_confirmed===true||p.itax_confirmed==='on'})`;
+  }
+  if(!one(await tx`select erp_private.period_due_ready(${proj.client_id}::uuid,${start}::date,${end}::date,${kind}) as ready`).ready)fail(400,'Confirm the KRA return due date for this period first: enter the date, tick that it matches the KRA iTax calendar, and confirm. If the date is not available, leave it blank and choose the task-date fallback.');
   return one(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values(${pid},${kind},${start},${end},${a.staff_id}) returning case_id`);
  }
  if(p.action==='tax_amend'){
@@ -190,6 +198,9 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   const reason=text(p.reason,2000);if(reason.length<10)fail(400,'Explain what is being corrected and why (at least 10 characters).');
   const newer=await tx`select case_id from erp_private.tax_cases where project_id=${target.project_id} and kind=${target.kind} and starts_on=${target.starts_on} and ends_on=${target.ends_on} and amendment_no>${target.amendment_no}`;
   if(newer.length)fail(400,'A later version of this return exists. Amend the latest filed version.');
+  // An amendment holds adjustments only. The filed source figures are carried over and cannot be edited; a tax with no adjustment fields cannot be amended yet.
+  const adjustmentKeys=(await tx`select erp_private.tax_amendment_adjustment_keys(${target.kind}) as keys`)[0].keys as string[];
+  if(!adjustmentKeys.length)fail(400,'This tax has no adjustment lines yet, and an amendment may only hold adjustments. Raise it with the Tax Lead before amending.');
   // The amendment starts from the filed inputs, but its approvals, tie-out and evidence start again.
   const inputs={...(target.inputs||{}),return_tied:false,eligibility_confirmed:false};
   return one(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by,inputs,amendment_no,amends_case_id,amendment_reason) values(${target.project_id},${target.kind},${target.starts_on},${target.ends_on},${a.staff_id},${tx.json(inputs)},${target.amendment_no+1},${target.case_id},${reason}) returning case_id,amendment_no`);
@@ -230,13 +241,28 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   for(const key of ['annual_bank_review_document_id','loan_statements_document_id','other_expenses_document_id','stock_movement_document_id','daily_sales_register_document_id','daily_purchases_register_document_id']){inputs[key]=inputs[key]?uuid(inputs[key]):null;if(inputs[key])one(await tx`select document_id from erp_private.documents where document_id=${inputs[key]} and project_id=${c.project_id} and archived_at is null and deleted_at is null`);}
   if(Object.hasOwn(inputs,'tax_adjustment_basis'))inputs.tax_adjustment_basis=text(inputs.tax_adjustment_basis||'',4000,false);
   const source=p.source_document_id?uuid(p.source_document_id):null;if(source)one(await tx`select document_id from erp_private.documents where document_id=${source} and project_id=${c.project_id} and archived_at is null and deleted_at is null`);
+  if(c.amendment_no>0&&c.amends_case_id){
+   // An amendment holds adjustments only: every other figure is the filed version's and cannot be edited here.
+   const orig=one(await tx`select inputs from erp_private.tax_cases where case_id=${c.amends_case_id}`),base=orig.inputs||{};
+   const adjustmentKeys=(await tx`select erp_private.tax_amendment_adjustment_keys(${c.kind}) as keys`)[0].keys as string[],confirmations=['return_tied','eligibility_confirmed'];
+   const blank=(v:any)=>v===null||v===undefined||v===false||v===''||(Array.isArray(v)&&!v.length)?null:JSON.stringify(v);
+   for(const k of Object.keys(inputs)){if(adjustmentKeys.includes(k)||confirmations.includes(k))continue;if(blank(inputs[k])!==blank(base[k]))fail(400,'An amendment changes adjustments only. The filed source figures cannot be edited; record the correction as an adjustment.');}
+   const merged:any={};for(const [k,v] of Object.entries(base))if(!adjustmentKeys.includes(k)&&!confirmations.includes(k))merged[k]=v;
+   for(const k of adjustmentKeys)if(Object.hasOwn(inputs,k))merged[k]=inputs[k];
+   merged.return_tied=inputs.return_tied===true;merged.eligibility_confirmed=inputs.eligibility_confirmed===true;inputs=merged;
+  }
   const rid=null; // Applicable versions are resolved on the server from client, tax and period.
   const next={...c,inputs,source_document_id:source,rate_id:rid};const s=await taxSummary(tx,next);
   if(p.action==='tax_preview')return {result:s.result,issues:s.issues,applied_rates:s.applied_rates,profile:s.profile,source_application:s.source_application};
   await tx`update erp_private.tax_cases set inputs=${tx.json(inputs)},source_document_id=${source},rate_id=${s.rate?.rate_id||null},result=${tx.json(s.result)},status='Draft',review_note=null where case_id=${c.case_id}`;return {ok:true,issues:s.issues};
  }
  if(p.action==='tax_submit'){
-  if(c.prepared_by!==a.staff_id||!['Draft','Returned'].includes(c.status))fail(403,'The preparer must submit a draft or returned case.');const s=await taxSummary(tx,c);if(s.issues.length)fail(400,s.issues.join(' '));
+  if(c.prepared_by!==a.staff_id||!['Draft','Returned'].includes(c.status))fail(403,'The preparer must submit a draft or returned case.');
+  if(c.amendment_no>0&&c.amends_case_id){
+   const orig=one(await tx`select inputs from erp_private.tax_cases where case_id=${c.amends_case_id}`),adjustmentKeys=(await tx`select erp_private.tax_amendment_adjustment_keys(${c.kind}) as keys`)[0].keys as string[];
+   if(!adjustmentKeys.some((k:string)=>JSON.stringify(c.inputs?.[k]??null)!==JSON.stringify(orig.inputs?.[k]??null)))fail(400,'Record at least one adjustment before submitting an amendment. An amendment with no adjustment changes nothing.');
+  }
+  const s=await taxSummary(tx,c);if(s.issues.length)fail(400,s.issues.join(' '));
   await takeSnapshot(tx,a,c,s,'SUBMITTED');
   await tx`update erp_private.tax_cases set status='Submitted',result=${tx.json(s.result)} where case_id=${c.case_id}`;return {ok:true};
  }

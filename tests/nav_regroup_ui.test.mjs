@@ -48,7 +48,7 @@ test('every link points at an action its screen really handles',()=>{
 });
 test('the sidebar draws the links as sub-items that open the module, never as a page or a current page',()=>{
   const app=rd('staff-pilot.mjs');
-  assert.match(app,/from '\.\/staff-nav\.mjs\?v=20261110-support-v1'/);
+  assert.match(app,/from '\.\/staff-nav\.mjs\?v=20261110-taxlead-v1'/);
   assert.match(app,/parent\('projects','Projects & Tasks','▣',modLinks\('projects'\)\)/);
   assert.match(app,/parent\('documents','Documents','▤',modLinks\('documents'\)\)/);
   assert.match(app,/parent\('communications','Communications Hub','◉',modLinks\('communications'\)\)/);

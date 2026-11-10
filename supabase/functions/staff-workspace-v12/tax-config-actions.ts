@@ -7,6 +7,15 @@ import {taxTestingEnabled,testingAuthorizationIssue,stagingRates,preferredRates}
 import {turnoverWatch,trailingYear} from './turnover-watch.mjs';
 import {summarySalesRows} from './period-import-actions.ts';
 const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Partner approval is required.');};
+// VAT and credit (withholding tax) rules need the designated Tax Lead's own action (the APPROVE_TAX_RULES right); a Partner without that right cannot confirm or approve them.
+// Every other rule can be confirmed and approved by a Partner or by the Tax Lead. The database enforces the same rule again.
+const leadOnly=['VAT','Withholding tax'];
+async function rateAuthority(tx:any,a:any,r:any){
+ const holder=!!(await tx`select erp_private.tax_rules_approver() as ok`)[0]?.ok;
+ if(leadOnly.includes(r.tax_type)){if(!holder)fail(403,'VAT and credit rules can only be confirmed and approved by the designated Tax Lead. An Engagement Partner can grant the Tax Lead right to the Tax Manager in Additional rights.');return holder;}
+ if(a.category_code!=='PARTNER'&&!holder)fail(403,'Engagement Partner or Tax Lead approval is required.');
+ return holder;
+}
 const current=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'Refresh this record before saving.');};
 async function linkedFirms(tx:any,cid:string,clean:any){
  const ids=[...new Set(Object.values(clean.obligation_statuses).flatMap((x:any)=>x.handling_firm_ids||[]))];if(!ids.length)return;
@@ -73,15 +82,15 @@ export async function taxConfigAction(tx:any,a:any,p:any):Promise<any>{
   return {ok:true,staging_only:true};
  }
  if(p.action==='rate_legal_confirm'){
-  partner(a);const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`);current(r,p);
-  const issue=legalConfirmIssue(r,{lead_name:p.lead_name,reference:p.reference,citation:p.legal_citation,confirmed:p.confirmed},a);if(issue)fail(400,issue);
+  const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`);const holder=await rateAuthority(tx,a,r);current(r,p);
+  const issue=legalConfirmIssue(r,{lead_name:p.lead_name,reference:p.reference,citation:p.legal_citation,confirmed:p.confirmed},{...a,tax_lead:holder});if(issue)fail(400,issue);
   if(r.created_by&&String(r.created_by)===String(a.staff_id))fail(403,'The person who prepared this tax rule cannot record its legal confirmation.');
   validateCanonicalRate(r.rate_key,r.tax_type,r.parameters);registryParameters(r.tax_type,r.parameters);
   await tx`update erp_private.tax_rates set legal_review_status='Confirmed',legal_citation=${text(p.legal_citation||r.legal_citation,500)},legal_review_reference=${text(p.reference,300)},legal_review_note=${'Confirmed by '+text(p.lead_name,120)},legal_reviewed_by=${a.staff_id},legal_reviewed_at=now() where rate_id=${r.rate_id}`;
   return {ok:true};
  }
  if(p.action==='rate_approve'){
-  partner(a);const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`);current(r,p);if(!['Draft','Testing'].includes(r.status))fail(400,'Choose a draft or provisional testing rate.');
+  const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`);await rateAuthority(tx,a,r);current(r,p);if(!['Draft','Testing'].includes(r.status))fail(400,'Choose a draft or provisional testing rate.');
   if(r.rate_key==='KE_TOT'){const gate=(await tx`select status,evidence from erp_private.release_checks where check_code='TOTVAT'`)[0];if(!gate||gate.status!=='Passed'||String(gate.evidence||'').trim().length<21)fail(400,'Keep the TOT rule in Testing until the staging TOT/VAT acceptance check is evidence-backed and marked Passed by the accountable reviewer.');}
   if(testRate(r))fail(400,'Test-only rates cannot be approved for client computations.');if(r.created_by&&String(r.created_by)===String(a.staff_id))fail(403,'The person who prepared this tax rule cannot approve it.');const sourceIssue=rateApprovalIssue(r,a.staff_id);if(sourceIssue)fail(400,sourceIssue);
   if(p.confirm_legal_basis!==true)fail(400,'Confirm the statutory rate, eligibility conditions and effective dates against the linked source.');
