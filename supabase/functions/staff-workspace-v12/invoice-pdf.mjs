@@ -11,7 +11,7 @@ export function invoiceTotals(i){
 }
 export async function invoicePdf(d,{PDFDocument,StandardFonts,rgb}){
  const i=d.invoice,t=invoiceTotals(i),draft=i.status==='Draft',doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica),bold=await doc.embedFont(StandardFonts.HelveticaBold),italic=await doc.embedFont(StandardFonts.HelveticaBoldOblique);
- const when=new Date(String(i.invoice_date).slice(0,10)+'T00:00:00Z');doc.setTitle(safe(`Invoice ${i.invoice_number||'DRAFT'}`));doc.setAuthor(safe(d.firm.legal_name));doc.setCreator('PCL Practice Management System');doc.setProducer('PCL Practice Management System');doc.setCreationDate(when);doc.setModificationDate(when);
+ const when=new Date(String(i.invoice_date).slice(0,10)+'T00:00:00Z');doc.setTitle(safe(`Invoice ${i.invoice_number||'DRAFT'}`));doc.setAuthor(safe(d.firm.legal_name));doc.setCreator('PCL Nexus');doc.setProducer('PCL Nexus');doc.setCreationDate(when);doc.setModificationDate(when);
  const W=595.28,H=841.89,M=42,CW=W-2*M,grey=rgb(.35,.35,.35),light=rgb(.85,.85,.85),pale=rgb(.94,.94,.94),blue=rgb(.12,.3,.5),ink=rgb(0,0,0);
  let logo=null;if(d.logo?.bytes?.length){try{logo=d.logo.mime_type==='image/png'?await doc.embedPng(d.logo.bytes):await doc.embedJpg(d.logo.bytes);}catch{logo=null;}}
  let page=doc.addPage([W,H]),y=H-M,pageNo=1;
