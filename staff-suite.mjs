@@ -1,14 +1,15 @@
 import {serviceNarration,formatDay} from './invoice-narration.mjs?v=20261107-annualpack-v3';
 import {createDiscussionUI} from './staff-discussion.mjs?v=20261026-v4';
 import {communicationQr,letterDetails,letterDetailsQr} from './staff-communication-qr.mjs?v=20261104-letter-details';
-import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-card-v2';
-import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-card-v2';
-import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-card-v2';
-import {createKraUI} from './staff-kra.mjs?v=20261110-card-v2';
-import {createIncomingUI} from './staff-incoming.mjs?v=20261110-card-v2';
-import {createForensicUI} from './staff-forensic.mjs?v=20261110-card-v2';
-import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-card-v2';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261110-card-v2';
+import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-deadline-v1';
+import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-deadline-v1';
+import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-deadline-v1';
+import {createKraUI} from './staff-kra.mjs?v=20261110-deadline-v1';
+import {createIncomingUI} from './staff-incoming.mjs?v=20261110-deadline-v1';
+import {createForensicUI} from './staff-forensic.mjs?v=20261110-deadline-v1';
+import {createDeadlineUI} from './staff-deadlines.mjs?v=20261110-deadline-v1';
+import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-deadline-v1';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261110-deadline-v1';
 import {defaultTaxReportingPeriod} from './staff-tax-period-defaults.mjs?v=20261031-tax-period-defaults-v1';
 export function createSuiteUI(ctx){
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,clientName,projectName,staffName,firmName,today,empty}=ctx;
@@ -23,6 +24,7 @@ export function createSuiteUI(ctx){
  const kra=createKraUI({...ctx,button,area,check});
  const incoming=createIncomingUI({...ctx,button,area,check});
  const forensic=createForensicUI({...ctx,button,area,check});
+ const deadlines=createDeadlineUI({...ctx,button,area,check});
  let financeTab='Invoices',timeTab='My HR',commsTab='Letters & QR',taxPage=0;
  const tabs=(name,values,current)=>`<div class="actions subnav">${values.map(v=>button(name,v,v,`class="${v===current?'primary':''}"`)).join('')}</div>`;
  const creditFor=i=>(s().advances||[]).filter(a=>a.client_id===i.client_id&&a.firm_id===i.firm_id&&Number(a.balance)>0&&(!a.project_id||a.project_id===i.project_id)),creditTotal=i=>round(creditFor(i).reduce((t,a)=>t+Number(a.balance),0));
@@ -46,7 +48,7 @@ export function createSuiteUI(ctx){
  }
  function support(){return `<div class="section-head"><p>Raise an internal support request and track its first-response deadline. Notifications remain inside the ERP.</p>${button('ticket-new','+ New ticket')}</div>${table(['Ticket','Subject','Assigned to','Priority / response due','Status','Action'],s().tickets.map(t=>[esc('ALC-'+t.ticket_number),esc(t.subject),esc(staffName(t.assigned_to)),`${badge(t.priority)}<small>${new Date(t.sla_due_at).toLocaleString('en-GB',{timeZone:'Africa/Nairobi'})}</small>${!t.first_response_at&&new Date(t.sla_due_at)<new Date()?'<span class="missing">Response overdue</span>':''}`,badge(t.status),button('ticket','Open',t.ticket_id)]))}`;}
  function adminSettings(){return `<section class="card"><div class="section-head"><h2>System settings</h2></div><p class="muted">A System Administrator keeps the application lists and reference material up to date. You do not see or change client records, and you cannot approve anything. Tax rules, chart of accounts changes and release decisions stay with Managers and Partners.</p><div class="actions"><button type="button" data-v6="sector">+ Add sector</button>${button('references','Private reference documents')}${button('release-read','Go-live readiness (read only)')}</div></section><section class="card section-space"><h3>Sectors</h3>${(d().sectors||[]).map(x=>`<span class="badge">${esc(x.name)}</span>`).join(' ')||empty('No sectors yet.')}</section>`;}
- function settings(){if(d().me.category_code==='ADMIN')return adminSettings();return `<section class="card"><div class="section-head"><h2>Reference documents & change control</h2>${button('references','Open private reference documents')}</div><p>Review the consolidated Word specifications and retain each approved version inside the ERP.</p></section><section class="card"><h2>Chart of accounts</h2><p>Attached account master, controlled additions and separate tax rules.</p><button type="button" data-accounting="catalog">Browse chart of accounts</button></section>${taxConfig.rates()}
+ function settings(){if(d().me.category_code==='ADMIN')return adminSettings();return `<section class="card"><div class="section-head"><h2>Reference documents & change control</h2>${button('references','Open private reference documents')}</div><p>Review the consolidated Word specifications and retain each approved version inside the ERP.</p></section><section class="card"><h2>Chart of accounts</h2><p>Attached account master, controlled additions and separate tax rules.</p><button type="button" data-accounting="catalog">Browse chart of accounts</button></section>${deadlines.card()}${taxConfig.rates()}
   ${partner()?`<section class="card section-space"><div class="section-head"><h2>Staff cost & billing rates</h2>${button('staff-rate','+ Add rate period')}</div>${table(['Staff','Effective dates','Cost / hour','Billable / hour'],s().staff_rates.map(r=>[esc(staffName(r.staff_id)),`${shortDate(r.effective_from)} – ${shortDate(r.effective_to)}`,money(r.cost_rate),money(r.billable_rate)]))}</section><section class="card section-space"><div class="section-head"><h2>Handling firms</h2><button data-new="firm">+ Add firm</button></div>${table(['Firm','Registered name','Invoice prefix','Action'],d().firms.map(f=>[esc(f.firm_code),esc(f.legal_name),esc(f.invoice_prefix||'INV/'+f.firm_code),button('firm','Edit details',f.firm_id)]))}</section>`:''}`;}
  function hr(){
   const me=d().me.staff_id,open=s().attendance.find(x=>x.staff_id===me&&date(x.work_date)===today()),mine=s().leave.filter(l=>l.staff_id===me),team=leader();
@@ -170,6 +172,7 @@ export function createSuiteUI(ctx){
   if(await kra.handle(action,id))return;
   if(await incoming.handle(action,id))return;
   if(await forensic.handle(action,id))return;
+  if(await deadlines.handle(action,id))return;
   if(action==='finance-tab'){financeTab=id;ctx.render();return;}if(action==='comms-tab'){commsTab=id;ctx.render();return;}if(action==='hr-tab'){timeTab=id;ctx.render();return;}
   if(action==='add-line'){$('#invoiceLines').insertAdjacentHTML('beforeend',lineInputs());invoiceTotals();return;}if(action==='add-employee'){$('#employeeRows').insertAdjacentHTML('beforeend',employeeInputs());return;}if(action==='add-partner'){$('#partnerRows').insertAdjacentHTML('beforeend',partnerInputs());return;}if(action==='print'){window.print();return;}
   if(action==='add-band'){$('#bands').insertAdjacentHTML('beforeend',bandInputs());return;}if(action==='remove-band'){b.closest('[data-band-row]').remove();return;}
@@ -262,5 +265,5 @@ export function createSuiteUI(ctx){
   if(b.dataset.suite==='reference-download'){const blob=await request({action:'reference_download',reference_id:b.dataset.id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=b.dataset.name||'Reference_document';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
  }catch(error){notice(error.message,true);}});
  document.addEventListener('click',async e=>{const b=e.target.closest('[data-suite]');if(!b||b.dataset.suite==='master-preview')return;try{b.disabled=true;await act(b.dataset.suite,b.dataset.id,b);}catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;}});
- return {chat,finance,communications,settings,hr,button,taxList,openReference,kra,incoming,forensic};
+ return {chat,finance,communications,settings,hr,button,taxList,openReference,kra,incoming,forensic,deadlines};
 }
