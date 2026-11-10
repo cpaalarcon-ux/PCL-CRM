@@ -78,3 +78,12 @@ The current published page is a browser-local ERP preview. Its navigation is org
 
 The staff hierarchy is **Engagement Partner, Manager, Audit Supervisor, Audit Assistant, and Intern**. Finance, HR and System Administration are additional permissions rather than staff categories. The preview may hide modules by category, but all real permissions, firm scope, approvals, audit trails and financial posting must be enforced on a backend. See [backend_handoff.md](backend_handoff.md).
 
+
+
+## Document Vault workflow update
+
+The vault preview now demonstrates client and engagement filing, project-period and engagement-task references, source-channel metadata, reviewer routing, controlled review transitions with mandatory comments, search filters, review history and archival of final records. Existing links for KYC checks, audit-file attachments, tax-task evidence and communication attachments remain the source of truth for those work areas.
+
+The preview remains browser-local and metadata-only. Manual channel and reviewer fields do not create a real email or WhatsApp integration, authenticate staff or store document bytes. Do not admit live client documents until the server APIs, private object storage, malware scanning and access policies are connected.
+
+DOCUMENT_VAULT_WORKFLOW_MIGRATION.sql adds the production schema foundation for document provenance, assignment, review events, individual access grants, engagement-task links, file hashes, scan state and retention-policy references. Review and apply it through a controlled migration after the backend is ready.
