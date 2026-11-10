@@ -708,12 +708,25 @@ BEGIN
     FROM tax_project_obligations o
     WHERE o.tax_period_project_id = NEW.tax_period_project_id
       AND o.status <> 'NOT_APPLICABLE'
-      AND (o.status <> 'FILED' OR NOT EXISTS (
-        SELECT 1 FROM tax_filing_submissions fs
-        WHERE fs.tax_project_obligation_id = o.tax_project_obligation_id
-          AND fs.tax_period_project_id = NEW.tax_period_project_id
-          AND fs.evidence_status IN ('ACKNOWLEDGEMENT_RECEIVED','MANAGER_EXCEPTION')
-      ));
+      AND (
+        o.status <> 'FILED'
+        OR NOT EXISTS (
+          SELECT 1 FROM tax_filing_submissions fs
+          WHERE fs.tax_project_obligation_id = o.tax_project_obligation_id
+            AND fs.tax_period_project_id = NEW.tax_period_project_id
+            AND fs.evidence_status IN ('ACKNOWLEDGEMENT_RECEIVED','MANAGER_EXCEPTION')
+        )
+        OR NOT EXISTS (
+          SELECT 1 FROM tax_computation_snapshots cs
+          WHERE cs.tax_project_obligation_id = o.tax_project_obligation_id
+            AND cs.review_status = 'APPROVED'
+            AND cs.snapshot_no = (
+              SELECT max(latest.snapshot_no)
+              FROM tax_computation_snapshots latest
+              WHERE latest.tax_project_obligation_id = o.tax_project_obligation_id
+            )
+        )
+      );
 
     IF obligation_count = 0 OR incomplete_count > 0 THEN
       RAISE EXCEPTION 'A tax period cannot be locked until each applicable obligation is filed and has acknowledgment evidence or an approved Manager exception.';
@@ -753,6 +766,33 @@ DROP TRIGGER IF EXISTS tax_period_projects_locked_identity_guard ON tax_period_p
 CREATE TRIGGER tax_period_projects_locked_identity_guard
 BEFORE UPDATE ON tax_period_projects
 FOR EACH ROW EXECUTE FUNCTION protect_locked_tax_period_identity();
+
+CREATE OR REPLACE FUNCTION protect_locked_tax_obligation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $
+DECLARE
+  old_locked_at TIMESTAMPTZ;
+  new_locked_at TIMESTAMPTZ;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    SELECT locked_at INTO old_locked_at
+    FROM tax_period_projects WHERE tax_period_project_id = OLD.tax_period_project_id;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    SELECT locked_at INTO new_locked_at
+    FROM tax_period_projects WHERE tax_period_project_id = NEW.tax_period_project_id;
+  END IF;
+  IF old_locked_at IS NOT NULL OR new_locked_at IS NOT NULL THEN
+    RAISE EXCEPTION 'Obligations on a locked tax period cannot be changed; use an amendment.';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS tax_project_obligations_locked_guard ON tax_project_obligations;
+CREATE TRIGGER tax_project_obligations_locked_guard
+BEFORE INSERT OR UPDATE OR DELETE ON tax_project_obligations
+FOR EACH ROW EXECUTE FUNCTION protect_locked_tax_obligation();
 
 -- Billable support services use approved prices and the existing invoice ledger.
 -- Closing a ticket does not create a tax invoice unless the approved fee and the
