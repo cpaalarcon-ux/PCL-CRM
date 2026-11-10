@@ -40,6 +40,8 @@ export const STAFF_RIGHTS=Object.freeze([
  {code:'document.review',area:'documents',group:'Document review',label:'Review a document and record a decision with a comment (never your own upload)',roles:['PARTNER','MANAGER','SUPERVISOR'],actions:['document_review_submit']},
  {code:'document.grant',area:'documents',group:'Document review',label:'Give or withdraw time-limited access to a single document',roles:['PARTNER','MANAGER'],actions:['document_grantees','document_grant_add','document_grant_revoke']},
  {code:'document.scan',area:'documents',group:'Document review',label:'Request a malware scan of a document (the scanning service is not connected yet)',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['evidence_scan']},
+ {code:'clientsupport.work',area:'communications',group:'Client support services',label:'Open, update, close or cancel client support tickets (a billable ticket creates a draft invoice only when it is closed)',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['client_support_open','client_support_update','client_support_close','client_support_cancel']},
+ {code:'clientsupport.billing_flags',area:'communications',group:'Client support services',label:'Decide which client support services are billable or switched off',roles:['PARTNER'],actions:['client_support_service_set']},
 ]);
 const RIGHT_CODES=STAFF_RIGHTS.map(r=>r.code);
 const BY_ACTION=new Map(STAFF_RIGHTS.flatMap(r=>r.actions.map(a=>[a,r.code])));
