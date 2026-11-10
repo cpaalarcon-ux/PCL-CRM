@@ -165,7 +165,11 @@ BEGIN
        OR NEW.itax_confirmed_amount IS DISTINCT FROM OLD.itax_confirmed_amount
        OR NEW.applied_amount IS DISTINCT FROM OLD.applied_amount
        OR NEW.external_reference IS DISTINCT FROM OLD.external_reference
-       OR NEW.evidence_document_id IS DISTINCT FROM OLD.evidence_document_id) THEN
+       OR NEW.evidence_document_id IS DISTINCT FROM OLD.evidence_document_id
+       OR NEW.verification_status IS DISTINCT FROM OLD.verification_status
+       OR NEW.reviewed_by_user_id IS DISTINCT FROM OLD.reviewed_by_user_id
+       OR NEW.reviewed_at IS DISTINCT FROM OLD.reviewed_at
+       OR NEW.review_note IS DISTINCT FROM OLD.review_note) THEN
     RAISE EXCEPTION 'A reviewed tax credit is immutable; enter a correcting credit and link the history.';
   END IF;
   RETURN NEW;
@@ -310,6 +314,19 @@ DROP TRIGGER IF EXISTS tax_obligation_source_totals_validate ON tax_obligation_s
 CREATE TRIGGER tax_obligation_source_totals_validate
 BEFORE INSERT OR UPDATE ON tax_obligation_source_totals
 FOR EACH ROW EXECUTE FUNCTION validate_tax_obligation_source_total();
+
+CREATE OR REPLACE FUNCTION prevent_tax_source_total_mutation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $
+BEGIN
+  RAISE EXCEPTION 'Imported source totals are immutable; correct them through a new accepted upload batch.';
+END;
+$;
+
+DROP TRIGGER IF EXISTS tax_obligation_source_totals_immutable ON tax_obligation_source_totals;
+CREATE TRIGGER tax_obligation_source_totals_immutable
+BEFORE UPDATE OR DELETE ON tax_obligation_source_totals
+FOR EACH ROW EXECUTE FUNCTION prevent_tax_source_total_mutation();
+
 
 -- Credit notes are recorded as signed VAT adjustments with evidence and reviewer
 -- approval. Output VAT credit notes reduce net VAT; input VAT credit notes reverse
@@ -601,7 +618,11 @@ BEGIN
        OR NEW.filing_date IS DISTINCT FROM OLD.filing_date
        OR NEW.acknowledgement_document_id IS DISTINCT FROM OLD.acknowledgement_document_id
        OR NEW.evidence_status IS DISTINCT FROM OLD.evidence_status
-       OR NEW.original_filing_submission_id IS DISTINCT FROM OLD.original_filing_submission_id) THEN
+       OR NEW.original_filing_submission_id IS DISTINCT FROM OLD.original_filing_submission_id
+       OR NEW.payment_reference IS DISTINCT FROM OLD.payment_reference
+       OR NEW.payment_date IS DISTINCT FROM OLD.payment_date
+       OR NEW.filed_by_user_id IS DISTINCT FROM OLD.filed_by_user_id
+       OR NEW.filed_at IS DISTINCT FROM OLD.filed_at) THEN
     RAISE EXCEPTION 'A locked filing cannot be edited; use a controlled amendment.';
   END IF;
 
@@ -616,7 +637,8 @@ BEGIN
     JOIN tax_project_obligations oo ON oo.tax_project_obligation_id = fs.tax_project_obligation_id
     JOIN tax_period_projects op ON op.tax_period_project_id = fs.tax_period_project_id
     WHERE fs.tax_filing_submission_id = NEW.original_filing_submission_id
-      AND fs.evidence_status IN ('ACKNOWLEDGEMENT_RECEIVED','MANAGER_EXCEPTION');
+      AND fs.evidence_status IN ('ACKNOWLEDGEMENT_RECEIVED','MANAGER_EXCEPTION')
+      AND op.status IN ('FILED','AMENDED') AND op.locked_at IS NOT NULL;
 
     IF period_parent_id IS DISTINCT FROM original_period_id
        OR original_obligation_type IS DISTINCT FROM new_obligation_type
@@ -634,6 +656,19 @@ DROP TRIGGER IF EXISTS tax_filing_submissions_evidence_guard ON tax_filing_submi
 CREATE TRIGGER tax_filing_submissions_evidence_guard
 BEFORE INSERT OR UPDATE ON tax_filing_submissions
 FOR EACH ROW EXECUTE FUNCTION validate_tax_filing_evidence_and_amendment();
+
+CREATE OR REPLACE FUNCTION prevent_tax_filing_submission_delete()
+RETURNS TRIGGER LANGUAGE plpgsql AS $
+BEGIN
+  RAISE EXCEPTION 'Filing submissions are retained for audit; use the amendment workflow.';
+END;
+$;
+
+DROP TRIGGER IF EXISTS tax_filing_submissions_no_delete ON tax_filing_submissions;
+CREATE TRIGGER tax_filing_submissions_no_delete
+BEFORE DELETE ON tax_filing_submissions
+FOR EACH ROW EXECUTE FUNCTION prevent_tax_filing_submission_delete();
+
 
 CREATE OR REPLACE FUNCTION enforce_tax_period_filing_lock()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -738,7 +773,7 @@ CREATE TABLE IF NOT EXISTS support_ticket_billing (
   ),
   CHECK (
     (billing_status = 'PENDING_APPROVAL' AND approved_by_user_id IS NULL AND approved_at IS NULL)
-    OR billing_status = 'CANCELLED'
+    OR billing_status IN ('NON_BILLABLE','CANCELLED')
     OR (billing_status IN ('APPROVED','READY_FOR_INVOICE','INVOICED') AND approved_fee IS NOT NULL AND approved_by_user_id IS NOT NULL AND approved_at IS NOT NULL)
   ),
   CHECK ((billing_status = 'INVOICED' AND invoice_id IS NOT NULL) OR (billing_status <> 'INVOICED' AND invoice_id IS NULL))
