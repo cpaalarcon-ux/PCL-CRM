@@ -8,3 +8,9 @@ FROM (VALUES
  ('20260','Director loan accounts','Liabilities',null::int,'LIAB','Statement of financial position','Balance sheet','Loan agreement / bank statement','Loans made to the company by a director, and their repayment. Terms and any interest need Partner and Tax Lead confirmation')
 ) AS v(code,name,account_group,route,category_code,statement,tax_note,evidence,notes)
 ON CONFLICT (code) DO NOTHING;
+
+-- Provisional statement lines, as for every other account: a Draft mapping the Partner approves or changes.
+INSERT INTO erp_private.account_statement_map(account_code,line_code,effective_from,reason)
+VALUES
+ ('20250','SFP.RELATED_PAY',DATE '2025-01-01','Provisional: director current account shown with amounts due to related parties; awaiting Partner approval'),
+ ('20260','SFP.BORROW_C',DATE '2025-01-01','Provisional: director loan shown with current borrowings; the current or long-term split depends on the loan terms; awaiting Partner approval');
