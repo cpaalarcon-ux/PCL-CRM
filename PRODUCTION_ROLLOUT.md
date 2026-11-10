@@ -111,3 +111,10 @@ Verified on 22 October 2026:
 - [Supabase production checklist](https://supabase.com/docs/guides/deployment/going-into-prod)
 - [Supabase storage access control](https://supabase.com/docs/guides/storage/security/access-control)
 - [Supabase database backups](https://supabase.com/docs/guides/platform/backups)
+
+
+## Document Vault go-live gate
+
+Do not admit real client files until the reviewed document-vault migration has been applied through controlled database change management and the authenticated API is connected to private object storage. The API must quarantine new uploads, scan them, calculate and retain a SHA-256 hash, enforce the firm/client/project assignment rules, and issue short-lived authorised download links.
+
+Before activation, verify the restricted KYC and engagement-letter paths, task and communication attachment links, named reviewer routing, mandatory review comments, uploader self-approval block, immutable review/access history, version superseding, explicit client release, retention and legal-hold checks, and restoration of both database metadata and object versions. Email and WhatsApp attachment intake remains disabled until their approved provider connections and sender-to-client matching are configured.
