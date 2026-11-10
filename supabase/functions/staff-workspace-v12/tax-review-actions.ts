@@ -2,6 +2,7 @@ import {pendingPurchases} from './purchase-pending.ts';
 import {ageingReport} from './credit-ageing.mjs';
 import {summarySalesRows,effectiveImports,confirmPeriodImport,salesSourceCoverage} from './period-import-actions.ts';
 import {stagingRates,preferredRates} from './testing-rates.mjs';
+import {sourceChecklist} from './source-checklist.mjs';
 import {taxKinds,pickRate,profileIssues,keys,testRate,payrollFromRules,simpleTax,vatRuleCheck,legalReviewIssues} from './tax-registry.mjs';
 import {fail,text,uuid,choice,revision,date} from './validation.mjs';
 import {range,day,number,amount,round,filingKinds,vatCalculation,incomeCalculation,payrollCalculation} from './suite-rules.mjs';
@@ -161,7 +162,9 @@ export async function taxSummary(tx:any,c:any){
  // Credit register control: entries for this period that are not yet checked against iTax (or have an undecided difference) stop submission. It adds no figure to the computation.
  const creditOpen=Number((await tx`select erp_private.tax_credit_open_count(${c.case_id}::uuid) n`)[0].n);
  if(creditOpen>0)issues.push(`${creditOpen} tax credit ${creditOpen===1?'entry needs':'entries need'} the iTax check or a decision on a difference (Tax credits).`);
- return {result,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
+ const annualBankDocLinked=!!c.inputs.annual_bank_review_document_id&&!issues.includes('Annual bank statement / review evidence is unavailable.');
+ const source_checklist=sourceChecklist({kind:c.kind,batches,bankPending:salesReview?.result?.bank_status==='Bank pending',annualBankDocLinked});
+ return {result,source_checklist,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
 }
 
 // Numbered, immutable computation snapshots (20261110274000_computation_snapshots.sql). The server records what the reviewer is shown at the moment of submission and again at lock;

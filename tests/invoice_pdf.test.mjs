@@ -34,7 +34,7 @@ test('The invoice PDF carries the Alarcon-style layout, and drafts are watermark
  const doc=await PDFLib.PDFDocument.load(a);assert.equal(doc.getPageCount(),1);
  const t=text(a);
  for(const want of ['FICTIONAL MLIMA CONSULTANTS LTD','PIN: P000000001A','I N V O I C E','Invoice Number:','INV/MLI/00322','1 Nov 2026','Bill To:','Tax ID: A000000002B','To our professional fees:','1 Month 1 Nov 2026 to 30 Nov 2026','Net Amount','3,448.28','551.72','Current Invoice Amount','4,000.00','Amount Paid','Balance Brought Forward','50,000.00','Total Amount Due','54,000.00','Thank you for your continued trust'])assert.ok(t.includes(want),'PDF text includes '+want);
- assert.ok(!/DRAFT/.test(t),'an issued invoice has no draft watermark');
+ assert.ok(!/NOT ISSUED/.test(t),'an issued invoice has no draft watermark (it carries the eTIMS mark until the number is recorded)');
  assert.ok(t.includes('Café'),'accents and curly apostrophes survive');
  const draft=text(await invoicePdf({...base,invoice:{...base.invoice,status:'Draft',invoice_number:null,brought_forward:0}},PDFLib));assert.match(draft,/DRAFT/);
  const noLogo=await invoicePdf({...base,logo:null,etims:{etims_invoice_no:'ETIMS-1',etims_issued_on:'2026-11-01',qr_url:'https://etims.example.test/v/1'}},PDFLib);assert.ok(text(noLogo).includes('eTIMS invoice no: ETIMS-1'));
@@ -93,7 +93,7 @@ test('Invoices: period, duplicate warning, continuous numbering, balance brought
  await assert.rejects(()=>act('PARTNER',{action:'firm_logo_set',firm_id:F,mime_type:'image/png',data_base64:Buffer.from('not an image at all, just text').toString('base64')}),/not a real PNG/);
  assert.equal((await act('PARTNER',{action:'firm_logo_set',firm_id:F,mime_type:'image/png',data_base64:PNG.toString('base64')})).ok,true);
  const issued=await act('PARTNER',{action:'invoice_pdf',invoice_id:second});assert.equal(issued.file_name,'INV_MLI_00324.pdf');
- doc1=text(Buffer.from(issued.base64,'base64'));assert.ok(!/DRAFT/.test(doc1));assert.match(doc1,/INV\/MLI\/00324/);assert.ok(doc1.includes('Balance Brought Forward')&&doc1.includes('2,500.00 KSh'),'fixed balance brought forward');assert.ok(doc1.includes('Total Amount Due')&&doc1.includes('6,500.00 KSh'));assert.match(doc1,/Bill To:/);assert.match(doc1,/1 Dec 2026 to 31 Dec 2026/);
+ doc1=text(Buffer.from(issued.base64,'base64'));assert.ok(!/NOT ISSUED/.test(doc1));assert.match(doc1,/INV\/MLI\/00324/);assert.ok(doc1.includes('Balance Brought Forward')&&doc1.includes('2,500.00 KSh'),'fixed balance brought forward');assert.ok(doc1.includes('Total Amount Due')&&doc1.includes('6,500.00 KSh'));assert.match(doc1,/Bill To:/);assert.match(doc1,/1 Dec 2026 to 31 Dec 2026/);
  assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='INVOICE_PDF'`)[0].n,2);
  assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='FIRM_LOGO_SET'`)[0].n,1);
  assert.equal((await as('PARTNER',()=>suiteRead(tx))).firms?.find?.(f=>f.firm_id===F)?.has_logo??true,true);

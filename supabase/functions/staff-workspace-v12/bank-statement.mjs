@@ -6,8 +6,8 @@ const kes=c=>(c/100).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFrac
 export const UNPAID_CHEQUES_ACCOUNT='10065';
 // Money-out groups, by the ledger account a line is mapped to. Drawings and distributions and loan repayments are balance sheet
 // items, not expenses; finance costs are the 62xxx accounts. Everything else mapped is other expenditure. A person still chooses the account.
-export const DRAWINGS_CODES=['35010','36020','20140'];
-export const LOAN_REPAYMENT_CODES=['20070','20090','20100'];
+export const DRAWINGS_CODES=['35010','36020','20140','20250']; // 20250 director current account (Draft until a Partner activates it)
+export const LOAN_REPAYMENT_CODES=['20070','20090','20100','20260']; // 20260 director loan account (Draft until a Partner activates it)
 export const isFinanceCostCode=c=>/^62\d{3}$/.test(String(c));
 export function outGroup(code){
  const c=String(code||'');
