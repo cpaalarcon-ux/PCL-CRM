@@ -43,6 +43,7 @@ import {engagementAction} from './engagement-actions.ts';
 import {aupAction} from './aup-actions.ts';
 import {kraAction} from './kra-actions.ts';
 import {incomingAction} from './incoming-actions.ts';
+import {forensicAction} from './forensic-actions.ts';
 import {auditAction} from './audit-actions.ts';
 import {suiteExport} from './suite-export.ts';
 import {masterImport} from './master-import.ts';
@@ -270,6 +271,34 @@ async function incomingDownload(id:any,p:any){
   return {blob:result.data,name:it.file_name};
  });
 }
+async function forensicUpload(req:Request,id:any){
+ // Forensic file: a person on the file's list with Lead or Investigator access adds an item of evidence. The database checks the list, the lock and the duplicate hash.
+ const f=await req.formData(),file=f.get('file');if(!(file instanceof File))fail(400,'Choose the evidence file.');
+ const bytes=new Uint8Array(await file.arrayBuffer()),name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_'),mime=fileType(name,bytes);
+ const extensions:Record<string,string>={'application/pdf':'pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'xlsx','image/png':'png','image/jpeg':'jpg','text/csv':'csv','application/zip':'zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document':'docx'};
+ const caseId=uuid(f.get('case_id')),description=text(f.get('description'),1000,true),source=text(f.get('source_note'),500,true);
+ if(description.length<5)fail(400,'Describe the evidence in at least 5 characters.');if(source.length<5)fail(400,'Say where and from whom it was obtained (at least 5 characters).');
+ const day=date(String(f.get('obtained_on')||''));if(!day)fail(400,'Enter the date the evidence was obtained.');
+ const evidence=crypto.randomUUID(),key='forensic/'+caseId+'/'+evidence+'.'+extensions[mime],digest=await sha(bytes);
+ await bucket();let uploaded=false;
+ try{return await scoped(id,async(tx,a)=>{
+  await requireStaffArea(tx,a,'audit');
+  if(!['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(a.category_code))fail(403,'Your account cannot use forensic files.');
+  const r=await tx`select erp_private.forensic_evidence_register(${evidence},${caseId},${description},${source},${day},${name},${key},${bytes.length},${digest},${mime}) r`;
+  const result=await admin.storage.from(BUCKET).upload(key,bytes,{contentType:mime,upsert:false});
+  if(result.error)fail(502,'The file could not be stored. Nothing was recorded. Try again or ask the lead Partner.');uploaded=true;
+  return {ok:true,...r[0].r};
+ });}catch(e){if(uploaded)await admin.storage.from(BUCKET).remove([key]);throw e;}
+}
+async function forensicDownload(id:any,p:any){
+ // The database function checks the list and records the download in the file's own event log.
+ return await scoped(id,async(tx,a)=>{
+  await requireStaffArea(tx,a,'audit');
+  const r=one(await tx`select erp_private.forensic_evidence_file(${uuid(p.evidence_id)}) r`);
+  const result=await admin.storage.from(BUCKET).download(r.r.object_key);if(result.error||!result.data)fail(404,'The file is unavailable.');
+  return {blob:result.data,name:r.r.file_name};
+ });
+}
 async function upload(req:Request,id:any){
  const f=await req.formData(),file=f.get('file');if(!(file instanceof File))fail(400,'Choose a file.');
  const bytes=new Uint8Array(await file.arrayBuffer()),name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_'),mime=fileType(name,bytes);
@@ -394,6 +423,7 @@ async function action(id:any,p:any){
   const aup=await aupAction(tx,a,p);if(aup!==undefined)return aup;
   const kra=await kraAction(tx,a,p);if(kra!==undefined)return kra;
   const incoming=await incomingAction(tx,a,p);if(incoming!==undefined)return incoming;
+  const forensic=await forensicAction(tx,a,p);if(forensic!==undefined)return forensic;
   const audit=await auditAction(tx,a,p,admin.storage.from(BUCKET));if(audit!==undefined)return audit;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
   // The review queue must come before improvementAction: that handler claims every v3_ action and rejects ones it does not know.
@@ -562,6 +592,7 @@ Deno.serve(async(req:Request)=>{
   await limit('request-global',2000);
   if(req.headers.get('content-type')?.startsWith('multipart/form-data')){
    const id=await identity(req);
+   if(req.headers.get('x-erp-upload-kind')==='forensic'){const result=await forensicUpload(req,id);return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='incoming'){const result=await incomingUpload(req,id);return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='reference'){const result=await referenceUpload(req,id);return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData(),dataset=String(form.get('dataset')||''),area=dataset==='Staff'?'staff_access':'clients';const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,area);return masterImport(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
@@ -579,8 +610,8 @@ Deno.serve(async(req:Request)=>{
   else if(p.action==='refresh_session')result=await refreshSession(req,p);
   else{
    const id=await identity(req);
-   if(p.action==='download'||p.action==='reference_download'||p.action==='incoming_download'){
-    const file=p.action==='reference_download'?await referenceDownload(id,p):p.action==='incoming_download'?await incomingDownload(id,p):await download(id,p);const h={...headers,'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`};
+   if(p.action==='download'||p.action==='reference_download'||p.action==='incoming_download'||p.action==='forensic_evidence_download'){
+    const file=p.action==='reference_download'?await referenceDownload(id,p):p.action==='incoming_download'?await incomingDownload(id,p):p.action==='forensic_evidence_download'?await forensicDownload(id,p):await download(id,p);const h={...headers,'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`};
     return new Response(file.blob,{headers:h});
    }
    result=await action(id,p);

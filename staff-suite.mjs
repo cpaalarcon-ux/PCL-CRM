@@ -1,13 +1,14 @@
 import {serviceNarration,formatDay} from './invoice-narration.mjs?v=20261107-annualpack-v3';
 import {createDiscussionUI} from './staff-discussion.mjs?v=20261026-v4';
 import {communicationQr,letterDetails,letterDetailsQr} from './staff-communication-qr.mjs?v=20261104-letter-details';
-import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-nav-v1';
-import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-nav-v1';
-import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-nav-v1';
-import {createKraUI} from './staff-kra.mjs?v=20261110-nav-v1';
-import {createIncomingUI} from './staff-incoming.mjs?v=20261110-nav-v1';
-import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-nav-v1';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261110-nav-v1';
+import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-forensic-v1';
+import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-forensic-v1';
+import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-forensic-v1';
+import {createKraUI} from './staff-kra.mjs?v=20261110-forensic-v1';
+import {createIncomingUI} from './staff-incoming.mjs?v=20261110-forensic-v1';
+import {createForensicUI} from './staff-forensic.mjs?v=20261110-forensic-v1';
+import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-forensic-v1';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261110-forensic-v1';
 import {defaultTaxReportingPeriod} from './staff-tax-period-defaults.mjs?v=20261031-tax-period-defaults-v1';
 export function createSuiteUI(ctx){
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,clientName,projectName,staffName,firmName,today,empty}=ctx;
@@ -21,6 +22,7 @@ export function createSuiteUI(ctx){
  const aup=createAupUI({...ctx,button,area,check});
  const kra=createKraUI({...ctx,button,area,check});
  const incoming=createIncomingUI({...ctx,button,area,check});
+ const forensic=createForensicUI({...ctx,button,area,check});
  let financeTab='Invoices',timeTab='My HR',commsTab='Letters & QR',taxPage=0;
  const tabs=(name,values,current)=>`<div class="actions subnav">${values.map(v=>button(name,v,v,`class="${v===current?'primary':''}"`)).join('')}</div>`;
  const creditFor=i=>(s().advances||[]).filter(a=>a.client_id===i.client_id&&a.firm_id===i.firm_id&&Number(a.balance)>0&&(!a.project_id||a.project_id===i.project_id)),creditTotal=i=>round(creditFor(i).reduce((t,a)=>t+Number(a.balance),0));
@@ -167,6 +169,7 @@ export function createSuiteUI(ctx){
   if(await aup.handle(action,id))return;
   if(await kra.handle(action,id))return;
   if(await incoming.handle(action,id))return;
+  if(await forensic.handle(action,id))return;
   if(action==='finance-tab'){financeTab=id;ctx.render();return;}if(action==='comms-tab'){commsTab=id;ctx.render();return;}if(action==='hr-tab'){timeTab=id;ctx.render();return;}
   if(action==='add-line'){$('#invoiceLines').insertAdjacentHTML('beforeend',lineInputs());invoiceTotals();return;}if(action==='add-employee'){$('#employeeRows').insertAdjacentHTML('beforeend',employeeInputs());return;}if(action==='add-partner'){$('#partnerRows').insertAdjacentHTML('beforeend',partnerInputs());return;}if(action==='print'){window.print();return;}
   if(action==='add-band'){$('#bands').insertAdjacentHTML('beforeend',bandInputs());return;}if(action==='remove-band'){b.closest('[data-band-row]').remove();return;}
@@ -259,5 +262,5 @@ export function createSuiteUI(ctx){
   if(b.dataset.suite==='reference-download'){const blob=await request({action:'reference_download',reference_id:b.dataset.id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=b.dataset.name||'Reference_document';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
  }catch(error){notice(error.message,true);}});
  document.addEventListener('click',async e=>{const b=e.target.closest('[data-suite]');if(!b||b.dataset.suite==='master-preview')return;try{b.disabled=true;await act(b.dataset.suite,b.dataset.id,b);}catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;}});
- return {chat,finance,communications,settings,hr,button,taxList,openReference,kra,incoming};
+ return {chat,finance,communications,settings,hr,button,taxList,openReference,kra,incoming,forensic};
 }

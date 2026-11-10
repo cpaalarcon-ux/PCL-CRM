@@ -6,8 +6,8 @@ import {MODULE_LINKS,NO_LINK_MODULES,moduleLinks} from '../staff-nav.mjs';
 const rd=f=>readFileSync(new URL('../'+f,import.meta.url),'utf8');
 const me=c=>({category_code:c});
 test('built modules get one link under their parent, for the right roles',()=>{
-  assert.deepEqual(moduleLinks(me('PARTNER'),'projects').map(x=>x.key),['kra']);
-  assert.deepEqual(moduleLinks(me('ASSISTANT'),'projects').map(x=>x.key),['kra']);
+  assert.deepEqual(moduleLinks(me('PARTNER'),'projects').map(x=>x.key),['kra','forensic']);
+  assert.deepEqual(moduleLinks(me('ASSISTANT'),'projects').map(x=>x.key),['kra','forensic']);
   assert.deepEqual(moduleLinks(me('INTERN'),'projects'),[]);
   assert.deepEqual(moduleLinks(me('ADMIN'),'projects'),[]);
   for(const parent of ['documents','communications']){
@@ -16,35 +16,33 @@ test('built modules get one link under their parent, for the right roles',()=>{
   }
   assert.equal(moduleLinks(me('PARTNER'),'documents')[0].suite,'incoming-open');
   assert.equal(moduleLinks(me('PARTNER'),'communications')[0].suite,'incoming-timeline-pick');
-  assert.equal(moduleLinks(me('PARTNER'),'projects')[0].suite,'kra-open');
+  assert.equal(moduleLinks(me('PARTNER'),'projects')[0].suite,'kra-open');assert.equal(moduleLinks(me('PARTNER'),'projects')[1].suite,'forensic-open');
 });
 test('a link needs the area to be allowed',()=>{
   assert.deepEqual(moduleLinks(me('PARTNER'),'documents',a=>a!=='documents'),[]);
 });
-test('a module that is not built has no link for anyone; AUP has no list screen so no link',()=>{
-  const forensic=MODULE_LINKS.find(m=>m.key==='forensic');
-  assert.equal(forensic.built,false);
-  for(const r of ['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN','ADMIN'])assert.deepEqual(moduleLinks(me(r),'projects').filter(x=>x.key==='forensic'),[],r);
+test('AUP has no list screen so no link; a module that is not built lists no roles',()=>{
+  // Forensic files were not built at Step 9, so they had no link then. The forensic file is built now (see forensic_file_ui.test.mjs), so its link is checked there.
+  // Anything that is not built must list no roles and so can never show a link.
   assert.deepEqual(NO_LINK_MODULES,['aup']);
   assert.ok(!MODULE_LINKS.some(m=>m.key==='aup'));
   assert.ok(!MODULE_LINKS.some(m=>!m.built&&m.roles.length),'an unbuilt module must not list roles');
 });
 test('every link points at an action its screen really handles',()=>{
-  const kra=rd('staff-kra.mjs'),inc=rd('staff-incoming.mjs');
+  const kra=rd('staff-kra.mjs'),inc=rd('staff-incoming.mjs'),fo=rd('staff-forensic.mjs');
   assert.match(kra,/action==='kra-open'/);
   assert.match(inc,/action==='incoming-open'/);
   assert.match(inc,/action==='incoming-timeline-pick'/);
-  for(const m of MODULE_LINKS.filter(x=>x.built))assert.ok(kra.includes(`'${m.action}'`)||inc.includes(`'${m.action}'`),m.key);
+  for(const m of MODULE_LINKS.filter(x=>x.built))assert.ok(kra.includes(`'${m.action}'`)||inc.includes(`'${m.action}'`)||fo.includes(`'${m.action}'`),m.key);
 });
 test('the sidebar draws the links as sub-items that open the module, never as a page or a current page',()=>{
   const app=rd('staff-pilot.mjs');
-  assert.match(app,/import \{moduleLinks\} from '\.\/staff-nav\.mjs\?v=20261110-nav-v1'/);
+  assert.match(app,/import \{moduleLinks\} from '\.\/staff-nav\.mjs\?v=20261110-forensic-v1'/);
   assert.match(app,/parent\('projects','Projects & Tasks','▣',\[audit,\.\.\.modLinks\('projects'\)\]\)/);
   assert.match(app,/parent\('documents','Documents','▤',modLinks\('documents'\)\)/);
   assert.match(app,/parent\('communications','Communications Hub','◉',modLinks\('communications'\)\)/);
   assert.match(app,/item\.suite\?`<button class="side-item side-sub side-module" type="button" data-suite="\$\{item\.suite\}"/);
-  assert.doesNotMatch(app,/forensic/i);
-  assert.match(rd('staff-pilot.html'),/data-build="2026-11-10\.2660"/);
+  assert.match(rd('staff-pilot.html'),/data-build="2026-11-10\.2670"/);
 });
 test('the menu keeps the same top-level items',()=>{
   const app=rd('staff-pilot.mjs');

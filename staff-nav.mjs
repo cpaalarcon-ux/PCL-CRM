@@ -6,8 +6,8 @@ export const MODULE_LINKS=[
  {key:'kra',parent:'projects',title:'KRA notices',action:'kra-open',built:true,roles:[...LEADERS,'ASSISTANT'],note:'KRA notice log, its verification task and flags (Step 7)'},
  {key:'incoming',parent:'documents',title:'Incoming review',action:'incoming-open',built:true,roles:LEADERS,note:'Received files waiting for a client and a filing (Step 8)'},
  {key:'timeline',parent:'communications',title:'Client timeline',action:'incoming-timeline-pick',built:true,roles:LEADERS,note:'Messages and documents for one client (Step 8)'},
- // Not built yet. Kept here so it appears the day it is built (set built:true then); until then nobody sees a link.
- {key:'forensic',parent:'projects',title:'Forensic files',action:'forensic-open',built:false,roles:[],note:'Forensic restricted file (not built)'}
+ // The link shows for every role that can be put on a file's list; it only opens the person's own list, which is empty unless they were added.
+ {key:'forensic',parent:'projects',title:'Forensic files',action:'forensic-open',built:true,roles:[...LEADERS,'ASSISTANT'],note:'Forensic restricted file: visible only to its access list (built)'}
 ];
 // The agreed-upon-procedures engine has no list screen of its own: it is reached from a project (Review & activate), so it has no sidebar link.
 export const NO_LINK_MODULES=['aup'];
