@@ -55,3 +55,20 @@ test('unpaid cheques are deducted for every client, and a cheque that clears aga
  assert.equal(s.money_out.unpaid_cheques,1000);assert.equal(s.money_out.other_mapped,0);
  assert.equal(by.cheques.lines[0].amount,1000);
 });
+
+test('money-out split: drawings, loans, finance costs, other, transfers, cheques and unclassified add back to total money out',async()=>{
+ const {outGroup,DRAWINGS_CODES}=await import('../supabase/functions/staff-workspace-v12/bank-statement.mjs');
+ const rows=[line('d1',0,'36020','B1',100),line('dv',0,'20140','B1',50),line('ln',0,'20090','B1',80),line('i1',0,'62000','B1',15),line('bc',0,'62510','B1',5),line('rent',0,'61000','B1',400),line('kra',0,'21600','B1',60),line('tr',0,'10040','B1',30),line('chq',0,'10065','B1',20),line('un',0,null,'B1',7),line('sale',900,'40000')];
+ const s=bankSummary({rows,categories:[],bankAccounts:[]});
+ const by=Object.fromEntries(s.money_out_sections.map(x=>[x.key,x]));
+ assert.equal(by['out:drawings'].amount,150);assert.equal(by['out:loans'].amount,80);assert.equal(by['out:finance'].amount,20);
+ assert.equal(by['out:other'].amount,460,'rent and the tax payment are other expenditure');assert.equal(by['out:transfers'].amount,30);assert.equal(by['out:cheques'].amount,20);assert.equal(by['out:unclassified'].amount,7);
+ assert.equal(s.money_out.total,767);assert.deepEqual(s.tie_out.money_out,{buckets:767,total:767});assert.deepEqual(s.tie_out.money_in,{buckets:900,total:900});
+ assert.equal(by['out:drawings'].lines[0].reference,'d1');assert.equal(by['out:drawings'].count,2);
+ assert.equal(outGroup('62060'),'finance');assert.equal(outGroup('62'),'other');assert.equal(outGroup(''),'unclassified');assert.equal(outGroup('35010'),'drawings');assert.ok(DRAWINGS_CODES.includes('35010'));
+ assert.equal(outGroup('30000'),'other','share capital is not a bank outflow group');
+});
+test('an unmapped money-out line is shown as not classified and the two sides still tie out',()=>{
+ const s=bankSummary({rows:[line('x',0,null,'B1',250)],categories:[],bankAccounts:[]});
+ assert.equal(s.money_out_sections.find(x=>x.key==='out:unclassified').amount,250);assert.equal(s.tie_out.money_out.buckets,s.tie_out.money_out.total);
+});

@@ -4,6 +4,22 @@ const cents=v=>Math.round((Number(v)+Number.EPSILON)*100);
 const has=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
 const kes=c=>(c/100).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
 export const UNPAID_CHEQUES_ACCOUNT='10065';
+// Money-out groups, by the ledger account a line is mapped to. Drawings and distributions and loan repayments are balance sheet
+// items, not expenses; finance costs are the 62xxx accounts. Everything else mapped is other expenditure. A person still chooses the account.
+export const DRAWINGS_CODES=['35010','36020','20140'];
+export const LOAN_REPAYMENT_CODES=['20070','20090','20100'];
+export const isFinanceCostCode=c=>/^62\d{3}$/.test(String(c));
+export function outGroup(code){
+ const c=String(code||'');
+ if(!c)return 'unclassified';
+ if(BANK_LEDGER_CODES.includes(c))return 'transfers';
+ if(c===UNPAID_CHEQUES_ACCOUNT)return 'cheques';
+ if(DRAWINGS_CODES.includes(c))return 'drawings';
+ if(LOAN_REPAYMENT_CODES.includes(c))return 'loans';
+ if(isFinanceCostCode(c))return 'finance';
+ return 'other';
+}
+export const OUT_LABELS={transfers:'Own-account transfers out',drawings:'Drawings and distributions (owner, partner, dividends)',loans:'Loan and lease repayments (not expenses)',finance:'Finance costs (bank charges, loan interest)',other:'Other expenditure (suppliers, rent, salaries, tax payments)',cheques:'Unpaid (dishonoured) cheques - returned by the bank',unclassified:'Not yet classified (no account mapped)'};
 const net=r=>cents(r.credit||0)-cents(r.debit||0);
 
 // Opening balance + money in - money out must equal the closing balance. The proof comes from the running-balance column,
@@ -44,17 +60,21 @@ export function bankSummary({rows=[],categories=[],bankAccounts=[],bankAccountId
  const live=categories.filter(c=>c.status==='Active');
  const sections=[{key:'transfers',label:'Own-account transfers in',cents:0,count:0,lines:[]},...live.map(c=>({key:'cat:'+c.category_id,label:c.name,cents:0,count:0,lines:[],category_id:c.category_id})),{key:'cheques',label:'Unpaid (dishonoured) cheques - returned by the bank',cents:0,count:0,lines:[]},{key:'unclassified',label:'Not yet classified (no account mapped)',cents:0,count:0,lines:[]},{key:'trade',label:'Trade bankings',cents:0,count:0,lines:[],total:true}];
  const out={total:0,transfers:0,unclassified:0,cheques:0,other:0},sec=k=>sections.find(s=>s.key===k);
+ const outSections=['transfers','drawings','loans','finance','other','cheques','unclassified'].map(k=>({key:'out:'+k,label:OUT_LABELS[k],cents:0,count:0,lines:[]})),osec=k=>outSections.find(x=>x.key==='out:'+k);
  let moneyIn=0;
  const view=r=>({row_id:r.row_id,date:r.normalized?.date||null,reference:r.normalized?.reference||'',description:r.normalized?.description||'',amount:Number(r.normalized?.credit||0),account_code:r.account_code||null,bank:label.get(r.bank_account_id)||null});
  for(const r of use){
   const cin=cents(r.normalized?.credit||0),cout=cents(r.normalized?.debit||0);
-  if(cout>0){out.total+=cout;if(!r.account_code)out.unclassified+=cout;else if(BANK_LEDGER_CODES.includes(String(r.account_code)))out.transfers+=cout;else if(String(r.account_code)===UNPAID_CHEQUES_ACCOUNT){out.cheques+=cout;const c=sec('cheques');c.cents+=cout;c.count++;if(c.lines.length<lineLimit)c.lines.push({...view(r),amount:cout/100});}else out.other+=cout;}
+  if(cout>0){const og=osec(outGroup(r.account_code));og.cents+=cout;og.count++;if(og.lines.length<lineLimit)og.lines.push({...view(r),amount:cout/100});out.total+=cout;if(!r.account_code)out.unclassified+=cout;else if(BANK_LEDGER_CODES.includes(String(r.account_code)))out.transfers+=cout;else if(String(r.account_code)===UNPAID_CHEQUES_ACCOUNT){out.cheques+=cout;const c=sec('cheques');c.cents+=cout;c.count++;if(c.lines.length<lineLimit)c.lines.push({...view(r),amount:cout/100});}else out.other+=cout;}
   if(cin<=0)continue;
   moneyIn+=cin;
   const key=!r.account_code?'unclassified':BANK_LEDGER_CODES.includes(String(r.account_code))?'transfers':(live.find(c=>(c.account_codes||[]).includes(String(r.account_code)))?'cat:'+live.find(c=>(c.account_codes||[]).includes(String(r.account_code))).category_id:'trade');
   const s=sec(key);s.cents+=cin;s.count++;if(s.lines.length<lineLimit)s.lines.push(view(r));
  }
  sec('trade').cents-=sec('cheques').cents;
+ const inBuckets=sections.reduce((n,x)=>n+x.cents,0),outBuckets=outSections.reduce((n,x)=>n+x.cents,0);
  return {money_in:moneyIn/100,sections:sections.map(s=>({key:s.key,label:s.label,amount:s.cents/100,count:s.count,lines:s.lines,truncated:s.count>s.lines.length,is_total:!!s.total,category_id:s.category_id||null})),
+  money_out_sections:outSections.map(x=>({key:x.key,label:x.label,amount:x.cents/100,count:x.count,lines:x.lines,truncated:x.count>x.lines.length})),
+  tie_out:{money_in:{buckets:inBuckets/100,total:moneyIn/100},money_out:{buckets:outBuckets/100,total:out.total/100}},
   trade_bankings:sec('trade').cents/100,money_out:{total:out.total/100,own_transfers:out.transfers/100,unpaid_cheques:out.cheques/100,not_classified:out.unclassified/100,other_mapped:out.other/100},lines:use.length};
 }
