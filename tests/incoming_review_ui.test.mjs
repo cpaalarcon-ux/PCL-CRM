@@ -116,12 +116,12 @@ test('server module: actions, areas, rules',()=>{
 
 test('wiring: screen imported, routed, reachable from Documents and Communications',()=>{
  const su=rd('staff-suite.mjs'),pi=rd('staff-pilot.mjs'),css=rd('staff-pilot.css');
- assert.match(su,/import \{createIncomingUI\} from '\.\/staff-incoming\.mjs\?v=20261110-forensic-v1'/);assert.match(su,/const incoming=createIncomingUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await incoming\.handle\(action,id\)\)return;/);assert.match(su,/return \{[^}]*kra,incoming(,forensic)?\}/);
+ assert.match(su,/import \{createIncomingUI\} from '\.\/staff-incoming\.mjs\?v=20261110-nav-v2'/);assert.match(su,/const incoming=createIncomingUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await incoming\.handle\(action,id\)\)return;/);assert.match(su,/return \{[^}]*kra,incoming(,forensic)?\}/);
  assert.match(su,/'Letter','Email','WhatsApp','Call','Meeting','Visit','Internal note'/);assert.match(su,/select\('direction'/);assert.match(su,/field\('sender_address'/);
  assert.match(pi,/return incomingCardHtml\(data\.me,suite\.button\)\+/);assert.match(pi,/if\(view==='documents'\)void suite\.incoming\.paintCard\(\);/);
  assert.match(pi,/'Correspondence','KRA Notices','Import Sources'\]/);assert.match(css,/\.timeline-doc\{/);
  const html=rd('staff-pilot.html'),rel=JSON.parse(rd(fx+'release.json'));
- assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-10.2670');
+ assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-10.2680');
  for(const f of ['staff-pilot.mjs','staff-suite.mjs','staff-pilot-auth.js','staff-pilot.html','staff-improvements.mjs','staff-audit.mjs','staff-audit-home.mjs','staff-audit-reports.mjs'])assert.doesNotMatch(rd(f),/20261109-kra-v1/,f+' carries the new cache-buster');
 });
 

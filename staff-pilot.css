@@ -264,13 +264,30 @@ body.workspace-active>footer{flex:0 0 auto;padding:7px 18px;border-top:1px solid
 .sidebar-nav .side-item:hover{background:var(--sidebar-hover);color:#fff}
 .sidebar-nav .side-item:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 .sidebar-nav .side-item[aria-current=page]{background:var(--sidebar-active);color:var(--sidebar-active-text);box-shadow:0 1px 3px #0002}
-@media(max-width:850px){
- body.workspace-active>main>#workspace{flex-direction:column}
- .workspace-sidebar{flex:0 0 auto;width:100%;height:auto;padding:10px 12px}
- .sidebar-brand{min-height:0;padding:0 4px 8px}
- .sidebar-nav{flex-direction:row;margin-top:8px;overflow-x:auto;gap:6px;padding-bottom:2px}
- .sidebar-nav .side-item{flex:0 0 auto;width:auto;min-height:38px;white-space:nowrap}
+/* Collapsible groups (build 2680): the label opens its page, the arrow shows or hides the links under it. */
+.sidebar-nav .side-group{display:flex;flex-direction:column;gap:2px}
+.sidebar-nav .side-row{display:flex;align-items:stretch;gap:2px}
+.sidebar-nav .side-row .side-item{flex:1 1 auto;min-width:0}
+.sidebar-nav .side-label{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.sidebar-nav .side-chevron{flex:0 0 36px;display:flex;align-items:center;justify-content:center;border:0;border-radius:8px;background:transparent;color:var(--sidebar-muted);font-size:13px;padding:0;cursor:pointer}
+.sidebar-nav .side-chevron:hover{background:var(--sidebar-hover);color:#fff}
+.sidebar-nav .side-chevron:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.sidebar-nav .side-subs{display:flex;flex-direction:column;gap:2px}
+.sidebar-nav .side-subs[hidden]{display:none}
+.sidebar-nav .nav-badge{flex:0 0 auto;margin-left:auto;min-width:22px;padding:0 7px;border-radius:99px;background:#e5e7eb;color:#1f2937;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.sidebar-nav .nav-badge.overdue{background:#d92d20;color:#fff}
+.sidebar-nav .side-item[aria-current=page] .nav-badge{box-shadow:0 0 0 1px #0002}
+.nav-hamburger{display:none;align-items:center;justify-content:center;min-width:42px;min-height:38px;padding:6px 10px;font-size:20px;line-height:1}
+.nav-backdrop{display:none}
+@media(max-width:768px){
+ .nav-hamburger{display:inline-flex}
+ .workspace-sidebar{position:fixed;inset:0 auto 0 0;z-index:60;flex:none;width:min(300px,86vw);height:100dvh;padding:14px 12px;visibility:hidden;transform:translateX(-102%);transition:transform .2s ease,visibility 0s linear .2s;box-shadow:6px 0 24px #0005}
+ body.nav-open .workspace-sidebar{visibility:visible;transform:none;transition:transform .2s ease,visibility 0s}
+ .nav-backdrop{position:fixed;inset:0;z-index:50;background:#0a1a1466}
+ body.nav-open .nav-backdrop{display:block}
+ body.nav-open{overflow:hidden}
 }
+@media(prefers-reduced-motion:reduce){.workspace-sidebar{transition:none!important}}
 
 /* Cards / List / Kanban display modes (staff-items-view.mjs) */
 .items-bar{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin:8px 0 4px}
@@ -380,7 +397,7 @@ body.workspace-active>footer{flex:0 0 auto;padding:7px 18px;border-top:1px solid
 /* Sub-items under Clients, Projects & Tasks and Administration (shown when that section is open). */
 .sidebar-nav .side-item.side-sub{min-height:34px;padding:6px 12px 6px 44px;font-size:12px;font-weight:500;opacity:.92}
 .badge.bad{background:#b3261e;color:#fff;border-color:#b3261e}
-@media(max-width:850px){.sidebar-nav .side-item.side-sub{padding:6px 12px}}
+@media(max-width:768px){.sidebar-nav .side-item.side-sub{padding:7px 12px 7px 44px}}
 
 /* Build .106: notification bell, practice metrics, holidays */
 .bell-button{position:relative;display:inline-flex;align-items:center;gap:4px;background:#edf5f0;color:var(--green);border:1px solid #cfdfd5;border-radius:999px;padding:8px 12px;font-weight:700;cursor:pointer}.bell-button:hover,.bell-button[aria-expanded=true]{background:#dceee3}

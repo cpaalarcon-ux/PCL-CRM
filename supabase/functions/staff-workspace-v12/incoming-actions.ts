@@ -8,7 +8,7 @@ import {nextNumber} from './suite-actions.ts';
 // (the file upload itself is handled in index.ts, which then calls incoming_register).
 // Rights are not in the staff rights catalogue: who may do what is decided here and in the database.
 const ACTIONS=['incoming_list','incoming_clients','incoming_options','incoming_candidates','incoming_choose_client','incoming_set_handling','incoming_accept','incoming_archive','incoming_kyc_approve',
- 'incoming_settings_read','incoming_setting_set','incoming_setting_confirm','document_links','document_link_add','document_link_remove','client_timeline'];
+ 'incoming_settings_read','incoming_setting_set','incoming_setting_confirm','document_links','document_link_add','document_link_remove','client_timeline','incoming_badge'];
 const RESOLUTIONS=['Rejected','Replacement requested','Duplicate','Withdrawn'];
 const reviewer=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'Your account cannot use Incoming Review.');};
 const partnerOf=(a:any,m:string)=>{if(a.category_code!=='PARTNER')fail(403,m);};
@@ -26,6 +26,11 @@ export async function incomingAction(tx:any,a:any,p:any):Promise<any>{
   const items=await tx`select * from erp_private.incoming_list(${archived})`;
   const counts=await tx`select erp_private.incoming_counts() c`;
   return {items,counts:counts[0].c,settings:await tx`select setting_key,label,int_value,text_value,rule_status,source_note,confirmed_at,revision from erp_private.incoming_settings order by setting_key`};
+ }
+ if(p.action==='incoming_badge'){
+  // The menu count. The database applies the same visibility and role rules as the queue; a role that may not review gets zero.
+  const [b]=await tx`select erp_private.incoming_badge() b`;
+  return {waiting:Number(b.b.waiting||0),overdue:Number(b.b.overdue||0)};
  }
  if(p.action==='incoming_clients'){
   // The clients this reviewer may handle external communication for.

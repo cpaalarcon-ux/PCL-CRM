@@ -38,9 +38,10 @@ test('Step 8: incoming review, sender matching, duplicates, accept and link, doc
 
  // ---- 1. Settings are defaults until a Partner confirms them -------------------------------------------------------------------------------
  const st=j(await tx`select setting_key,int_value,text_value,rule_status from erp_private.incoming_settings order by setting_key`);
- assert.equal(st.length,4);assert.ok(st.every(s=>s.rule_status==='Suggested'));
+ assert.equal(st.length,5);assert.ok(st.every(s=>s.rule_status==='Suggested'));
  const sv=k=>st.find(s=>s.setting_key===k);
  assert.deepEqual([sv('accept_min_role').text_value,sv('restricted_min_role').text_value,sv('kyc_route').text_value,sv('retention_days').int_value],['SUPERVISOR','MANAGER','LEADERS_ONLY',365]);
+ assert.equal(sv('overdue_days').int_value,3,'the menu count turns red after 3 days (default, not confirmed)');
  await q('MANAGER',`update erp_private.incoming_settings set text_value='PARTNER' where setting_key='accept_min_role'`);
  assert.equal((await tx`select text_value from erp_private.incoming_settings where setting_key='accept_min_role'`)[0].text_value,'SUPERVISOR','a Manager cannot change a setting');
  await assert.rejects(setting('accept_min_role','INTERN'),/Supervisor, Manager or Partner/);
@@ -261,8 +262,42 @@ test('Step 8: incoming review, sender matching, duplicates, accept and link, doc
  // ---- 12. Counts, row security, grants -----------------------------------------------------------------------------------------------------------
  const cnt=j((await q('MANAGER',`select erp_private.incoming_counts() c`))[0].c);assert.ok(cnt.incoming_waiting>=1&&cnt.incoming_needs_review>=1&&cnt.incoming_oldest_days>=0);
  assert.deepEqual(j((await q('SUPERVISOR',`select erp_private.incoming_counts() c`))[0].c),{});
+
+ // ---- 12b. The menu count (build 2680): scoped to what the person may see, hidden from people who may not review ---------------------------------
+ const badge=async role=>j((await q(role,`select erp_private.incoming_badge() b`))[0].b);
+ const listN=async role=>(await q(role,`select count(*)::int n from erp_private.incoming_list(false)`))[0].n;
+ for(const role of ['SUPERVISOR','MANAGER','PARTNER']){const b=await badge(role);assert.equal(b.waiting,await listN(role),role+': the count equals the waiting list the person can open');}
+ const rBadge=await reg('MANAGER',{file:'badge-restricted.pdf',client:A});await q('MANAGER',`select erp_private.incoming_set_handling($1,'Restricted',false)`,[rBadge.item]);
+ assert.equal((await badge('MANAGER')).waiting,await listN('MANAGER'));assert.equal((await badge('SUPERVISOR')).waiting,await listN('SUPERVISOR'));
+ assert.ok((await badge('MANAGER')).waiting>(await badge('SUPERVISOR')).waiting,'a Restricted file is counted for a Manager but not for a Supervisor');
+ for(const role of ['ASSISTANT','INTERN'])assert.deepEqual(await badge(role),{waiting:0,overdue:0},role+' has no queue and no count');
+ // Counts on the page card are scoped the same way: with Restricted files limited to Partners a Manager no longer counts them.
+ await q('PARTNER',`update erp_private.incoming_settings set text_value='PARTNER' where setting_key='restricted_min_role'`);
+ assert.equal(j((await q('MANAGER',`select erp_private.incoming_counts() c`))[0].c).incoming_waiting,await listN('MANAGER'),'the page card count matches what a Manager can open');
+ assert.equal((await badge('MANAGER')).waiting,await listN('MANAGER'));
+ await q('PARTNER',`update erp_private.incoming_settings set text_value='MANAGER' where setting_key='restricted_min_role'`);
+ // A role that may not accept sees no count even though it can read the queue.
+ await q('PARTNER',`update erp_private.incoming_settings set text_value='MANAGER' where setting_key='accept_min_role'`);
+ assert.deepEqual(await badge('SUPERVISOR'),{waiting:0,overdue:0},'a Supervisor who may not review gets no count');
+ assert.ok((await badge('MANAGER')).waiting>0);
+ await q('PARTNER',`update erp_private.incoming_settings set text_value='SUPERVISOR' where setting_key='accept_min_role'`);
+ // Overdue: a waiting file logged longer ago than the setting turns the count red; the number of waiting files does not change.
+ const before=await badge('MANAGER');assert.equal(before.overdue,0,'nothing is overdue yet');
+ const oldOne=(await tx`select item_id from erp_private.incoming_items where deleted_at is null and status in('Received','Needs Review') order by logged_at limit 1`)[0].item_id;
+ await db.exec('alter table erp_private.incoming_items disable trigger user');
+ await tx`update erp_private.incoming_items set logged_at=now()-interval '4 days' where item_id=${oldOne}`;
+ await db.exec('alter table erp_private.incoming_items enable trigger user');
+ const after=await badge('PARTNER');assert.equal(after.overdue>=1,true,'a 4-day-old waiting file is overdue');assert.equal(after.waiting,await listN('PARTNER'));
+ await q('PARTNER',`update erp_private.incoming_settings set int_value=10 where setting_key='overdue_days'`);
+ assert.equal((await badge('PARTNER')).overdue,0,'a 10-day limit leaves the 4-day-old file not overdue');
+ await assert.rejects(q('PARTNER',`update erp_private.incoming_settings set int_value=0 where setting_key='overdue_days'`),/1 to 60/);
+ await assert.rejects(q('PARTNER',`update erp_private.incoming_settings set int_value=61 where setting_key='overdue_days'`),/1 to 60/);
+ await q('MANAGER',`update erp_private.incoming_settings set int_value=2 where setting_key='overdue_days'`);
+ assert.equal((await tx`select int_value from erp_private.incoming_settings where setting_key='overdue_days'`)[0].int_value,10,'only a Partner changes it');
+ await q('PARTNER',`update erp_private.incoming_settings set int_value=3 where setting_key='overdue_days'`);
+ assert.equal((await tx`select rule_status from erp_private.incoming_settings where setting_key='overdue_days'`)[0].rule_status,'Suggested');
  for(const t of ['incoming_items','incoming_settings','document_links'])assert.deepEqual(j((await tx`select relrowsecurity,relforcerowsecurity from pg_class where oid=${'erp_private.'+t}::regclass`)[0]),{relrowsecurity:true,relforcerowsecurity:true},t);
- const fns=['incoming_register','incoming_choose_client','incoming_set_handling','incoming_accept','incoming_archive','incoming_list','incoming_candidates','incoming_counts','document_link_add','document_link_remove','incoming_can_see','incoming_matches'];
+ const fns=['incoming_register','incoming_choose_client','incoming_set_handling','incoming_accept','incoming_archive','incoming_list','incoming_candidates','incoming_counts','incoming_badge','document_link_add','document_link_remove','incoming_can_see','incoming_matches'];
  for(const f of fns){const g=await tx`select has_function_privilege('anon',p.oid,'execute') anon,has_function_privilege('authenticated',p.oid,'execute') auth,has_function_privilege('service_role',p.oid,'execute') svc,has_function_privilege('erp_api',p.oid,'execute') api,p.prosecdef,p.proconfig from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='erp_private' and p.proname=${f}`;assert.equal(g.length,1,f);assert.deepEqual([g[0].anon,g[0].auth,g[0].svc,g[0].api,g[0].prosecdef],[false,false,false,true,true],f);assert.ok(g[0].proconfig.some(x=>/search_path/.test(x)),f+' pins the search path');}
  // The Assistant's own evidence rules are unchanged.
  const ad=await q('SUPERVISOR',`select erp_private.document_allowed($1,$2,$3,null,'Correspondence',false) ok`,[A,F,pA]);assert.equal(ad[0].ok,true);
