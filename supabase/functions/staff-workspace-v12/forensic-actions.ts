@@ -4,7 +4,7 @@ import {fail,text,uuid,choice,date} from './validation.mjs';
 // these checks give friendly messages. A person who is not on a file's list gets the same "not available" answer whether the file exists or not.
 // Administrators and Interns never reach this module. The file itself (evidence upload) is handled in index.ts, which then calls forensic_evidence_register.
 // Rights are not in the staff rights catalogue: the access list and the lead Partner decide who may do what.
-const ACTIONS=['forensic_list','forensic_clients','forensic_open','forensic_get','forensic_staff_options','forensic_access_add','forensic_access_level','forensic_access_remove','forensic_lead_transfer',
+const ACTIONS=['forensic_menu','forensic_list','forensic_clients','forensic_open','forensic_get','forensic_staff_options','forensic_access_add','forensic_access_level','forensic_access_remove','forensic_lead_transfer',
  'forensic_evidence_withdraw','forensic_custody_add','forensic_finding_add','forensic_finding_withdraw','forensic_report_save','forensic_report_issue','forensic_hold_set','forensic_hold_release',
  'forensic_settings_read','forensic_setting_set','forensic_setting_confirm'];
 const eligible=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(a.category_code))fail(403,'Your account cannot use forensic files.');};
@@ -14,6 +14,8 @@ const optText=(v:any,max:number)=>v?text(v,max):null;
 
 export async function forensicAction(tx:any,a:any,p:any):Promise<any>{
  if(!ACTIONS.includes(p.action))return undefined;
+ // The menu check never refuses: a person who is not eligible simply gets no entry.
+ if(p.action==='forensic_menu'){if(!['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(a.category_code))return {show:false};const r=await tx`select erp_private.forensic_menu() r`;return {show:r[0].r===true};}
  eligible(a);
 
  if(p.action==='forensic_list'){

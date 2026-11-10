@@ -12,13 +12,13 @@ export const MODULE_LINKS=[
  {key:'incoming',parent:'documents',area:'documents',title:'Incoming review',action:'incoming-open',built:true,roles:LEADERS,badge:'incoming',note:'Received files waiting for a client and a filing (Step 8)'},
  {key:'timeline',parent:'communications',area:'communications',title:'Client timeline',action:'incoming-timeline-pick',built:true,roles:LEADERS,note:'Messages and documents for one client (Step 8)'},
  // The link shows for every role that can be put on a file's list; it only opens the person's own list, which is empty unless they were added.
- {key:'forensic',parent:'engagements',area:'audit',title:'Forensic files',action:'forensic-open',built:true,roles:[...LEADERS,'ASSISTANT'],note:'Forensic restricted file: visible only to its access list (built)'}
+ {key:'forensic',parent:'engagements',area:'audit',title:'Forensic files',action:'forensic-open',built:true,gate:'forensic',roles:[...LEADERS,'ASSISTANT'],note:'Forensic restricted file: visible only to its access list (built)'}
 ];
 // The agreed-upon-procedures engine has no list screen of its own: it is reached from a project (Review & activate), so it has no sidebar link.
 export const NO_LINK_MODULES=['aup'];
-export function moduleLinks(me,parent,canArea=()=>true){
+export function moduleLinks(me,parent,canArea=()=>true,flags={}){
  const role=me?.category_code;
- return MODULE_LINKS.filter(m=>m.built&&m.parent===parent&&m.roles.includes(role)&&canArea(m.area||m.parent)).map(m=>({title:m.title,suite:m.action,key:m.key,badge:m.badge||''}));
+ return MODULE_LINKS.filter(m=>m.built&&m.parent===parent&&m.roles.includes(role)&&canArea(m.area||m.parent)&&(!m.gate||flags[m.gate]===true)).map(m=>({title:m.title,suite:m.action,key:m.key,badge:m.badge||''}));
 }
 
 // ---- Collapsible menu: which parents are open is remembered in this browser, per signed-in person (a display preference, not data).

@@ -1,14 +1,14 @@
 // One page of the Client Register for Managers and Partners. The database function runs as the signed-in person, so row-level security still applies.
 import {fail,uuid,text} from './validation.mjs';
 const ONE=(v:any,allowed:string[],label:string)=>{if(v===undefined||v===null||v==='')return null;const s=String(v);if(!allowed.includes(s))fail(400,`${label} is not recognised.`);return s;};
-// The extra facts on each client card: KRA notices near their deadline, files waiting in Incoming review, a forensic file (lead only) and unbilled work in progress.
+// The extra facts on each client card: KRA notices near their deadline, files waiting in Incoming review and unbilled work in progress.
 // The database applies the visibility rules; this only checks the role and the size of the request.
 const ids=(v:any)=>{if(!Array.isArray(v)||v.length>500)fail(400,'Ask for 500 clients or fewer.');return v.map((x:any)=>uuid(x));};
 export async function clientRegisterAction(tx:any,a:any,p:any){
  if(p.action==='client_card_flags'){
   if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'The client card facts are for Supervisors, Managers and Partners.');
   const rows=await tx`select * from erp_private.client_card_flags(${tx.array(ids(p.client_ids))}::uuid[])`;
-  return {rows:rows.map((r:any)=>({client_id:r.client_id,kra_open:Number(r.kra_open||0),kra_days:r.kra_days===null?null:Number(r.kra_days),incoming_waiting:Number(r.incoming_waiting||0),incoming_overdue:Number(r.incoming_overdue||0),forensic_file:!!r.forensic_file}))};
+  return {rows:rows.map((r:any)=>({client_id:r.client_id,kra_open:Number(r.kra_open||0),kra_days:r.kra_days===null?null:Number(r.kra_days),incoming_waiting:Number(r.incoming_waiting||0),incoming_overdue:Number(r.incoming_overdue||0)}))};
  }
  if(p.action==='client_card_wip'){
   if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'Work in progress is shown to Managers and Partners only.');

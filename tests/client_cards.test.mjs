@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {clientProgress,nextStep,clientStatus,cardStatus,setupCompletion,alertBadges,setupRing,nextAction,stateCounts,clientCard,chipRow,CLIENT_STATES} from '../staff-client-cards.mjs';
+import {PROFILE_TABS} from '../staff-client-profile.mjs';
 import {rowMeta,compactKes} from '../staff-client-register.mjs';
 import {areaForStaffAction} from '../supabase/functions/staff-workspace-v12/staff-access-control.mjs';
 
@@ -65,7 +66,7 @@ test('main button: KYC and tax steps open their screens; ready clients get a tas
  assert.deepEqual(nextAction(nextStep(done()),{open_tasks:1}),{label:'Review 1 task',step:'tasks'});
  assert.deepEqual(nextAction(nextStep(done()),{open_tasks:0}),{label:'Open client file',step:'file'});
  assert.deepEqual(nextAction(nextStep(done()),null),{label:'Open client file',step:'file'});
- assert.match(card(done(),{meta:{open_tasks:3}}),/class="primary cc-main" data-client-open="c1">Review 3 tasks</);
+ assert.match(card(done(),{meta:{open_tasks:3}}),/class="primary cc-main" data-client-open="c1" data-client-tab="projects">Review 3 tasks</);
  assert.match(card(done()),/class="primary cc-main" data-client-open="c1">Open client file</);
  assert.equal(nextAction(nextStep(base({readiness:undefined})),null).step,'loading','while mappings load the button opens the set-up guide');
 });
@@ -99,17 +100,19 @@ test('status: red before amber before green; overdue tasks and late files turn a
  assert.equal(cardStatus(base({readiness:undefined}),{flags:{kra_open:1,kra_days:0}}).key,'action','a KRA warning does not wait for the set-up check');
 });
 
-test('warning badges: KRA red with days left, Incoming review amber, forensic only when the server says so',()=>{
- assert.equal(alertBadges(null,esc),'');assert.equal(alertBadges({kra_open:0,incoming_waiting:0,forensic_file:false},esc),'');
+test('warning badges: KRA red with days left, Incoming review amber, and never anything forensic',()=>{
+ assert.equal(alertBadges(null,esc),'');assert.equal(alertBadges({kra_open:0,incoming_waiting:0},esc),'');
  const kra=alertBadges({kra_open:1,kra_days:3},esc);assert.match(kra,/class="cc-alert red" data-suite="kra-open"[^>]*><span aria-hidden="true">🚨<\/span> KRA notice: 3 days left</);
  assert.match(alertBadges({kra_open:2,kra_days:1},esc),/1 day left \(\+1 more\)/);assert.match(alertBadges({kra_open:1,kra_days:0},esc),/due today/);assert.match(alertBadges({kra_open:1,kra_days:-3},esc),/overdue by 3 days/);
  const inc=alertBadges({incoming_waiting:2,incoming_overdue:0},esc);assert.match(inc,/class="cc-alert amber" data-suite="incoming-open"[^>]*><span aria-hidden="true">⚠️<\/span> Incoming review: 2 files</);
  assert.match(alertBadges({incoming_waiting:1,incoming_overdue:1},esc),/Incoming review: 1 file, 1 overdue/);
- assert.match(alertBadges({forensic_file:true},esc),/<span class="cc-alert dark"><span aria-hidden="true">🔒<\/span> Forensic file<\/span>/);
- assert.doesNotMatch(alertBadges({kra_open:1,kra_days:3,incoming_waiting:1},esc),/orensic/,'no forensic text unless the flag is true');
- assert.doesNotMatch(card(done()),/orensic|cc-alerts/,'a card with no flags has no warning row and no forensic hint');
- assert.match(card(done(),{flags:{kra_open:1,kra_days:3,incoming_waiting:2,incoming_overdue:0,forensic_file:false}}),/<div class="cc-alerts"[^>]*>.*KRA notice: 3 days left.*Incoming review: 2 files.*<\/div>/);
- assert.match(card(done(),{flags:{forensic_file:true}}),/Forensic file/);
+ assert.equal(alertBadges({forensic_file:true},esc),'','even if a forensic flag were ever sent, the card has no place to show it');
+ assert.doesNotMatch(alertBadges({kra_open:1,kra_days:3,incoming_waiting:1},esc),/orensic/,'no forensic text on a warning row');
+ assert.doesNotMatch(card(done()),/orensic|cc-alerts/,'a card with no flags has no warning row');
+ assert.match(card(done(),{flags:{kra_open:1,kra_days:3,incoming_waiting:2,incoming_overdue:0}}),/<div class="cc-alerts"[^>]*>.*KRA notice: 3 days left.*Incoming review: 2 files.*<\/div>/);
+ assert.doesNotMatch(card(done(),{flags:{forensic_file:true,kra_open:1,kra_days:2}}),/orensic|🔒/,'a card never mentions a forensic file');
+ assert.doesNotMatch(readFileSync(new URL('../staff-client-cards.mjs',import.meta.url),'utf8')+readFileSync(new URL('../staff-client-register.mjs',import.meta.url),'utf8')+readFileSync(new URL('../supabase/functions/staff-workspace-v12/client-register-actions.ts',import.meta.url),'utf8'),/orensic/,'no forensic code in the card, the register or the card actions');
+ assert.doesNotMatch(readFileSync(new URL('../staff-pilot.css',import.meta.url),'utf8'),/cc-alert\.dark/);
 });
 
 test('metrics row: zeros and empty values are not drawn; WIP is compact and explained',()=>{
@@ -148,7 +151,7 @@ test('the page loads the card facts safely: one request per minute, WIP only for
  assert.match(pilot,/if\(isLeader\(\)\)void ensureCardFacts\(rows\.map\(c=>c\.client_id\)\)/);
  assert.match(pilot,/request\(\{action:'client_card_flags',client_ids:list\}\)/);assert.match(pilot,/\['PARTNER','MANAGER'\]\.includes\(data\.me\.category_code\)&&canArea\('billing_wip'\)/);
  assert.match(pilot,/Date\.now\(\)-cardFacts\.at<60000/);assert.match(pilot,/ids\.slice\(0,500\)/);
- assert.match(pilot,/\/\^\(\?:kra_\|incoming_\|forensic_open\$\)\/\.test\(String\(p\?\.action\|\|''\)\)\|\|options\.uploadKind==='incoming'\)cardFacts\.at=0/);
+ assert.match(pilot,/\/\^\(\?:kra_\|incoming_\)\/\.test\(String\(p\?\.action\|\|''\)\)\|\|options\.uploadKind==='incoming'\)cardFacts\.at=0/);
  assert.match(pilot,/cardFlags=new Map\(\);cardWip=new Map\(\);cardFacts\.key='';cardFacts\.at=0;/,'signing out forgets the facts');
  assert.match(pilot,/stateHidden=st!=='all'&&r\.dataset\.state!=='all'&&r\.dataset\.state!==st/);
  assert.match(pilot,/document\.querySelectorAll\('\.cc-more\[open\]'\)\.forEach\(d=>\{if\(d!==more\|\|e\.target\.closest\('\.cc-menu button'\)\)d\.open=false;\}\)/,'the menu closes on an outside click or a choice');
@@ -173,4 +176,15 @@ test('the Clients screen uses the card grid and keeps search, structure and stat
  assert.doesNotMatch(pilot,/<th>Purchase mapping setup<\/th>/);
  assert.match(pilot,/stateHidden/);assert.match(pilot,/repaintClientCards/);
  assert.match(css,/\.client-grid\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(min\(100%,380px\),1fr\)\)/);
+});
+
+test('Review N tasks opens the client file on its Projects & Tasks tab, and the client page shows the same status as the card',()=>{
+ const pilot=readFileSync(new URL('../staff-pilot.mjs',import.meta.url),'utf8'),profile=readFileSync(new URL('../staff-client-profile.mjs',import.meta.url),'utf8');
+ assert.match(card(done(),{meta:{open_tasks:3}}),/data-client-open="c1" data-client-tab="projects">Review 3 tasks</);
+ assert.doesNotMatch(card(done(),{meta:{open_tasks:0}}),/data-client-tab/);
+ assert.match(pilot,/pendingClientTab=b\.dataset\.clientTab\|\|''/);assert.match(pilot,/clientTab=pendingClientTab\|\|'overview'/);
+ assert.match(pilot,/status=cardStatus\(progress,\{flags:cardFlags\.get\(c\.client_id\)/);assert.doesNotMatch(pilot,/status=clientStatus\(/);
+ assert.match(pilot,/void ensureCardFacts\(\[c\.client_id\]\)/);
+ assert.match(profile,/data-client-status="\$\{id\}"/);
+ assert.ok(PROFILE_TABS.some(([k])=>k==='projects'));
 });

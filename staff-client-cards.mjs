@@ -80,13 +80,12 @@ export function cardStatus(p,{flags=null,meta=null}={}){
 }
 
 const dayText=d=>d<0?`overdue by ${-d} day${d===-1?'':'s'}`:d===0?'due today':`${d} day${d===1?'':'s'} left`;
-// Warnings on the card. The forensic mark reaches the page only for the lead of that file (the database decides); nobody else is told.
+// Warnings on the card: KRA notices and Incoming review only.
 export function alertBadges(flags,esc){
  if(!flags)return '';
  const out=[];
  if(flags.kra_open>0)out.push(`<button type="button" class="cc-alert red" data-suite="kra-open" data-id=""><span aria-hidden="true">🚨</span> KRA notice: ${esc(dayText(flags.kra_days))}${flags.kra_open>1?` (+${flags.kra_open-1} more)`:''}</button>`);
  if(flags.incoming_waiting>0)out.push(`<button type="button" class="cc-alert amber" data-suite="incoming-open" data-id=""><span aria-hidden="true">⚠️</span> Incoming review: ${flags.incoming_waiting} file${flags.incoming_waiting===1?'':'s'}${flags.incoming_overdue>0?`, ${flags.incoming_overdue} overdue`:''}</button>`);
- if(flags.forensic_file)out.push(`<span class="cc-alert dark"><span aria-hidden="true">🔒</span> Forensic file</span>`);
  return out.length?`<div class="cc-alerts" aria-label="Warnings for this client">${out.join('')}</div>`:'';
 }
 
@@ -114,7 +113,7 @@ export function clientCard({client:c,progress:p,esc,structureLabel,leader,lightA
  const attrs=`data-search="${esc(searchText)}" data-structure="${esc(c.legal_structure||'')}" data-state="${leader?(status.key==='checking'?'setup':status.key):'all'}"`;
  if(!leader)return `<article class="client-card" ${attrs}><div class="cc-head"><div><h3>${detailsVisible?`<button class="link" data-client-view="${id}">${esc(c.company_name)}</button>`:esc(c.company_name)}</h3><div class="cc-meta">${esc(sub)}${lifecycleBadge(c,esc)}</div></div></div>${tags}${lightActions?`<div class="cc-foot">${lightActions}</div>`:''}</article>`;
  const comp=setupCompletion(p),act=nextAction(step,meta);
- const target={profile:`data-v3="client" data-id="${id}"`,kyc:`data-suite="compliance" data-id="${id}"`,tax:`data-suite="tax-profile" data-id="${id}"`,activities:`data-setup-guide="${id}"`,'tb-post':`data-setup-guide="${id}"`,'tb-stage':`data-setup-guide="${id}"`,loading:`data-setup-guide="${id}"`,tasks:`data-client-open="${id}"`,file:`data-client-open="${id}"`}[act.step];
+ const target={profile:`data-v3="client" data-id="${id}"`,kyc:`data-suite="compliance" data-id="${id}"`,tax:`data-suite="tax-profile" data-id="${id}"`,activities:`data-setup-guide="${id}"`,'tb-post':`data-setup-guide="${id}"`,'tb-stage':`data-setup-guide="${id}"`,loading:`data-setup-guide="${id}"`,tasks:`data-client-open="${id}" data-client-tab="projects"`,file:`data-client-open="${id}"`}[act.step];
  const menu=[[`data-client-open="${id}"`,'Open client file'],[`data-client="${id}"`,'View details'],[`data-client-accounts="${id}"`,'Client accounts'],[`data-setup-guide="${id}"`,'Continue set-up'],[`data-suite="compliance" data-id="${id}"`,'Edit KYC and contacts'],[`data-suite="tax-profile" data-id="${id}"`,'Tax profile'],[`data-v3="client" data-id="${id}"`,'Entity and activities']]
   .map(([a,l])=>`<button type="button" role="menuitem" ${a}>${l}</button>`).join('');
  return `<article class="client-card" ${attrs}><div class="cc-head"><div><h3><button class="link" data-client-open="${id}">${esc(c.company_name)}</button></h3><div class="cc-meta">${esc(sub)}${lifecycleBadge(c,esc)}</div></div><span class="badge ${status.tone}" data-client-status="${id}"${status.reasons.length?` title="${esc(status.reasons.join('. '))}"`:''}><span aria-hidden="true">${status.icon}</span> ${esc(status.label)}</span></div>${tags}${alertBadges(flags,esc)}${extra}${setupRing(comp,id,esc)}<div class="cc-foot"><button type="button" class="primary cc-main" ${target}>${esc(act.label)}</button><details class="cc-more"><summary aria-label="More actions for ${esc(c.company_name)}" title="More actions"><span aria-hidden="true">⋯</span></summary><div class="cc-menu" role="menu" aria-label="More actions">${menu}</div></details></div></article>`;
