@@ -92,7 +92,10 @@ export async function kraAction(tx:any,a:any,p:any):Promise<any>{
   const documents=c.status==='Open'||c.status==='Responded'?await tx`select document_id,file_name,category from erp_private.kra_client_documents(${c.client_id}::uuid)`:[];
   const projects=c.status==='Open'||c.status==='Responded'?await tx`select p.project_id,p.project_name,p.service_code,p.status from erp_private.projects p
    where p.client_id=${c.client_id} and p.deleted_at is null and p.status<>'Archived' and erp_private.project_allowed(p.project_id) order by p.project_name`:[];
-  return {case:c,task,requests,flags,documents,projects};
+  const tickets=await tx`select t.ticket_id,t.ticket_number,sv.service_name,t.status,t.priority,t.response_due_on,t.resolution_due_on,coalesce(s.full_name,'A colleague') assigned_name
+   from erp_private.client_support_tickets t join erp_private.client_support_services sv on sv.service_code=t.service_code left join erp_private.staff_members s on s.staff_id=t.assigned_to
+   where t.kra_case_id=${c.case_id} order by t.opened_at desc limit 50`;
+  return {case:c,task,requests,flags,documents,projects,tickets};
  }
 
  if(p.action==='kra_settings_read'){
