@@ -86,6 +86,28 @@ END $$;
 CREATE INDEX IF NOT EXISTS tax_period_projects_compliance_year_idx
   ON tax_period_projects (tax_compliance_year_id, period_start, period_end);
 
+CREATE OR REPLACE FUNCTION validate_tax_period_compliance_year()
+RETURNS TRIGGER LANGUAGE plpgsql AS $
+DECLARE
+  year_start DATE;
+  year_end DATE;
+BEGIN
+  IF NEW.tax_compliance_year_id IS NULL THEN RETURN NEW; END IF;
+  SELECT financial_year_start, financial_year_end INTO year_start, year_end
+  FROM tax_compliance_years WHERE tax_compliance_year_id = NEW.tax_compliance_year_id;
+  IF year_start IS NULL OR NEW.period_start < year_start OR NEW.period_end > year_end THEN
+    RAISE EXCEPTION 'Tax period dates must fall within the linked client financial year.';
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS tax_period_projects_compliance_year_dates ON tax_period_projects;
+CREATE TRIGGER tax_period_projects_compliance_year_dates
+BEFORE INSERT OR UPDATE OF tax_compliance_year_id, period_start, period_end
+ON tax_period_projects
+FOR EACH ROW EXECUTE FUNCTION validate_tax_period_compliance_year();
+
 -- Aggregate credit reconciliation is obligation-specific. Only reviewed,
 -- applied values enter a tax computation. Credit notes are adjustments to VAT
 -- output/input tax, not free-standing generic credits.
@@ -175,6 +197,9 @@ BEGIN
      AND obligation_tax_type <> 'INCOME_TAX' THEN
     RAISE EXCEPTION 'Income-tax withholding and instalment credits can only be recorded against an Income Tax obligation.';
   END IF;
+  IF NEW.credit_type = 'CREDIT_BROUGHT_FORWARD' AND obligation_tax_type NOT IN ('VAT','INCOME_TAX') THEN
+    RAISE EXCEPTION 'Brought-forward credits are enabled only for VAT and Income Tax in this workflow.';
+  END IF;
   IF NEW.credit_type = 'OTHER_TAX_CREDIT' AND obligation_tax_type NOT IN ('VAT','INCOME_TAX') THEN
     RAISE EXCEPTION 'Other tax credits are not enabled for this obligation type.';
   END IF;
@@ -236,6 +261,30 @@ CREATE TABLE IF NOT EXISTS tax_obligation_source_totals (
 
 CREATE INDEX IF NOT EXISTS tax_obligation_source_totals_period_idx
   ON tax_obligation_source_totals (tax_project_obligation_id, source_type, recorded_at DESC);
+
+CREATE OR REPLACE FUNCTION validate_tax_obligation_source_total()
+RETURNS TRIGGER LANGUAGE plpgsql AS $
+DECLARE
+  batch_obligation_id BIGINT;
+  batch_source_type TEXT;
+  batch_status TEXT;
+BEGIN
+  SELECT tax_project_obligation_id, source_type, status
+    INTO batch_obligation_id, batch_source_type, batch_status
+  FROM tax_upload_batches WHERE tax_upload_batch_id = NEW.tax_upload_batch_id;
+  IF batch_obligation_id IS DISTINCT FROM NEW.tax_project_obligation_id
+     OR batch_source_type IS DISTINCT FROM NEW.source_type
+     OR batch_status <> 'ACCEPTED' THEN
+    RAISE EXCEPTION 'Source totals must match an accepted upload batch for the same obligation and source.';
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS tax_obligation_source_totals_validate ON tax_obligation_source_totals;
+CREATE TRIGGER tax_obligation_source_totals_validate
+BEFORE INSERT OR UPDATE ON tax_obligation_source_totals
+FOR EACH ROW EXECUTE FUNCTION validate_tax_obligation_source_total();
 
 -- Credit notes are recorded as signed VAT adjustments with evidence and reviewer
 -- approval. Output VAT credit notes reduce net VAT; input VAT credit notes reverse
@@ -302,14 +351,17 @@ BEFORE INSERT OR UPDATE ON tax_period_adjustments
 FOR EACH ROW EXECUTE FUNCTION validate_tax_period_adjustment();
 
 CREATE OR REPLACE FUNCTION prevent_approved_tax_adjustment_mutation()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+RETURNS TRIGGER LANGUAGE plpgsql AS $
 BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Tax adjustments are retained for audit; enter a correcting adjustment instead.';
+  END IF;
   IF OLD.status IN ('APPROVED','REJECTED') THEN
     RAISE EXCEPTION 'Reviewed tax adjustments are immutable; enter a correcting adjustment.';
   END IF;
   RETURN NEW;
 END;
-$$;
+$;
 
 DROP TRIGGER IF EXISTS tax_period_adjustments_immutable_review ON tax_period_adjustments;
 CREATE TRIGGER tax_period_adjustments_immutable_review
@@ -335,7 +387,7 @@ CREATE TABLE IF NOT EXISTS tax_computation_snapshots (
   vat_payable NUMERIC(16,2) CHECK (vat_payable >= 0),
   vat_excess_credit NUMERIC(16,2) CHECK (vat_excess_credit >= 0),
   review_status TEXT NOT NULL DEFAULT 'PREPARED'
-    CHECK (review_status IN ('PREPARED','REVIEWED','APPROVED','SUPERSEDED')),
+    CHECK (review_status IN ('PREPARED','REVIEWED','APPROVED')),
   computed_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
   computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   reviewed_by_user_id BIGINT REFERENCES users(user_id) ON DELETE RESTRICT,
@@ -344,7 +396,7 @@ CREATE TABLE IF NOT EXISTS tax_computation_snapshots (
   UNIQUE (tax_project_obligation_id, snapshot_no),
   CHECK ((vat_payable IS NULL AND vat_excess_credit IS NULL)
       OR (vat_payable IS NOT NULL AND vat_excess_credit IS NOT NULL AND NOT (vat_payable > 0 AND vat_excess_credit > 0))),
-  CHECK ((review_status IN ('PREPARED','SUPERSEDED') AND reviewed_by_user_id IS NULL AND reviewed_at IS NULL)
+  CHECK ((review_status = 'PREPARED' AND reviewed_by_user_id IS NULL AND reviewed_at IS NULL)
       OR (review_status IN ('REVIEWED','APPROVED') AND reviewed_by_user_id IS NOT NULL AND reviewed_at IS NOT NULL))
 );
 
@@ -620,9 +672,9 @@ CREATE TABLE IF NOT EXISTS support_ticket_billing (
     (is_billable AND billing_status <> 'NON_BILLABLE')
   ),
   CHECK (
-    (billing_status IN ('PENDING_APPROVAL','CANCELLED') AND approved_by_user_id IS NULL AND approved_at IS NULL)
-    OR
-    (billing_status IN ('APPROVED','READY_FOR_INVOICE','INVOICED') AND approved_fee IS NOT NULL AND approved_by_user_id IS NOT NULL AND approved_at IS NOT NULL)
+    (billing_status = 'PENDING_APPROVAL' AND approved_by_user_id IS NULL AND approved_at IS NULL)
+    OR billing_status = 'CANCELLED'
+    OR (billing_status IN ('APPROVED','READY_FOR_INVOICE','INVOICED') AND approved_fee IS NOT NULL AND approved_by_user_id IS NOT NULL AND approved_at IS NOT NULL)
   ),
   CHECK ((billing_status = 'INVOICED' AND invoice_id IS NOT NULL) OR (billing_status <> 'INVOICED' AND invoice_id IS NULL))
 );
@@ -709,6 +761,8 @@ CREATE TABLE IF NOT EXISTS tax_notices (
   created_by_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (handling_firm_id, notice_reference),
+  FOREIGN KEY (engagement_id, client_id, handling_firm_id)
+    REFERENCES engagements (engagement_id, client_id, handling_firm_id) ON DELETE RESTRICT,
   CHECK (response_due_date IS NULL OR response_due_date >= received_date)
 );
 
