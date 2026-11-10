@@ -461,7 +461,8 @@ USING (
 WITH CHECK (
   app_has_firm_access((SELECT handling_firm_id FROM documents WHERE documents.document_id = document_access_grants.document_id))
   AND EXISTS (SELECT 1 FROM users actor JOIN roles role ON role.role_id = actor.role_id
-              WHERE actor.user_id = app_user_id() AND role.hierarchy_level <= 2)
+              WHERE actor.user_id = app_user_id() AND actor.is_active AND role.hierarchy_level <= 2)
+  AND (revoked_at IS NULL OR (revoked_by_user_id = app_user_id() AND length(trim(revocation_note)) > 0))
 );
 
 ALTER TABLE document_access_logs ENABLE ROW LEVEL SECURITY;
@@ -488,6 +489,61 @@ CREATE POLICY document_review_events_select ON document_review_events FOR SELECT
 USING (app_can_access_document(document_id));
 CREATE POLICY document_review_events_insert ON document_review_events FOR INSERT
 WITH CHECK (app_can_manage_document(document_id) AND actor_user_id = app_user_id());
+
+
+CREATE OR REPLACE VIEW v_document_vault_relationships
+WITH (security_invoker = true) AS
+SELECT document.document_id, 'ENGAGEMENT'::TEXT AS relationship_type,
+       engagement.engagement_id::TEXT AS relationship_id,
+       engagement.service_type AS relationship_label,
+       document.uploaded_at AS linked_at
+FROM documents document
+JOIN engagements engagement ON engagement.engagement_id = document.engagement_id
+UNION ALL
+SELECT link.document_id, 'ENGAGEMENT_TASK'::TEXT,
+       task.task_id::TEXT, task.task_name, link.linked_at
+FROM engagement_task_document_links link
+JOIN active_engagement_tasks task ON task.task_id = link.task_id
+UNION ALL
+SELECT check_record.document_id, 'KYC_REQUIREMENT'::TEXT,
+       check_record.kyc_document_check_id::TEXT, check_record.document_requirement,
+       check_record.created_at
+FROM client_kyc_document_checks check_record
+UNION ALL
+SELECT attachment.document_id, 'AUDIT_FILE'::TEXT,
+       audit_file.audit_file_id::TEXT,
+       COALESCE(audit_file.file_reference, 'Audit file ' || to_char(audit_file.reporting_year_end,'YYYY-MM-DD')),
+       attachment.created_at
+FROM audit_file_attachments attachment
+JOIN audit_files audit_file ON audit_file.audit_file_id = attachment.audit_file_id
+WHERE attachment.document_id IS NOT NULL
+UNION ALL
+SELECT evidence.vault_document_id, 'TAX_TASK'::TEXT,
+       task.tax_period_project_task_id::TEXT, task.task_name, evidence.uploaded_at
+FROM tax_project_task_evidence evidence
+JOIN tax_period_project_tasks task ON task.tax_period_project_task_id = evidence.tax_period_project_task_id
+UNION ALL
+SELECT batch.vault_document_id, 'TAX_SOURCE_BATCH'::TEXT,
+       batch.tax_upload_batch_id::TEXT, batch.source_type || ' ' || batch.period_key::TEXT, batch.created_at
+FROM tax_upload_batches batch
+WHERE batch.vault_document_id IS NOT NULL
+UNION ALL
+SELECT submission.acknowledgement_document_id, 'TAX_FILING_ACKNOWLEDGEMENT'::TEXT,
+       submission.tax_filing_submission_id::TEXT, submission.filing_reference, submission.created_at
+FROM tax_filing_submissions submission
+WHERE submission.acknowledgement_document_id IS NOT NULL
+UNION ALL
+SELECT workpaper.vault_document_id, 'TAX_WORKPAPER'::TEXT,
+       workpaper.tax_workpaper_version_id::TEXT, 'Tax workpaper version ' || workpaper.version_no::TEXT,
+       workpaper.prepared_at
+FROM tax_workpaper_versions workpaper
+UNION ALL
+SELECT attachment.document_id, 'COMMUNICATION'::TEXT,
+       communication.hub_communication_id::TEXT,
+       communication.communication_type || ': ' || communication.subject,
+       communication.communication_at
+FROM communication_attachments attachment
+JOIN communication_hub communication ON communication.hub_communication_id = attachment.hub_communication_id;
 
 COMMIT;
 
