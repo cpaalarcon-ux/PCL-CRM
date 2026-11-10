@@ -56,6 +56,10 @@ export function caseView({r,me,button}){
   const tone=q.status==='MISSING'?'warn':q.status==='RECEIVED'?'ok':'muted';
   return `<tr><td>${esc(q.description)}${q.file_name?`<br><small>${esc(q.file_name)}</small>`:''}${q.na_reason?`<br><small>${esc(q.na_reason)}</small>`:''}</td><td>${esc(day(q.needed_by))}</td><td>${badge(q.status.replace('_',' '),tone)}</td><td>${c.status==='Open'?(q.status==='MISSING'?button('kra-attach','Attach a document',q.request_id)+(leader?' '+button('kra-na','Not applicable',q.request_id):''):button('kra-reopen','Return to missing',q.request_id)):''}</td></tr>`;}).join('')}</tbody></table></div>`:'<p class="muted full">No documents listed yet.</p>';
  if(c.status==='Open')html+=`<div class="actions full">${button('kra-request-add','+ Add a requested document',c.case_id)}</div>`;
+ // Client support tickets linked to this notice (opened from Communications Hub > Client services).
+ const tix=r.tickets||[];
+ html+=`<h3 class="full">Client support tickets linked to this notice (${tix.length})</h3>`;
+ html+=tix.length?`<div class="scroll full"><table id="kraTickets"><thead><tr><th>Ticket</th><th>Service</th><th>Status</th><th>Assigned to</th><th>Due</th></tr></thead><tbody>${tix.map(t=>`<tr><td>CST-${esc(t.ticket_number)}${t.priority&&t.priority!=='Medium'?`<small>${esc(t.priority)} priority</small>`:''}</td><td>${esc(t.service_name)}</td><td>${esc(t.status)}</td><td>${esc(t.assigned_name)}</td><td>${t.response_due_on?`<small>Respond by ${esc(day(t.response_due_on))}</small>`:''}${t.resolution_due_on?`<small>Resolve by ${esc(day(t.resolution_due_on))}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted full">No client support ticket is linked to this notice. Link one when you open or update a ticket under Communications Hub > Client services.</p>';
  // Actions.
  const actions=[];
  if(c.status==='Open'){actions.push(button('kra-respond','Mark as responded',c.case_id,'class="primary"'));actions.push(button('kra-edit','Edit the notice details',c.case_id));}

@@ -26,7 +26,7 @@ test('Client support services and closure-time invoicing',async t=>{
  await assert.rejects(q('PARTNER',`update erp_private.client_support_services set service_name='Renamed' where service_code='GENERAL_QUERY'`),/cannot be renamed/);
  await assert.rejects(()=>tx`delete from erp_private.client_support_services where service_code='GENERAL_QUERY'`,/archived, not deleted|Historical/);
  // ---- 2. Opening and working a ticket -----------------------------------------------------------------------------------------------------------------------
- const open=(role,code='KRA_NOTICE_LIFTING',o={})=>q(role,`insert into erp_private.client_support_tickets(client_id,firm_id,project_id,service_code,subject,details,opened_by,assigned_to) values($1,$2,$3,$4,$5,'Client asked for the notice to be lifted.',$6,$7) returning ticket_id`,[Z,F,o.project===undefined?PJ:o.project,code,o.subject||'Lift the agency notice on the main account',actors[role].staff_id,o.to||SUP]);
+ const open=(role,code='KRA_NOTICE_LIFTING',o={})=>q(role,`insert into erp_private.client_support_tickets(client_id,firm_id,project_id,service_code,subject,details,opened_by,assigned_to,response_due_on,resolution_due_on) values($1,$2,$3,$4,$5,'Client asked for the notice to be lifted.',$6,$7,current_date+2,current_date+10) returning ticket_id`,[Z,F,o.project===undefined?PJ:o.project,code,o.subject||'Lift the agency notice on the main account',actors[role].staff_id,o.to||SUP]);
  await assert.rejects(open('INTERN'),/does not handle|row-level security/);
  await assert.rejects(open('MANAGER','KRA_NOTICE_LIFTING',{to:actors.INTERN.staff_id}),/Assign the ticket/,'not to an Intern');
  const T1=(await open('MANAGER'))[0].ticket_id;
