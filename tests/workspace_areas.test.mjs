@@ -44,7 +44,8 @@ test('areas route through the existing ERP views and the topbar button returns H
   assert.match(html, /id="areasHome"[^>]*data-view="home"/);
   assert.match(app, /if\(b\.dataset\.view\)[\s\S]{0,150}navigateWorkspace\(b\.dataset\.view\)/);
   assert.match(app, /\$\('#areasLauncher'\)\.hidden=view!=='home'/);
-  assert.doesNotMatch(app, /workspace-nav-open|navScrim|navToggle/);
+  assert.doesNotMatch(app, /workspace-nav-open|navScrim/);
+  assert.match(html, /id="navToggle"[^>]*aria-controls="workspaceSidebar"[^>]*aria-expanded="false"/, 'the hamburger opens the menu drawer on a phone');
 });
 
 test('the area grid uses six desktop, three tablet, and two mobile columns', () => {
@@ -86,5 +87,5 @@ test('the sidebar is built from the same permission-filtered catalog as the laun
   assert.match(app, /sideItems=\[\{view:'home',title:'Home',icon:'⌂',subs:\[\]\}/);
   assert.match(app, /\$\('#sideNav'\)\.innerHTML=sideItems\.map/);
   assert.match(html, /<aside id="workspaceSidebar"[^>]*aria-label="Main navigation">/);
-  assert.match(css, /@media\(max-width:850px\)\{\s*body\.workspace-active>main>#workspace\{flex-direction:column\}/);
+  assert.match(css, /@media\(max-width:768px\)\{[^@]*\.workspace-sidebar\{position:fixed/, 'under 768px the sidebar is a drawer');
 });

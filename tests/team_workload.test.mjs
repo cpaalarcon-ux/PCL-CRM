@@ -36,7 +36,8 @@ test('the sidebar follows the agreed layout and rights are unchanged',()=>{
  for(const label of ['Clients','Projects & Tasks','Time & Attendance','Team & HR','Documents','Communications Hub','Finance & Reports','Administration'])assert.ok(app.includes(`'${label}'`),label);
  assert.match(app,/leaf\('leads','Leads & Pipeline'/,'Leads sit under Clients');
  assert.match(app,/parent\('clients','Clients','▦',\[lead\]\)/);
- assert.match(app,/parent\('projects','Projects & Tasks','▣',\[audit(,\.\.\.modLinks\('projects'\))?\]\)/,'Audit is under Projects & Tasks, not a main item');
+ assert.match(app,/parent\('projects','Projects & Tasks','▣',modLinks\('projects'\)\)/,'Projects & Tasks is the project and task manager');
+ assert.match(app,/subs=\[audit,\.\.\.modLinks\('engagements'\)\]/,'Audit files sit under Engagements & Delivery');
  assert.ok(!/sideItems=\[[^\]]*leaf\('audit'/.test(app),'Audit is not a top-level sidebar item');
  // areas (rights) are untouched
  for(const area of ['clients','projects','time_hr','documents','communications','audit','billing_wip','staff_access','settings','leads'])assert.ok(app.includes(`area:'${area}'`),area);

@@ -122,13 +122,13 @@ test('server module, upload and download routes, areas',()=>{
 });
 
 test('menu link, wiring and cache busters',()=>{
- const f=MODULE_LINKS.find(m=>m.key==='forensic');assert.equal(f.built,true);assert.equal(f.action,'forensic-open');assert.equal(f.parent,'projects');
- for(const r of ['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'])assert.ok(moduleLinks(me(r),'projects').some(x=>x.key==='forensic'&&x.suite==='forensic-open'),r);
- for(const r of ['INTERN','ADMIN'])assert.ok(!moduleLinks(me(r),'projects').some(x=>x.key==='forensic'),r);
+ const f=MODULE_LINKS.find(m=>m.key==='forensic');assert.equal(f.built,true);assert.equal(f.action,'forensic-open');assert.equal(f.parent,'engagements');
+ for(const r of ['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'])assert.ok(moduleLinks(me(r),'engagements').some(x=>x.key==='forensic'&&x.suite==='forensic-open'),r);
+ for(const r of ['INTERN','ADMIN'])assert.ok(!moduleLinks(me(r),'engagements').some(x=>x.key==='forensic'),r);
  const su=rd('staff-suite.mjs');
- assert.match(su,/import \{createForensicUI\} from '\.\/staff-forensic\.mjs\?v=20261110-forensic-v1'/);assert.match(su,/const forensic=createForensicUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await forensic\.handle\(action,id\)\)return;/);assert.match(su,/incoming,forensic\}/);
+ assert.match(su,/import \{createForensicUI\} from '\.\/staff-forensic\.mjs\?v=20261110-nav-v2'/);assert.match(su,/const forensic=createForensicUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await forensic\.handle\(action,id\)\)return;/);assert.match(su,/incoming,forensic\}/);
  assert.match(rd('staff-forensic.mjs'),/request\(f,\{file:true,uploadKind:'forensic'\}\)/);
- const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-10\.2670$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
+ const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-10\.2680$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
  assert.doesNotMatch(rd('staff-forensic.mjs')+rd(fx+'forensic-actions.ts')+rd('supabase/migrations/20261110266000_forensic_file.sql'),/ISRS\s*4000/,'the unverified standard number appears nowhere in the code');
 });
 
