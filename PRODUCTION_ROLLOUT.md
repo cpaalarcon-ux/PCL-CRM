@@ -111,3 +111,24 @@ Verified on 22 October 2026:
 - [Supabase production checklist](https://supabase.com/docs/guides/deployment/going-into-prod)
 - [Supabase storage access control](https://supabase.com/docs/guides/storage/security/access-control)
 - [Supabase database backups](https://supabase.com/docs/guides/platform/backups)
+
+
+## Document Vault go-live gate
+
+Do not admit real client files until the reviewed document-vault migration has been applied through controlled database change management and the authenticated API is connected to private object storage. The API must quarantine new uploads, scan them, calculate and retain a SHA-256 hash, enforce the firm/client/project assignment rules, and issue short-lived authorised download links.
+
+Before activation, verify the restricted KYC and engagement-letter paths, task and communication attachment links, named reviewer routing, mandatory review comments, uploader self-approval block, immutable review/access history, version superseding, explicit client release, retention and legal-hold checks, and restoration of both database metadata and object versions. Email and WhatsApp attachment intake remains disabled until their approved provider connections and sender-to-client matching are configured.
+
+
+## Tax workflow migration and go-live gates
+
+The tax workflow migration is a schema foundation only. Do not apply it to production until the server routes and staged migration have been reviewed.
+
+1. Apply the additive migration to a development database and check existing period and filing records. Keep historical periods unlinked to a financial year until staff confirm the client's actual year dates; do not infer a client year from the period end date.
+2. Implement and stage the server API routes in `backend_handoff.md`. The browser modules still use local storage and cannot enforce the database controls.
+3. Test maker-checker separation, exact-match credit reconciliation, blocked variance submission, Manager / Partner variance approval, approved adjustment evidence, source batch/hash traceability, acknowledgment blocking, approved missing-PDF exception, and locked original amendment behavior.
+4. Test support-ticket billing for billable, non-billable, unapproved fee, no engagement, wrong firm, and approved draft invoice cases. Confirm invoices use the existing invoice register and tax configuration.
+5. Test permissions with Assistant, Supervisor, Manager, Partner, and Authorized Tax Filer accounts. New tables deny direct anon/authenticated access; server routes must enforce firm, client and assignment scope.
+6. Treat the KRA notice register as case tracking only until the AUP report generator, reviewer workflow, export manifest and Section 59 pack have been separately built and validated.
+
+No live database migration, email or tax-provider connection, automatic invoice issuance, KRA filing, AUP report generation or deployment is performed by this branch update.
