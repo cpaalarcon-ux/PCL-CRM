@@ -81,13 +81,14 @@ export function cardStatus(p,{flags=null,meta=null}={}){
 }
 
 const dayText=d=>d<0?`overdue by ${-d} day${d===-1?'':'s'}`:d===0?'due today':`${d} day${d===1?'':'s'} left`;
-// Warnings on the card: KRA notices and Incoming review only.
+// Warnings on the card: KRA notices, filings (overdue, Urgent, due soon) and Incoming review. Urgent and due soon are amber and do not by themselves turn the card red.
 export function alertBadges(flags,esc,id=''){
  if(!flags)return '';
  const out=[];
  if(flags.kra_open>0)out.push(`<button type="button" class="cc-alert red" data-suite="kra-open" data-id=""><span aria-hidden="true">🚨</span> KRA notice: ${esc(dayText(flags.kra_days))}${flags.kra_open>1?` (+${flags.kra_open-1} more)`:''}</button>`);
  const open=id?`data-client-open="${esc(id)}" data-client-tab="projects"`:'';
  if(flags.filing_late>0)out.push(`<button type="button" class="cc-alert red" ${open}><span aria-hidden="true">🚨</span> Filing overdue: ${flags.filing_late_days} day${flags.filing_late_days===1?'':'s'}${flags.filing_late>1?` (+${flags.filing_late-1} more)`:''}</button>`);
+ if(flags.filing_urgent>0)out.push(`<button type="button" class="cc-alert amber" ${open} title="The firm's own deadline for this filing has been reached; the KRA due date has not passed."><span aria-hidden="true">🔥</span> Urgent: KRA date ${flags.filing_urgent_days===0?'today':'in '+flags.filing_urgent_days+' day'+(flags.filing_urgent_days===1?'':'s')}${flags.filing_urgent>1?` (+${flags.filing_urgent-1} more)`:''}</button>`);
  if(flags.filing_soon>0)out.push(`<button type="button" class="cc-alert amber" ${open}><span aria-hidden="true">⏳</span> Filing ${flags.filing_soon_days===0?'due today':'due in '+flags.filing_soon_days+' day'+(flags.filing_soon_days===1?'':'s')}${flags.filing_soon>1?` (+${flags.filing_soon-1} more)`:''}</button>`);
  if(flags.incoming_waiting>0)out.push(`<button type="button" class="cc-alert amber" data-suite="incoming-open" data-id=""><span aria-hidden="true">⚠️</span> Incoming review: ${flags.incoming_waiting} file${flags.incoming_waiting===1?'':'s'}${flags.incoming_overdue>0?`, ${flags.incoming_overdue} overdue`:''}</button>`);
  return out.length?`<div class="cc-alerts" aria-label="Warnings for this client">${out.join('')}</div>`:'';

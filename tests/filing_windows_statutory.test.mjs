@@ -68,6 +68,19 @@ test('Statutory due date windows and the internal Urgent alert',async t=>{
  const u5=await filing('monthly-vat',9,12,-1,AST);
  s=await st(u5);assert.deepEqual([s.internal_days_left,s.days_left],[-1,12]);
  assert.equal((await tx`select erp_private.filing_urgent_scan() n`)[0].n,1);
+ // ---- 4a. The client card shows the same Urgent filings as the nightly notice (build 2786), whether or not anyone is assigned to them ----------------------
+ {
+  const urgent=async role=>(await q(role,`select filing_urgent,filing_urgent_days from erp_private.client_card_flags($1::uuid[])`,[[A]]))[0];
+  assert.deepEqual(await urgent('MANAGER'),{filing_urgent:5,filing_urgent_days:3},'t1, t2, u1, u4 and u5 have reached their internal date and are not yet past the KRA date; the nearest KRA date is 3 days away');
+  assert.deepEqual(await urgent('PARTNER'),{filing_urgent:5,filing_urgent_days:3});
+  assert.deepEqual(await q('ASSISTANT',`select * from erp_private.client_card_flags($1::uuid[])`,[[A]]),[],'the card facts are not given to an Assistant');
+  await tx`update erp_private.tasks set status='Completed' where task_id=${u5}`;
+  assert.equal((await urgent('MANAGER')).filing_urgent,4,'a completed filing is no longer urgent');
+  await tx`update erp_private.tasks set status='Pending' where task_id=${u5}`;
+  // not urgent: the internal date is still ahead (u2), the KRA date has passed (u3), or no KRA date is recorded (t4, lone)
+  const ids=new Set((await tx`select task_id from erp_private.filing_state() where due_source='PERIOD' and internal_days_left<=0 and days_left>=0`).map(r=>r.task_id));
+  assert.ok(!ids.has(u2)&&!ids.has(u3)&&!ids.has(t4)&&!ids.has(lone)&&ids.has(u4)&&ids.has(u1));
+ }
  // ---- 4b. Only a CONFIRMED, per-class date counts ---------------------------------------------------------------------------------------------------------------
  // a period with only the legacy return_due_date on the client period (never confirmed) uses the task date
  {const t=id(),w=id();n++;const s0=`2025-${String(n).padStart(2,'0')}-01`,e0=`2025-${String(n).padStart(2,'0')}-28`;
