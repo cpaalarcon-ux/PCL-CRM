@@ -23,7 +23,7 @@ export function createSettingsHubUI(ctx){
  let hub=null,loading=false,failed='',q='';
  async function load(){
   if(loading)return;loading=true;
-  try{hub=await request({action:'settings_hub_read'});failed='';}catch(e){failed=e.message||'The settings hub could not be loaded.';}
+  try{const r=await request({action:'settings_hub_read'});if(!r||!Array.isArray(r.sections)||!Array.isArray(r.waiting))throw Error('The settings hub answer was not in the expected form.');hub=r;failed='';}catch(e){failed=e.message||'The settings hub could not be loaded.';}
   finally{loading=false;ctx.render();}
  }
  function card(){
