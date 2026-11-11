@@ -54,7 +54,7 @@ test('the sidebar draws the links as sub-items that open the module, never as a 
   assert.match(app,/parent\('communications','Communications Hub','◉',modLinks\('communications'\)\)/);
   assert.match(app,/subs=\[audit,\.\.\.modLinks\('engagements'\)\]\.filter\(Boolean\)/,'Audit files, KRA notices and Forensic files are the links under Engagements & Delivery');
   assert.match(app,/item\.suite\?`<button class="side-item side-sub side-module" type="button" data-suite="\$\{item\.suite\}"/);
-  assert.match(rd('staff-pilot.html'),/data-build="2026-11-11\.2781"/);
+  assert.match(rd('staff-pilot.html'),/data-build="2026-11-11\.2782"/);
 });
 test('the order matches the agreed list: Engagements & Delivery follows Communications and precedes Finance & Reports',()=>{
   const app=rd('staff-pilot.mjs');

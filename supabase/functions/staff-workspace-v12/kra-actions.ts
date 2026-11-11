@@ -5,7 +5,14 @@ import {fail,text,uuid,choice,date,revision} from './validation.mjs';
 // The system never creates the KRA project: staff create it from the template and link it to the case.
 // Rights are not in the staff rights catalogue: who may do what is decided here and in the database triggers.
 const ACTIONS=['kra_form_options','kra_list','kra_read','kra_log','kra_edit','kra_link_project','kra_respond','kra_return','kra_close','kra_cancel',
- 'kra_request_add','kra_request_attach','kra_request_na','kra_request_reopen','kra_flags','kra_check_now','kra_settings_read','kra_setting_set','kra_setting_confirm'];
+ 'kra_request_add','kra_request_attach','kra_request_na','kra_request_reopen','kra_flags','kra_check_now','kra_settings_read','kra_setting_set','kra_setting_confirm',
+ 'kra_dashboard','kra_stage','kra_event_add','kra_ack'];
+const CHANNELS=['iTax portal','Email','Hand delivery','Courier','Other'];
+const EVENT_KINDS=['Email','Call','Meeting','Letter','Note'];
+const OPEN_STAGES=['Received','Triage','In progress','Internal review','Approved to send'];
+const SUBMITTED_STAGES=['Awaiting KRA','Further information requested','Dispute or appeal','Resolved'];
+// A date and time typed in Nairobi (YYYY-MM-DDTHH:MM) becomes a timestamp with the +03:00 offset.
+function nairobiStamp(v:any){const m=/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/.exec(String(v||''));if(!m||Number.isNaN(Date.parse(`${m[1]}T${m[2]}:00+03:00`)))fail(400,'Enter the date and time the response was submitted to KRA.');return `${m[1]}T${m[2]}:00+03:00`;}
 const TYPES=['Audit notice','Assessment','Demand','Objection decision','Other'];
 const HEADS=['Income tax','VAT','PAYE','Withholding tax','Excise','Other'];
 const STATUSES=['Open','Responded','Closed','Cancelled'];
@@ -55,7 +62,8 @@ export async function kraAction(tx:any,a:any,p:any):Promise<any>{
     (select m.full_name from erp_private.staff_members m where m.staff_id=t.assigned_to) as task_assignee_name,
     (select count(*) from erp_private.kra_case_requests r where r.case_id=c.case_id and r.status='MISSING')::int as missing_requests,
     (select count(*) from erp_private.kra_case_requests r where r.case_id=c.case_id)::int as total_requests,
-    coalesce((select string_agg(f.flag_code,'' order by f.flag_code) from erp_private.kra_compliance_flags f where f.case_id=c.case_id and f.status='Open'),'') as open_flags
+    coalesce((select string_agg(f.flag_code,'' order by f.flag_code) from erp_private.kra_compliance_flags f where f.case_id=c.case_id and f.status='Open'),'') as open_flags,
+    (select pg.stage from erp_private.kra_case_progress pg where pg.case_id=c.case_id) as stage
    from erp_private.kra_cases c join erp_private.clients cl on cl.client_id=c.client_id
     left join erp_private.projects pr on pr.project_id=c.project_id left join erp_private.tasks t on t.task_id=c.verification_task_id
    where (${status}::text is null or c.status=${status}) and (${client}::uuid is null or c.client_id=${client})
@@ -95,7 +103,16 @@ export async function kraAction(tx:any,a:any,p:any):Promise<any>{
   const tickets=await tx`select t.ticket_id,t.ticket_number,sv.service_name,t.status,t.priority,t.response_due_on,t.resolution_due_on,coalesce(s.full_name,'A colleague') assigned_name
    from erp_private.client_support_tickets t join erp_private.client_support_services sv on sv.service_code=t.service_code left join erp_private.staff_members s on s.staff_id=t.assigned_to
    where t.kra_case_id=${c.case_id} order by t.opened_at desc limit 50`;
-  return {case:c,task,requests,flags,documents,projects,tickets};
+  const progress=(await tx`select pg.stage,pg.stage_changed_at,pg.submitted_at,pg.submission_channel,pg.submission_reference,pg.ack_document_id,(select d.file_name from erp_private.documents d where d.document_id=pg.ack_document_id) as ack_file_name,pg.revision
+   from erp_private.kra_case_progress pg where pg.case_id=${c.case_id}`)[0]||null;
+  const events=await tx`select e.event_id,e.kind,e.happened_at,e.participants,e.summary,e.document_id,coalesce(s.full_name,case when e.recorded_by is null then 'The system' else 'A colleague' end) as recorded_by_name,e.recorded_by,
+    (select d.file_name from erp_private.documents d where d.document_id=e.document_id) as file_name
+   from erp_private.kra_case_events e left join erp_private.staff_members s on s.staff_id=e.recorded_by where e.case_id=${c.case_id} order by e.happened_at,e.event_id limit 300`;
+  return {case:c,task,requests,flags,documents,projects,tickets,progress,events};
+ }
+
+ if(p.action==='kra_dashboard'){
+  return {dashboard:(await tx`select erp_private.kra_dashboard() as r`)[0].r};
  }
 
  if(p.action==='kra_settings_read'){
@@ -166,8 +183,13 @@ export async function kraAction(tx:any,a:any,p:any):Promise<any>{
  }
  if(p.action==='kra_respond'){
   same(c,p);if(c.status!=='Open')fail(400,'Only an open case can be marked as responded.');
-  const on=date(String(p.responded_on||''));if(!on)fail(400,'Enter the date the response was sent to KRA.');
-  await tx`update erp_private.kra_cases set status='Responded',responded_on=${on} where case_id=${c.case_id}`;
+  const at=nairobiStamp(p.submitted_at),channel=choice(p.submission_channel,CHANNELS),ref=text(p.submission_reference,200);
+  if(ref.length<3)fail(400,'Enter the reference KRA gave, or the iTax acknowledgment number (at least 3 characters).');
+  const ack=p.ack_document_id?uuid(p.ack_document_id):null;
+  const missing=await tx`select description from erp_private.kra_case_requests where case_id=${c.case_id} and status='MISSING' order by created_at`;
+  if(missing.length)fail(400,`${missing.length} requested document(s) are still missing (${missing.map((m:any)=>m.description).join('; ').slice(0,300)}). Attach them, or have a Manager or Partner mark them not applicable with a reason, before submitting to KRA.`);
+  await tx`update erp_private.kra_case_progress set submitted_at=${at},submission_channel=${channel},submission_reference=${ref},ack_document_id=${ack} where case_id=${c.case_id}`;
+  await tx`update erp_private.kra_cases set status='Responded',responded_on=${at.slice(0,10)} where case_id=${c.case_id}`;
   return {ok:true};
  }
  if(p.action==='kra_return'){
@@ -187,6 +209,27 @@ export async function kraAction(tx:any,a:any,p:any):Promise<any>{
   if(!['Open','Responded'].includes(c.status))fail(400,'This case is already closed.');
   const note=text(p.note,500);if(note.length<10)fail(400,'Say why the case is cancelled, in at least 10 characters.');
   await tx`update erp_private.kra_cases set status='Cancelled',close_note=${note} where case_id=${c.case_id}`;
+  return {ok:true};
+ }
+
+ if(p.action==='kra_stage'){
+  same(c,p);const stage=text(p.stage,40);
+  if(c.status==='Open'&&!OPEN_STAGES.includes(stage))fail(400,'Choose a stage from the list. Submitting the case to KRA is done with Mark as submitted.');
+  if(c.status==='Responded'&&!SUBMITTED_STAGES.includes(stage))fail(400,'Choose a stage from the list.');
+  if(!['Open','Responded'].includes(c.status))fail(400,'This case is closed.');
+  if(['Approved to send','Resolved'].includes(stage))leaderOf(a,`Only a Manager or Partner can set the stage "${stage}".`);
+  await tx`update erp_private.kra_case_progress set stage=${stage} where case_id=${c.case_id}`;
+  return {ok:true};
+ }
+ if(p.action==='kra_ack'){
+  if(!['Open','Responded'].includes(c.status))fail(400,'This case is closed.');
+  await tx`update erp_private.kra_case_progress set ack_document_id=${uuid(p.document_id)} where case_id=${c.case_id}`;
+  return {ok:true};
+ }
+ if(p.action==='kra_event_add'){
+  const kind=choice(p.kind,EVENT_KINDS),summary=text(p.summary,2000);if(summary.length<3)fail(400,'Write what was said or sent, in at least 3 characters.');
+  const when=p.happened_at?nairobiStamp(p.happened_at):null,doc=p.document_id?uuid(p.document_id):null,who=p.participants?text(p.participants,300):null;
+  await tx`insert into erp_private.kra_case_events(case_id,kind,happened_at,recorded_by,participants,summary,document_id) values(${c.case_id},${kind},coalesce(${when}::timestamptz,now()),${a.staff_id},${who},${summary},${doc})`;
   return {ok:true};
  }
 

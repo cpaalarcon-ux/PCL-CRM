@@ -24,12 +24,13 @@ test('Step 7: KRA notice log, verification task and flags',async t=>{
   return q(role,`insert into erp_private.kra_cases(client_id,handling_firm_id,notice_reference,notice_type,tax_head,period_start,period_end,notice_date,received_on,deadline_date,summary,notice_document_id,project_id,logged_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning case_id`,[client,F,v.ref,v.type,v.head,v.ps,v.pe,v.nd,v.rc,v.dl,v.sum,v.doc,v.proj,actors[role].staff_id]).then(r=>r[0].case_id);};
  const row=async c=>j((await tx`select * from erp_private.kra_cases where case_id=${c}`)[0]);
  const flags=async(c,status)=>j(await tx`select flag_code,severity,status,resolved_how,resolved_by from erp_private.kra_compliance_flags where case_id=${c} and (${status}::text is null or status=${status}) order by flag_code,created_at`);
- const open=async c=>(await flags(c,'Open')).map(f=>f.flag_code).join('');
+ const open=async c=>(await flags(c,'Open')).map(f=>f.flag_code).filter(x=>x!=='E').join(''); // flag E (the Partner alert) has its own test in kra_case_progress.test.mjs
+ const respond=async(role,c,on)=>{await q(role,`update erp_private.kra_case_progress set submitted_at=now(),submission_channel='Email',submission_reference='KRA-ACK-1' where case_id=$1`,[c]);await q(role,`update erp_private.kra_cases set status='Responded',responded_on=$2 where case_id=$1`,[c,on]);};
  const doc=async(client=A,category='Permanent File')=>{const d=id();await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${d},${client},${F},${category},${'KRA '+category+'.pdf'},${'k/'+d},10,${'a'.repeat(64)},'application/pdf',${M})`;return d;};
 
  // ---- 1. Settings are defaults until a Partner confirms them -----------------------------------------------------------------------------------
  const st=j(await tx`select setting_key,int_value,text_value,rule_status from erp_private.kra_check_settings order by setting_key`);
- assert.equal(st.length,11);assert.ok(st.every(s=>s.rule_status==='Suggested'),'nothing is confirmed at the start');
+ assert.equal(st.length,13);assert.ok(st.every(s=>s.rule_status==='Suggested'),'nothing is confirmed at the start');
  const sv=k=>st.find(s=>s.setting_key===k);
  assert.deepEqual([sv('task_lead_days').int_value,sv('urgent_below_days').int_value,sv('urgent_task_lead_days').int_value,sv('flag_b_days').int_value,sv('flag_c_days').int_value,sv('flag_d_days').int_value],[7,7,2,3,2,14]);
  assert.deepEqual(['a','b','c','d'].map(k=>sv('severity_'+k).text_value),['HIGH','CRITICAL','CRITICAL','MEDIUM']);
@@ -119,10 +120,10 @@ test('Step 7: KRA notice log, verification task and flags',async t=>{
  assert.match((await tx`select detail from erp_private.kra_compliance_flags where case_id=${c4c}`)[0].detail,/passed 2 day/);
  await assert.rejects(q('ASSISTANT',`update erp_private.kra_cases set status='Responded' where case_id=$1`,[c4]),/Record the date the response/);
  await assert.rejects(q('ASSISTANT',`update erp_private.kra_cases set status='Responded',responded_on=$2 where case_id=$1`,[c4,D(1)]),/between the date received and today/);
- await q('ASSISTANT',`update erp_private.kra_cases set status='Responded',responded_on=$2 where case_id=$1`,[c4,D(0)]);
+ await respond('ASSISTANT',c4,D(0));
  let r4=await row(c4);assert.deepEqual([r4.status,r4.responded_on,r4.responded_by],['Responded',D(0),AST]);
  assert.equal(await open(c4),'','responding clears flag B');
- assert.equal((await flags(c4,'Resolved')).length,1);
+ assert.equal((await flags(c4,'Resolved')).filter(f=>f.flag_code!=='E').length,1);
  await assert.rejects(q('ASSISTANT',`update erp_private.kra_cases set summary='Rewritten summary of the notice' where case_id=$1`,[c4]),/cannot be edited/);
  await assert.rejects(q('ASSISTANT',`update erp_private.kra_cases set status='Open',return_note='Sent in error by mistake' where case_id=$1`,[c4]),/Only a Manager or Partner can return/);
  // The deadline moves: the task moves with it and flag B can clear.
@@ -160,13 +161,13 @@ test('Step 7: KRA notice log, verification task and flags',async t=>{
  assert.equal((await tx`select document_id from erp_private.kra_case_requests where request_id=${q1.request_id}`)[0].document_id,null);
  await q('MANAGER',`update erp_private.kra_case_requests set status='NOT_APPLICABLE',na_reason='The client holds no such records.' where request_id=$1`,[q1.request_id]);
  assert.equal(await open(c6),'B','a Manager marking it not applicable with a reason clears flag C');
- await q('ASSISTANT',`update erp_private.kra_cases set status='Responded',responded_on=$2 where case_id=$1`,[c6,D(0)]);
+ await respond('ASSISTANT',c6,D(0));
  assert.equal(await open(c6),'');
  await assert.rejects(rq(c6,'More records for the year 2025'),/only while the case is open/);
 
  // ---- 7. Flag D, the Partner's Approve & Close, and the nightly run ----------------------------------------------------------------------------------
  const c7=await log('ASSISTANT',A,{dl:D(60),ref:'KRA/D/1'});
- await q('ASSISTANT',`update erp_private.kra_cases set status='Responded',responded_on=$2 where case_id=$1`,[c7,D(0)]);
+ await respond('ASSISTANT',c7,D(0));
  assert.equal(await open(c7),'');
  const nightly=async(days)=>j((await tx`select erp_private.kra_run_checks((${T0}::date+${days}::int)) r`)[0].r);
  await assert.rejects(q('ASSISTANT',`select erp_private.kra_run_checks()`),/Only a Manager or Partner/);
@@ -189,7 +190,7 @@ test('Step 7: KRA notice log, verification task and flags',async t=>{
  // Flag D can count from the deadline instead (a setting no one has confirmed).
  await q('PARTNER',`update erp_private.kra_check_settings set text_value='deadline' where setting_key='flag_d_basis'`);
  const c8=await log('ASSISTANT',A,{dl:D(10),ref:'KRA/D/2'});
- await q('ASSISTANT',`update erp_private.kra_cases set status='Responded',responded_on=$2 where case_id=$1`,[c8,D(0)]);
+ await respond('ASSISTANT',c8,D(0));
  await nightly(14);assert.equal(await open(c8),'','counted from the deadline, 14 days after the response is only 4 days after the deadline');
  await nightly(24);assert.equal(await open(c8),'D');
  await q('PARTNER',`update erp_private.kra_check_settings set text_value='response' where setting_key='flag_d_basis'`);
