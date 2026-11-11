@@ -1,5 +1,6 @@
 import {fail,text,uuid} from './validation.mjs';
 import {ageDebtors} from './debtors-rules.mjs';
+import {suggestReceipts} from './receipt-match-rules.mjs';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v).slice(0,10);
 const one=(rows:any[])=>{if(!rows.length)fail(403,'This record is not available to your account.');return rows[0];};
 const num=(v:any)=>{const n=Number(v);return Number.isFinite(n)?n:0;};
@@ -24,11 +25,14 @@ export async function debtorsRead(tx:any,l:any,asOf:string){
  const used=new Map<string,number>();for(const a of allocations)used.set(a.bank_row_id,round((used.get(a.bank_row_id)||0)+num(a.amount)));
  const receipts=bank.slice(0,5000).map((r:any)=>{const credit=num(r.normalized.credit),allocated=used.get(r.row_id)||0;return {row_id:r.row_id,date:day(r.normalized.date||from),reference:String(r.normalized.reference||r.normalized.description||'row '+r.source_row),credit,allocated,remaining:round(credit-allocated)};});
  const open=receipts.filter((r:any)=>r.remaining>0);
+ // Suggested matches: a pointer only. Nothing is allocated until a person opens one and confirms it.
+ const textOf=new Map(bank.slice(0,5000).map((r:any)=>[r.row_id,[r.normalized.reference,r.normalized.description,r.normalized.narration,r.normalized.party].filter((x:any)=>x!=null&&String(x).trim()!=='').join(' ')]));
+ const matches=suggestReceipts({receipts:open.map((r:any)=>({...r,text:textOf.get(r.row_id)||r.reference})),invoices:aged.customers.flatMap((c:any)=>c.invoices.filter((i:any)=>i.open>0).map((i:any)=>({...i,customer:c.customer,pin:c.pin})))});
  const ledger=one(await tx`select coalesce(sum(x.debit-x.credit),0) balance from erp_private.ledger_lines x join erp_private.ledger_journals j using(journal_id) where j.period_id=${l.period_id} and j.status='Posted' and j.journal_date<=${asOf} and x.account_code='10060'`),
   ledgerBalance=round(num(ledger.balance)),postedSchedule=aged.totals.posted;
  const reversed=new Set(allocations.filter((a:any)=>a.reverses_id).map((a:any)=>a.reverses_id));
  const history=allocations.filter((a:any)=>!a.reverses_id).map((a:any)=>{const inv=invoices.find((i:any)=>i.row_id===a.sales_row_id),bk=receipts.find((x:any)=>x.row_id===a.bank_row_id);return {allocation_id:a.allocation_id,invoice:inv?.invoice||'',customer:inv?.customer||'',receipt_reference:bk?.reference||a.reference||'',receipt_date:a.receipt_date,amount:num(a.amount),reversed:reversed.has(a.allocation_id)};}).reverse().slice(0,300);
- return {as_of:asOf,...aged,unallocated_receipts:{count:open.length,value:round(open.reduce((s:number,r:any)=>s+r.remaining,0))},receipts:open.slice(0,500),allocations:history,
+ return {as_of:asOf,...aged,unallocated_receipts:{count:open.length,value:round(open.reduce((s:number,r:any)=>s+r.remaining,0))},receipts:open.slice(0,500),suggestions:matches.suggestions,suggestions_truncated:matches.truncated,allocations:history,
   reconciliation:{schedule_posted:postedSchedule,ledger_10060:ledgerBalance,difference:round(ledgerBalance-postedSchedule),not_posted:aged.totals.not_posted,
    note:'Compares posted sales on this schedule with the Trade receivables (10060) balance in the posted ledger. Differences are opening balances, receipts posted as journals, or sales not yet posted.'}};
 }
