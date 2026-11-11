@@ -5,7 +5,7 @@ import {communicationQr,letterDetails,letterDetailsQr} from './staff-communicati
 import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-taxrole-v3';
 import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-taxrole-v3';
 import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-taxrole-v3';
-import {createKraUI} from './staff-kra.mjs?v=20261111-ticketkra-v1';
+import {createKraUI} from './staff-kra.mjs?v=20261111-kraprog-v1';
 import {createIncomingUI} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {createForensicUI} from './staff-forensic.mjs?v=20261110-taxrole-v3';
 import {createDeadlineUI} from './staff-deadlines.mjs?v=20261110-taxrole-v3';
