@@ -24,7 +24,7 @@ test('wiring: the new action is a communications action, the form asks for the d
  assert.equal(areaForStaffAction('client_support_kra_cases'),'communications');
  const ui=read('staff-client-support.mjs');for(const k of ['response_due_on','resolution_due_on','kra_case_id','client_support_kra_cases','assignment_note','priority'])assert.match(ui,new RegExp(k));
  assert.match(ui,/Response due date \*/);assert.match(ui,/Resolution due date \*/);assert.match(ui,/Related KRA notice \(optional\)/);
- const su=read('staff-suite.mjs');assert.match(su,/staff-client-support\.mjs\?v=20261111-ticketkra-v1/);assert.match(su,/staff-kra\.mjs\?v=20261111-ticketkra-v1/);
+ const su=read('staff-suite.mjs');assert.match(su,/staff-client-support\.mjs\?v=20261111-physfile-v1/);assert.match(su,/staff-kra\.mjs\?v=20261111-ticketkra-v1/);
  const sv=read('supabase/functions/staff-workspace-v12/client-support-actions.ts');assert.match(sv,/client_support_kra_cases/);assert.match(sv,/firm_id=\$\{firm\} and deleted_at is null/,'the firm link is read from the right column');
  const mig=read('supabase/migrations/20261111000000_ticket_kra_link.sql');assert.match(mig,/FOREIGN KEY\(kra_case_id,client_id\)/);assert.match(mig,/still open or responded/);
 });

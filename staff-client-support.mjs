@@ -1,6 +1,8 @@
 // Client support services (Communications Hub > Client services): requests a client makes of the firm, such as lifting a KRA agency notice.
 // Not the internal staff help desk (the Support tab). A billable service gets a DRAFT invoice only when its ticket is closed; the database enforces this
 // (20261110278000_client_support_services.sql). The fee is typed by the person closing the ticket; no rate is stored.
+import {createPhysicalFilesUI} from './staff-physical-files.mjs?v=20261111-physfile-v1';
+import {HIGH_PRIORITY_NOTE} from './staff-physical-file-rules.mjs?v=20261111-physfile-v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const day=v=>v?String(v).slice(0,10):'';
 const kes=n=>new Intl.NumberFormat('en-KE',{style:'currency',currency:'KES'}).format(Number(n||0));
@@ -23,7 +25,7 @@ const label={'csup-edit':'Update','csup-close':'Close','csup-cancel':'Cancel'};
 
 export function ticketsView({tickets,me,button}){
  if(!tickets.length)return '<p class="muted">No client support tickets yet.</p>';
- return `<div class="scroll"><table><thead><tr><th>Ticket</th><th>Client / service</th><th>Status</th><th>Assigned to</th><th>Due</th><th>Billing</th><th></th></tr></thead><tbody>${tickets.map(t=>`<tr><td>CST-${esc(t.ticket_number)}<small>${esc(t.subject)}</small><small>${esc(day(t.opened_at))}</small></td><td>${esc(t.company_name)}<small>${esc(t.service_name)}</small>${t.kra_case_id?`<small>KRA notice ${esc(t.kra_reference)}${t.kra_tax_head?' · '+esc(t.kra_tax_head):''}</small>`:''}</td><td>${esc(t.status)}${t.resolution?`<small>${esc(t.resolution)}</small>`:''}</td><td>${esc(t.assigned_name)}${t.priority&&t.priority!=='Medium'?`<small class="${PRIORITY_TONE[t.priority]||''}">${esc(t.priority)} priority</small>`:''}${t.assignment_note?`<small>${esc(t.assignment_note)}</small>`:''}</td><td>${dueText(t).map(x=>`<small class="${/overdue/.test(x)?'warn':''}">${esc(x)}</small>`).join('')||'<small class="muted">no dates</small>'}</td><td>${t.is_billable?(t.invoice_id?`Draft invoice created${t.invoice_number?' ('+esc(t.invoice_number)+')':''}<small>${esc(kes(t.fee_amount))} before VAT</small>`:t.status==='Cancelled'?'Cancelled: no invoice':'Billable: invoice when closed'):'Not billable'}</td><td>${ticketActions(t,me).map(a=>button(a,label[a],t.ticket_id)).join(' ')}</td></tr>`).join('')}</tbody></table></div>`;
+ return `<div class="scroll"><table><thead><tr><th>Ticket</th><th>Client / service</th><th>Status</th><th>Assigned to</th><th>Due</th><th>Billing</th><th></th></tr></thead><tbody>${tickets.map(t=>`<tr><td>CST-${esc(t.ticket_number)}<small>${esc(t.subject)}</small><small>${esc(day(t.opened_at))}</small></td><td>${esc(t.company_name)}<small>${esc(t.service_name)}</small>${t.kra_case_id?`<small>KRA notice ${esc(t.kra_reference)}${t.kra_tax_head?' · '+esc(t.kra_tax_head):''}</small>`:''}</td><td>${esc(t.status)}${t.resolution?`<small>${esc(t.resolution)}</small>`:''}</td><td>${esc(t.assigned_name)}${t.priority&&t.priority!=='Medium'?`<small class="${PRIORITY_TONE[t.priority]||''}">${esc(t.priority)} priority</small>`:''}${t.assignment_note?`<small>${esc(t.assignment_note)}</small>`:''}${t.high_priority_stale?`<small class="warn" title="${esc(HIGH_PRIORITY_NOTE)}">High priority and not started within 24 hours</small>`:''}${Number(t.files_in_office)>0?`<small>${esc(t.files_in_office)} physical file${Number(t.files_in_office)===1?'':'s'} still in the office</small>`:''}</td><td>${dueText(t).map(x=>`<small class="${/overdue/.test(x)?'warn':''}">${esc(x)}</small>`).join('')||'<small class="muted">no dates</small>'}</td><td>${t.is_billable?(t.invoice_id?`Draft invoice created${t.invoice_number?' ('+esc(t.invoice_number)+')':''}<small>${esc(kes(t.fee_amount))} before VAT</small>`:t.status==='Cancelled'?'Cancelled: no invoice':'Billable: invoice when closed'):'Not billable'}</td><td>${ticketActions(t,me).map(a=>button(a,label[a],t.ticket_id)).join(' ')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 export function servicesView({services,me,button}){
@@ -32,6 +34,7 @@ export function servicesView({services,me,button}){
 
 export function createClientSupportUI(ctx){
  const {field,select,form,modal,request,button,area}=ctx,d=()=>ctx.data();
+ const physical=createPhysicalFilesUI(ctx);
  let tickets=[],services=[],loaded=false,loading=false;
  async function load(){
   if(loading)return;loading=true;
@@ -43,9 +46,9 @@ export function createClientSupportUI(ctx){
  function view(){
   if(!loaded){queueMicrotask(load);return '<p class="muted">Loading client support tickets…</p>';}
   const me=d().me;
-  return `<div class="section-head"><p>Requests clients make of the firm. This is separate from the internal Support tab, which is for staff IT and system requests.</p>${['INTERN','ADMIN'].includes(me.category_code)?'':button('csup-new','+ New client ticket','','class="primary"')}</div>${ticketsView({tickets,me,button})}${servicesView({services,me,button})}`;
+  return `<div class="section-head"><p>Requests clients make of the firm. This is separate from the internal Support tab, which is for staff IT and system requests.</p>${['INTERN','ADMIN'].includes(me.category_code)?'':button('csup-new','+ New client ticket','','class="primary"')}</div>${ticketsView({tickets,me,button})}${physical.view()}${servicesView({services,me,button})}`;
  }
- const refresh=async()=>{loaded=false;await load();};
+ const refresh=async()=>{loaded=false;await Promise.all([load(),physical.refresh()]);};
  const placeOptions=()=>{
   const dd=d(),client=id=>dd.clients.find(c=>c.client_id===id)?.company_name||'Client',firm=id=>dd.firms.find(f=>f.firm_id===id)?.legal_name||'Firm';
   const withProject=ctx.filtered().projects.map(p=>[`${p.client_id}|${p.handling_firm_id}|${p.project_id}`,`${client(p.client_id)} · ${p.project_name} · ${firm(p.handling_firm_id)}`]);
@@ -62,6 +65,7 @@ export function createClientSupportUI(ctx){
   try{const r=await request({action:'client_support_kra_cases',client_id:clientId});sel.innerHTML=opts(r.cases||[]);}catch(e){sel.innerHTML=opts([]);}
  }
  async function handle(action,id){
+  if(action.startsWith('pf-'))return physical.handle(action,id);
   if(!action.startsWith('csup-'))return false;
   if(action==='csup-new'){
    const svc=services.filter(s=>s.is_active);
