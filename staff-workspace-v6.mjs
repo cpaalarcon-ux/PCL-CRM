@@ -6,7 +6,7 @@ import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=2
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
 import {createAccountingUI} from './staff-accounting.mjs?v=20261107-annualpack-v3';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261111-bankmatch-v1';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261111-bankfixit-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 export function createWorkspaceUI(ctx){
