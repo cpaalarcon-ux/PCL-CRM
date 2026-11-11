@@ -2,6 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 import {mapAllAccounts,readyForLedger,checkJournal} from './helpers/client-mappings.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {ledgerAction}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
+const {starterConfirmAction}=await import('../supabase/functions/staff-workspace-v12/starter-confirm-actions.ts');
 const {annualTaxLedgerControl}=await import('../supabase/functions/staff-workspace-v12/ledger-actions.ts');
 const {improvementAction}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
 const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
@@ -142,6 +143,23 @@ test('Client ledger: source integrity, maker/checker, entity profit and shared P
   assert.match((await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'})).starters.find(x=>x.key==='ledger-fee').problem,/already has this rule, approved/);
   await ledger('MANAGER',{...base,action:'ledger_bank_rule_review',rule_id:(await tx`select rule_id from erp_private.bank_mapping_rules where keyword='loan interest'`)[0].rule_id,status:'Retired',review_note:'Fictional: not needed for this client'});
   assert.equal((await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'})).starters.find(x=>x.key==='loan-interest').problem,null,'a retired starter can be proposed again');
+ // Build 2788: once a Partner records the Tax Lead's written confirmation the excise starter can be copied (as Proposed only); withdrawing locks it again.
+ {
+  const sc=(role,p)=>as(role,a=>starterConfirmAction(tx,a,p));
+  const rec={action:'bank_starter_confirm_record',rule_key:'excise-duty',account_code:'51070',confirmed_by_name:'Fictional Tax Lead',confirmed_on:'2026-11-10',source_note:'Fictional email of 10 Nov 2026',seen_in_writing:true};
+  await assert.rejects(()=>sc('MANAGER',rec),/Only a Partner/);
+  assert.match((await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'})).starters.find(x=>x.key==='excise-duty').problem,/Tax Lead has not confirmed/);
+  await assert.rejects(()=>sc('PARTNER',{...rec,account_code:'10180'}),/must name the account 51070/);
+  await sc('PARTNER',rec);
+  const open=(await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'})).starters.find(x=>x.key==='excise-duty');assert.equal(open.problem,null);assert.equal(open.unlocked,true);
+  const got=await ledger('ASSISTANT',{...base,action:'ledger_bank_starter_copy',keys:['excise-duty']});assert.deepEqual(got.proposed.map(x=>x.status),['Proposed'],'unlocking only allows a Proposed rule');
+  const ex=(await tx`select status,account_code,note from erp_private.bank_mapping_rules where keyword='excise duty'`)[0];assert.equal(ex.status,'Proposed');assert.equal(ex.account_code,'51070');assert.match(ex.note,/Tax Lead confirmation recorded by a Partner/);
+  assert.equal((await ledger('ASSISTANT',{...base,action:'ledger_bank_apply_rules'})).mapped,0,'the copied excise rule maps nothing until a different Manager or Partner approves it');
+  const live=(await tx`select confirmation_id,revision from erp_private.starter_rule_confirmations where status='Confirmed'`)[0];
+  await sc('PARTNER',{action:'bank_starter_confirm_withdraw',confirmation_id:live.confirmation_id,revision:live.revision,reason:'Fictional: wording to be re-checked'});
+  await tx`update erp_private.bank_mapping_rules set status='Retired',review_note='Fictional: test clean-up' where keyword='excise duty'`;
+  assert.match((await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'})).starters.find(x=>x.key==='excise-duty').problem,/Tax Lead has not confirmed/,'withdrawn: locked again');
+ }
  }
  let fix=await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'});assert.equal(fix.not_mapped,2);assert.equal(fix.lines>=3,true);assert.ok(fix.accounts.some(x=>x.code==='62570'));assert.ok(!fix.accounts.some(x=>x.code==='50000'),'stock accounts are not offered for bank lines');
  const rev2=fix.items.find(i=>i.row_id===l2.row_id).revision;
