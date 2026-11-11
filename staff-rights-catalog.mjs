@@ -42,6 +42,7 @@ export const STAFF_RIGHTS=Object.freeze([
  {code:'document.scan',area:'documents',group:'Document review',label:'Request a malware scan of a document (the scanning service is not connected yet)',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['evidence_scan']},
  {code:'clientsupport.work',area:'communications',group:'Client support services',label:'Open, update, close or cancel client support tickets (a billable ticket creates a draft invoice only when it is closed)',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['client_support_open','client_support_update','client_support_close','client_support_cancel']},
  {code:'clientsupport.billing_flags',area:'communications',group:'Client support services',label:'Decide which client support services are billable or switched off',roles:['PARTNER'],actions:['client_support_service_set']},
+ {code:'physicalfiles.work',area:'documents',group:'Physical files',label:'Register physical files, move them between people and places, link the scanned copy, return them to the client with a dispatch note, or archive them (a returned or archived file is locked)',roles:['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'],actions:['physical_file_list','physical_file_read','physical_file_register','physical_file_move','physical_file_pending','physical_file_return','physical_file_archive','physical_file_copy','physical_file_documents','physical_file_dispatch_note']},
 ]);
 const RIGHT_CODES=STAFF_RIGHTS.map(r=>r.code);
 const BY_ACTION=new Map(STAFF_RIGHTS.flatMap(r=>r.actions.map(a=>[a,r.code])));

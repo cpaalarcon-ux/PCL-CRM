@@ -32,7 +32,8 @@ export async function clientSupportAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='client_support_list'){
   const cid=p.client_id?uuid(p.client_id):null;
   return {tickets:await tx`select t.ticket_id,t.ticket_number,t.client_id,t.firm_id,t.project_id,t.service_code,sv.service_name,sv.is_billable,t.subject,t.details,t.status,t.opened_by,t.assigned_to,t.opened_at,t.fee_amount,t.invoice_id,i.invoice_number,i.status invoice_status,t.resolution,t.closed_at,t.revision,c.company_name,coalesce(s.full_name,'A colleague') assigned_name,t.priority,t.response_due_on,t.resolution_due_on,t.assignment_note,t.kra_case_id,k.notice_reference kra_reference,k.tax_head kra_tax_head,
-    (t.status='Open' and t.response_due_on<(now() at time zone 'Africa/Nairobi')::date) response_overdue,(t.status not in('Closed','Cancelled') and t.resolution_due_on<(now() at time zone 'Africa/Nairobi')::date) resolution_overdue
+    (t.status='Open' and t.response_due_on<(now() at time zone 'Africa/Nairobi')::date) response_overdue,(t.status not in('Closed','Cancelled') and t.resolution_due_on<(now() at time zone 'Africa/Nairobi')::date) resolution_overdue,
+    (t.status='Open' and t.priority in('High','Urgent') and t.opened_at<now()-interval '24 hours') high_priority_stale,(select count(*) from erp_private.physical_files pf where pf.ticket_id=t.ticket_id and pf.status not in('Returned to client','Archived')) files_in_office
     from erp_private.client_support_tickets t left join erp_private.kra_cases k on k.case_id=t.kra_case_id join erp_private.client_support_services sv on sv.service_code=t.service_code join erp_private.clients c on c.client_id=t.client_id left join erp_private.staff_members s on s.staff_id=t.assigned_to
     left join erp_private.invoices i on i.invoice_id=t.invoice_id
     where (${cid}::uuid is null or t.client_id=${cid}) order by (t.status in('Closed','Cancelled')),t.opened_at desc limit 300`};

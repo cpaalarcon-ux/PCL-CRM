@@ -101,7 +101,7 @@ test('wiring: screen is imported, routed, reachable from Projects and from the P
  assert.match(dash,/role==='PARTNER'\?'<section class="home-kra" id="homeKraFlags"/);
  assert.match(css,/\.kra-banner\{[^}]*background:#b3261e/);
  const html=rd('staff-pilot.html'),rel=JSON.parse(rd(fx+'release.json'));
- assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-11.2780');
+ assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-11.2781');
  for(const f of ['staff-pilot.mjs','staff-suite.mjs','staff-pilot-auth.js','staff-pilot.html','staff-improvements.mjs','staff-audit.mjs','staff-audit-home.mjs','staff-audit-reports.mjs'])assert.doesNotMatch(rd(f),/20261109-aup-v1/,f+' carries the new cache-buster');
 });
 test('migration: the rules that must not be loosened',()=>{
