@@ -8,7 +8,7 @@ export async function clientRegisterAction(tx:any,a:any,p:any){
  if(p.action==='client_card_flags'){
   if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'The client card facts are for Supervisors, Managers and Partners.');
   const rows=await tx`select * from erp_private.client_card_flags(${tx.array(ids(p.client_ids))}::uuid[])`;
-  return {rows:rows.map((r:any)=>({client_id:r.client_id,kra_open:Number(r.kra_open||0),kra_days:r.kra_days===null?null:Number(r.kra_days),incoming_waiting:Number(r.incoming_waiting||0),incoming_overdue:Number(r.incoming_overdue||0)}))};
+  return {rows:rows.map((r:any)=>({client_id:r.client_id,kra_open:Number(r.kra_open||0),kra_days:r.kra_days===null?null:Number(r.kra_days),incoming_waiting:Number(r.incoming_waiting||0),incoming_overdue:Number(r.incoming_overdue||0),filing_soon:Number(r.filing_soon||0),filing_soon_days:r.filing_soon_days===null?null:Number(r.filing_soon_days),filing_late:Number(r.filing_late||0),filing_late_days:r.filing_late_days===null?null:Number(r.filing_late_days),filing_urgent:Number(r.filing_urgent||0),filing_urgent_days:r.filing_urgent_days===null?null:Number(r.filing_urgent_days)}))};
  }
  if(p.action==='client_card_wip'){
   if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'Work in progress is shown to Managers and Partners only.');

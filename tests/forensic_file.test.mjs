@@ -57,7 +57,7 @@ test('Forensic file: hidden from everyone off the list, evidence, custody, findi
  // ---- 2b. The client card says nothing about a forensic file to anyone, the lead included (decision of 10 Nov 2026, build 2700) ---------------------
  const cardCols=await q('PARTNER',`select * from erp_private.client_card_flags($1::uuid[])`,[[A]]);
  assert.equal(cardCols.length,1);assert.ok(!Object.keys(cardCols[0]).some(k=>/forensic/i.test(k)),'the card question has no forensic column at all');
- assert.deepEqual(Object.keys(cardCols[0]).sort(),['client_id','filing_late','filing_late_days','filing_soon','filing_soon_days','incoming_overdue','incoming_waiting','kra_days','kra_open']);
+ assert.deepEqual(Object.keys(cardCols[0]).sort(),['client_id','filing_late','filing_late_days','filing_soon','filing_soon_days','filing_urgent','filing_urgent_days','incoming_overdue','incoming_waiting','kra_days','kra_open']);
  assert.equal((await tx`select count(*)::int n from erp_private.audit_events where table_name ~* 'forensic' or action ~* 'forensic'`)[0].n,0,'nothing forensic is in the general log');
  await assert.rejects(tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key) values(${actors.PARTNER.auth_user_id},'x','forensic_cases','INSERT','k')`,/audit_events_no_forensic/,'the general log refuses a forensic table');
  await assert.rejects(tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key) values(${actors.PARTNER.auth_user_id},'x','clients','VIEW_FORENSIC','k')`,/audit_events_no_forensic/,'the general log refuses a forensic action');

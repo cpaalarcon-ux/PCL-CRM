@@ -26,7 +26,7 @@ import {createSuiteUI} from './staff-suite.mjs?v=20261110-taxrole-v3';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {moduleLinks,GROUP_ENGAGEMENTS,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261110-taxrole-v3';
-import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261110-taxrole-v3';
+import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261111-urgent-v1';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261110-taxrole-v3';
