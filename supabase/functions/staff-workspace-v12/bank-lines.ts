@@ -4,6 +4,7 @@ import {bankRegister} from './bank-accounts.ts';
 import {fixItQueue,matchRule,ruleProblem,MATCH_MODES,DIRECTIONS} from './bank-rules.mjs';
 import {BANK_LEDGER_CODES} from './bank-close.mjs';
 import {bankSummary} from './bank-statement.mjs';
+import {STARTER_RULES,starterList} from './bank-starter-rules.mjs';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const dayOf=(r:any)=>String(r.normalized?.date||day(r.period_start));
 
@@ -61,7 +62,7 @@ export async function bankLineAction(tx:any,a:any,l:any,p:any){
   const [rules,banks,rows]=await Promise.all([rulesOf(tx,cid),bankRegister(tx,cid),periodRows(tx,l,to)]);
   const catalog=await tx`select code,name,status,is_legacy,route,category_code,account_group from erp_private.account_catalog order by code`;
   const accounts=(await chartCatalogue(tx,catalog,cid,day(l.starts_on))).filter((x:any)=>x.status==='Active'&&!x.is_legacy&&x.in_client_chart!==false&&![1,3].includes(x.route)).map((x:any)=>({code:x.code,name:x.name,group:x.account_group}));
-  return {...fixItQueue({rows:rows.map((r:any)=>({...r})),rules,bankAccounts:banks}),rules,accounts,lines:rows.length,mapped:rows.filter((r:any)=>r.account_code).length};
+  return {...fixItQueue({rows:rows.map((r:any)=>({...r})),rules,bankAccounts:banks}),rules,accounts,starters:starterList(rules,new Set(accounts.map((x:any)=>x.code))),lines:rows.length,mapped:rows.filter((r:any)=>r.account_code).length};
  }
  if(p.action==='ledger_bank_lines_map'){
   const items=Array.isArray(p.items)?p.items:[];if(!items.length||items.length>500)fail(400,'Select between 1 and 500 statement lines.');
@@ -88,6 +89,25 @@ export async function bankLineAction(tx:any,a:any,l:any,p:any){
   const dup=(await tx`select rule_id from erp_private.bank_mapping_rules where client_id=${cid} and lower(btrim(keyword))=lower(${keyword}) and match_mode=${match_mode} and direction=${direction} and status<>'Retired'`)[0];
   if(dup)fail(409,'A rule with this keyword, match and direction already exists. Retire it first to replace it.');
   return (await tx`insert into erp_private.bank_mapping_rules(client_id,keyword,match_mode,direction,account_code,note,created_by) values(${cid},${keyword},${match_mode},${direction},${account},${note},${a.staff_id}) returning rule_id,status`)[0];
+ }
+ if(p.action==='ledger_bank_starter_copy'){
+  // Copies chosen starter rules into this client as Proposed rules. The same checks as a rule typed by hand apply, and a locked starter is refused.
+  if(a.category_code==='INTERN')fail(403,'Your role cannot propose bank rules.');
+  const keys=Array.isArray(p.keys)?[...new Set(p.keys.map((k:any)=>String(k)))]:[];
+  if(!keys.length||keys.length>STARTER_RULES.length)fail(400,'Choose at least one starter rule.');
+  const chosen=keys.map((k:string)=>STARTER_RULES.find((s:any)=>s.key===k)||fail(400,'That starter rule does not exist.'));
+  await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':bankrules'},0))`;
+  const existing=await rulesOf(tx,cid),catalog=await tx`select code,name,status,is_legacy,route,category_code,account_group from erp_private.account_catalog order by code`;
+  const chart=(await chartCatalogue(tx,catalog,cid,day(l.starts_on))).filter((x:any)=>x.status==='Active'&&!x.is_legacy&&x.in_client_chart!==false&&![1,3].includes(x.route)).map((x:any)=>x.code);
+  const states=starterList(existing,new Set(chart));
+  for(const s of chosen){const st=states.find((x:any)=>x.key===s.key);if(st.problem)fail(400,s.label+': '+st.problem);}
+  const made=[];
+  for(const s of chosen){
+   const bad=ruleProblem(s);if(bad)fail(400,bad);
+   const r=(await tx`insert into erp_private.bank_mapping_rules(client_id,keyword,match_mode,direction,account_code,note,created_by) values(${cid},${s.keyword},${s.match_mode},${s.direction},${s.account_code},${('Starter rule: '+s.why).slice(0,300)},${a.staff_id}) returning rule_id,status`)[0];
+   made.push({key:s.key,rule_id:r.rule_id,status:r.status});
+  }
+  return {proposed:made};
  }
  if(p.action==='ledger_bank_rule_review'){
   if(!leader)fail(403,'A Manager or Partner must approve or retire a bank rule.');

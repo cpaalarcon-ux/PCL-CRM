@@ -191,7 +191,7 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
   const rules=f.rules.map(x=>[`<b>${esc(x.keyword)}</b>`,esc(x.match_mode),esc(x.direction),esc(x.account_code)+`<small>${esc(x.account_name||'')}</small>`,esc(x.status),leader&&x.status==='Proposed'?btn('bank-rule-approve','Approve',x.rule_id):'',leader&&x.status!=='Retired'?btn('bank-rule-retire','Retire',x.rule_id):'']);
   return `<h3 class="section-space">Fix-It queue</h3><p class="muted">Statement lines still needing a person. Map them one by one, in a group, or with approved narration rules. Nothing here posts to the ledger.</p>
   <p class="${f.total?'error':'info'}" role="status">${f.lines} statement line(s) in this period · ${f.mapped} mapped · ${f.not_mapped} not mapped${f.suggested?` (${f.suggested} with a rule suggestion)`:''} · ${f.transfers_unpaired} transfer(s) without an opposite line.</p>
-  <div class="actions">${btn('bank-apply-rules','Apply approved rules')}${btn('bank-map-selected','Map selected lines…')}${btn('bank-rule-new','+ Narration rule')}</div>
+  <div class="actions">${btn('bank-apply-rules','Apply approved rules')}${btn('bank-map-selected','Map selected lines…')}${btn('bank-rule-new','+ Narration rule')}${btn('bank-starter','Starter rules…')}</div>
   ${f.items.length?table(['','Date','Bank','Reference','Money in','Money out','Why it is here','Suggested'],rows):'<p class="info">No statement lines need attention.</p>'}${f.truncated?'<p class="muted">Only the first 500 are shown.</p>':''}
   <h4>Narration rules</h4><p class="muted">A rule maps a keyword in a line's reference or description to an account. A different Manager or Partner approves a rule before it is applied. A rule cannot be edited: retire it and propose a new one.</p>
   ${f.rules.length?table(['Keyword','Match','Applies to','Account','Status','',''],rules):'<p class="muted">No rules yet.</p>'}`;
@@ -200,6 +200,11 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
   show('New narration rule',form(`<p class="info full">Use a distinctive word from the narration, for example the lender’s name or “Bank to Mobile”. Short or generic keywords are refused. The rule is applied only after a different Manager or Partner approves it.</p>
    ${field('keyword','Keyword *','')}${select('match_mode','Match',['Contains','Starts with'],'Contains')}${select('direction','Applies to',['Either','Money in','Money out'],'Either')}
    ${select('account_code','Ledger account *',fixit.accounts.map(a=>[a.code,a.code+' '+a.name]),fixit.accounts[0]?.code||'')}${field('note','Why this rule is safe','')}`,'Propose rule'),f=>request({...payload('ledger_bank_rule_save'),...Object.fromEntries(f)}),async()=>{await ensureFixit(true);});
+ }
+
+ function bankStarterForm(){
+  const list=fixit.starters||[],rows=list.map(s=>`<label class="full check-row"><input type="checkbox" name="key" value="${esc(s.key)}"${s.problem?' disabled':''}> <b>${esc(s.label)}</b>: “${esc(s.keyword)}” ${esc(s.direction.toLowerCase())} to ${esc(s.account_code)} <small>${esc(s.why)}</small>${s.problem?`<small class="warn">${esc(s.problem)}</small>`:''}</label>`).join('');
+  show('Starter narration rules',form(`<p class="info full">These are suggestions. Each one you copy becomes a <b>Proposed</b> rule for this client; it maps nothing until a different Manager or Partner approves it. There is no general “transfer” rule: a transfer to a supplier is not an own-account transfer, so those lines stay with a person.</p>${rows}`,'Propose the selected rules'),f=>request({...payload('ledger_bank_starter_copy'),keys:f.getAll('key')}),async()=>{await ensureFixit(true);});
  }
  function bankMapForm(picked){
   show('Map '+picked.length+' statement line(s)',form(`<p class="info full">All selected lines go to one ledger account. Use separate batches for different accounts.</p>
@@ -453,6 +458,7 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
   if(a==='bank-cat-new'){bankCategoryForm();return;}
   if(a==='bank-cat-retire'){try{const c=bsum.categories.find(x=>x.category_id===id);await request({...payload('ledger_bank_category_retire'),category_id:id,revision:c.revision});await ensureSummary(true);}catch(e){notice(e.message,true);}return;}
   if(a==='bank-rule-new'){if(fixit&&!fixit.error)bankRuleForm();return;}
+  if(a==='bank-starter'){if(fixit&&!fixit.error)bankStarterForm();return;}
   if(a==='bank-rule-approve'){try{const rule=fixit.rules.find(x=>x.rule_id===id);await request({...payload('ledger_bank_rule_review'),rule_id:id,revision:rule.revision,status:'Active'});await ensureFixit(true);}catch(e){notice(e.message,true);}return;}
   if(a==='bank-rule-retire'){const rule=fixit.rules.find(x=>x.rule_id===id);show('Retire rule “'+rule.keyword+'”',form(`<p class="info full">A retired rule stops mapping new lines. Lines it already mapped are not changed.</p>${field('review_note','Why is this rule being retired? *','')}`,'Retire rule'),f=>request({...payload('ledger_bank_rule_review'),rule_id:id,revision:rule.revision,status:'Retired',...Object.fromEntries(f)}),async()=>{await ensureFixit(true);});return;}
   if(a==='bank-apply-rules'){try{const x=await request({...payload('ledger_bank_apply_rules'),as_of:r.as_of});await ensureFixit(true);await refresh();notice(x.mapped+' line(s) mapped by approved rules; '+x.left+' left for you.');}catch(e){notice(e.message,true);}return;}
