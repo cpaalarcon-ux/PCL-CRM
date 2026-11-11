@@ -49,6 +49,7 @@ import {creditAction} from './credit-actions.ts';
 import {documentReviewAction} from './document-review-actions.ts';
 import {clientSupportAction} from './client-support-actions.ts';
 import {physicalFileAction,setPhysicalPdfLib} from './physical-file-actions.ts';
+import {settingsHubAction} from './settings-hub-actions.ts';
 import {dueDateAction} from './due-date-actions.ts';
 import {taxManagerAction} from './tax-manager-actions.ts';
 import {forensicAction} from './forensic-actions.ts';
@@ -435,6 +436,7 @@ async function action(id:any,p:any){
   const kra=await kraAction(tx,a,p);if(kra!==undefined)return kra;
   const clientSupport=await clientSupportAction(tx,a,p);if(clientSupport!==undefined)return clientSupport; // before the client_ prefix handlers
   const physicalFile=await physicalFileAction(tx,a,p);if(physicalFile!==undefined)return physicalFile;
+  const settingsHub=await settingsHubAction(tx,a,p);if(settingsHub!==undefined)return settingsHub;
   const docReview=await documentReviewAction(tx,a,p);if(docReview!==undefined)return docReview; // before the document_ prefix handlers
   const incoming=await incomingAction(tx,a,p);if(incoming!==undefined)return incoming;
   const deadline=await deadlineAction(tx,a,p);if(deadline!==undefined)return deadline;
