@@ -63,4 +63,21 @@ test('debtors ageing: receipts are allocated from bank credits, reversed with a 
  assert.equal(r.allocations.find(x=>x.invoice==='INV1').reversed,true);
  // Allocation rows are append-only.
  await assert.rejects(()=>tx`delete from erp_private.customer_receipt_allocations where allocation_id=${first.allocation_id}`,/./);
+
+ // Suggested matches (build 2784): pointers only. An amount alone is never enough; the narration must also point to the customer or invoice.
+ r=await read('ASSISTANT','2026-04-30');
+ assert.deepEqual(r.suggestions,[],'MPESA-A1 equals INV1 in amount only, and the early credit says nothing: no suggestion');
+ const strong=await BANK(5,'2026-03-12','MPESA FICTIONAL DUKA INV2',180),pinOnly=await BANK(6,'2026-03-20','P000000001A transfer',180),nameOnly=await BANK(7,'2026-03-15','Fictional Duka payment',120);
+ r=await read('ASSISTANT','2026-04-30');
+ const byBank=new Map(r.suggestions.map(x=>[x.bank_row_id,x]));
+ assert.equal(byBank.size,2,'the name alone (30 points) is not enough');assert.ok(!byBank.has(nameOnly));
+ assert.deepEqual([byBank.get(strong).invoice,byBank.get(strong).confidence,byBank.get(strong).amount],['INV2','Strong',180]);
+ assert.ok(byBank.get(strong).reasons.includes('Invoice number appears in the narration')&&byBank.get(strong).reasons.includes('Amount equals the invoice balance'));
+ assert.deepEqual([byBank.get(pinOnly).invoice,byBank.get(pinOnly).confidence],['INV2','Possible'],'a PIN with the amount is a possible match');
+ assert.equal(r.suggestions[0].bank_row_id,strong,'strongest first');
+ // A suggestion allocates nothing; confirming it uses the ordinary allocation and its rules.
+ assert.equal(r.unallocated_receipts.count,5);assert.equal((await tx`select count(*)::int n from erp_private.customer_receipt_allocations`)[0].n,3,'still the three earlier rows: suggesting allocated nothing');
+ await alloc('ASSISTANT',strong,s2,180);
+ r=await read('ASSISTANT','2026-04-30');assert.ok(!r.suggestions.some(x=>x.bank_row_id===strong),'an allocated credit is no longer suggested');
+ assert.ok(!r.suggestions.some(x=>x.sales_row_id===s2&&x.amount>0&&x.invoice_open===0),'a settled invoice is not suggested');
 });
