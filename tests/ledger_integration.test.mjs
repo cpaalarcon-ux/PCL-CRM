@@ -119,6 +119,30 @@ test('Client ledger: source integrity, maker/checker, entity profit and shared P
  await ledger('MANAGER',{...base,action:'ledger_bank_rule_review',rule_id:rl.rule_id,status:'Active'});
  const applied=await ledger('ASSISTANT',{...base,action:'ledger_bank_apply_rules'});assert.equal(applied.mapped,1);assert.equal(applied.left,2);
  assert.equal((await tx`select account_code from erp_private.workbook_rows where row_id=${l1.row_id}`)[0].account_code,'62570');
+ // Starter narration rules (build 2783): suggestions copied in as Proposed rules, never active, never the unsafe transfer rule, never the locked excise rule.
+ {
+  const st=(await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'})).starters;
+  assert.deepEqual(st.map(x=>x.key),['ledger-fee','commission-on-turnover','bank-charges','loan-interest','overdraft-interest','excise-duty']);
+  assert.ok(!st.some(x=>/^(trf|transfer)/i.test(x.keyword)),'no blanket transfer rule');
+  assert.match(st.find(x=>x.key==='excise-duty').problem,/Tax Lead has not confirmed/);assert.equal(st.find(x=>x.key==='ledger-fee').problem,null);
+  await assert.rejects(()=>ledger('INTERN',{...base,action:'ledger_bank_starter_copy',keys:['ledger-fee']}),/Interns can access assigned tasks/);
+  await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_starter_copy',keys:[]}),/at least one/);
+  await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_starter_copy',keys:['no-such']}),/does not exist/);
+  await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_starter_copy',keys:['excise-duty']}),/Tax Lead has not confirmed/);
+  const got=await ledger('ASSISTANT',{...base,action:'ledger_bank_starter_copy',keys:['ledger-fee','loan-interest']});
+  assert.deepEqual(got.proposed.map(x=>x.status),['Proposed','Proposed']);
+  const rows=await tx`select keyword,direction,account_code,status,created_by,note from erp_private.bank_mapping_rules where note like 'Starter rule:%' order by keyword`;
+  assert.deepEqual(rows.map(x=>[x.keyword,x.direction,x.account_code,x.status]),[['ledger fee','Money out','62510','Proposed'],['loan interest','Money out','62000','Proposed']]);
+  assert.ok(rows.every(x=>x.created_by===actors.ASSISTANT.staff_id));
+  assert.equal((await ledger('ASSISTANT',{...base,action:'ledger_bank_apply_rules'})).mapped,0,'a proposed starter rule maps nothing');
+  await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_starter_copy',keys:['ledger-fee']}),/already has this rule, waiting for approval/);
+  const mine=(await tx`select rule_id from erp_private.bank_mapping_rules where keyword='ledger fee'`)[0].rule_id;
+  await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_rule_review',rule_id:mine,status:'Active'}),/Manager or Partner/);
+  await ledger('MANAGER',{...base,action:'ledger_bank_rule_review',rule_id:mine,status:'Active'});
+  assert.match((await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'})).starters.find(x=>x.key==='ledger-fee').problem,/already has this rule, approved/);
+  await ledger('MANAGER',{...base,action:'ledger_bank_rule_review',rule_id:(await tx`select rule_id from erp_private.bank_mapping_rules where keyword='loan interest'`)[0].rule_id,status:'Retired',review_note:'Fictional: not needed for this client'});
+  assert.equal((await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'})).starters.find(x=>x.key==='loan-interest').problem,null,'a retired starter can be proposed again');
+ }
  let fix=await ledger('ASSISTANT',{...base,action:'ledger_bank_fixit_read'});assert.equal(fix.not_mapped,2);assert.equal(fix.lines>=3,true);assert.ok(fix.accounts.some(x=>x.code==='62570'));assert.ok(!fix.accounts.some(x=>x.code==='50000'),'stock accounts are not offered for bank lines');
  const rev2=fix.items.find(i=>i.row_id===l2.row_id).revision;
  await assert.rejects(()=>ledger('ASSISTANT',{...base,action:'ledger_bank_lines_map',items:[{row_id:l2.row_id,revision:rev2}],account_code:'10020'}),/own bank/);
