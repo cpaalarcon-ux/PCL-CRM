@@ -14,11 +14,17 @@ export const STARTER_RULES=[
 ];
 
 // Why a starter cannot be copied into this client, or null when it can. existing: the client's rules; chartCodes: Set of account codes in the client's chart.
-export function starterProblem(s,existing=[],chartCodes=new Set()){
- if(s.needs)return s.needs_note;
+// confirmed: Map of rule key -> the account code a Partner recorded the Tax Lead's written confirmation for (build 2788). A locked starter opens only when
+// the recorded account is the starter's own account, so a confirmation for one account never unlocks a rule that points at another.
+export function starterProblem(s,existing=[],chartCodes=new Set(),confirmed=new Map()){
+ if(s.needs&&confirmed.get(s.key)!==s.account_code)return s.needs_note;
  const dup=(existing||[]).find(r=>r.status!=='Retired'&&norm(r.keyword)===norm(s.keyword)&&r.match_mode===s.match_mode&&r.direction===s.direction);
  if(dup)return dup.status==='Active'?'The client already has this rule, approved.':'The client already has this rule, waiting for approval.';
  if(!chartCodes.has(s.account_code))return 'Account '+s.account_code+' is not in this client\'s chart of accounts.';
  return null;
 }
-export const starterList=(existing,chartCodes)=>STARTER_RULES.map(s=>({...s,problem:starterProblem(s,existing,chartCodes)}));
+export const starterList=(existing,chartCodes,confirmed=new Map())=>STARTER_RULES.map(s=>({...s,problem:starterProblem(s,existing,chartCodes,confirmed),unlocked:!!s.needs&&confirmed.get(s.key)===s.account_code}));
+// Rows of starter_rule_confirmations with status Confirmed -> the Map that starterList takes.
+export const confirmedMap=rows=>new Map((rows||[]).filter(r=>r.status==='Confirmed').map(r=>[r.rule_key,r.account_code]));
+// The locked starters, for the Settings card: each with its confirmation if one is recorded.
+export const lockedStarters=rows=>STARTER_RULES.filter(s=>s.needs).map(s=>{const c=(rows||[]).find(r=>r.rule_key===s.key&&r.status==='Confirmed');return {key:s.key,label:s.label,keyword:s.keyword,account_code:s.account_code,needs:s.needs,why:s.why,locked:!(c&&c.account_code===s.account_code),confirmation:c||null};});
