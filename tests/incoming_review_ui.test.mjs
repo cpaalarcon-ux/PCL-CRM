@@ -121,7 +121,7 @@ test('wiring: screen imported, routed, reachable from Documents and Communicatio
  assert.match(pi,/return incomingCardHtml\(data\.me,suite\.button\)\+/);assert.match(pi,/if\(view==='documents'\)void suite\.incoming\.paintCard\(\);/);
  assert.match(pi,/'Correspondence','KRA Notices','Import Sources'\]/);assert.match(css,/\.timeline-doc\{/);
  const html=rd('staff-pilot.html'),rel=JSON.parse(rd(fx+'release.json'));
- assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-11.2791');
+ assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-12.2792');
  for(const f of ['staff-pilot.mjs','staff-suite.mjs','staff-pilot-auth.js','staff-pilot.html','staff-improvements.mjs','staff-audit.mjs','staff-audit-home.mjs','staff-audit-reports.mjs'])assert.doesNotMatch(rd(f),/20261109-kra-v1/,f+' carries the new cache-buster');
 });
 

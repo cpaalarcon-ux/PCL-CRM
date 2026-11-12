@@ -37,5 +37,5 @@ test('wiring: migration, buster, build label',()=>{
  assert.match(mig,/REVOKE EXECUTE ON FUNCTION erp_private\.client_card_flags\(uuid\[\]\) FROM PUBLIC,anon,authenticated,service_role;/);assert.match(mig,/GRANT EXECUTE ON FUNCTION erp_private\.client_card_flags\(uuid\[\]\) TO erp_api;/);
  assert.doesNotMatch(mig,/forensic/i,'the card question stays free of forensic figures');assert.doesNotMatch(mig,/ISRS 4000/);
  assert.match(rd('staff-pilot.mjs'),/staff-client-cards\.mjs\?v=20261111-urgent-v1/);
- assert.match(rd('supabase/functions/staff-workspace-v12/release.json'),/2026-11-11\.2791/);assert.match(rd('staff-pilot.html'),/2026-11-11\.2791/);
+ assert.match(rd('supabase/functions/staff-workspace-v12/release.json'),/2026-11-12\.2792/);assert.match(rd('staff-pilot.html'),/2026-11-12\.2792/);
 });
