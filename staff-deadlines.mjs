@@ -1,6 +1,7 @@
 // Filing deadline windows (Settings): for each kind of filing, how many days before the due date it is flagged "due soon", and how many days after it the
 // Partners are alerted. The values and their rules live in the database (20261110270000_filing_deadline_windows.sql); this file draws the screen.
 // Flag and alert only: nothing is blocked. Managers can read the matrix; only a Partner can change a value or record its confirmation.
+import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const day=v=>v?String(v).slice(0,10):'';
 export const DEADLINE_NOTE='These windows came from a Partner\'s written instruction of 10 November 2026. They are counted backwards from the KRA (statutory) due date that the Tax Lead, a Manager or a Partner has confirmed for the client\'s period and filing type; the firm\'s own internal deadline is a separate date that raises an Urgent notice. If no KRA date has been confirmed for a period (or the task-date fallback was chosen on purpose), the filing task\'s own due date is used. They flag a filing as due soon and alert the Partners when it is late; they never block anyone from filing. Until a Partner records the confirmation they show "Default - not yet confirmed".';
@@ -22,7 +23,7 @@ export function createDeadlineUI(ctx){
  // The card on the Settings screen. Managers and Partners only.
  function card(){
   if(!leaderRole(d().me))return '';
-  return `<section class="card"><div class="section-head"><h2>Filing deadline windows</h2>${button('deadline-settings','Open the warning windows')}</div><p class="muted">When a PAYE, VAT, monthly or annual filing is flagged as due soon, and when the Partners are alerted that one is late. Nothing is blocked.</p></section>`;
+  return settingsCard({id:'deadlineCard',title:'Filing deadline windows',purpose:'When a PAYE, VAT, monthly or annual filing is flagged as due soon, and when the Partners are alerted that one is late. Nothing is blocked.',audience:'Managers and Partners (only a Partner changes a value)',actions:button('deadline-settings','Open')});
  }
  async function settings(){
   const r=await request({action:'deadline_settings_read'}),partner=d().me?.category_code==='PARTNER';

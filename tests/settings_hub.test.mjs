@@ -26,13 +26,18 @@ test('pure: every section is listed once, owners are labelled as suggestions, no
 });
 
 test('server action: only Partners and Managers, and other actions pass through',async()=>{
- const rows=[{section_key:'licences',pending:'2',total:'4'}];let conf=[];const t=async(parts)=>String(parts[0]).includes('starter_rule_confirmations')?conf:rows;
+ const rows=[{section_key:'licences',pending:'2',total:'4'}];let conf=[],backlog=[];const t=async(parts)=>String(parts[0]).includes('period_due_backlog')?[{items:backlog}]:String(parts[0]).includes('starter_rule_confirmations')?conf:rows;
  const out=await settingsHubAction(t,{category_code:'PARTNER'},{action:'settings_hub_read'});assert.equal(out.sections.find(s=>s.key==='licences').pending,2);
  await settingsHubAction(t,{category_code:'MANAGER'},{action:'settings_hub_read'});
  for(const c of ['SUPERVISOR','ASSISTANT','INTERN','ADMIN'])await assert.rejects(()=>settingsHubAction(t,{category_code:c},{action:'settings_hub_read'}),/Managers and Partners/);
  const sc=x=>x.sections.find(s=>s.key==='starter_confirmations');
  assert.equal(sc(out).pending,1,'the excise starter is locked, so one is waiting');assert.ok(out.waiting.some(s=>s.key==='starter_confirmations'));
  conf=[{rule_key:'excise-duty',account_code:'51070',status:'Confirmed'}];assert.equal(sc(await settingsHubAction(t,{category_code:'PARTNER'},{action:'settings_hub_read'})).pending,0,'a recorded confirmation clears it');
+ // Tax periods waiting for a KRA due date (build 2796): counted by the server from the same list the Settings card opens; only MISSING ones are waiting.
+ const bl=x=>x.sections.find(s=>s.key==='due_date_backlog');
+ assert.equal(bl(out).pending,0);assert.equal(bl(out).status,'Nothing waiting');
+ backlog=[{due_status:'MISSING'},{due_status:'CONFIRMED'},{due_status:'MISSING'},{due_status:'TASK_DATE_FALLBACK'}];
+ const withBacklog=await settingsHubAction(t,{category_code:'MANAGER'},{action:'settings_hub_read'});assert.equal(bl(withBacklog).pending,2);assert.equal(bl(withBacklog).total,4);assert.equal(bl(withBacklog).status,'2 to confirm');assert.ok(withBacklog.waiting.some(s=>s.key==='due_date_backlog'));
  assert.equal(await settingsHubAction(t,{category_code:'PARTNER'},{action:'something_else'}),undefined);
 });
 
@@ -80,8 +85,8 @@ test('UI: hub view, waiting list, search, escaping, roles, wiring and build labe
  const ui=(role,req)=>createSettingsHubUI({request:req,render(){},data:()=>({me:{category_code:role}})});
  assert.equal(ui('SUPERVISOR',async()=>({})).card(),'');assert.equal(ui('ADMIN',async()=>({})).card(),'');
  assert.match(ui('PARTNER',async()=>h).card(),/Loading/);
- const suite=rd('staff-suite.mjs');assert.match(suite,/createSettingsHubUI/);assert.match(suite,/\$\{settingsHub\.card\(\)\}<section class="card"><div class="section-head"><h2>Reference documents/);
- assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261112-excise-v4/);assert.match(suite,/staff-settings-hub\.mjs\?v=20261112-hubwait-v1/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-12.2795');assert.match(rd('staff-pilot.html'),/2026-11-12\.2795/);
+ const suite=rd('staff-suite.mjs');assert.match(suite,/createSettingsHubUI/);assert.match(suite,/\$\{settingsHub\.card\(\)\}\$\{settingsCard\(\{id:'referenceCard',title:'Reference documents/);
+ assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261112-resources-v1/);assert.match(suite,/staff-settings-hub\.mjs\?v=20261112-resources-v1/);
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-12.2796');assert.match(rd('staff-pilot.html'),/2026-11-12\.2796/);
  const mig=rd('supabase/migrations/20261111050000_settings_hub.sql');assert.doesNotMatch(mig,/forensic/i);assert.match(mig,/REVOKE EXECUTE ON FUNCTION erp_private\.settings_hub\(\) FROM PUBLIC,anon,authenticated,service_role;/);assert.match(mig,/GRANT EXECUTE ON FUNCTION erp_private\.settings_hub\(\) TO erp_api;/);
 });
