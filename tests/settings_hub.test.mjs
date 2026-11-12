@@ -3,7 +3,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const root=path.resolve(import.meta.dirname,'..'),rd=f=>fs.readFileSync(path.join(root,f),'utf8');
 const fx='supabase/functions/staff-workspace-v12/';
-const {buildHub,searchSections,SECTIONS,OWNER_NOTE}=await import('../'+fx+'settings-hub-rules.mjs');
+const {buildHub,searchSections,SECTIONS,OWNER_NOTE,COMPUTED_KEYS}=await import('../'+fx+'settings-hub-rules.mjs');
 const {settingsHubAction}=await import('../'+fx+'settings-hub-actions.ts');
 const {waitingView,tableView,hubView,createSettingsHubUI}=await import('../staff-settings-hub.mjs');
 const esc=s=>String(s??'');
@@ -26,10 +26,13 @@ test('pure: every section is listed once, owners are labelled as suggestions, no
 });
 
 test('server action: only Partners and Managers, and other actions pass through',async()=>{
- const rows=[{section_key:'licences',pending:'2',total:'4'}];const t=async()=>rows;
+ const rows=[{section_key:'licences',pending:'2',total:'4'}];let conf=[];const t=async(parts)=>String(parts[0]).includes('starter_rule_confirmations')?conf:rows;
  const out=await settingsHubAction(t,{category_code:'PARTNER'},{action:'settings_hub_read'});assert.equal(out.sections.find(s=>s.key==='licences').pending,2);
  await settingsHubAction(t,{category_code:'MANAGER'},{action:'settings_hub_read'});
  for(const c of ['SUPERVISOR','ASSISTANT','INTERN','ADMIN'])await assert.rejects(()=>settingsHubAction(t,{category_code:c},{action:'settings_hub_read'}),/Managers and Partners/);
+ const sc=x=>x.sections.find(s=>s.key==='starter_confirmations');
+ assert.equal(sc(out).pending,1,'the excise starter is locked, so one is waiting');assert.ok(out.waiting.some(s=>s.key==='starter_confirmations'));
+ conf=[{rule_key:'excise-duty',account_code:'51070',status:'Confirmed'}];assert.equal(sc(await settingsHubAction(t,{category_code:'PARTNER'},{action:'settings_hub_read'})).pending,0,'a recorded confirmation clears it');
  assert.equal(await settingsHubAction(t,{category_code:'PARTNER'},{action:'something_else'}),undefined);
 });
 
@@ -41,7 +44,7 @@ test('settings_hub(): counts agree with the tables, and only Partners and Manage
  for(const role of ['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN']){const a=actors[role]={staff_id:id(),auth_user_id:id(),session:id(),category_code:role};await tx`insert into auth.users(id) values(${a.auth_user_id})`;await tx`insert into auth.sessions(id,user_id) values(${a.session},${a.auth_user_id})`;await tx`insert into erp_private.staff_members(staff_id,auth_user_id,staff_identifier,login_id,full_name,category_code,employment_type,contract_end_date,access_status,sessions_invalid_before) values(${a.staff_id},${a.auth_user_id},${role},${role.toLowerCase()},${'Fictional '+role},${a.category_code},'Permanent','2027-12-31','Active',now()-interval '1 day')`;await tx`insert into erp_private.pilot_sessions(session_id,staff_id,expires_at) values(${a.session},${a.staff_id},now()+interval '1 hour')`;await tx`insert into erp_private.staff_firm_access(staff_id,firm_id,scope) values(${a.staff_id},${F},'Assigned')`;}
  const hub=role=>as(role,()=>db.query('select section_key,pending,total from erp_private.settings_hub()').then(r=>Object.fromEntries(r.rows.map(x=>[x.section_key,x]))));
  const before=await hub('PARTNER');
- assert.deepEqual(Object.keys(before).sort(),SECTIONS.map(s=>s.key).sort(),'the database answers for exactly the sections the page lists');
+ assert.deepEqual(Object.keys(before).sort(),SECTIONS.map(s=>s.key).filter(k=>!COMPUTED_KEYS.includes(k)).sort(),'the database answers for every section except those counted by the server code');
  // Direct counts, as the database owner, for tables with no client scoping.
  const n=async(sql)=>Number((await tx([sql]))[0].c);
  assert.equal(before.deadline_windows.total,await n(`select count(*) c from erp_private.deadline_settings`));
@@ -78,7 +81,7 @@ test('UI: hub view, waiting list, search, escaping, roles, wiring and build labe
  assert.equal(ui('SUPERVISOR',async()=>({})).card(),'');assert.equal(ui('ADMIN',async()=>({})).card(),'');
  assert.match(ui('PARTNER',async()=>h).card(),/Loading/);
  const suite=rd('staff-suite.mjs');assert.match(suite,/createSettingsHubUI/);assert.match(suite,/\$\{settingsHub\.card\(\)\}<section class="card"><div class="section-head"><h2>Reference documents/);
- assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261111-excise-v1/);assert.match(suite,/staff-settings-hub\.mjs\?v=20261111-hub-v1/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-11.2788');assert.match(rd('staff-pilot.html'),/2026-11-11\.2788/);
+ assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261112-hubwait-v1/);assert.match(suite,/staff-settings-hub\.mjs\?v=20261112-hubwait-v1/);
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-11.2789');assert.match(rd('staff-pilot.html'),/2026-11-11\.2789/);
  const mig=rd('supabase/migrations/20261111050000_settings_hub.sql');assert.doesNotMatch(mig,/forensic/i);assert.match(mig,/REVOKE EXECUTE ON FUNCTION erp_private\.settings_hub\(\) FROM PUBLIC,anon,authenticated,service_role;/);assert.match(mig,/GRANT EXECUTE ON FUNCTION erp_private\.settings_hub\(\) TO erp_api;/);
 });
