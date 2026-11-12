@@ -1,7 +1,8 @@
 import {fail,text,choice,date,uuid} from './validation.mjs';
 export const round=v=>Math.round((v+Number.EPSILON)*100)/100;
-export function number(v,min=0,max=1e12){if(v===''||v===null||v===undefined||!Number.isFinite(Number(v))||Number(v)<min||Number(v)>max)fail(400,'Enter a valid number within the permitted range.');return Number(v);}
-export const amount=v=>round(number(v));
+// label (optional) names the box in the message, so the person knows which figure to correct.
+export function number(v,min=0,max=1e12,label=''){if(v===''||v===null||v===undefined||!Number.isFinite(Number(v))||Number(v)<min||Number(v)>max)fail(400,label?`Enter ${label} as a number from ${min.toLocaleString('en-US')} to ${max>=1e12?'a reasonable amount':max.toLocaleString('en-US')}.`:'Enter a valid number within the permitted range.');return Number(v);}
+export const amount=(v,label='')=>round(number(v,0,1e12,label));
 export const day=v=>date(v)||fail(400,'Choose a date.');
 export function range(start,end){start=day(start);end=day(end);if(end<start)fail(400,'End date must follow start date.');return [start,end];}
 export function safeUrl(value,meeting=false){if(!value)return '';const v=text(value,1000);let u;try{u=new URL(v);}catch{fail(400,'Enter a complete HTTPS URL.');}if(u.protocol!=='https:'||u.username||u.password)fail(400,'Use an HTTPS URL without credentials.');if(meeting&&!['meet.google.com','teams.microsoft.com','teams.live.com','zoom.us'].some(h=>u.hostname===h||u.hostname.endsWith('.'+h)))fail(400,'Use a Google Meet, Teams or Zoom meeting link.');return u.href;}

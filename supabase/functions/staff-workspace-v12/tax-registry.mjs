@@ -126,12 +126,12 @@ export function profileIssues(profile,c){
 }
 export function registryParameters(type,p){
  const allowed=['rate','method','fixed_amount','minimum','basis','treatment','period','bands','personal_relief','employee_rate','employer_rate','lower_limit','upper_limit','pension_monthly_cap','mortgage_monthly_cap','medical_monthly_cap','insurance_rate','insurance_monthly_cap','minimum_turnover_exclusive','maximum_turnover','minimum_annual_rent','maximum_annual_rent','threshold'];const out=Object.fromEntries(Object.entries(p||{}).filter(([k])=>allowed.includes(k)));
- if(type==='NSSF'){out.employee_rate=number(p.employee_rate,0,100);out.employer_rate=number(p.employer_rate,0,100);out.lower_limit=amount(p.lower_limit);out.upper_limit=amount(p.upper_limit);if(out.upper_limit<out.lower_limit)fail(400,'NSSF upper limit must exceed lower limit.');}
+ if(type==='NSSF'){out.employee_rate=number(p.employee_rate,0,100,'the employee rate (%)');out.employer_rate=number(p.employer_rate,0,100,'the employer rate (%)');out.lower_limit=amount(p.lower_limit,'the Tier I monthly limit (KES)');out.upper_limit=amount(p.upper_limit,'the total monthly earnings limit (KES)');if(out.upper_limit<out.lower_limit)fail(400,'NSSF upper limit must exceed lower limit.');}
  else if(type==='Relief / deduction')for(const k of ['pension_monthly_cap','mortgage_monthly_cap','medical_monthly_cap','insurance_rate','insurance_monthly_cap'])out[k]=number(p[k],0,k==='insurance_rate'?100:1e9);
  else if(type==='PAYE'||type==='Individual income tax'){if(!Array.isArray(p.bands))fail(400,'Graduated bands are required.');}
- else if(type==='Registration threshold')out.threshold=amount(p.threshold);
- else if(type==='Levy'&&p.method==='fixed')out.fixed_amount=amount(p.fixed_amount);
- else out.rate=number(p.rate,0,100);
+ else if(type==='Registration threshold')out.threshold=amount(p.threshold,'the annual threshold (KES)');
+ else if(type==='Levy'&&p.method==='fixed')out.fixed_amount=amount(p.fixed_amount,'the fixed amount (KES)');
+ else out.rate=number(p.rate,0,100,'the rate (%)');
  if(out.minimum!=null)out.minimum=amount(out.minimum);
  return out;
 }
