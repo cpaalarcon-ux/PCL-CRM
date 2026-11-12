@@ -10,5 +10,5 @@ test('the server returns the groups and the tie-out, and no group is a guess',()
  const m=read('supabase/functions/staff-workspace-v12/bank-statement.mjs');
  assert.match(m,/money_out_sections/);assert.match(m,/tie_out/);
  assert.doesNotMatch(m,/narrative|description.*includes/i,'money out is grouped by the account a person mapped, never by text');
- assert.match(read('supabase/functions/staff-workspace-v12/release.json'),/2026-11-12\.2794/);
+ assert.match(read('supabase/functions/staff-workspace-v12/release.json'),/2026-11-12\.2795/);
 });

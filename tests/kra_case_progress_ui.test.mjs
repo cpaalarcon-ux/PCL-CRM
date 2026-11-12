@@ -55,7 +55,7 @@ test('wiring: handlers, cache buster and the build label',()=>{
  const k=rd('staff-kra.mjs');
  for(const a of ['kra-respond','kra-missing','kra-stage','kra-ack','kra-contact'])assert.ok(k.includes("'"+a+"'"),a+' is handled');
  assert.match(rd('staff-suite.mjs'),/staff-kra\.mjs\?v=20261111-kraprog-v1/);
- assert.match(rd('supabase/functions/staff-workspace-v12/release.json'),/2026-11-12\.2794/);assert.match(rd('staff-pilot.html'),/2026-11-12\.2794/);
+ assert.match(rd('supabase/functions/staff-workspace-v12/release.json'),/2026-11-12\.2795/);assert.match(rd('staff-pilot.html'),/2026-11-12\.2795/);
  const sql=rd('supabase/migrations/20261111030000_kra_case_progress.sql');
  assert.doesNotMatch(sql,/ISRS 4000/);assert.doesNotMatch(sql,/DELETE FROM/i);
  assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/kra_/);

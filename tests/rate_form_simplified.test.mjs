@@ -71,8 +71,8 @@ test('New dated version: rule fixed, start is the day after the last version, no
 test('the other free text is only approval notes; wiring and label',()=>{
  const src=rd('staff-tax-config.mjs');assert.match(src,/<legend>Approval notes<\/legend>/);assert.match(src,/<summary>Advanced<\/summary>/);
  assert.doesNotMatch(src,/Stable rule code \*/,'the code is no longer a required typed field');
- assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261112-excise-v3/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261112-excise-v3/);
- assert.equal(JSON.parse(rd('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-12.2794');assert.match(rd('staff-pilot.html'),/2026-11-12\.2794/);
+ assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261112-excise-v4/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261112-excise-v4/);
+ assert.equal(JSON.parse(rd('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-12.2795');assert.match(rd('staff-pilot.html'),/2026-11-12\.2795/);
  assert.doesNotMatch(src,/forensic|ISRS 4000/i);
 });
 

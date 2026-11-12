@@ -9,10 +9,10 @@ import {summarySalesRows} from './period-import-actions.ts';
 const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Partner approval is required.');};
 // VAT and credit (withholding tax) rules need the designated Tax Lead's own action (the APPROVE_TAX_RULES right); a Partner without that right cannot confirm or approve them.
 // Every other rule can be confirmed and approved by a Partner or by the Tax Lead. The database enforces the same rule again.
-const leadOnly=['VAT','Withholding tax'];
+const leadOnly=['VAT','Withholding tax','Excise duty'];
 async function rateAuthority(tx:any,a:any,r:any){
  const holder=!!(await tx`select erp_private.tax_rules_approver() as ok`)[0]?.ok;
- if(leadOnly.includes(r.tax_type)){if(!holder)fail(403,'VAT and credit rules can only be confirmed and approved by the designated Tax Manager who holds the APPROVE_TAX_RULES permission. An Engagement Partner assigns the Tax Manager to an engagement and switches the permission on.');return holder;}
+ if(leadOnly.includes(r.tax_type)){if(!holder&&r.tax_type==='Excise duty')fail(403,'Excise duty rules can only be confirmed and approved by the designated Tax Manager who holds the APPROVE_TAX_RULES permission. An Engagement Partner assigns the Tax Manager to an engagement and switches the permission on.');if(!holder)fail(403,'VAT and credit rules can only be confirmed and approved by the designated Tax Manager who holds the APPROVE_TAX_RULES permission. An Engagement Partner assigns the Tax Manager to an engagement and switches the permission on.');return holder;}
  if(a.category_code!=='PARTNER'&&!holder)fail(403,'Engagement Partner or designated Tax Manager approval is required.');
  return holder;
 }
