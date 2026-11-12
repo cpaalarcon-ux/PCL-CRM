@@ -42,7 +42,7 @@ test('rate register: SEPT placeholder carries no rate and the Tax Lead confirmat
  assert.equal(r.status,'Draft');assert.equal(r.legal_review_status,'Pending');assert.equal(r.tax_type,'Significant economic presence tax');
  assert.deepEqual(r.parameters,{});assert.equal(r.parameters.rate,undefined);
  // It cannot be tested or confirmed while it has no figures.
- await assert.rejects(()=>act('MANAGER',{action:'rate_test',rate_id:r.rate_id,revision:r.revision,confirm_staging:true,testing_note:'Fictional staging test purpose and result'}),/rate|number|required|staging/i);
+ await assert.rejects(()=>act('MANAGER',{action:'rate_test',rate_id:r.rate_id,revision:r.revision,confirm_staging:true,testing_note:'Fictional staging test purpose and result'}),/no figures yet, so there is nothing to test/,'a placeholder with no figures says plainly why it cannot be tested');
  await assert.rejects(()=>act('PARTNER',{action:'rate_legal_confirm',rate_id:r.rate_id,revision:r.revision,lead_name:'Fictional Lead',reference:'Memo 2026-11-07 fictional',legal_citation:'Fictional Act section 1',confirmed:true}),/no figures/);
 
  // 2. A Manager enters a FICTIONAL figure for this isolated test database and keeps it pending.

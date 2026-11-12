@@ -1,6 +1,8 @@
 import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261107-annualpack-v3';
 // Non-eTIMS exceptions: mapping a purchase that has no eTIMS invoice needs a named legal basis from an approved list, evidence, and a
 // check against other purchases and the bank. A Partner approves each basis; a Manager or Partner can add one for approval.
+// The code of a new legal basis is made from its name so it is never mistyped: NE- then the name in capitals with hyphens, at most 30 characters.
+export const basisCode=name=>{const t=String(name||'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');return t?('NE-'+t).slice(0,30).replace(/-+$/,''):'';};
 export function createNonEtimsUI(ctx){
  const {$,esc,request}=ctx,d=()=>ctx.data();
  const opts=(items,value='',blank='Choose…')=>`<option value="">${esc(blank)}</option>`+items.map(([k,v])=>`<option value="${esc(k)}" ${String(k)===String(value)?'selected':''}>${esc(v)}</option>`).join('');
@@ -41,7 +43,8 @@ export function createNonEtimsUI(ctx){
   if(action==='ne-bases'){await adminBases();return true;}
   if(action==='ne-new'||action==='ne-edit'){
    const b=action==='ne-edit'?find(id):null,cats=$('#editorBody')._ne.categories;
-   modal(b?'Edit '+b.basis_code:'Add a legal basis',form((b?'':field('basis_code','Basis code *','','text','required maxlength="30" pattern="[A-Za-z0-9-]{3,30}" placeholder="NE-EXAMPLE"'))+select('legal_category','Legal category *',cats,b?.legal_category||'','Choose category')+field('label','Name of the basis *',b?.label||'','text','required maxlength="200"')+area('guidance','What evidence is needed',b?.guidance||'')+field('legal_reference','Legal reference (a Partner must verify it before approval)',b?.legal_reference||'','text','maxlength="500"'),b?'Save basis':'Add basis'),f=>request({action:'non_etims_basis_save',...(b?{basis_id:b.basis_id,revision:b.revision}:{}),...Object.fromEntries(f)}),async()=>{await adminBases();});
+   modal(b?'Edit '+b.basis_code:'Add a legal basis',form(select('legal_category','Legal category *',cats,b?.legal_category||'','Choose category')+field('label','Name of the basis *',b?.label||'','text','required maxlength="200"')+(b?'':field('basis_code','Code (made from the name, not typed)','','text','readonly required maxlength="30" pattern="[A-Za-z0-9-]{3,30}" title="The code is made from the name of the basis."'))+area('guidance','What evidence is needed',b?.guidance||'')+field('legal_reference','Legal reference (a Partner must verify it before approval)',b?.legal_reference||'','text','maxlength="500"'),b?'Save basis':'Add basis'),f=>request({action:'non_etims_basis_save',...(b?{basis_id:b.basis_id,revision:b.revision}:{}),...Object.fromEntries(f)}),async()=>{await adminBases();});
+    if(!b){const lab=document.querySelector('#editForm [name="label"]'),code=document.querySelector('#editForm [name="basis_code"]');const sync=()=>{code.value=basisCode(lab.value);};lab.addEventListener('input',sync);sync();}
    return true;
   }
   if(action==='ne-approve'){
