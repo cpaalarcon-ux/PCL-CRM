@@ -14,6 +14,6 @@ test('the server refuses a rule with no figures before it checks the note, with 
  assert.doesNotMatch(rd('staff-tax-config.mjs')+block,/forensic|ISRS 4000/i);
 });
 test('wiring and build label',()=>{
- assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261112-rateform-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261112-rateform-v1/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-11.2791');assert.match(rd('staff-pilot.html'),/2026-11-11\.2791/);
+ assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261112-excise-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261112-excise-v1/);
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-12.2792');assert.match(rd('staff-pilot.html'),/2026-11-12\.2792/);
 });

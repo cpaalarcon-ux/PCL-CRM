@@ -17,7 +17,7 @@ import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261110-taxro
 import {createDocumentReviewUI} from './staff-document-review.mjs?v=20261110-taxrole-v3';
 import {createClientSupportUI} from './staff-client-support.mjs?v=20261111-physfile-v1';
 import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-taxrole-v3';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261112-rateform-v1';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261112-excise-v1';
 import {defaultTaxReportingPeriod,suggestedKraDueDate} from './staff-tax-period-defaults.mjs?v=20261110-taxrole-v3';
 export function createSuiteUI(ctx){
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,clientName,projectName,staffName,firmName,today,empty}=ctx;
