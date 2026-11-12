@@ -1,6 +1,7 @@
 // Bank starter rules that wait for a tax ruling (Settings). A locked starter, today "excise duty on bank charges to expense 51070", opens for copying only after a
 // PARTNER records that the Tax Lead confirmed it in writing: who, the date, and where it is written. Claude never records one. Managers can read; only a Partner records.
 // Recording applies the rule to no client: a preparer still copies it as a Proposed rule and a different Manager or Partner still approves it.
+import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const day=v=>v?String(v).slice(0,10):'';
 export const STARTER_CONFIRM_NOTE='A starter rule that depends on a tax ruling stays locked until a Partner records the Tax Lead\'s written confirmation here. Recording it does not apply the rule to any client: a preparer still copies it as a Proposed rule, and a different Manager or Partner still approves it.';
@@ -19,7 +20,7 @@ export function createStarterConfirmUI(ctx){
  const partner=()=>d().me?.category_code==='PARTNER';
  function card(){
   if(!leaderRole(d().me))return '';
-  return `<section class="card section-space" id="starterConfirmCard"><div class="section-head"><h2>Bank starter rules waiting for the Tax Lead</h2>${button('starter-confirm-open','Open')}</div><p class="muted">Excise duty on bank charges is locked until a Partner records the Tax Lead's written confirmation.</p></section>`;
+  return settingsCard({id:'starterConfirmCard',title:'Bank starter rules waiting for the Tax Lead',purpose:"Excise duty on bank charges is locked until a Partner records the Tax Lead's written confirmation.",audience:'Managers and Partners (only a Partner records it)',actions:button('starter-confirm-open','Open')});
  }
  async function open(){
   const r=await request({action:'bank_starter_confirm_read'});cur=r;

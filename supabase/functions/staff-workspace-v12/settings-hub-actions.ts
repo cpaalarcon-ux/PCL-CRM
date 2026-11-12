@@ -12,5 +12,8 @@ export async function settingsHubAction(tx:any,a:any,p:any):Promise<any>{
  const conf=await tx`select rule_key,account_code,status from erp_private.starter_rule_confirmations where status='Confirmed'`;
  const locked=lockedStarters(conf);
  counts.push({section_key:'starter_confirmations',pending:locked.filter((x:any)=>x.locked).length,total:locked.length});
+ // Tax periods still waiting for a confirmed KRA due date (build 2796): counted from the same list the Settings card opens.
+ const backlog=(await tx`select erp_private.period_due_backlog() as items`)[0]?.items||[];
+ counts.push({section_key:'due_date_backlog',pending:backlog.filter((x:any)=>x.due_status==='MISSING').length,total:backlog.length});
  return buildHub(counts);
 }

@@ -29,12 +29,12 @@ test('rules: status wording, Partner-only buttons, no claim of confirmation',()=
 });
 test('wiring: server module, area, Settings card and cache busters',()=>{
  const su=read('staff-suite.mjs');
- assert.match(su,/import \{createTaxRolesUI\} from '\.\/staff-tax-roles\.mjs\?v=20261110-taxrole-v3'/);assert.match(su,/const taxRoles=createTaxRolesUI\(/);
+ assert.match(su,/import \{createTaxRolesUI\} from '\.\/staff-tax-roles\.mjs\?v=20261112-resources-v1'/);assert.match(su,/const taxRoles=createTaxRolesUI\(/);
  assert.match(su,/deadlines\.card\(\)\}\$\{taxRoles\.card\(\)\}/);assert.match(su,/if\(await taxRoles\.handle\(action,id\)\)return/);
  const idx=read('supabase/functions/staff-workspace-v12/index.ts');assert.match(idx,/const taxManager=await taxManagerAction\(tx,a,p\)/);
  assert.ok(idx.indexOf('taxManagerAction(tx,a,p)')<idx.indexOf('await taxAction(tx,a,p)'),'registered before the tax_ handler');
  for(const a of ['tax_manager_read','tax_manager_assign','tax_manager_end','tax_role_permission_set','annual_due_rule_set','annual_due_rule_confirm'])assert.equal(areaForStaffAction(a),'settings',a);
  assert.equal(areaForStaffAction('tax_create'),'projects');
- assert.equal(JSON.parse(read('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-12.2795');
+ assert.equal(JSON.parse(read('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-12.2796');
  for(const f of ['staff-tax-roles.mjs','supabase/migrations/20261110280000_tax_manager_role_annual_rules.sql','supabase/functions/staff-workspace-v12/tax-manager-actions.ts'])assert.doesNotMatch(read(f),/ISRS 4000/);
 });

@@ -27,7 +27,7 @@ test('handler: opens the list, confirm and fallback send the right requests; car
  assert.deepEqual(sent.at(-1),{action:'due_date_fallback',project_id:'p1',starts_on:'2026-09-01',ends_on:'2026-09-30',kind:'VAT',fallback_reason:'The KRA calendar is not published'});
 });
 test('wiring: screen imported, Settings card, dispatch, server action mapped to the projects area, migration locked down',()=>{
- const su=read('staff-suite.mjs');assert.match(su,/import \{createDueBacklogUI\} from '\.\/staff-due-backlog\.mjs\?v=20261110-duebacklog-v1'/);assert.match(su,/\$\{taxRoles\.card\(\)\}\$\{dueBacklog\.card\(\)\}/);assert.match(su,/if\(await dueBacklog\.handle\(action,id\)\)return/);
+ const su=read('staff-suite.mjs');assert.match(su,/import \{createDueBacklogUI\} from '\.\/staff-due-backlog\.mjs\?v=20261112-resources-v1'/);assert.match(su,/\$\{taxRoles\.card\(\)\}\$\{dueBacklog\.card\(\)\}/);assert.match(su,/if\(await dueBacklog\.handle\(action,id\)\)return/);
  const sv=read('supabase/functions/staff-workspace-v12/due-date-actions.ts');assert.match(sv,/'due_date_backlog'/);assert.match(sv,/Managers and Partners/);
  const mig=read('supabase/migrations/20261110283000_due_date_backlog.sql');assert.match(mig,/SECURITY DEFINER SET search_path TO ''/);assert.match(mig,/REVOKE ALL ON FUNCTION erp_private\.period_due_backlog\(\) FROM PUBLIC,anon,authenticated,service_role/);assert.match(mig,/GRANT EXECUTE ON FUNCTION erp_private\.period_due_backlog\(\) TO erp_api/);
  assert.doesNotMatch(mig,/INSERT INTO|UPDATE erp_private|DELETE FROM/i);

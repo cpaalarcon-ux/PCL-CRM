@@ -11,7 +11,7 @@ import {LIFECYCLE_WORDS,lifecycleForm,isArchived} from './staff-client-lifecycle
 import {DEFAULT_QUERY,queryToRequest,toolbar as registerBar,pager as registerPager,rowMeta} from './staff-client-register.mjs?v=20261110-taxrole-v3';
 import {createPresenceUI} from './staff-presence.mjs?v=20261109-hol-v1';
 import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-check-v1';
-import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261109-ptm-v1';
+import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261112-resources-v1';
 import {createLeadsUI} from './staff-leads.mjs?v=20261108-nav-v1';
 import {createTeamUI} from './staff-team.mjs?v=20261109-vs-v1';
 import {DEFAULT as VS_DEFAULT,hasPicker,pickerOptions,targetOf,attendanceTitle,teamTitle,narrowTasks,attendanceCards} from './staff-view-staff.mjs?v=20261109-vs-v1';
@@ -22,10 +22,10 @@ import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
 import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261110-taxrole-v3';
 import {createMessenger} from './staff-messenger.mjs?v=20261108-nav-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261112-excise-v4';
+import {createSuiteUI} from './staff-suite.mjs?v=20261112-resources-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
-import {moduleLinks,GROUP_ENGAGEMENTS,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261110-taxrole-v3';
+import {moduleLinks,GROUP_ENGAGEMENTS,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261112-resources-v1';
 import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261111-urgent-v1';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
@@ -427,7 +427,6 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.openProject){if($('#editor').open)$('#editor').close();navigateWorkspace('projects',b.dataset.openProject);if(b.dataset.workPeriod){v6.selectPeriod(b.dataset.workPeriod);render();}}
  if(b.dataset.workspaceView)navigateWorkspace(b.dataset.workspaceView);
  if(b.dataset.dashboard==='read-alert'){await request({action:'notification_read',notification_id:b.dataset.id});await load();}
- if(b.dataset.dashboard==='account-catalog')await v6.openCatalog();
  if(b.dataset.drill)drillHome(b.dataset.drill);
  if(b.dataset.myReview==='setup')await improvements.client(b.dataset.client);
  if(b.dataset.myReview==='escalation')await v6.answerEscalation(b.dataset.id);

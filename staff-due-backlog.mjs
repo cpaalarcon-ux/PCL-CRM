@@ -1,6 +1,7 @@
 // Tax periods waiting for a confirmed KRA due date (Settings). The list comes from the database (20261110283000_due_date_backlog.sql) and is read-only; each row opens the same
 // confirm or task-date-fallback form used on the new tax period screen, and the database checks the same rules again. Nothing here confirms a date by itself:
 // a person ticks that the date matches the KRA iTax calendar, or says why the task date is used instead.
+import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const day=v=>v?String(v).slice(0,10):'';
 export const BACKLOG_NOTE='These are the tax periods that already exist. Each one needs the KRA due date confirmed against the iTax calendar by the Tax Lead, a Manager or a Partner, or the task date chosen on purpose with a reason. Until then, its filing warnings count from the filing task\'s own due date. The suggested date is a suggestion only.';
@@ -22,7 +23,7 @@ export function createDueBacklogUI(ctx){
  const waitingCount=()=>waiting(cur).length;
  function card(){
   if(!leaderRole(d().me))return '';
-  return `<section class="card"><div class="section-head"><h2>Tax periods waiting for a KRA due date</h2>${button('duebacklog-open','Open')}</div><p class="muted">Existing periods that still need their KRA due date confirmed.</p></section>`;
+  return settingsCard({id:'dueBacklogCard',title:'Tax periods waiting for a KRA due date',purpose:'Existing periods that still need their KRA due date confirmed.',audience:'Managers and Partners',actions:button('duebacklog-open','Open')});
  }
  async function open(){
   const data=await request({action:'due_date_backlog'});cur=data.items||[];

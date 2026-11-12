@@ -1,6 +1,7 @@
 // Tax Manager role and annual due-date rules (Settings). The rules live in the database (20261110280000_tax_manager_role_annual_rules.sql); this file draws the screen.
 // A Partner assigns Managers as Tax Managers of all clients (or of a single engagement) and switches the role's APPROVE_TAX_RULES permission on (it starts off). Managers can read.
 // Nothing on this screen approves a tax rule; approval stays on the tax rules screen, where the database checks this role again.
+import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const day=v=>v?String(v).slice(0,10):'';
 export const ROLE_NOTE='Tax Managers are Managers a Partner assigns once for all clients, or to a single client engagement. A firm may have as many as it needs. VAT, credit and other tax rules can be approved only by a Tax Manager while a Partner has switched the APPROVE_TAX_RULES permission on for the role. A Partner cannot approve a VAT or credit rule without being assigned as it; no other staff member can approve one.';
@@ -31,7 +32,7 @@ export function createTaxRolesUI(ctx){
  const leaderRole=me=>['PARTNER','MANAGER'].includes(me?.category_code);
  function card(){
   if(!leaderRole(d().me))return '';
-  return `<section class="card"><div class="section-head"><h2>Tax Manager role and annual due dates</h2>${button('taxrole-open','Open')}</div><p class="muted">Who may approve tax rules, and how the annual KRA due dates are suggested.</p></section>`;
+  return settingsCard({id:'taxRoleCard',title:'Tax Manager role and annual due dates',purpose:'Who may approve tax rules, and how the annual KRA due dates are suggested.',audience:'Managers and Partners (only a Partner assigns the role)',actions:button('taxrole-open','Open')});
  }
  async function open(){
   const data=await request({action:'tax_manager_read'}),partner=d().me?.category_code==='PARTNER';

@@ -10,6 +10,8 @@ export const GROUP_ENGAGEMENTS={key:'engagements',title:'Engagements & Delivery'
 export const MODULE_LINKS=[
  {key:'kra',parent:'engagements',area:'projects',title:'KRA notices',action:'kra-open',built:true,roles:[...LEADERS,'ASSISTANT'],note:'KRA notice log, its verification task and flags (Step 7)'},
  {key:'incoming',parent:'documents',area:'documents',title:'Incoming review',action:'incoming-open',built:true,roles:LEADERS,badge:'incoming',note:'Received files waiting for a client and a filing (Step 8)'},
+ // Open to every role that can open Documents (Partner, Manager, Supervisor, Assistant, Intern): it only searches the chart and downloads templates.
+ {key:'resources',parent:'documents',area:'documents',title:'Resources',action:'resources-open',built:true,roles:[...LEADERS,'ASSISTANT','INTERN'],note:'Chart of accounts search and upload templates (build 2796)'},
  {key:'timeline',parent:'communications',area:'communications',title:'Client timeline',action:'incoming-timeline-pick',built:true,roles:LEADERS,note:'Messages and documents for one client (Step 8)'},
  // The link shows for every role that can be put on a file's list; it only opens the person's own list, which is empty unless they were added.
  {key:'forensic',parent:'engagements',area:'audit',title:'Forensic files',action:'forensic-open',built:true,gate:'forensic',roles:[...LEADERS,'ASSISTANT'],note:'Forensic restricted file: visible only to its access list (built)'}
