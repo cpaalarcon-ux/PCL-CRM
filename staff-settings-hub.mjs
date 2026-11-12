@@ -1,6 +1,6 @@
 // Settings hub (Settings page, top card). One list of every settings section, who should own it, and how much is still a default or waiting for approval.
 // Read only: it changes nothing and links to nothing it does not name. Managers and Partners only.
-import {searchSections} from './staff-settings-hub-rules.mjs?v=20261111-hub-v1';
+import {searchSections} from './staff-settings-hub-rules.mjs?v=20261112-hubwait-v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 export function waitingView(hub){

@@ -17,7 +17,10 @@ export const SECTIONS=[
  {key:'approve_chart',group:'Waiting for approval',title:'Chart of accounts additions in draft',owner:'Partner',where:'Settings > Chart of accounts',about:'New accounts stay Draft until a Partner activates them.',needs:'to activate'},
  {key:'approve_statement_lines',group:'Waiting for approval',title:'Statement-line mappings in draft',owner:'Partner',where:'Annual accounts > Statement-line mapping',about:'Which statement line each account sits on.',needs:'to approve'},
  {key:'approve_bank_rules',group:'Waiting for approval',title:'Proposed bank narration rules',owner:'A Manager or Partner who did not propose the rule',where:'Client accounting > Banks > Fix-It queue',about:'A proposed rule maps nothing until a different person approves it.',needs:'to approve'},
+ {key:'starter_confirmations',group:'Waiting for approval',title:'Bank starter rules waiting for the Tax Lead',owner:'A Partner records the Tax Lead\'s written confirmation',where:'Settings > Bank starter rules waiting for the Tax Lead',about:'A starter rule that depends on a tax ruling stays locked until the confirmation is recorded.',needs:'to confirm'},
 ];
+// Sections whose counts come from the server code, not from erp_private.settings_hub().
+export const COMPUTED_KEYS=['starter_confirmations'];
 // counts: [{section_key,pending,total}] from erp_private.settings_hub()
 export function buildHub(counts){
  const by=new Map((counts||[]).map(c=>[c.section_key,{pending:Number(c.pending||0),total:Number(c.total||0)}]));
