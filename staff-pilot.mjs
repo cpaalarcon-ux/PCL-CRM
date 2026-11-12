@@ -22,7 +22,7 @@ import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
 import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261110-taxrole-v3';
 import {createMessenger} from './staff-messenger.mjs?v=20261108-nav-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261112-excise-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261112-excise-v2';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {moduleLinks,GROUP_ENGAGEMENTS,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261110-taxrole-v3';

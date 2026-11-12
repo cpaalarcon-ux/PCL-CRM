@@ -102,7 +102,7 @@ test('wiring: screen is imported, routed and reachable from the engagement page'
  assert.match(su,/if\(await aup\.handle\(action,id\)\)return;/);
  assert.match(su,/AUP_SERVICES\.includes\(p\.service_code\)\?button\('aup-open','Procedures, scope & report',pid\)/);
  const html=rd('staff-pilot.html'),rel=JSON.parse(rd(fx+'release.json'));
- assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-12.2792');
+ assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-12.2793');
  for(const f of ['staff-pilot.mjs','staff-suite.mjs','staff-pilot-auth.js','staff-pilot.html'])assert.doesNotMatch(rd(f),/20261109-services-v1/,f+' carries the new cache-buster');
 });
 test('migration: the rules that must not be loosened',()=>{

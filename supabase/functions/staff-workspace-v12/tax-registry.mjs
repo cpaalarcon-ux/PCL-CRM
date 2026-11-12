@@ -80,6 +80,20 @@ export function pickRate(rates,key,start,end=start){
  if(matches.length!==1)fail(400,matches.length?`Multiple approved versions of ${key} cover this period.`:`Applicable approved rate missing: ${key} (${start} to ${end}).`);
  return matches[0];
 }
+// Excise products recorded on a client tax profile: which excise rules apply to the client, with the client's registration or licence reference and the dates.
+// The product code, unit and rate are never held here; they come from the rule.
+export function exciseProducts(list,obligations,profileFrom,profileTo){
+ if(list==null||(Array.isArray(list)&&!list.length))return [];
+ if(!Array.isArray(list))fail(400,'The excise products must be a list.');
+ if(list.length>20)fail(400,'Add at most 20 excise products to one profile.');
+ if(!obligations.includes('Excise duty'))fail(400,'Tick the Excise duty position before recording excise products.');
+ const out=list.map(x=>{const rate_key=String(x?.rate_key||'');if(!/^KE_EXCISE_[A-Z0-9_]{1,50}$/.test(rate_key))fail(400,'Choose the excise rule for each product.');
+  const from=dateString(x.effective_from),to=dateString(x.effective_to);if(!from||!to)fail(400,'Enter the dates each excise product applies from and through.');if(to<from)fail(400,'An excise product cannot end before it starts.');
+  if(profileFrom&&from<profileFrom||profileTo&&to>profileTo)fail(400,'Each excise product must fall within the profile dates.');
+  return {rate_key,registration_reference:text(x.registration_reference||'',120,false),effective_from:from,effective_to:to};});
+ for(let i=0;i<out.length;i++)for(let j=i+1;j<out.length;j++)if(out[i].rate_key===out[j].rate_key&&out[i].effective_from<=out[j].effective_to&&out[j].effective_from<=out[i].effective_to)fail(400,'The same excise rule is listed twice for overlapping dates.');
+ return out;
+}
 export function validateProfile(p){
  const entity_type=choice(p.entity_type,['Company','Partnership','Individual','Other']),residency=choice(p.residency,['Resident','Non-resident']),regime=choice(p.regime,['Standard','TOT','MRI','Special']);
  const obligations=[...new Set(p.obligations||[])].map(x=>choice(x,profileKinds));if(!obligations.length)fail(400,'Select at least one confirmed client tax position.');
@@ -100,7 +114,8 @@ export function validateProfile(p){
  const vat_threshold_evidence_reference=text(p.vat_threshold_evidence_reference||'',300,false);
  if(vat_taxable_supplies_status==='CONFIRMED'&&(vat_taxable_supplies_12m===null||!vat_threshold_checked_on||!vat_threshold_evidence_reference))fail(400,'Enter the rolling 12-month taxable-supplies amount, check date and evidence reference.');
  if(vat_taxable_supplies_status==='UNKNOWN'&&(vat_taxable_supplies_12m!==null||vat_threshold_checked_on||vat_threshold_evidence_reference))fail(400,'Clear the amount, check date and evidence reference or mark the rolling 12-month taxable-supplies figure Confirmed.');
- return {entity_type,residency,regime,obligations,obligation_statuses,annual_turnover,vat_taxable_supplies_status,vat_taxable_supplies_12m,vat_threshold_checked_on,vat_threshold_evidence_reference,notes:text(p.notes,4000)};
+ const excise_products=exciseProducts(p.excise_products,obligations,dateString(p.effective_from)||null,dateString(p.effective_to)||null);
+ return {entity_type,residency,regime,obligations,obligation_statuses,excise_products,annual_turnover,vat_taxable_supplies_status,vat_taxable_supplies_12m,vat_threshold_checked_on,vat_threshold_evidence_reference,notes:text(p.notes,4000)};
 }
 export function profileIssues(profile,c){
  const issues=[];if(!profile||profile.status!=='Verified')return ['A Manager or Partner must verify a client tax profile covering this period.'];
@@ -124,13 +139,16 @@ export function profileIssues(profile,c){
  if(c.kind==='Individual'&&(c.starts_on.slice(5)!=='01-01'||c.ends_on!==c.starts_on.slice(0,4)+'-12-31'))issues.push('The individual schedule requires a full calendar year.');
  return issues;
 }
+export const exciseBases=['Amount per unit','Percentage of value'];
 export const exciseUnits=['Litre','Kilogram','Tonne','Cubic metre','Each (per item)','Per 1,000 items'];
 export function registryParameters(type,p){
- const allowed=['rate','method','fixed_amount','minimum','basis','treatment','period','bands','personal_relief','employee_rate','employer_rate','lower_limit','upper_limit','pension_monthly_cap','mortgage_monthly_cap','medical_monthly_cap','insurance_rate','insurance_monthly_cap','minimum_turnover_exclusive','maximum_turnover','minimum_annual_rent','maximum_annual_rent','threshold','product_code','unit','rate_per_unit'];const out=Object.fromEntries(Object.entries(p||{}).filter(([k])=>allowed.includes(k)));
+ const allowed=['rate','method','fixed_amount','minimum','basis','treatment','period','bands','personal_relief','employee_rate','employer_rate','lower_limit','upper_limit','pension_monthly_cap','mortgage_monthly_cap','medical_monthly_cap','insurance_rate','insurance_monthly_cap','minimum_turnover_exclusive','maximum_turnover','minimum_annual_rent','maximum_annual_rent','threshold','product_code','unit','rate_per_unit','excise_basis'];const out=Object.fromEntries(Object.entries(p||{}).filter(([k])=>allowed.includes(k)));
  if(type==='NSSF'){out.employee_rate=number(p.employee_rate,0,100,'the employee rate (%)');out.employer_rate=number(p.employer_rate,0,100,'the employer rate (%)');out.lower_limit=amount(p.lower_limit,'the Tier I monthly limit (KES)');out.upper_limit=amount(p.upper_limit,'the total monthly earnings limit (KES)');if(out.upper_limit<out.lower_limit)fail(400,'NSSF upper limit must exceed lower limit.');}
  else if(type==='Relief / deduction')for(const k of ['pension_monthly_cap','mortgage_monthly_cap','medical_monthly_cap','insurance_rate','insurance_monthly_cap'])out[k]=number(p[k],0,k==='insurance_rate'?100:1e9);
  else if(type==='PAYE'||type==='Individual income tax'){if(!Array.isArray(p.bands))fail(400,'Graduated bands are required.');}
- else if(type==='Excise duty'){const code=String(p.product_code||'').trim();if(!/^\d{4}(\.\d{2}){0,2}$/.test(code))fail(400,'Enter the product code as the tariff heading, for example 2711.19.00.');if(!exciseUnits.includes(p.unit))fail(400,'Choose the unit the duty is charged on.');out.product_code=code;out.unit=p.unit;out.rate_per_unit=amount(p.rate_per_unit,'the duty per unit (KES)');delete out.rate;}
+ else if(type==='Excise duty'){const code=String(p.product_code||'').trim();if(!/^\d{4}(\.\d{2}){0,2}$/.test(code))fail(400,'Enter the product code as the tariff heading, for example 2711.19.00.');if(!exciseBases.includes(p.excise_basis))fail(400,'Choose how the duty is worked out: an amount per unit, or a percentage of value.');out.product_code=code;out.excise_basis=p.excise_basis;
+  if(p.excise_basis==='Amount per unit'){if(!exciseUnits.includes(p.unit))fail(400,'Choose the unit the duty is charged on.');out.unit=p.unit;out.rate_per_unit=amount(p.rate_per_unit,'the duty per unit (KES)');delete out.rate;}
+  else {out.rate=number(p.rate,0,100,'the duty (% of value)');delete out.unit;delete out.rate_per_unit;}}
  else if(type==='Registration threshold')out.threshold=amount(p.threshold,'the annual threshold (KES)');
  else if(type==='Levy'&&p.method==='fixed')out.fixed_amount=amount(p.fixed_amount,'the fixed amount (KES)');
  else out.rate=number(p.rate,0,100,'the rate (%)');
