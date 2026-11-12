@@ -28,7 +28,7 @@ test('duty is worked out from the rule, per unit and as a percentage, rounded to
  const r=computeSchedule({...M,lines:[{rate_key:'KE_EXCISE_LPG',quantity:1000.5},{rate_key:'KE_EXCISE_FICT_PCT',value:12345.67}],rates:[unitRule,pctRule],profile});
  assert.deepEqual(r.issues,[]);assert.equal(r.lines[0].duty,12506.25);assert.equal(r.lines[1].duty,1234.57);assert.equal(r.total_duty,13740.82);
  assert.equal(r.lines[0].product_code,'2711.19.00');assert.equal(r.lines[0].unit,'Kilogram');assert.equal(r.lines[0].rate_per_unit,12.5);
- assert.equal(r.rules_status,'CONFIRMED');assert.equal(r.not_for_filing,false);assert.deepEqual(r.notices,[]);
+ assert.equal(r.rules_status,'CONFIRMED');assert.equal(r.not_for_filing,false);assert.deepEqual(r.notices,[r.sales_check.message]);assert.equal(r.sales_check.status,'No eTIMS sales','a value was keyed but no eTIMS sales are imported, so it is a notice, not a blocker');
  assert.equal(computeSchedule({...M,lines:[{rate_key:'KE_EXCISE_LPG',quantity:0}],rates:[unitRule],profile}).total_duty,0,'nil sales are allowed');
 });
 
@@ -143,6 +143,6 @@ test('wiring: routed, in the projects area, no forensic words, no figures seeded
  assert.match(rd(fx+'staff-access-control.mjs'),/excise_schedule_/);
  for(const f of ['supabase/migrations/20261112030000_excise_schedules.sql',fx+'excise-schedule-actions.ts',fx+'excise-schedule-rules.mjs','staff-excise-schedule.mjs'])assert.doesNotMatch(rd(f),/forensic|ISRS 4000/i);
  assert.doesNotMatch(rd('supabase/migrations/20261112030000_excise_schedules.sql'),/INSERT INTO/i);
- assert.match(rd('staff-tax-config.mjs'),/staff-excise-schedule\.mjs\?v=20261112-excise-v3/);assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261112-excise-v3/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-12.2794');assert.match(rd('staff-pilot.html'),/data-build="2026-11-12\.2794"/);
+ assert.match(rd('staff-tax-config.mjs'),/staff-excise-schedule\.mjs\?v=20261112-excise-v4/);assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261112-excise-v4/);
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-12.2795');assert.match(rd('staff-pilot.html'),/data-build="2026-11-12\.2795"/);
 });

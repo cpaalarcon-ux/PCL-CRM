@@ -8,6 +8,17 @@ import {number,amount,round} from './suite-rules.mjs';
 import {rulesStatus,appliedRateSummary} from './snapshot-rules.mjs';
 
 export const MAX_LINES=40;
+const SALES_TOLERANCE=1;
+// Sales check (build 2795). The eTIMS sales import holds values (net amount, VAT, description) but no quantity or product code, so quantities cannot be checked against it.
+// What can be checked is the sales VALUE the person enters for each line: it cannot be more than all the eTIMS sales recorded for the month. Nothing is invented from the descriptions.
+export function salesCheck(lines,sales){
+ const declared=round(lines.reduce((s,l)=>s+(l.value||0),0)),entered=lines.some(l=>l.value!=null);
+ const out={declared_value:declared,etims_net:sales?.available?sales.net:null,etims_source:sales?.available?sales.source:null,status:'',message:''};
+ if(!entered){out.status='No value entered';out.message='Quantities cannot be checked against eTIMS: the eTIMS import holds sales values, not quantities. Enter the sales value of each line to compare it with the eTIMS sales for the month.';return out;}
+ if(!sales?.available){out.status='No eTIMS sales';out.message='No eTIMS sales are imported for this client and month, so the sales values entered cannot be checked yet.';return out;}
+ if(declared>round(sales.net)+SALES_TOLERANCE){out.status='More than eTIMS sales';out.message=`The sales values entered (KES ${declared.toFixed(2)}) are more than all the eTIMS sales for the month (KES ${round(sales.net).toFixed(2)}). Check the figures or the import.`;return out;}
+ out.status='Within eTIMS sales';out.message=`The sales values entered (KES ${declared.toFixed(2)}) are within the eTIMS sales for the month (KES ${round(sales.net).toFixed(2)}). The eTIMS import cannot show which products were sold, so this does not prove the quantities.`;return out;
+}
 const isoDate=v=>/^\d{4}-\d\d-\d\d$/.test(String(v||''))&&!Number.isNaN(Date.parse(v))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;
 // A month is given by its first and last day, both checked.
 export function monthProblem(starts_on,ends_on){
@@ -36,7 +47,7 @@ export function cleanLines(list,starts_on,ends_on){
 const sameWindow=(a,b)=>a.rate_key===b.rate_key&&a.from<=b.to&&b.from<=a.to;
 // rates: the excise rules the person may use (approved, or approved for staging tests), as returned by stagingRates().
 // profile: the verified client tax profile covering the month, or null.
-export function computeSchedule({starts_on,ends_on,lines,rates,profile}){
+export function computeSchedule({starts_on,ends_on,lines,rates,profile,sales=null}){
  const issues=[],applied=[],out=[];
  const bad=monthProblem(starts_on,ends_on);if(bad)fail(400,bad);
  const clean=cleanLines(lines,starts_on,ends_on);
@@ -52,18 +63,20 @@ export function computeSchedule({starts_on,ends_on,lines,rates,profile}){
   const base={rate_key:l.rate_key,label:String(r.label||l.rate_key).replace(/\s*\(rate pending\)\s*$/i,''),from:l.from,to:l.to,note:l.note,rate_id:r.rate_id,approval_scope:r.approval_scope||null,product_code:p.product_code??null,basis:p.excise_basis??null};
   if(p.excise_basis==='Amount per unit'){
    if(l.quantity==null){issues.push(`Line ${n}: enter the quantity sold in ${p.unit}.`);out.push({...base,unit:p.unit,problem:true});return;}
-   out.push({...base,unit:p.unit,rate_per_unit:p.rate_per_unit,quantity:l.quantity,duty:round(l.quantity*Number(p.rate_per_unit))});
+   out.push({...base,unit:p.unit,rate_per_unit:p.rate_per_unit,quantity:l.quantity,...(l.value!=null?{value:l.value}:{}),duty:round(l.quantity*Number(p.rate_per_unit))});
   }else if(p.excise_basis==='Percentage of value'){
    if(l.value==null){issues.push(`Line ${n}: enter the value of the sales (KES).`);out.push({...base,problem:true});return;}
    out.push({...base,rate:p.rate,value:l.value,duty:round(l.value*Number(p.rate)/100)});
   }else {issues.push(`Line ${n}: ${l.rate_key} has no figures yet (its product code, basis and rate wait for the Tax Lead's written confirmation). Nothing can be worked out.`);out.push({...base,problem:true});}
  });
+ const check=salesCheck(clean,sales);if(check.status==='More than eTIMS sales')issues.push(check.message);
  const total=round(out.reduce((s,x)=>s+(x.duty||0),0));
  const status=rulesStatus(applied,{});
  const notices=[];
  if(status==='TESTING')notices.push('TESTING - NOT FOR FILING: this schedule uses a rule approved for staging tests only.');
+ if(['No value entered','No eTIMS sales'].includes(check.status))notices.push(check.message);
  for(const r of legalPendingRates(applied).filter((r,i,a)=>a.findIndex(y=>y.rate_key===r.rate_key)===i))notices.push(`${r.rate_key}: pending Tax Lead written confirmation. This working is a test and is not for filing.`);
- return {lines:out,total_duty:total,issues:[...new Set(issues)],notices,rules_status:status,not_for_filing:status!=='CONFIRMED',applied_rates:appliedRateSummary(applied),starts_on,ends_on};
+ return {lines:out,sales_check:check,total_duty:total,issues:[...new Set(issues)],notices,rules_status:status,not_for_filing:status!=='CONFIRMED',applied_rates:appliedRateSummary(applied),starts_on,ends_on};
 }
 // The preparer and the reviewer must be different people, and a schedule with open issues cannot be reviewed.
 export function reviewProblem(schedule,computed,actor){

@@ -18,7 +18,7 @@ async function requireScheduleObligations(tx:any,s:any,cid:string){
   const issue=obligationWorkIssue(profile,taxCode);if(issue)fail(400,issue);
  }
 }
-async function projectTaskGate(tx:any,pid:string,cid:string,effectiveOn:string){
+export async function projectTaskGate(tx:any,pid:string,cid:string,effectiveOn:string){
  const project=one(await tx`select status from erp_private.projects where project_id=${pid} and deleted_at is null`);
  if(project.status!=='Active')return {ready:false,reason:'Project is Draft. Complete the engagement checks and activate it after resolving the opening-balance step.'};
  const client=one(await tx`select opening_balance_status from erp_private.clients where client_id=${cid} and deleted_at is null`);
@@ -27,7 +27,7 @@ async function projectTaskGate(tx:any,pid:string,cid:string,effectiveOn:string){
   where lp.client_id=${cid} and lp.starts_on<=${effectiveOn} and lp.ends_on>=${effectiveOn} and j.kind='Opening' and j.status='Posted' limit 1`;
  return posted?{ready:true,reason:''}:{ready:false,reason:'The opening TB source is not yet posted for the financial year covering this schedule. Import it, map and balance it, then have a different Manager or Partner post it.'};
 }
-async function assign(tx:any,pid:string,firm:string,sid:string){
+export async function assign(tx:any,pid:string,firm:string,sid:string){
  const s=one(await tx`select * from erp_private.assignment_candidates() where staff_id=${sid} and firm_id=${firm}`);
  await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${pid},${sid},${firm},${s.category_code}) on conflict(project_id,staff_id) do update set deleted_at=null`;
  return s;
