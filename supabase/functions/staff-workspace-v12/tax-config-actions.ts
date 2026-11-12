@@ -72,6 +72,7 @@ export async function taxConfigAction(tx:any,a:any,p:any):Promise<any>{
   leader(a);if(!taxTestingEnabled(Deno.env.get('SUPABASE_URL')||''))fail(403,'Rule testing can be enabled only in the staging ERP.');
   const r=one(await tx`select * from erp_private.tax_rates where rate_id=${uuid(p.rate_id)} for update`);current(r,p);
   if(r.status!=='Draft')fail(400,'Only a saved draft can be enabled for staging testing.');
+  if(r.parameters==null||typeof r.parameters!=='object'||!Object.keys(r.parameters).length)fail(400,'This rule has no figures yet, so there is nothing to test. Its rate, base and dates wait for the Tax Lead\'s written confirmation. Use Edit draft to enter a labelled test figure only if you need to test it earlier.');
   const testingIssue=testingAuthorizationIssue(p.confirm_staging,p.testing_note);if(testingIssue)fail(400,testingIssue);
   const note=text(p.testing_note,2000);
   validateCanonicalRate(r.rate_key,r.tax_type,r.parameters);
