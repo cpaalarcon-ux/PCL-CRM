@@ -29,7 +29,7 @@ test('rules: status wording, Partner-only buttons, no claim of confirmation',()=
 });
 test('wiring: server module, area, Settings card and cache busters',()=>{
  const su=read('staff-suite.mjs');
- assert.match(su,/import \{createTaxRolesUI\} from '\.\/staff-tax-roles\.mjs\?v=20261110-taxrole-v3'/);assert.match(su,/const taxRoles=createTaxRolesUI\(/);
+ assert.match(su,/import \{createTaxRolesUI\} from '\.\/staff-tax-roles\.mjs\?v=20261112-resources-v1'/);assert.match(su,/const taxRoles=createTaxRolesUI\(/);
  assert.match(su,/deadlines\.card\(\)\}\$\{taxRoles\.card\(\)\}/);assert.match(su,/if\(await taxRoles\.handle\(action,id\)\)return/);
  const idx=read('supabase/functions/staff-workspace-v12/index.ts');assert.match(idx,/const taxManager=await taxManagerAction\(tx,a,p\)/);
  assert.ok(idx.indexOf('taxManagerAction(tx,a,p)')<idx.indexOf('await taxAction(tx,a,p)'),'registered before the tax_ handler');

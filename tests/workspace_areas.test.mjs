@@ -37,7 +37,7 @@ test('the Home launcher lists integrated areas and filters by server-provided ac
   assert.match(app, /const canArea=area=>!!data&&/);
   assert.match(app, /const allowed=\['home'\]/);
   assert.doesNotMatch(dashboard, /home-areas|erp-module|ERP areas/);
-  assert.match(app, /staff-dashboard\.mjs\?v=20261109-ptm-v1/);
+  assert.match(app, /staff-dashboard\.mjs\?v=20261112-resources-v1/);
 });
 
 test('areas route through the existing ERP views and the topbar button returns Home', () => {
