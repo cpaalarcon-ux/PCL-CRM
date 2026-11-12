@@ -14,10 +14,11 @@ test('built modules get one link under their parent, for the right roles',()=>{
   assert.deepEqual(moduleLinks(me('INTERN'),'engagements'),[]);
   assert.deepEqual(moduleLinks(me('ADMIN'),'engagements'),[]);
   for(const r of ['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'])assert.deepEqual(moduleLinks(me(r),'projects'),[],'Projects & Tasks holds no module links: it is the project and task manager');
-  for(const parent of ['documents','communications']){
-    for(const r of ['PARTNER','MANAGER','SUPERVISOR'])assert.equal(moduleLinks(me(r),parent).length,1,r+' '+parent);
-    for(const r of ['ASSISTANT','INTERN','ADMIN'])assert.deepEqual(moduleLinks(me(r),parent),[],r+' '+parent);
-  }
+  // Communications: one link for leaders only. Documents: leaders also get Incoming review; Resources (build 2796, listed after Incoming review) is open to every role that has the Documents area.
+  for(const r of ['PARTNER','MANAGER','SUPERVISOR']){assert.equal(moduleLinks(me(r),'communications').length,1,r+' communications');assert.deepEqual(moduleLinks(me(r),'documents').map(x=>x.key),['incoming','resources'],r+' documents');}
+  for(const r of ['ASSISTANT','INTERN','ADMIN'])assert.deepEqual(moduleLinks(me(r),'communications'),[],r+' communications');
+  for(const r of ['ASSISTANT','INTERN'])assert.deepEqual(moduleLinks(me(r),'documents').map(x=>x.key),['resources'],r+' documents');
+  assert.deepEqual(moduleLinks(me('ADMIN'),'documents'),[],'ADMIN documents');
   assert.equal(moduleLinks(me('PARTNER'),'documents')[0].suite,'incoming-open');
   assert.equal(moduleLinks(me('PARTNER'),'communications')[0].suite,'incoming-timeline-pick');
   assert.equal(moduleLinks(me('PARTNER'),'engagements')[0].suite,'kra-open');assert.equal(moduleLinks(me('PARTNER'),'engagements',()=>true,{forensic:true})[1].suite,'forensic-open');
@@ -40,21 +41,21 @@ test('AUP has no list screen so no link; a module that is not built lists no rol
   assert.ok(!MODULE_LINKS.some(m=>!m.built&&m.roles.length),'an unbuilt module must not list roles');
 });
 test('every link points at an action its screen really handles',()=>{
-  const kra=rd('staff-kra.mjs'),inc=rd('staff-incoming.mjs'),fo=rd('staff-forensic.mjs');
+  const kra=rd('staff-kra.mjs'),inc=rd('staff-incoming.mjs'),fo=rd('staff-forensic.mjs'),res=rd('staff-resources.mjs');
   assert.match(kra,/action==='kra-open'/);
   assert.match(inc,/action==='incoming-open'/);
   assert.match(inc,/action==='incoming-timeline-pick'/);
-  for(const m of MODULE_LINKS.filter(x=>x.built))assert.ok(kra.includes(`'${m.action}'`)||inc.includes(`'${m.action}'`)||fo.includes(`'${m.action}'`),m.key);
+  for(const m of MODULE_LINKS.filter(x=>x.built))assert.ok(kra.includes(`'${m.action}'`)||inc.includes(`'${m.action}'`)||fo.includes(`'${m.action}'`)||res.includes(`'${m.action}'`),m.key);
 });
 test('the sidebar draws the links as sub-items that open the module, never as a page or a current page',()=>{
   const app=rd('staff-pilot.mjs');
-  assert.match(app,/from '\.\/staff-nav\.mjs\?v=20261110-taxrole-v3'/);
+  assert.match(app,/from '\.\/staff-nav\.mjs\?v=20261112-resources-v1'/);
   assert.match(app,/parent\('projects','Projects & Tasks','▣',modLinks\('projects'\)\)/);
   assert.match(app,/parent\('documents','Documents','▤',modLinks\('documents'\)\)/);
   assert.match(app,/parent\('communications','Communications Hub','◉',modLinks\('communications'\)\)/);
   assert.match(app,/subs=\[audit,\.\.\.modLinks\('engagements'\)\]\.filter\(Boolean\)/,'Audit files, KRA notices and Forensic files are the links under Engagements & Delivery');
   assert.match(app,/item\.suite\?`<button class="side-item side-sub side-module" type="button" data-suite="\$\{item\.suite\}"/);
-  assert.match(rd('staff-pilot.html'),/data-build="2026-11-12\.2795"/);
+  assert.match(rd('staff-pilot.html'),/data-build="2026-11-12\.2796"/);
 });
 test('the order matches the agreed list: Engagements & Delivery follows Communications and precedes Finance & Reports',()=>{
   const app=rd('staff-pilot.mjs');
