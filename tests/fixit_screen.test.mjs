@@ -53,5 +53,5 @@ test('wiring: handlers, versioned imports, styles, build label',()=>{
  assert.doesNotMatch(ui,/bank-map-selected/,'the old tick-then-map button is replaced');
  const css=rd('staff-pilot.css');assert.match(css,/\.fx-split\{/);assert.match(css,/\.sr-only\{/);assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261111-fixit-v1/);
  assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261111-bankfixit-v1/);
- assert.match(rd('supabase/functions/staff-workspace-v12/release.json'),/2026-11-12\.2793/);assert.match(rd('staff-pilot.html'),/2026-11-12\.2793/);
+ assert.match(rd('supabase/functions/staff-workspace-v12/release.json'),/2026-11-12\.2794/);assert.match(rd('staff-pilot.html'),/2026-11-12\.2794/);
 });

@@ -156,3 +156,14 @@ test('form: the excise section appears with the position, offers rules from a li
  tick.checked=false;tick.dispatchEvent(new pdom.window.Event('change',{bubbles:true}));assert.ok(box().hidden);
  await pSubmit(new pdom.window.FormData(f()));assert.deepEqual(pSent.at(-1).excise_products,[],'a hidden list is never sent');
 });
+
+test('profile: the Excise schedule button appears only for a client with the Excise duty position, and the click is routed to the schedule screen', async()=>{
+ globalThis.document=pdom.window.document;const calls=[];
+ const mk=obl=>({profile_id:'p1',client_id:'c1',status:'Draft',entity_type:'Company',residency:'Resident',regime:'Standard',obligations:obl,obligation_statuses:{},effective_from:'2026-01-01',effective_to:'2026-12-31',notes:'n',excise_products:[],revision:1});
+ const run=async obl=>{const pctx={...ctx,$:s=>document.querySelector(s),modal:(t,h)=>{document.querySelector('#editorBody').innerHTML=h;},request:async x=>{calls.push(x);return {schedules:[]};},button:(a,l,id='')=>`<button type="button" data-action="${a}" data-id="${id}">${l}</button>`,
+  data:()=>({me:{category_code:'MANAGER',staff_id:'m1'},suite:{rates:profileRates,tax_profiles:[mk(obl)],legal_structure_tax_defaults:[],release:null},clients:[client],firms:[],client_firms:[]})};
+  const u=createTaxConfigUI(pctx);await u.handle('profile-edit','p1');return u;};
+ await run(['Company']);assert.ok(!document.querySelector('[data-action="xsched-schedule"]'));
+ const u=await run(['Company','Excise duty']);const b=document.querySelector('[data-action="xsched-schedule"]');assert.ok(b);assert.equal(b.dataset.id,'c1');
+ assert.equal(await u.handle('xsched-schedule','c1'),true);assert.equal(calls.at(-1).action,'excise_schedule_read');assert.equal(calls.at(-1).client_id,'c1');
+});
