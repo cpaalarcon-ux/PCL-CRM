@@ -128,7 +128,7 @@ test('menu link, wiring and cache busters',()=>{
  const su=rd('staff-suite.mjs');
  assert.match(su,/import \{createForensicUI\} from '\.\/staff-forensic\.mjs\?v=20261110-taxrole-v3'/);assert.match(su,/const forensic=createForensicUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await forensic\.handle\(action,id\)\)return;/);assert.match(su,/incoming,forensic,deadlines\}/);
  assert.match(rd('staff-forensic.mjs'),/request\(f,\{file:true,uploadKind:'forensic'\}\)/);
- const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-12\.2792$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
+ const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-12\.2793$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
  assert.doesNotMatch(rd('staff-forensic.mjs')+rd(fx+'forensic-actions.ts')+rd('supabase/migrations/20261110266000_forensic_file.sql'),/ISRS\s*4000/,'the unverified standard number appears nowhere in the code');
 });
 

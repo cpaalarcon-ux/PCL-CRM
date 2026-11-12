@@ -89,9 +89,9 @@ test('UI: card, table by role, form, escaping and wiring',()=>{
  const ui=role=>createStarterConfirmUI({field:()=>'',form:()=>'',modal:()=>{},request:async()=>({}),button,area:()=>'',data:()=>({me:{category_code:role}})});
  assert.match(ui('PARTNER').card(),/Bank starter rules waiting for the Tax Lead/);assert.match(ui('MANAGER').card(),/starterConfirmCard/);for(const r of ['SUPERVISOR','ASSISTANT','INTERN','ADMIN'])assert.equal(ui(r).card(),'');
  const suite=rd('staff-suite.mjs');assert.match(suite,/staff-starter-confirm\.mjs\?v=20261111-excise-v1/);assert.match(suite,/\$\{starterConfirm\.card\(\)\}/);assert.match(suite,/starterConfirm\.handle\(action,id\)/);
- assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261112-excise-v1/);
+ assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261112-excise-v2/);
  assert.match(rd(fx+'staff-access-control.mjs'),/bank_starter_confirm_\|/);assert.match(rd(fx+'index.ts'),/starterConfirmAction/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-12.2792');assert.match(rd('staff-pilot.html'),/2026-11-12\.2792/);
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-12.2793');assert.match(rd('staff-pilot.html'),/2026-11-12\.2793/);
  const mig=rd('supabase/migrations/20261111060000_starter_rule_confirmations.sql');assert.doesNotMatch(mig,/forensic|ISRS 4000/i);assert.doesNotMatch(rd('staff-starter-confirm.mjs')+rd(fx+'starter-confirm-actions.ts'),/forensic|ISRS 4000/i);
  assert.doesNotMatch(mig+rd(fx+'bank-starter-rules.mjs'),/\d+(\.\d+)?\s*%/,'no rate is stored');
 });
