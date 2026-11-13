@@ -230,3 +230,11 @@ export function firstSupportedStart(month=12,day=31){
  return new Date(yearEnd(y-1)+86400000).toISOString().slice(0,10);
 }
 export const unsupportedPeriodMessage=start=>`The ERP holds data for periods ending 31 December 2025 onwards. This client's first supported date is ${start}. Keep earlier periods in the client\u2019s previous records.`;
+
+// Header line for an exported report: the period the figures cover, and the day it was prepared (not the current week).
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const shortDay=(iso,withYear)=>{const [y,m,d]=String(iso).slice(0,10).split('-').map(Number);return `${d} ${MONTHS[m-1]}${withYear?' '+y:''}`;};
+export function reportPeriodLine(start,end,prepared){
+ const sameYear=String(start).slice(0,4)===String(end).slice(0,4);
+ return `Reporting period: ${shortDay(start,!sameYear)} to ${shortDay(end,true)}. Prepared: ${shortDay(prepared,true)}.`;
+}

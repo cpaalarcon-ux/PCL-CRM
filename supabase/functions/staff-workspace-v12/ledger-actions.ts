@@ -10,7 +10,7 @@ import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,noti
 import {readWorkbookSheet} from './workbook-reader.mjs';
 import {checkWorkbookZip} from './workspace-rules.mjs';
 import {loadCrosswalk,revenueAccount} from './sales-crosswalk.ts';
-import {cashAmount,day,normaliseLines,journalIssues,journalExceptions,journalCheckSummary,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,assetClassAllowed,payrollJournal,profitByActivity,isoWeek,DATA_CUTOFF} from './ledger-rules.mjs';
+import {cashAmount,day,normaliseLines,journalIssues,journalExceptions,journalCheckSummary,costJournal,trialBalance,profitReport,sourceApplicationSchedule,assetCalculation,periodAssetCharge,staffReviewer,reportPeriodLine,assetClassAllowed,payrollJournal,profitByActivity,isoWeek,DATA_CUTOFF} from './ledger-rules.mjs';
 import {debtorsRead,receiptAction} from './debtors.ts';
 import {payablesReport,supplierAction} from './payables.ts';
 import {bankRegister,bankAccountAction} from './bank-accounts.ts';
@@ -193,10 +193,10 @@ function reportWindow(l:any,kind:string,asOf:string){
 }
 const PNL_LINES:[string,string][]=[['sales','Sales'],['cost_of_sales','Cost of sales'],['gross_profit','Gross profit'],['other_income','Other income'],['payroll','Staff costs'],['operating_expenses','Operating expenses'],['finance','Finance costs'],['depreciation','Depreciation'],['profit_before_tax','Profit before tax'],['income_tax','Income tax'],['profit_after_tax','Profit after tax']];
 async function reportWorkbook({client,l,full,snapshot}:any){
- const book=new ExcelJS.Workbook(),money='#,##0.00;(#,##0.00);-',week=full.current_week;
+ const book=new ExcelJS.Workbook(),money='#,##0.00;(#,##0.00);-';
  const head=(sheet:any,title:string,sub:string)=>{sheet.addRow([client.company_name+' · '+title]).font={name:'Arial',size:12,bold:true};sheet.addRow([sub]).font={name:'Arial',size:9,italic:true};sheet.addRow([]);};
  const style=(sheet:any,from:number)=>{sheet.eachRow((r:any,n:number)=>{if(n<from)return;r.eachCell((c:any)=>{c.font={name:'Arial',size:9,bold:n===from};if(typeof c.value==='number')c.numFmt=money;});});sheet.columns.forEach((c:any,i:number)=>c.width=i===0?34:18);};
- const cur=book.addWorksheet('Current period');head(cur,`${snapshot.report_kind} ${snapshot.starts_on} to ${snapshot.as_of}`,`Current period: ${week.label} (${week.starts_on} to ${week.ends_on}). Posted entries only. Data cut-off: periods ending ${DATA_CUTOFF} onwards.`);
+ const cur=book.addWorksheet('Current period');head(cur,`${snapshot.report_kind} ${snapshot.starts_on} to ${snapshot.as_of}`,`${reportPeriodLine(snapshot.starts_on,snapshot.as_of,new Date().toLocaleDateString('en-CA',{timeZone:'Africa/Nairobi'}))} Posted entries only. Data cut-off: periods ending ${DATA_CUTOFF} onwards.`);
  cur.addRow(['Line','This report (KES)','Year to date (KES)']);for(const [k,label] of PNL_LINES)cur.addRow([label,Number(snapshot.profit[k]||0),Number(full.profit[k]||0)]);style(cur,4);
  const act=book.addWorksheet('Profit by activity');head(act,'Profit and loss by business activity',`${snapshot.starts_on} to ${snapshot.as_of}. Unallocated = income and expense lines without an activity.`);
  const cols=snapshot.profit_by_activity.activities;act.addRow(['Line',...cols.map((c:any)=>`${c.activity_name} (${c.pack_code})`),'Unallocated','Total']);
