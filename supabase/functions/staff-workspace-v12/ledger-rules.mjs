@@ -156,10 +156,23 @@ export function sourceApplicationSchedule(tb){
  return {name:'Source & Application of Funds',sources,applications,memo,source_total,application_total,difference,trial_balance_difference,opening_trial_balance_difference,tie_out_difference,balanced:Math.abs(difference)<=0.01&&Math.abs(trial_balance_difference)<=0.01&&Math.abs(opening_trial_balance_difference)<=0.01&&Math.abs(tie_out_difference)<=0.01,unclassified,requirements,issues,basis:'Calculated from posted annual opening balances and posted journal movements. Non-cash depreciation is shown separately and excluded from cash applications, as in the supplied schedule. VAT/input tax, tax credits, inventory, payables, loans, PPE and equity movements remain traceable in account details. This control does not prove source completeness or approve a tax claim.'};
 }
 
+// A rate row covers one calendar year, but a client's financial year can straddle two (July to June). Following rows of the same class that
+// start the day after the previous one ends and carry identical rates, accounts and cap extends the cover without changing any stored row.
+export function rateCoveredTo(rate,rates){
+ const same=['class_code','first_rate','annual_rate','later_basis_percentage','method','expense_account','contra_account'],cap=r=>r.tax_cost_cap==null?null:Number(r.tax_cost_cap);
+ const next=d=>new Date(Date.parse(day(d)+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+ let to=day(rate.effective_to);
+ for(let guard=0;guard<10;guard++){
+  const follow=(rates||[]).find(r=>day(r.effective_from)===next(to)&&same.every(k=>String(r[k])===String(rate[k]))&&cap(r)===cap(rate));
+  if(!follow)break;to=day(follow.effective_to);
+ }
+ return to;
+}
+
 export function assetCalculation(asset,rate,start,end){
  const cost=cashAmount(asset.cost)/100,business=finite(asset.business_percentage,'business-use percentage',0,100)/100,first=day(asset.first_use_date),fyStart=day(start),fyEnd=day(end),issues=[];
  if(!first||first>fyEnd)issues.push('Confirm a first-use date within or before this financial year.');
- if(day(rate.effective_from)>fyStart||day(rate.effective_to)<fyEnd)issues.push('Select one reviewed rule covering this financial year.');
+ if(day(rate.effective_from)>fyStart||day(rate.covered_to||rate.effective_to)<fyEnd)issues.push('Select one reviewed rule covering this financial year.');
  if(asset.complex_case)issues.push('A disposal, special incentive or transitional case needs a supported separate adjustment.');
  const firstRate=finite(rate.first_rate,'first-use rate',0,100)/100,laterRate=finite(rate.annual_rate,'annual rate',0,100)/100,factor=finite(rate.later_basis_percentage,'later basis percentage',0,100)/100;
  const sameYear=first>=fyStart&&first<=fyEnd;
