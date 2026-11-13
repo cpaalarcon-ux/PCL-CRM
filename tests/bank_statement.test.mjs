@@ -72,3 +72,11 @@ test('an unmapped money-out line is shown as not classified and the two sides st
  const s=bankSummary({rows:[line('x',0,null,'B1',250)],categories:[],bankAccounts:[]});
  assert.equal(s.money_out_sections.find(x=>x.key==='out:unclassified').amount,250);assert.equal(s.tie_out.money_out.buckets,s.tie_out.money_out.total);
 });
+
+test('continuity works when the database returns Date objects (Jan, Feb, Mar are not reordered as text)',()=>{
+ const d=x=>new Date(x+'T00:00:00Z'),st=(s,e,o,c)=>({bank_account_id:'B1',period_start:d(s),period_end:d(e),statement_opening:o,statement_closing:c});
+ const ok=statementContinuity([st('2026-03-01','2026-03-31',300,400),st('2026-01-01','2026-01-31',100,200),st('2026-02-01','2026-02-28',200,300)]);
+ assert.equal(ok.gaps.length,0);assert.equal(ok.compared,2);
+ const bad=statementContinuity([st('2026-01-01','2026-01-31',100,200),st('2026-02-01','2026-02-28',250,300)]);
+ assert.equal(bad.gaps.length,1);assert.equal(bad.gaps[0].from,'2026-01-31');assert.equal(bad.gaps[0].to,'2026-02-01');
+});

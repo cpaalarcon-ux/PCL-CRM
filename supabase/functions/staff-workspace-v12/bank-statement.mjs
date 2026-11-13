@@ -43,11 +43,13 @@ export function reconcileStatement({rows=[],declaredOpening=null,declaredClosing
 }
 
 // Consecutive statements of one bank must join up: each opening balance equals the previous closing balance.
+// Dates come back from the database as Date objects; compare and print them as ISO days, never as String(Date) ("Tue Mar 31 ...").
+const isoDay=v=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 export function statementContinuity(statements=[]){
  const by=new Map();for(const s of statements){if(!s.bank_account_id||!has(s.statement_opening)||!has(s.statement_closing))continue;const l=by.get(s.bank_account_id)||[];l.push(s);by.set(s.bank_account_id,l);}
  const gaps=[];
- for(const list of by.values()){list.sort((a,b)=>String(a.period_start).localeCompare(String(b.period_start))||String(a.period_end).localeCompare(String(b.period_end)));
-  for(let i=1;i<list.length;i++){const prev=list[i-1],next=list[i];if(cents(next.statement_opening)!==cents(prev.statement_closing))gaps.push({bank_account_id:next.bank_account_id,from:String(prev.period_end).slice(0,10),to:String(next.period_start).slice(0,10),previous_closing:Number(prev.statement_closing),next_opening:Number(next.statement_opening)});}}
+ for(const list of by.values()){list.sort((a,b)=>isoDay(a.period_start).localeCompare(isoDay(b.period_start))||isoDay(a.period_end).localeCompare(isoDay(b.period_end)));
+  for(let i=1;i<list.length;i++){const prev=list[i-1],next=list[i];if(cents(next.statement_opening)!==cents(prev.statement_closing))gaps.push({bank_account_id:next.bank_account_id,from:isoDay(prev.period_end),to:isoDay(next.period_start),previous_closing:Number(prev.statement_closing),next_opening:Number(next.statement_opening)});}}
  return {compared:[...by.values()].reduce((n,l)=>n+Math.max(0,l.length-1),0),gaps};
 }
 
