@@ -62,10 +62,13 @@ async function salesCoverageMode(tx:any,project:any,start:string,end:string){
  return classifySalesCoverage(start,end,nairobiToday(),periods.map((x:any)=>`${day(x.starts_on)}|${day(x.ends_on)}`));
 }
 // One import belongs to one business activity. When exactly one activity covers the period it is
-// used automatically; with several, the preparer chooses, or leaves it blank (Unallocated).
-async function importActivity(tx:any,clientId:string,start:string,end:string,requested:any){
+// used automatically. With several, a sales import must say which one, or explicitly choose
+// "split_later" (Unallocated); leaving it blank is refused so sales are not silently left out of every activity.
+export async function importActivity(tx:any,clientId:string,start:string,end:string,requested:any,kind:string='Sales'){
  const acts=await tx`select activity_id,activity_name from erp_private.client_activities where client_id=${clientId} and effective_from<=${end} and (effective_to is null or effective_to>=${start})`;
+ if(requested==='split_later')return null;
  if(requested){const id=uuid(requested);if(!acts.some((x:any)=>x.activity_id===id))fail(400,'Choose a business activity of this client that covers the import period.');return id;}
+ if(acts.length>1&&kind==='Sales')fail(400,'This client has more than one business activity in this period. Choose the activity these sales belong to, or choose “Split later (Unallocated)”.');
  return acts.length===1?acts[0].activity_id:null;
 }
 async function prepare(tx:any,a:any,project:any,p:any,storage:any){
@@ -254,7 +257,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   const confirmedIds=ids.length?(await tx`select import_id from erp_private.period_imports where import_id=any(${tx.array(ids)}::uuid[]) and status='Confirmed'`).map((r:any)=>r.import_id):[];
   const amendments=confirmedIds.length?await tx`select amendment_id,import_id,status,outcome from erp_private.import_amendments where import_id=any(${tx.array(confirmedIds)}::uuid[]) and status in ('Ready','Replacement saved')`:[];
   for(const cid of confirmedIds){const am=amendments.find((m:any)=>m.import_id===cid&&m.status==='Ready'&&m.outcome==='Replace');if(!am)fail(409,'A confirmed summary can only be replaced after an approved amendment. Open the confirmed summary and choose “Amend this period”.');}
-  const activityId=await importActivity(tx,project.client_id,x.starts_on,x.ends_on,p.activity_id);
+  const activityId=await importActivity(tx,project.client_id,x.starts_on,x.ends_on,p.activity_id,x.kind);
   const saved=one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,entry_mode,kind,source_type,coverage_mode,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,activity_id,notes) values(${pid},${project.client_id},${x.document_id},${x.entry_mode},${x.kind},${x.source_type},${x.coverage_mode},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${activityId},${text(p.notes||'',4000,false)}) returning import_id`);
   for(const am of amendments.filter((m:any)=>m.status==='Ready'))await tx`update erp_private.import_amendments set status='Replacement saved',replacement_import_id=${saved.import_id} where amendment_id=${am.amendment_id} and status='Ready'`;
   return saved;
