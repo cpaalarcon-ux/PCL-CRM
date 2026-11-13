@@ -2,7 +2,7 @@ import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {syncClientSector} from './activity-sectors.ts';
 import {clientChartAction,requireChartAccount,chartCatalogue} from './client-chart.ts';
 import {familyFor} from './legal-structure.mjs';
-import {entityInput,partnerRatios,stockValues,suggestionFor,exportReadiness,packs,streams,asDay,VAT_CATEGORIES,vatCategoriesInput} from './improvement-rules.mjs';
+import {entityInput,partnerRatios,stockValues,nilStockStatement,suggestionFor,exportReadiness,packs,streams,asDay,VAT_CATEGORIES,vatCategoriesInput} from './improvement-rules.mjs';
 import {salesNetByCategory} from './stock-vat.ts';
 import {money} from './accounting-rules.mjs';
 import {dependencyTaskAction,syncClientDependencyTasks} from './dependency-tasks.ts';
@@ -303,13 +303,13 @@ export async function improvementAction(tx:any,a:any,p:any,storage?:any){
    reviewer(a);if(c.status!=='Submitted'||c.prepared_by===a.staff_id)fail(403,'Another reviewer must review the submitted stock control.');const status=choice(p.status,['Approved','Returned']),note=text(p.review_note,2000);if(note.length<10)fail(400,'Explain the independent review conclusion in at least 10 characters.');
    if(status==='Approved'&&c.snapshot?.source_fingerprint!==src.fingerprint)fail(400,'Source rows changed. Return and reconcile the stock control.');
    if(status==='Approved'&&c.result?.issues?.length&&!p.variance_evidence_id)fail(400,'Resolve the stock issues or link independent variance evidence.');
-   if(status==='Approved'){if(c.result?.opening_value===null||c.result?.closing_value===null||src.unreviewed||src.unallocated||!src.selected_count)fail(400,'Support openings, source mapping and independent tax row reviews first.');if(c.result.closing_value<0)fail(400,'Resolve negative closing stock before approval.');if(p.variance_evidence_id)await evidence(tx,p.variance_evidence_id,pid);}
+   if(status==='Approved'){if(c.result?.opening_value===null||c.result?.closing_value===null||src.unreviewed||src.unallocated||(!src.selected_count&&!nilStockStatement(c.result,src,c.inputs)))fail(400,'Support openings, source mapping and independent tax row reviews first.');if(c.result.closing_value<0)fail(400,'Resolve negative closing stock before approval.');if(p.variance_evidence_id)await evidence(tx,p.variance_evidence_id,pid);}
    await tx`update erp_private.stock_controls set status=${status},review_note=${note},reviewed_by=${a.staff_id},snapshot=${tx.json({...c.snapshot,review_note:note,reviewed_by:a.staff_id,variance_evidence_id:p.variance_evidence_id||null})} where control_id=${c.control_id}`;return {ok:true};
   }
   if(!['Draft','Returned'].includes(c.status)||c.prepared_by!==a.staff_id)fail(403,'Only the assigned preparer can change unsubmitted stock work.');
   const inputs=p.action==='v3_stock_save'&&p.inputs&&typeof p.inputs==='object'&&!Array.isArray(p.inputs)?{...p.inputs,...Object.fromEntries(['carried_from','carried_opening_value','carried_through'].filter(k=>c.inputs?.[k]!==undefined).map(k=>[k,c.inputs[k]]))}:p.action==='v3_stock_save'?p.inputs:c.inputs;if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||JSON.stringify(inputs).length>20000)fail(400,'Invalid stock values.');
   const result=stockValues({...inputs,...(c.vat_category?{net_sales:src.net_sales}:{}),resale_purchases:src.resale_purchases,landed_costs:src.landed_costs},policy);
-  if(p.action==='v3_stock_submit'&&(result.opening_value===null||result.closing_value===null||!String(inputs.evidence_reference||'').trim()||!String(inputs.reconciliation_note||'').trim()||!src.selected_count||src.unreviewed||src.unallocated))fail(400,'Complete supported opening, cost, evidence, source allocation and row review before submission.');
+  if(p.action==='v3_stock_submit'&&(result.opening_value===null||result.closing_value===null||!String(inputs.evidence_reference||'').trim()||!String(inputs.reconciliation_note||'').trim()||(!src.selected_count&&!nilStockStatement(result,src,inputs))||src.unreviewed||src.unallocated))fail(400,'Complete supported opening, cost, evidence, source allocation and row review before submission. A category with no purchases can be submitted only as a nil-stock statement: opening, purchases, cost of sales and closing all nil, with evidence and a written reason.');
   await tx`update erp_private.stock_controls set inputs=${tx.json(inputs)},result=${tx.json(result)},status=${p.action==='v3_stock_submit'?'Submitted':'Draft'},snapshot=${tx.json({inputs,result,policy,source_fingerprint:src.fingerprint,source_rows:src.rows})} where control_id=${c.control_id}`;return {ok:true};
  }
  if(['v3_bank_defer','v3_bank_read','v3_bank_supplement','v3_bank_review'].includes(p.action)){

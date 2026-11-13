@@ -33,6 +33,13 @@ export function stockValues(inputs,policy){
  if(!String(inputs.reconciliation_note||'').trim())issues.push('Record the source tie-out and any variance resolution.');
  return {carried_opening:carried!==null&&Number.isFinite(carried)?carried:null,opening_value:opening,resale_purchases:purchases,landed_costs:landed,returns_value:returns,adjustments,net_sales:sales,cost_of_sales:cogs,closing_value:closing,count_value:count,count_variance:variance,cost_basis:basis,provisional:basis==='Provisional margin estimate',issues,label:basis==='Provisional margin estimate'?'PROVISIONAL MANAGEMENT ESTIMATE — NOT VERIFIED STOCK':'Draft supported value control — independent review required',full_perpetual_costing:false};
 }
+// A VAT-category stock roll may carry no purchase rows only as a nil-stock statement: opening, purchases, landed costs, cost of sales and closing are all nil
+// and the roll carries evidence and a written reason. Anything else still needs selected, reviewed purchase rows.
+export function nilStockStatement(result,source,inputs){
+ if(!result||!source||source.selected_count)return false;
+ const nil=v=>v!==null&&v!==undefined&&Number(v)===0;
+ return nil(result.opening_value)&&nil(result.closing_value)&&nil(result.cost_of_sales)&&nil(source.resale_purchases)&&nil(source.landed_costs)&&String(inputs?.reconciliation_note||'').trim().length>=10&&String(inputs?.evidence_reference||'').trim().length>0;
+}
 export function suggestionFor(row,history){
  const n=row.normalized||{},description=String(n.description||row.narration||'').trim().toLowerCase();
  const generic=!description||/^(purchases?|goods|items?|invoice|supplies|general|misc(?:ellaneous)?|stock)$/i.test(description);
