@@ -22,12 +22,14 @@ test('every Settings card is drawn with the shared layout',()=>{
  const suite=rd('staff-suite.mjs');for(const id of ['referenceCard','chartCard'])assert.match(suite,new RegExp(`settingsCard\\(\\{id:'${id}'`));
 });
 
-test('Resources: the chart search and both templates, for everyone; leaders are told where accounts are added',()=>{
+test('Resources: the chart search and every template listed by area, for everyone; leaders are told where accounts are added',()=>{
  document.querySelector('#x').innerHTML=resourcesView(false);
  assert.ok(document.querySelector('[data-accounting="catalog"]'));assert.deepEqual([...document.querySelectorAll('a[download]')].map(a=>a.getAttribute('href')),TEMPLATES.map(t=>t.file));
  assert.match(document.body.textContent,/Managers and Partners add new accounts/);
  document.querySelector('#x').innerHTML=resourcesView(true);assert.match(document.body.textContent,/stay Draft until a Partner activates them/);
- assert.deepEqual(TEMPLATES.map(t=>t.file),['/Opening_TB_Upload_Template.xlsx','/Purchase_Upload_Template.xlsx']);
+ assert.ok(TEMPLATES.length>=10);for(const area of ['Opening balances','Sales','Purchases','Payroll','Bank','Clients'])assert.ok(TEMPLATES.some(t=>t.area===area),area);
+ for(const t of TEMPLATES)assert.ok(fs.existsSync(path.join(root,t.file.slice(1))),t.file+' is shipped');
+ assert.equal([...document.querySelectorAll('#templatesCard tbody tr')].length,TEMPLATES.length);
 });
 
 test('Resources opens as a window from the Documents menu and does nothing else',async()=>{
@@ -46,9 +48,9 @@ test('the Documents menu shows Resources to every role that can open Documents, 
 
 test('Home no longer carries the reference card, and the wiring is in place',()=>{
  const dash=rd('staff-dashboard.mjs');assert.doesNotMatch(dash,/home-reference|QUICK REFERENCES|data-dashboard="account-catalog"/);assert.doesNotMatch(rd('staff-pilot.mjs'),/dashboard==='account-catalog'/);
- const suite=rd('staff-suite.mjs');assert.match(suite,/createResourcesUI\(ctx\)/);assert.match(suite,/resources\.handle\(action\)/);assert.match(suite,/staff-resources\.mjs\?v=20261112-resources-v1/);
+ const suite=rd('staff-suite.mjs');assert.match(suite,/createResourcesUI\(ctx\)/);assert.match(suite,/resources\.handle\(action\)/);assert.match(suite,/staff-resources\.mjs\?v=20261114-templates-v1/);
  for(const f of ['staff-resources.mjs','staff-settings-cards.mjs'])assert.doesNotMatch(rd(f),/forensic|ISRS 4000/i);
  assert.match(rd('staff-pilot.mjs'),/staff-nav\.mjs\?v=20261112-resources-v1/);assert.match(rd('staff-pilot.mjs'),/staff-dashboard\.mjs\?v=20261112-resources-v1/);
- assert.equal(JSON.parse(rd('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-14.2800');assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2800"/);
+ assert.equal(JSON.parse(rd('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-14.2801');assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2801"/);
  assert.equal(rd('staff-settings-hub-rules.mjs'),rd('supabase/functions/staff-workspace-v12/settings-hub-rules.mjs'),'the two copies of the hub rules agree');
 });
