@@ -15,6 +15,7 @@ export function draftSummary(x,esc,shortDate){
  const c=x.changes||{};
  return `<p class="info full">${esc(x.note||'')}</p><p><b>${esc(x.month)}</b> · ${x.lines.length} on the payroll${x.skipped.length?` · ${x.skipped.length} skipped`:''}</p>`+
   (x.existing_run?`<div class="info full error">A payroll for this month already exists (${esc(x.existing_run.status)}). Opening a new draft would repeat it. Open that payroll instead, or discard it first with a reason.</div>`:'')+
+  (x.replacing_run?`<p class="info full">The confirmed run for this month is being amended and its posted entries are reversed. The new run replaces it when it is confirmed, and the old one stays in the history.</p>`:'')+
   (x.returned_run?`<p class="info full">An earlier version of this month was returned. The new run replaces it when it is confirmed, and the returned version stays in the history. Confirm the replacement when the preview asks.</p>`:'')+
   `<h4>New staff (${(c.new_staff||[]).length})</h4>${li(c.new_staff||[],i=>`${esc(i.name)}: gross ${kes(i.gross)}`)}`+
   `<h4>Pay changes (${(c.pay_changes||[]).length})</h4>${li(c.pay_changes||[],i=>`${esc(i.name)}: ${kes(i.from)} to ${kes(i.to)} from ${esc(shortDate(i.effective_from))}. ${esc(i.reason)}`)}`+

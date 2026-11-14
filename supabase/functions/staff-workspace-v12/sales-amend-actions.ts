@@ -22,7 +22,10 @@ function plan(journals:any[]){
  const open=journals.filter(j=>j.status!=='Posted'),need=journals.filter(j=>j.status==='Posted'&&!j.reversal_id),waiting=journals.filter(j=>j.status==='Posted'&&j.reversal_id&&j.reversal_status!=='Posted');
  return {open,need,waiting,done:!open.length&&!need.length&&!waiting.length};
 }
-const totalsOf=(payload:any)=>{
+const noun=(k:any)=>k==='Payroll'?'payroll':'sales';
+const tag=(k:any)=>k==='Payroll'?'PAYROLL':'SALES';
+const totalsOf=(payload:any,kind:any='Sales')=>{
+ if(kind==='Payroll'){const rows=Array.isArray(payload?.calculated)?payload.calculated:[];return {employees:rows.length,gross:money(rows.reduce((n:number,r:any)=>n+(Number(r.gross)||0),0)),net:money(rows.reduce((n:number,r:any)=>n+(Number(r.net_pay)||0),0))};}
  const groups=Array.isArray(payload?.groups)?payload.groups:[],net=money(groups.reduce((n:number,g:any)=>n+(Number(g.net)||0),0)),vat=money(groups.reduce((n:number,g:any)=>n+(Number(g.vat)||0),0));
  return {net,vat,gross:money(net+vat),categories:groups.length};
 };
@@ -46,11 +49,11 @@ async function view(tx:any,a:any,am:any){
  const next:any={Requested:isLeader&&!mine?'Decide: a different Manager or Partner must approve or reject this request.':'Waiting for a different Manager or Partner to decide.',
   Approved:isLeader?'Prepare the reversal of the posted entries. A different Manager or Partner then reviews and posts each one.':'Waiting for a Manager or Partner to prepare the reversals.',
   Reversing:'Waiting for a different Manager or Partner to review and post the reversal entries in Client accounting → Entry register.',
-  Ready:am.outcome==='Replace'?'The posted entries are reversed. Upload the corrected sales summary and choose Replace; it is confirmed by an independent reviewer as usual.':(isLeader?'The posted entries are reversed. Withdraw the old summary to finish.':'Waiting for a Manager or Partner to withdraw the old summary.'),
+  Ready:am.outcome==='Replace'?(am.kind==='Payroll'?'The posted entries are reversed. Prepare the month again from the payroll register and choose Replace; it is confirmed by an independent reviewer as usual.':'The posted entries are reversed. Upload the corrected sales summary and choose Replace; it is confirmed by an independent reviewer as usual.'):(isLeader?'The posted entries are reversed. Withdraw the old summary to finish.':'Waiting for a Manager or Partner to withdraw the old summary.'),
   'Replacement saved':'The corrected summary is waiting for independent review. The amendment completes when it is confirmed.',
   Complete:'Finished.',Rejected:'Rejected.',Cancelled:'Cancelled.'}[am.status as string];
  return {amendment:{...am,requested_by_name:who(am.requested_by),decided_by_name:who(am.decided_by),prepared_by_name:who(am.prepared_by),completed_by_name:who(am.completed_by)},
-  summary:imp?{import_id:imp.import_id,status:imp.status,starts_on:day(imp.starts_on),ends_on:day(imp.ends_on),totals:totalsOf(imp.payload)}:null,journals,next,
+  summary:imp?{import_id:imp.import_id,kind:imp.kind,status:imp.status,starts_on:day(imp.starts_on),ends_on:day(imp.ends_on),totals:totalsOf(imp.payload,imp.kind)}:null,journals,next,
   can:{decide:am.status==='Requested'&&isLeader&&!mine,prepare:am.status==='Approved'&&isLeader,complete:am.status==='Ready'&&am.outcome==='Withdraw'&&isLeader,cancel:['Requested','Approved'].includes(am.status)&&(mine||isLeader)}};
 }
 
@@ -69,21 +72,21 @@ export async function salesAmendAction(tx:any,a:any,p:any){
   const rows=await tx`select * from erp_private.import_amendments where import_id=${importId} and project_id=${pid} order by requested_at desc`;
   const out=[];for(const r of rows)out.push(await view(tx,a,await refresh(tx,r)));
   const imp=(await tx`select status,kind,starts_on,ends_on,payload from erp_private.period_imports where import_id=${importId} and project_id=${pid}`)[0];
-  return {import_status:imp?.status||null,can_request:imp?.status==='Confirmed'&&imp?.kind==='Sales'&&!rows.some((r:any)=>LIVE.includes(r.status)),amendments:out};
+  return {import_status:imp?.status||null,kind:imp?.kind||null,can_request:imp?.status==='Confirmed'&&['Sales','Payroll'].includes(imp?.kind)&&!rows.some((r:any)=>LIVE.includes(r.status)),amendments:out};
  }
 
  if(p.action==='sales_amend_request'){
   const imp=(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid} for update`)[0];
   if(!imp)fail(404,'This summary is unavailable.');
-  if(imp.kind!=='Sales')fail(400,'Only sales summaries can be amended here.');
+  if(!['Sales','Payroll'].includes(imp.kind))fail(400,'Only sales and payroll summaries can be amended here.');
   if(imp.status!=='Confirmed')fail(409,imp.status==='Superseded'||imp.status==='Discarded'?'This summary is already replaced or discarded.':'Only a confirmed summary needs an amendment. Draft, returned or submitted summaries can be discarded or withdrawn.');
   const outcome=choice(p.outcome,['Replace','Withdraw']),type=choice(p.reason_type,REASONS),reason=text(p.reason,2000);
   if(reason.length<10)fail(400,'Explain what is wrong in at least 10 characters.');
   if((await tx`select amendment_id from erp_private.import_amendments where import_id=${imp.import_id} and status=any(${tx.array(LIVE)}::text[])`).length)fail(409,'An amendment is already open for this summary.');
   if(!await taxOpen(tx,pid,day(imp.starts_on),day(imp.ends_on)))fail(409,'The tax period is submitted, locked or filed. Return that work before amending its sources.');
-  const made=(await tx`insert into erp_private.import_amendments(project_id,client_id,import_id,kind,outcome,reason_type,reason,starts_on,ends_on,original_totals,requested_by) values(${pid},${project.client_id},${imp.import_id},'Sales',${outcome},${type},${reason},${day(imp.starts_on)},${day(imp.ends_on)},${tx.json(totalsOf(imp.payload))},${a.staff_id}) returning *`)[0];
-  await audit(tx,a,'SALES_AMENDMENT_REQUESTED',made.amendment_id,{import_id:imp.import_id,outcome,reason_type:type,totals:totalsOf(imp.payload)});
-  await notifyReviewers(tx,project.client_id,`amendment of a confirmed sales summary (${day(imp.starts_on)} to ${day(imp.ends_on)})`,'review:sales-amend:'+made.amendment_id);
+  const made=(await tx`insert into erp_private.import_amendments(project_id,client_id,import_id,kind,outcome,reason_type,reason,starts_on,ends_on,original_totals,requested_by) values(${pid},${project.client_id},${imp.import_id},${imp.kind},${outcome},${type},${reason},${day(imp.starts_on)},${day(imp.ends_on)},${tx.json(totalsOf(imp.payload,imp.kind))},${a.staff_id}) returning *`)[0];
+  await audit(tx,a,tag(imp.kind)+'_AMENDMENT_REQUESTED',made.amendment_id,{import_id:imp.import_id,outcome,reason_type:type,totals:totalsOf(imp.payload,imp.kind)});
+  await notifyReviewers(tx,project.client_id,`amendment of a confirmed ${noun(imp.kind)} summary (${day(imp.starts_on)} to ${day(imp.ends_on)})`,'review:sales-amend:'+made.amendment_id);
   return await view(tx,a,made);
  }
 
@@ -95,8 +98,8 @@ export async function salesAmendAction(tx:any,a:any,p:any){
   if(note.length<10)fail(400,'Record the reason for your decision (at least 10 characters).');
   if(decision==='Approved'&&!await taxOpen(tx,pid,day(am.starts_on),day(am.ends_on)))fail(409,'The tax period is now submitted, locked or filed. Return that work before approving.');
   const next=(await tx`update erp_private.import_amendments set status=${decision},decided_by=${a.staff_id},decided_at=now(),decision_note=${note} where amendment_id=${am.amendment_id} returning *`)[0];
-  await audit(tx,a,'SALES_AMENDMENT_'+decision.toUpperCase(),am.amendment_id,{note});
-  await notifyOutcome(tx,am.requested_by,project.client_id,'amendment of a confirmed sales summary',decision,note,'outcome:sales-amend:'+am.amendment_id);
+  await audit(tx,a,tag(am.kind)+'_AMENDMENT_'+decision.toUpperCase(),am.amendment_id,{note});
+  await notifyOutcome(tx,am.requested_by,project.client_id,'amendment of a confirmed '+noun(am.kind)+' summary',decision,note,'outcome:sales-amend:'+am.amendment_id);
   return await view(tx,a,next);
  }
 
@@ -110,12 +113,12 @@ export async function salesAmendAction(tx:any,a:any,p:any){
   if(pl.open.length)fail(409,`${pl.open.length} entr${pl.open.length===1?'y':'ies'} built from this summary ${pl.open.length===1?'is':'are'} not posted yet (${pl.open.map((j:any)=>j.reference).slice(0,3).join(', ')}). Post or return and withdraw ${pl.open.length===1?'it':'them'} first.`);
   const made:any[]=[];
   for(const j of pl.need){
-   const reversal=await ledgerAction(tx,a,{action:'ledger_reverse',project_id:pid,period_id:j.period_id,journal_id:j.journal_id,journal_date:day(j.journal_date),reference:('REV-'+j.reference).slice(0,100),description:'Reversal for approved amendment of a confirmed sales summary',evidence:am.reason},null);
+   const reversal=await ledgerAction(tx,a,{action:'ledger_reverse',project_id:pid,period_id:j.period_id,journal_id:j.journal_id,journal_date:day(j.journal_date),reference:('REV-'+j.reference).slice(0,100),description:'Reversal for approved amendment of a confirmed '+noun(am.kind)+' summary',evidence:am.reason},null);
    made.push({journal_id:j.journal_id,reversal_id:reversal.journal_id});
   }
   const status=made.length||pl.waiting.length?'Reversing':'Ready';
   const next=(await tx`update erp_private.import_amendments set status=${status},prepared_by=${a.staff_id},prepared_at=now(),reversals=${tx.json(made)} where amendment_id=${am.amendment_id} returning *`)[0];
-  await audit(tx,a,'SALES_AMENDMENT_REVERSALS_PREPARED',am.amendment_id,{reversals:made.length});
+  await audit(tx,a,tag(am.kind)+'_AMENDMENT_REVERSALS_PREPARED',am.amendment_id,{reversals:made.length});
   return {...await view(tx,a,next),reversals:made};
  }
 
@@ -128,7 +131,7 @@ export async function salesAmendAction(tx:any,a:any,p:any){
   await tx`select set_config('erp.period_import_replacement','confirmed',true)`;
   await tx`update erp_private.period_imports set status='Superseded' where import_id=${am.import_id} and status='Confirmed'`;
   const next=(await tx`update erp_private.import_amendments set status='Complete',completed_by=${a.staff_id},completed_at=now() where amendment_id=${am.amendment_id} returning *`)[0];
-  await audit(tx,a,'SALES_AMENDMENT_COMPLETED',am.amendment_id,{outcome:'Withdraw'});
+  await audit(tx,a,tag(am.kind)+'_AMENDMENT_COMPLETED',am.amendment_id,{outcome:'Withdraw'});
   return await view(tx,a,next);
  }
 
@@ -137,6 +140,6 @@ export async function salesAmendAction(tx:any,a:any,p:any){
  if(!['Requested','Approved'].includes(am.status))fail(409,'Once reversals are prepared the amendment cannot be cancelled. Finish it, or ask a Partner.');
  if(am.requested_by!==a.staff_id&&!LEADERS.includes(a.category_code))fail(403,'Only the requester, a Manager or a Partner can cancel.');
  const next=(await tx`update erp_private.import_amendments set status='Cancelled' where amendment_id=${am.amendment_id} returning *`)[0];
- await audit(tx,a,'SALES_AMENDMENT_CANCELLED',am.amendment_id,{});
+ await audit(tx,a,tag(am.kind)+'_AMENDMENT_CANCELLED',am.amendment_id,{});
  return await view(tx,a,next);
 }
