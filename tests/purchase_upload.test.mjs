@@ -13,7 +13,8 @@ test('updated template accepts the legacy 12-column upload but uses M and N for 
  const v=row();v[12]='EXP02';v[13]='61000';const accounts=[{code:'61000',name:'Office expense',route:2,category_code:'EXP02',status:'Active',is_legacy:false}];
  const n=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.deepEqual(n.issues,[]);assert.deepEqual(n.row.mapping_suggestion,{route:2,category_code:'EXP02',account_code:'61000',confirmed:false});
  v[12]='PPE10B';const mismatch=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.equal(mismatch.row.mapping_suggestion,undefined);assert.match(mismatch.row.mapping_suggestion_issue,/does not match/);assert.deepEqual(mismatch.issues,[]);
- v[12]='';assert.match(normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts).row.mapping_suggestion_issue,/both ERP routing code/);
+ v[12]='';assert.match(normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts).row.mapping_suggestion_issue,/routing code \(M\) with the ERP TB item code/);
+ v[12]='exp02';v[13]='';const only=normalizePurchaseUpload(v,'16%','2026-10-01','2026-10-31',accounts);assert.equal(only.row.mapping_suggestion_issue,undefined,'a routing code alone is a valid key for the approved routing map');assert.equal(only.row.routing_code,'EXP02');assert.equal(only.row.mapping_suggestion,undefined);
 });
 test('decimal money rounds half away from zero without rejecting Excel floating tails',()=>{
  for(const [input,expected] of [[7126.9728000000005,7126.97],['10912.478400000002',10912.48],['1.005',1.01],[-1.005,-1.01],['(1,234.565)',-1234.57],[1e-7,0],['0',0],[-0,0]])assert.equal(money(input),expected);

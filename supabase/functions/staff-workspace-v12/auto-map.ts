@@ -2,13 +2,15 @@ import {fail,text,uuid} from './validation.mjs';
 import {mapValue,inventoryDetails,isCost} from './accounting-rules.mjs';
 import {chartResolver} from './client-chart.ts';
 import {suggestionsFor,loadBlocks,isBlocked,HISTORY_METHOD} from './purchase-history.ts';
+import {resolveRouting,cleanCode,unmappedByCode} from './routing-map-rules.mjs';
 // Automatic account mapping. A purchase row whose routing code (column M) and TB item code (column N) exactly match one active,
 // non-legacy account of the central chart is mapped when it is imported, so staff only handle exceptions. The mapping classifies the
 // row; it never approves input VAT, deductibility or posting. A Manager or Partner can remove it with a reason; a removed row is
 // never mapped automatically again. A Manager or Partner can also record a dated supplier override so the same supplier and account are not mapped automatically again.
 // An automatic mapping also needs the client's approved chart in force on the invoice date; every row left for staff carries the reason.
 export const AUTO_METHOD='Auto-mapped — chart verified';
-export const CODE_METHODS=['Uploaded routing and TB codes',AUTO_METHOD,HISTORY_METHOD];
+export const ROUTING_METHOD='Auto-mapped — approved routing map';
+export const CODE_METHODS=['Uploaded routing and TB codes',AUTO_METHOD,HISTORY_METHOD,ROUTING_METHOD];
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v).slice(0,10);
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 
@@ -28,13 +30,23 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
  const policies=activities.length?await tx`select * from erp_private.stock_policy_versions where activity_id=any(${tx.array(activities.map((x:any)=>x.activity_id))}::uuid[]) order by effective_from desc`:[];
  const soldVat=(await tx`select vat_categories_sold from erp_private.clients where client_id=${project.client_id}`)[0]?.vat_categories_sold||null;
  const stamp=new Date().toISOString(),updates:any[]=[],history=await suggestionsFor(tx,project,rows);let viaHistory=0;
- const blocks=await loadBlocks(tx,project.client_id),notes=new Map<string,{code:string,reason:string}>();
+ const blocks=await loadBlocks(tx,project.client_id),notes=new Map<string,{code:string,reason:string}>(),exceptionCodes=new Map<string,string>();
+ const routingMap=await tx`select module,routing_code,item_code,erp_account_code,side,effective_from,effective_to,status,routing_id from erp_private.client_routing_map where client_id=${project.client_id} and module='Purchases' and status='Active'`;
  for(const r of rows){
   const note=(code:string,reason:string)=>{notes.set(r.row_id,{code,reason});};
   try{
    // Without uploaded codes, a long and perfectly consistent expense history for the supplier maps the row, but only when that history was
    // independently posted and not reversed; a shorter or unposted history is only suggested on screen.
-   let hint=r.normalized.mapping_suggestion,fromHistory=false;
+   // The client's approved routing map comes first: a routing code in the file is matched to exactly one approved, date-valid account of this client.
+   let hint=r.normalized.mapping_suggestion,fromHistory=false,viaMap:any=null;
+   const rcode=cleanCode(r.normalized.routing_code);
+   if(rcode){
+    const found=resolveRouting(routingMap,{module:'Purchases',routing_code:rcode,item_code:r.normalized.tb_code,date:String(r.normalized.date||day(r.period_start))});
+    if(found.status==='mapped'){
+     const acct=accounts.find((x:any)=>x.code===found.mapping.erp_account_code);
+     if(acct){hint={route:Number(acct.route),category_code:acct.category_code,account_code:acct.code};viaMap=found.mapping;}
+    }else if(found.status!=='none'||!hint){note(found.code,found.reason);exceptionCodes.set(r.row_id,rcode);continue;}
+   }
    if(!hint){const s=history.get(r.row_id);if(!s?.auto){note('NO_CODES','No routing and TB codes in the upload, and not enough posted history for this supplier to map it automatically.');continue;}hint={route:s.route,category_code:s.category_code,account_code:s.account_code};fromHistory=true;}
    const at=String(r.normalized.date||day(r.period_start)),route=Number(hint.route),code=String(hint.account_code??'');
    const account=accounts.find((x:any)=>x.code===code);
@@ -58,7 +70,7 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
    const own=policies.filter((v:any)=>v.activity_id===chosen?.activity_id),dated=own.find((v:any)=>day(v.effective_from)<=at);
    const v=mapValue(r,{route,account_code:account.code},accounts,own.length?dated:policy);
    const details=inventoryDetails(r,{route,account_code:account.code});if(chosen)details.activity_id=chosen.activity_id;delete details.auto_map_note;
-   details.mapping_confirmation={method:fromHistory?HISTORY_METHOD:AUTO_METHOD,routing_code:account.category_code,tb_item_code:account.code,chart_version:account.catalog_version??null,mapped_at:stamp,imported_by:a.staff_id};
+   details.mapping_confirmation={method:viaMap?ROUTING_METHOD:fromHistory?HISTORY_METHOD:AUTO_METHOD,routing_code:viaMap?viaMap.routing_code:account.category_code,tb_item_code:account.code,chart_version:account.catalog_version??null,mapped_at:stamp,imported_by:a.staff_id,...(viaMap?{routing_map_id:viaMap.routing_id,awaiting_review:true}:{})};
    if(fromHistory)viaHistory++;
    updates.push({row_id:r.row_id,route:v.route,category_code:v.category_code,account_code:v.account_code,narration:v.narration,asset_details:v.asset_details,first_use_status:v.first_use_status,first_use_date:v.first_use_date,review_details:details});
   }catch(e:any){ /* Anything the manual mapping would refuse stays unmapped for staff to resolve, with the reason. */ note('MAPPING_REFUSED',String(e?.message||'The mapping rules refused this row.').slice(0,300)); }
@@ -68,9 +80,9 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
  for(let i=0;i<noteUpdates.length;i+=500)await tx`update erp_private.workbook_rows r set review_details=coalesce(r.review_details,'{}'::jsonb)||jsonb_build_object('auto_map_note',v.note) from jsonb_to_recordset(${tx.json(noteUpdates.slice(i,i+500))}::jsonb) as v(row_id uuid,note jsonb) where r.row_id=v.row_id and r.account_code is null`;
  for(let i=0;i<updates.length;i+=500)await tx`update erp_private.workbook_rows r set route=v.route,category_code=v.category_code,account_code=v.account_code,narration=v.narration,asset_details=v.asset_details,first_use_status=v.first_use_status,first_use_date=v.first_use_date,review_details=v.review_details from jsonb_to_recordset(${tx.json(updates.slice(i,i+500))}::jsonb) as v(row_id uuid,route integer,category_code text,account_code text,narration text,asset_details text,first_use_status text,first_use_date date,review_details jsonb) where r.row_id=v.row_id`;
  if(updates.length)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'workbook_rows','AUTO_MAPPING',${project.project_id},${tx.json({count:updates.length,method:AUTO_METHOD,via_supplier_history:viaHistory,row_ids:updates.map((x:any)=>x.row_id).slice(0,500)})})`;
- const exceptions=rows.filter((r:any)=>!mappedIds.has(r.row_id)&&notes.has(r.row_id)).map((r:any)=>({row_id:r.row_id,source_row:r.source_row,...notes.get(r.row_id)!})),reasons:Record<string,number>={};
+ const exceptions=rows.filter((r:any)=>!mappedIds.has(r.row_id)&&notes.has(r.row_id)).map((r:any)=>({row_id:r.row_id,source_row:r.source_row,...notes.get(r.row_id)!,routing_code:exceptionCodes.get(r.row_id)||null})),reasons:Record<string,number>={};
  for(const e of exceptions)reasons[e.code]=(reasons[e.code]||0)+1;
- return {mapped:updates.length,left_for_staff:rows.length-updates.length,reasons,exceptions:exceptions.slice(0,200)};
+ return {mapped:updates.length,left_for_staff:rows.length-updates.length,reasons,exceptions:exceptions.slice(0,200),unmapped_routing_codes:unmappedByCode(exceptions),via_routing_map:updates.filter((u:any)=>u.review_details?.mapping_confirmation?.method===ROUTING_METHOD).length};
 }
 
 export async function autoMapAction(tx:any,a:any,p:any){

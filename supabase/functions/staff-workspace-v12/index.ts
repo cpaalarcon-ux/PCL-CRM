@@ -53,6 +53,7 @@ import {settingsHubAction} from './settings-hub-actions.ts';
 import {starterConfirmAction} from './starter-confirm-actions.ts';
 import {exciseScheduleAction} from './excise-schedule-actions.ts';
 import {bankTotalsAction} from './bank-totals-actions.ts';
+import {routingMapAction} from './routing-map-actions.ts';
 import {dueDateAction} from './due-date-actions.ts';
 import {taxManagerAction} from './tax-manager-actions.ts';
 import {forensicAction} from './forensic-actions.ts';
@@ -450,6 +451,7 @@ async function action(id:any,p:any){
   const starterConfirm=await starterConfirmAction(tx,a,p);if(starterConfirm!==undefined)return starterConfirm;
   const exciseSchedule=await exciseScheduleAction(tx,a,p);if(exciseSchedule!==undefined)return exciseSchedule;
   const bankTotals=await bankTotalsAction(tx,a,p,admin.storage.from(BUCKET));if(bankTotals!==undefined)return bankTotals;
+  const routingMap=await routingMapAction(tx,a,p);if(routingMap!==undefined)return routingMap;
   const docReview=await documentReviewAction(tx,a,p);if(docReview!==undefined)return docReview; // before the document_ prefix handlers
   const incoming=await incomingAction(tx,a,p);if(incoming!==undefined)return incoming;
   const deadline=await deadlineAction(tx,a,p);if(deadline!==undefined)return deadline;

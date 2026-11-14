@@ -1,3 +1,4 @@
+import {routingConfirmed} from './routing-map-rules.mjs';
 import ExcelJS from 'exceljs';
 import {requireRightChart} from './legal-structure-actions.ts';
 import {pendingPurchases} from './purchase-pending.ts';
@@ -136,10 +137,10 @@ async function sourceCheck(tx:any,j:any){
  if(archived.length)fail(409,'A source in this draft was archived. Return the draft to its preparer and create a corrected posting from active sources.');
  const r=await reviewedRows(tx,j.project_id,j.source_snapshot.rows.map((x:any)=>x.row_id));
  const clientId=(await tx`select client_id from erp_private.projects where project_id=${j.project_id}`)[0]?.client_id;
- const accounts=await tx`select code,route,category_code,status,is_legacy from erp_private.account_catalog`;
+ const accounts=await tx`select code,route,category_code,status,is_legacy from erp_private.account_catalog`,routingMaps=await tx`select routing_id,erp_account_code,effective_from,effective_to,status from erp_private.client_routing_map where client_id=${clientId} and status='Active'`;
  for(const row of r.filter((x:any)=>['Purchases','Expenditure','Non-eTIMS'].includes(x.dataset)&&x.account_code)){
   const hint=row.normalized?.mapping_suggestion,confirmation=row.review_details?.mapping_confirmation,account=accounts.find((x:any)=>x.code===row.account_code),confirmed=['Uploaded routing and TB codes','Auto-mapped — chart verified'].includes(confirmation?.method)&&hint&&String(confirmation.tb_item_code)===String(row.account_code)&&String(hint.account_code)===String(row.account_code)&&String(confirmation.routing_code)===String(hint.category_code)&&String(account?.category_code)===String(hint.category_code)&&Number(account?.route)===Number(hint.route)&&account?.status==='Active'&&!account?.is_legacy;
-  if(!confirmed&&!await clientAccountAllowed(tx,clientId,row.account_code,day(row.normalized.date||row.period_start)))fail(409,`ERP account ${row.account_code} is no longer approved for this client and source date, and its uploaded code confirmation is not valid. Review the client account setup and refresh the draft.`);
+  if(!confirmed&&!routingConfirmed(confirmation,row.account_code,row.normalized.date||row.period_start,routingMaps)&&!await clientAccountAllowed(tx,clientId,row.account_code,day(row.normalized.date||row.period_start)))fail(409,`ERP account ${row.account_code} is no longer approved for this client and source date, and its uploaded code confirmation is not valid. Review the client account setup and refresh the draft.`);
  }
  if(await digest(r.map(sourceShape))!==j.source_snapshot.digest)fail(409,'A source or its review changed. Refresh the generated draft before resubmitting.');
 }
