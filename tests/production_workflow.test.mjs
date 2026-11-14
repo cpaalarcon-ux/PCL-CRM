@@ -37,3 +37,11 @@ test('production requires green staging checks, migration safety and the same fu
   assert.match(prod, /older than the last applied production migration/);
   assert.match(prod, /functions deploy staff-workspace-v12 --project-ref "\$PROJECT_REF" --no-verify-jwt/);
 });
+
+test('production sets its own site address and allowed origins and refuses staging ones', () => {
+  assert.match(prod, /vars\.PROD_SITE_ORIGIN/);
+  assert.match(prod, /vars\.PROD_ALLOWED_ORIGINS/);
+  assert.match(prod, /supabase secrets set PCL_SITE_ORIGIN=/);
+  assert.match(prod, /\*backend-staging-foundation\*/);
+  assert.ok(prod.indexOf('secrets set PCL_SITE_ORIGIN') < prod.indexOf('functions deploy staff-workspace-v12'), 'settings are in place before the function goes live');
+});

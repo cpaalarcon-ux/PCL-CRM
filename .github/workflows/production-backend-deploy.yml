@@ -13,6 +13,8 @@ name: Production backend deploy
 # Required in the "production" environment (Settings > Environments > production), with required reviewers turned on:
 #   secrets:  PROD_SUPABASE_ACCESS_TOKEN, PROD_SUPABASE_DB_PASSWORD
 #   variables: PROD_PROJECT_REF   (the 20-character reference of the production project)
+#              PROD_SITE_ORIGIN   (the web address staff use, e.g. https://pcl.phamalarcon.com; setup links start with it)
+#              PROD_ALLOWED_ORIGINS (comma-separated web addresses allowed to call the backend; normally the same address)
 
 on:
   workflow_dispatch:
@@ -108,6 +110,14 @@ jobs:
 
       - name: Apply pending migrations
         run: supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Set the function's site address and allowed origins
+        run: |
+          site="${{ vars.PROD_SITE_ORIGIN }}"; origins="${{ vars.PROD_ALLOWED_ORIGINS }}"
+          [[ "$site" =~ ^https://[a-z0-9.-]+$ ]] || { echo "::error::PROD_SITE_ORIGIN must be an https address with no path."; exit 1; }
+          [ -n "$origins" ] || { echo "::error::PROD_ALLOWED_ORIGINS is empty."; exit 1; }
+          case "$site,$origins" in *backend-staging-foundation*|*"$STAGING_PROJECT_REF"*) echo "::error::A staging address was given for production."; exit 1;; esac
+          supabase secrets set PCL_SITE_ORIGIN="$site" PCL_ALLOWED_ORIGINS="$origins" --project-ref "$PROJECT_REF"
 
       - name: Deploy staff-workspace-v12
         # Gateway JWT verification stays off: login and setup routes are called before a session exists,

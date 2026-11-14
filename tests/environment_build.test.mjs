@@ -6,6 +6,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {build, loadEnvironment, reachable} from '../scripts/build-site.mjs';
 import {taxTestingEnabled, stagingRates} from '../supabase/functions/staff-workspace-v12/testing-rates.mjs';
+import {allowedOrigin, DEFAULT_ORIGINS} from '../supabase/functions/staff-workspace-v12/validation.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const staging = JSON.parse(fs.readFileSync(path.join(root, 'environments/staging.json'), 'utf8'));
@@ -81,4 +82,23 @@ test('the fictional-client guard is off by default in the database', () => {
   assert.match(sql, /enabled boolean NOT NULL DEFAULT false/);
   const all = fs.readdirSync(path.join(root, 'supabase/migrations')).map(f => fs.readFileSync(path.join(root, 'supabase/migrations', f), 'utf8')).join('\n');
   assert.ok(!/workspace_features[^;]*enabled\s*=\s*true|insert into erp_private\.workspace_features[^;]*true/i.test(all), 'no migration may switch the guard on');
+});
+
+test('allowed browser origins: staging keeps its list, production allows only what it is given', () => {
+  assert.equal(allowedOrigin('https://backend-staging-foundation.pcl-crm.pages.dev'), true, 'staging default unchanged');
+  assert.equal(allowedOrigin('https://evil.example'), false);
+  assert.equal(allowedOrigin('https://pcl.phamalarcon.com', ['https://pcl.phamalarcon.com']), true);
+  assert.equal(allowedOrigin('https://backend-staging-foundation.pcl-crm.pages.dev', ['https://pcl.phamalarcon.com']), false, 'production does not trust the staging site');
+  assert.equal(allowedOrigin('https://pcl.phamalarcon.com', []), false, 'an unconfigured production project allows no browser at all');
+  assert.ok(DEFAULT_ORIGINS.length >= 3);
+});
+
+test('the server takes its setup-link address from settings and falls back to staging only on the staging project', () => {
+  const src = fs.readFileSync(path.join(root, 'supabase/functions/staff-workspace-v12/index.ts'), 'utf8');
+  assert.match(src, /Deno\.env\.get\('PCL_SITE_ORIGIN'\)/);
+  assert.match(src, /Deno\.env\.get\('PCL_ALLOWED_ORIGINS'\)/);
+  assert.match(src, /IS_STAGING_PROJECT\?'https:\/\/backend-staging-foundation\.pcl-crm\.pages\.dev':''/, 'staging address only as the staging default');
+  assert.match(src, /if\(!SETUP_BASE\)fail\(503/, 'no setup link is issued without a configured address');
+  const loose = src.split('\n').filter(l => l.includes('backend-staging-foundation') && !l.includes('IS_STAGING_PROJECT?'));
+  assert.deepEqual(loose, [], 'no other staging address in the server');
 });
