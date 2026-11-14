@@ -66,7 +66,9 @@ export function normalizePurchaseUpload(values,rate,start,end,accounts=[],client
  if(!row.invoice)issues.push('Column E: invoice or credit-note number is required.');
  if(!row.description)issues.push('Column F: purchase description is required.');
  row.routing_code=row.routing_code?String(row.routing_code).trim():'';row.tb_code=row.tb_code?String(row.tb_code).trim():'';
- if(!!row.routing_code!==!!row.tb_code)row.mapping_suggestion_issue='Enter both ERP routing code (M) and ERP TB item code (N), or leave both blank.';
+ // A routing code on its own (column M) is a valid key: the client's approved routing map chooses the account. A TB item code on its own is not.
+ if(!row.routing_code&&row.tb_code)row.mapping_suggestion_issue='Enter the ERP routing code (M) with the ERP TB item code (N), or leave both blank.';
+ else if(row.routing_code&&!row.tb_code){const routingCode=row.routing_code.toUpperCase();if(!/^[A-Z][A-Z0-9_]{1,29}$/.test(routingCode))row.mapping_suggestion_issue='Column M must be a routing code such as EXP01.';else row.routing_code=routingCode;}
  else if(row.routing_code||row.tb_code){
   const routingCode=String(row.routing_code).trim().toUpperCase(),code=String(row.tb_code).trim();
   if(!/^[A-Z][A-Z0-9]{1,9}$/.test(routingCode)||!/^\d{5}$/.test(code))row.mapping_suggestion_issue='Columns M and N must contain an ERP routing category code and a five-digit TB item code.';
