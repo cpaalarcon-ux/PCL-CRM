@@ -57,6 +57,7 @@ import {routingMapAction} from './routing-map-actions.ts';
 import {payrollRegisterAction} from './payroll-register-actions.ts';
 import {payrollReviewAction} from './payroll-review-actions.ts';
 import {deleteRedoAction} from './delete-redo-actions.ts';
+import {clientMasterAction} from './client-master-actions.ts';
 import {dueDateAction} from './due-date-actions.ts';
 import {taxManagerAction} from './tax-manager-actions.ts';
 import {forensicAction} from './forensic-actions.ts';
@@ -458,6 +459,7 @@ async function action(id:any,p:any){
   const payrollRegister=await payrollRegisterAction(tx,a,p);if(payrollRegister!==undefined)return payrollRegister;
   const payrollReview=await payrollReviewAction(tx,a,p);if(payrollReview!==undefined)return payrollReview;
   const deleteRedo=await deleteRedoAction(tx,a,p);if(deleteRedo!==undefined)return deleteRedo;
+  const clientMaster=await clientMasterAction(tx,a,p);if(clientMaster!==undefined)return clientMaster;
   const docReview=await documentReviewAction(tx,a,p);if(docReview!==undefined)return docReview; // before the document_ prefix handlers
   const incoming=await incomingAction(tx,a,p);if(incoming!==undefined)return incoming;
   const deadline=await deadlineAction(tx,a,p);if(deadline!==undefined)return deadline;
