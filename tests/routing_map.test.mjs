@@ -61,14 +61,14 @@ test('a mapped row stays valid only while the same approved mapping still covers
 test('the actions are classified, wired, and the maker is never the checker',()=>{
  for(const a of ['routing_map_read','routing_map_propose','routing_map_approve','routing_map_end','routing_map_withdraw'])assert.equal(areaForStaffAction(a),'projects',a);
  const idx=rd('supabase/functions/staff-workspace-v12/index.ts');assert.match(idx,/routingMapAction\(tx,a,p\)/);
- const act=rd('supabase/functions/staff-workspace-v12/routing-map-actions.ts');assert.match(act,/m\.created_by===a\.staff_id\)fail\(403,'A different Manager or Partner must approve/);assert.match(act,/Propose between 1 and 200/);
+ const act=rd('supabase/functions/staff-workspace-v12/routing-map-actions.ts');assert.match(act,/a\.category_code!=='PARTNER'\)fail\(403,'A Partner approves/);assert.match(act,/m\.created_by===a\.staff_id\)fail\(403,'A Partner who did not propose it must approve/);assert.match(act,/Propose between 1 and 200/);
  const auto=rd('supabase/functions/staff-workspace-v12/auto-map.ts');assert.match(auto,/resolveRouting\(routingMap/);assert.match(auto,/awaiting_review:true/);assert.doesNotMatch(auto,/insert into erp_private\.(journal|ledger)/i,'mapping never posts');
  for(const f of ['ledger-actions.ts','accounting-actions.ts'])assert.match(rd('supabase/functions/staff-workspace-v12/'+f),/routingConfirmed\(/,f);
 });
 test('the migration: RLS forced, no delete, audited, approval by a different Manager or Partner, approved mappings never edited',()=>{
- const f=fs.readdirSync(path.join(root,'supabase/migrations')).find(x=>/client_routing_map/.test(x)),sql=rd('supabase/migrations/'+f);
+ const files=fs.readdirSync(path.join(root,'supabase/migrations')).filter(x=>/client_routing_map|routing_map_partner/.test(x)).sort(),f=files[0],sql=files.map(x=>rd('supabase/migrations/'+x)).join('\n');
  assert.match(sql,/FORCE ROW LEVEL SECURITY/);assert.match(sql,/reject_delete/);assert.match(sql,/log_change\('routing_id'\)/);assert.match(sql,/touch_revision/);
- assert.match(sql,/A different Manager or Partner must approve this routing mapping/);assert.match(sql,/cannot be edited\. Propose a new dated mapping instead/);
+ assert.match(sql,/A Partner who did not propose it must approve this routing mapping/);assert.match(sql,/A Manager or Partner proposes a routing mapping/);assert.match(sql,/ADD COLUMN version integer/);assert.match(sql,/coalesce\(max\(m\.version\),0\)\+1/);assert.match(sql,/cannot be edited\. Propose a new dated mapping instead/);
  assert.match(sql,/An approved mapping already covers this routing code on these dates/);assert.match(sql,/CHECK\(\(module='Payroll'\)=\(side IS NOT NULL\)\)/);
  assert.doesNotMatch(sql.replace(/^--.*$/gm,''),/client_account_mappings/i,'a separate table from the opening trial balance mappings');
  assert.ok(f>'20261107103437','newer than the baseline');
@@ -77,10 +77,12 @@ test('the screen: approve is offered only to a different Manager or Partner; sta
  const {mapRows,createRoutingMapUI,ROUTING_NOTE}=await import('../staff-routing-map.mjs');
  const draft={routing_id:'d',module:'Purchases',routing_code:'EXP01',erp_account_code:'61030',account_name:'Office',effective_from:'2026-01-01',status:'Draft',created_by:'maker',created_by_name:'Maker',revision:1};
  const html=(me)=>mapRows([draft],{me});
- assert.doesNotMatch(html({staff_id:'maker',category_code:'MANAGER'}),/data-rm="approve"/,'the maker cannot approve');
- assert.match(html({staff_id:'other',category_code:'MANAGER'}),/data-rm="approve"/);
+ assert.doesNotMatch(html({staff_id:'maker',category_code:'PARTNER'}),/data-rm="approve"/,'the proposer cannot approve');
+ assert.match(html({staff_id:'other',category_code:'PARTNER'}),/data-rm="approve"/);
+ assert.doesNotMatch(html({staff_id:'other',category_code:'MANAGER'}),/data-rm="approve"/,'a Manager proposes; only a Partner approves');
  assert.doesNotMatch(html({staff_id:'x',category_code:'ASSISTANT'}),/data-rm="approve"/,'staff cannot approve');
- assert.match(html({staff_id:'maker',category_code:'ASSISTANT'}),/data-rm="withdraw"/,'the maker can withdraw their own draft');
+ assert.match(html({staff_id:'maker',category_code:'MANAGER'}),/data-rm="withdraw"/,'the maker can withdraw their own draft');
+ assert.match(html({staff_id:'other',category_code:'PARTNER'}),/Version 1/);
  const active={...draft,status:'Active',approved_by:'o',approved_by_name:'Other'};
  assert.match(mapRows([active],{me:{staff_id:'z',category_code:'PARTNER'}}),/data-rm="end"/);assert.doesNotMatch(mapRows([active],{me:{staff_id:'z',category_code:'ASSISTANT'}}),/data-rm="(end|withdraw)"/);
  assert.match(ROUTING_NOTE,/Nothing is posted/);

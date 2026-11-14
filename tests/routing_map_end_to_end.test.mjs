@@ -42,25 +42,27 @@ test('the approved routing map: one approval maps every row with the code for it
  const none=await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal(none.mapped,0);assert.deepEqual(none.unmapped_routing_codes.map(x=>[x.routing_code,x.rows]),[['XRT1',3],['XRT9',1]]);
  assert.match((await get('A1')).review_details.auto_map_note.reason,/XRT1 has no approved mapping/);
  // Staff propose; a draft maps nothing.
- const prop=await rm('ASSISTANT',{action:'routing_map_propose',module:'Purchases',routing_code:'xrt1',erp_account_code:a1.code,effective_from:'2026-09-01',effective_to:'2026-10-31'});assert.equal(prop.saved,1);
+ await assert.rejects(()=>rm('ASSISTANT',{action:'routing_map_propose',module:'Purchases',routing_code:'XRT1',erp_account_code:a1.code,effective_from:'2026-09-01'}),/Manager or Partner proposes/);
+ const prop=await rm('MANAGER',{action:'routing_map_propose',module:'Purchases',routing_code:'xrt1',erp_account_code:a1.code,effective_from:'2026-09-01',effective_to:'2026-10-31'});assert.equal(prop.saved,1);
  assert.equal((await auto('ASSISTANT',{action:'workbook_auto_map'})).mapped,0,'a draft is not approved');
- const dup=await rm('ASSISTANT',{action:'routing_map_propose',rows:[{module:'Purchases',routing_code:'XRT1',erp_account_code:a2.code,effective_from:'2026-10-01'}]}).catch(e=>e);assert.match(String(dup.message),/already covers/);
- const bad=await rm('ASSISTANT',{action:'routing_map_propose',module:'Purchases',routing_code:'XRT2',erp_account_code:'11010',effective_from:'2026-09-01'}).catch(e=>e);assert.match(String(bad.message),/not a purchase account|not active|chart of accounts/);
- const list=await rm('ASSISTANT',{action:'routing_map_read'}),m=list.maps[0];assert.equal(m.status,'Draft');assert.equal(m.routing_code,'XRT1');
- // The maker cannot approve it, in the action or in the database; a different Manager can.
- await assert.rejects(()=>rm('ASSISTANT',{action:'routing_map_approve',routing_id:m.routing_id,revision:m.revision}),/Manager or Partner approves/);
- const own=await rm('MANAGER',{action:'routing_map_propose',module:'Purchases',routing_code:'XRT5',erp_account_code:a1.code,effective_from:'2026-09-01'});assert.equal(own.saved,1);
- const mine=(await rm('MANAGER',{action:'routing_map_read'})).maps.find(x=>x.routing_code==='XRT5');
- await assert.rejects(()=>rm('MANAGER',{action:'routing_map_approve',routing_id:mine.routing_id,revision:mine.revision}),/different Manager or Partner/);
- assert.deepEqual(await rm('MANAGER',{action:'routing_map_approve',routing_id:m.routing_id,revision:m.revision}),{ok:true});
+ const dup=await rm('MANAGER',{action:'routing_map_propose',rows:[{module:'Purchases',routing_code:'XRT1',erp_account_code:a2.code,effective_from:'2026-10-01'}]}).catch(e=>e);assert.match(String(dup.message),/already covers/);
+ const bad=await rm('MANAGER',{action:'routing_map_propose',module:'Purchases',routing_code:'XRT2',erp_account_code:'11010',effective_from:'2026-09-01'}).catch(e=>e);assert.match(String(bad.message),/not a purchase account|not active|chart of accounts/);
+ const list=await rm('MANAGER',{action:'routing_map_read'}),m=list.maps[0];assert.equal(m.version,1);assert.equal(m.status,'Draft');assert.equal(m.routing_code,'XRT1');
+ // The proposer cannot approve it, and neither can another Manager: only a Partner who did not propose it.
+ await assert.rejects(()=>rm('ASSISTANT',{action:'routing_map_approve',routing_id:m.routing_id,revision:m.revision}),/Partner approves/);
+ await assert.rejects(()=>rm('MANAGER',{action:'routing_map_approve',routing_id:m.routing_id,revision:m.revision}),/Partner approves/);
+ const own=await rm('PARTNER',{action:'routing_map_propose',module:'Purchases',routing_code:'XRT5',erp_account_code:a1.code,effective_from:'2026-09-01'});assert.equal(own.saved,1);
+ const mine=(await rm('PARTNER',{action:'routing_map_read'})).maps.find(x=>x.routing_code==='XRT5');
+ await assert.rejects(()=>rm('PARTNER',{action:'routing_map_approve',routing_id:mine.routing_id,revision:mine.revision}),/did not propose it/);
+ assert.deepEqual(await rm('PARTNER',{action:'routing_map_approve',routing_id:m.routing_id,revision:m.revision}),{ok:true});
  // One approval maps every row with the code that falls inside its dates; the rest keep their reason.
  const run=await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal(run.mapped,2);assert.equal(run.via_routing_map,2);
- const a=await get('A1');assert.equal(a.account_code,a1.code);assert.equal(a.review_details.mapping_confirmation.method,ROUTING_METHOD);assert.equal(a.review_details.mapping_confirmation.awaiting_review,true);assert.equal(a.review_details.mapping_confirmation.routing_map_id,m.routing_id);
+ const a=await get('A1');assert.equal(a.account_code,a1.code);assert.equal(a.review_details.mapping_confirmation.method,ROUTING_METHOD);assert.equal(a.review_details.mapping_confirmation.awaiting_review,true);assert.equal(a.review_details.mapping_confirmation.routing_map_id,m.routing_id);assert.equal(a.review_details.mapping_confirmation.routing_map_version,1);
  assert.equal((await get('A2')).account_code,a1.code);
  const late=await get('LATE');assert.equal(late.account_code,null);assert.match(late.review_details.auto_map_note.reason,/not one that covers 2026-12-20/);
  assert.equal((await get('NOMAP')).account_code,null);assert.match((await get('NOMAP')).review_details.auto_map_note.reason,/XRT9 has no approved mapping/);
  // The mapping is never edited; it is ended or withdrawn with a reason.
- const live=(await rm('MANAGER',{action:'routing_map_read'})).maps.find(x=>x.routing_id===m.routing_id);
+ const live=(await rm('PARTNER',{action:'routing_map_read'})).maps.find(x=>x.routing_id===m.routing_id);
  await assert.rejects(()=>rm('ASSISTANT',{action:'routing_map_withdraw',routing_id:m.routing_id,revision:live.revision,reason:'Staff cannot withdraw an approved one'}),/Manager or Partner withdraws/);
  await assert.rejects(()=>rm('PARTNER',{action:'routing_map_withdraw',routing_id:m.routing_id,revision:live.revision,reason:'short'}),/at least 10/);
  assert.deepEqual(await rm('PARTNER',{action:'routing_map_withdraw',routing_id:m.routing_id,revision:live.revision,reason:'Wrong account chosen for this code'}),{ok:true});

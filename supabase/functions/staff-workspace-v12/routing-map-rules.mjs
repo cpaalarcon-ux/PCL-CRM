@@ -7,6 +7,7 @@ export const PAYROLL_CODES=[
  {code:'GROSS_SALARY',label:'Gross salaries',side:'Debit'},{code:'ALLOWANCES',label:'Allowances',side:'Debit'},{code:'OVERTIME',label:'Overtime',side:'Debit'},{code:'BONUS',label:'Bonuses',side:'Debit'},
  {code:'PAYE',label:'PAYE payable',side:'Credit'},{code:'NSSF_EMPLOYEE',label:'NSSF, employee share',side:'Credit'},{code:'SHIF',label:'SHIF payable',side:'Credit'},{code:'AHL_EMPLOYEE',label:'Housing levy, employee share',side:'Credit'},{code:'OTHER_DEDUCTIONS',label:'Other employee deductions',side:'Credit'},
  {code:'NSSF_EMPLOYER',label:'NSSF, employer share (expense)',side:'Debit'},{code:'AHL_EMPLOYER',label:'Housing levy, employer share (expense)',side:'Debit'},{code:'NITA_EMPLOYER',label:'NITA (expense)',side:'Debit'},
+ {code:'NITA_PAYABLE',label:'NITA payable',side:'Credit'},
  {code:'NET_PAY_PAYABLE',label:'Net salary payable',side:'Credit'},{code:'PAYROLL_BANK_PAYMENT',label:'Payroll bank payment',side:'Credit'}
 ];
 const day=v=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);

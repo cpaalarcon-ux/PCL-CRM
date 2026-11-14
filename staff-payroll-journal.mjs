@@ -1,0 +1,17 @@
+// Payroll journal preview (build 2803): the reviewer's one-screen summary before the draft journal is prepared from the approved payroll mappings.
+// It shows the gross, deductions and net totals, new staff and salary changes against the previous month, exceptions, whether every payroll code has an approved
+// mapping, and the account-level journal with its balance. Preparing the draft posts nothing: a different authorised reviewer approves and posts it.
+const e0=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const kes=v=>Number(v||0).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
+export const PAYROLL_JOURNAL_NOTE='The journal is prepared from the payroll summary using this client\'s approved payroll mappings, one line per account. Preparing it posts nothing: a different authorised reviewer checks it and approves the posting.';
+export function payrollPreviewView(r,esc=e0){
+ const t=r.totals||{},c=r.changes||{},list=(items,fmt)=>items.length?`<ul>${items.map(i=>`<li>${fmt(i)}</li>`).join('')}</ul>`:'<p class="muted">None.</p>';
+ const unmapped=(r.unmapped||[]).length?`<div class="info full error"><b>Not prepared: these payroll codes have no approved mapping</b><ul>${r.unmapped.map(x=>`<li><b>${esc(x.code)}</b>: ${esc(x.reason)}</li>`).join('')}</ul></div>`:'';
+ const problems=(r.problems||[]).length?`<div class="info full error"><ul>${r.problems.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:'';
+ const changes=c.first_month?'<p class="muted">No earlier payroll summary to compare with. Every employee is new this month.</p>':`<h4>New staff (${(c.new_staff||[]).length})</h4>${list(c.new_staff||[],x=>`${esc(x.name)}: gross ${kes(x.gross)}`)}<h4>Salary changes (${(c.salary_changes||[]).length})</h4>${list(c.salary_changes||[],x=>`${esc(x.name)}: ${kes(x.from)} to ${kes(x.to)}`)}<h4>No longer on the payroll (${(c.left||[]).length})</h4>${list(c.left||[],x=>`${esc(x.name)}: was ${kes(x.gross)}`)}`;
+ const ex=(r.exceptions||[]).length?`<h4>Exceptions (${r.exceptions.length})</h4>${list(r.exceptions.slice(0,50),x=>`<b>${esc(x.kind)}</b>${x.row?' · row '+esc(x.row):''}${x.name?' · '+esc(x.name):''}: ${esc(x.detail||'')}`)}`:'<h4>Exceptions</h4><p class="muted">None.</p>';
+ const lines=(r.journal?.lines||[]).map(l=>`<tr><td>${esc(l.account_code)}</td><td>${esc(l.description)}</td><td class="num">${l.debit?kes(l.debit):''}</td><td class="num">${l.credit?kes(l.credit):''}</td></tr>`).join('');
+ return `<p class="info full">${esc(PAYROLL_JOURNAL_NOTE)}</p>${unmapped}${problems}<h4>${esc(r.month||'')} · ${esc(r.employees||0)} employees</h4><table><tbody><tr><td>Gross pay</td><td class="num">${kes(t.gross)}</td></tr><tr><td>Deductions</td><td class="num">${kes(t.deductions)}</td></tr><tr><td>Net pay</td><td class="num">${kes(t.net)}</td></tr><tr><td>Employer cost (NSSF, housing levy, NITA)</td><td class="num">${kes(t.employer_cost)}</td></tr></tbody></table>${changes}${ex}`+
+  (lines?`<h4>Journal ${r.journal.balanced?'<span class="badge good">Balanced</span>':'<span class="badge warn">Not balanced or incomplete</span>'}</h4><table id="payrollJournalTable"><thead><tr><th>Account</th><th>Line</th><th>Debit</th><th>Credit</th></tr></thead><tbody>${lines}<tr><td></td><td><b>Total</b></td><td class="num">${kes(r.journal.debit)}</td><td class="num">${kes(r.journal.credit)}</td></tr></tbody></table>`:'');
+}
+export const canPrepare=r=>!(r.unmapped||[]).length&&!(r.problems||[]).length&&!!r.journal?.balanced;
