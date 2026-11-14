@@ -27,6 +27,7 @@ test('readiness lists exceptions only: missing, waiting, statement-only and diff
  assert.equal(r.exceptions.find(e=>e.key==='year_end').state,'Missing','a superseded fact does not count');
  const d=readiness({entityType:'Limited company',facts:[fact('company_name','Acme Ltd')],master:{company_name:'Acme Limited'}});
  assert.equal(d.rows[0].state,'Differs');assert.match(d.rows[0].issue,/client record says "Acme Limited"/);
+ const unk=readiness({entityType:null,facts:[fact('company_name','Acme Ltd'),fact('registration_number','C1')],master:{}});assert.equal(unk.ready,false);assert.equal(unk.exceptions[0].key,'legal_entity_type');assert.ok(unk.rows.find(r=>r.key==='registration_number').extra);assert.equal(unk.required,7);
  const all=readiness({entityType:'Sole proprietor',facts:requiredFor('Sole proprietor').map(f=>fact(f.key,'v')),master:{}});assert.equal(all.ready,true);assert.equal(all.percent,100);
 });
 test('who may verify and record',()=>{

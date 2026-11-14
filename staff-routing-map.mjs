@@ -31,15 +31,21 @@ export function createRoutingMapUI(ctx){
  const accountList=()=>(cur.accounts||[]).map(a=>[a.code,`${a.code} · ${a.name}`]);
  function paint(){
   const maps=cur.maps||[],rows=mapRows(maps,{me:d().me,esc});
-  modal('Routing map',`<p class="info full">${esc(ROUTING_NOTE)}</p><div class="actions">${leaderRole()?'<button type="button" data-rm="add">Propose a mapping</button>':''}</div>${rows?`<div class="scroll full"><table id="routingMapTable"><thead><tr><th>For</th><th>Routing code</th><th>Client account</th><th>Valid</th><th>State</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted full">No routing mappings yet for this client.</p>'}`);
+  modal('Routing map',`<p class="info full">${esc(ROUTING_NOTE)}</p><div class="actions">${leaderRole()?'<button type="button" data-rm="add">Propose a mapping</button><button type="button" data-rm="copy">Copy from another client</button>':''}</div>${rows?`<div class="scroll full"><table id="routingMapTable"><thead><tr><th>For</th><th>Routing code</th><th>Client account</th><th>Valid</th><th>State</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted full">No routing mappings yet for this client.</p>'}`);
   const body=$('#editorBody');if(body)body.onclick=async ev=>{const b=ev.target.closest('[data-rm]');if(!b)return;const id=b.dataset.id,rev=b.dataset.rev,act=b.dataset.rm;
    try{
     if(act==='add')add();
+    else if(act==='copy')copyFrom();
     else if(act==='approve')modal('Approve mapping',form('<p class="info full">You did not propose this. Approve only after checking the account is right for this client, as the Engagement Partner. Every purchase row with the code, dated inside the mapping, will then be mapped automatically for review.</p>','Approve'),()=>request({action:'routing_map_approve',client_id:cid,routing_id:id,revision:rev}),()=>open(cid),{refreshWorkspace:false});
     else if(act==='end')modal('End mapping',form(field('effective_to','Last day it applies *','','date')+`<label class="full">Why? *<textarea name="reason" required minlength="10" maxlength="500"></textarea></label>`,'End'),f=>request({action:'routing_map_end',client_id:cid,routing_id:id,revision:rev,effective_to:f.get('effective_to'),reason:f.get('reason')}),()=>open(cid),{refreshWorkspace:false});
     else if(act==='withdraw')modal('Withdraw mapping',form(`<p class="info full">Rows already mapped keep their classification, but no new row is mapped by it.</p><label class="full">Why? *<textarea name="reason" required minlength="10" maxlength="500"></textarea></label>`,'Withdraw'),f=>request({action:'routing_map_withdraw',client_id:cid,routing_id:id,revision:rev,reason:f.get('reason')}),()=>open(cid),{refreshWorkspace:false});
    }catch(err){notice(err.message,true);}
   };
+ }
+ function copyFrom(){
+  const clients=(d().clients||[]).filter(c=>c.client_id!==cid).map(c=>[c.client_id,c.legal_name||c.name||c.client_id]);
+  modal('Copy routing map as drafts',form('<p class="info full">The other client\'s approved mappings that are in force today become new drafts for this client. Nothing maps anything until a different Partner approves each one. Codes this client already has are skipped.</p>'+select('from_client_id','Copy from *',clients,'','Choose a client')+field('effective_from','Apply from *','','date','required'),'Copy as drafts'),
+   f=>request({action:'routing_map_copy',client_id:cid,from_client_id:f.get('from_client_id'),effective_from:f.get('effective_from')}),out=>{notice('Copied '+out.saved+' of '+out.offered+' as drafts'+(out.skipped.length?'; '+out.skipped.length+' skipped':'')+'.');return open(cid);},{refreshWorkspace:false,pendingLabel:'Copying…',pendingMessage:'Copying the approved mappings as drafts.',successMessage:'Copied.'});
  }
  function add(){
   const codes=(cur.payroll_codes||[]).map(x=>[x.code,`${x.code} · ${x.label}`]);

@@ -3,7 +3,7 @@ import {proposalIssues,PAYROLL_CODES,payrollSide,cleanCode,MODULES} from './rout
 
 // The approved routing map (build 2802, Partner approval and versions from 2803): read it, a Manager or Partner proposes mappings (one or many), a Partner who did not propose approves, and a Manager or Partner ends or withdraws them.
 // The rules for the table are in 20261114150000_client_routing_map.sql; the matching rules are in routing-map-rules.mjs. Nothing here posts anything.
-const ACTIONS=['routing_map_read','routing_map_propose','routing_map_approve','routing_map_end','routing_map_withdraw'];
+const ACTIONS=['routing_map_read','routing_map_copy','routing_map_propose','routing_map_approve','routing_map_end','routing_map_withdraw'];
 const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 const one=(r:any[])=>{if(!r.length)fail(403,'This is unavailable to your account.');return r[0];};
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
@@ -11,7 +11,7 @@ const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 export async function routingMapAction(tx:any,a:any,p:any):Promise<any>{
  if(!ACTIONS.includes(p.action))return undefined;
  if(['INTERN','ADMIN'].includes(a.category_code))fail(403,'The routing map is maintained by staff with client access.');
- if(p.action==='routing_map_propose'&&!isLeader(a))fail(403,'A Manager or Partner proposes a routing mapping.');
+ if(['routing_map_propose','routing_map_copy'].includes(p.action)&&!isLeader(a))fail(403,'A Manager or Partner proposes a routing mapping.');
  const cid=uuid(p.client_id);
  one(await tx`select client_id from erp_private.clients where client_id=${cid}`);
  if(p.action==='routing_map_read'){
@@ -20,6 +20,22 @@ export async function routingMapAction(tx:any,a:any,p:any):Promise<any>{
    where m.client_id=${cid} and (${p.module?text(p.module,20):null}::text is null or m.module=${p.module?text(p.module,20):null}) order by m.module,m.routing_code,m.effective_from desc limit 1000`;
   const accounts=await tx`select code,name,route,category_code,account_group from erp_private.account_catalog where status='Active' and not is_legacy order by code`;
   return {maps,accounts,payroll_codes:PAYROLL_CODES,modules:MODULES};
+ }
+ if(p.action==='routing_map_copy'){
+  // Reuse is a head start for the proposer, never an approval: the source client's current approved mappings become new DRAFT proposals for this client.
+  // They are validated like any proposal, skipped where this client already has a draft or approved mapping, and still need a different Partner's approval.
+  const from=uuid(p.from_client_id);if(from===cid)fail(400,'Choose a different client to copy from.');
+  const src=one(await tx`select client_id,company_name from erp_private.clients where client_id=${from} and deleted_at is null`);
+  const start=day(p.effective_from);if(!/^\d{4}-\d{2}-\d{2}$/.test(start))fail(400,'Choose the date the copied mappings should apply from.');
+  const mods=Array.isArray(p.modules)&&p.modules.length?p.modules.map((m:any)=>text(m,20)):null;
+  const maps=await tx`select module,routing_code,item_code,erp_account_code,label from erp_private.client_routing_map where client_id=${from} and status='Active' and effective_from<=current_date and coalesce(effective_to,'9999-12-31'::date)>=current_date and (${mods?tx.array(mods):null}::text[] is null or module=any(${mods?tx.array(mods):null}::text[])) order by module,routing_code limit 200`;
+  if(!maps.length)fail(409,'This client has no approved mappings in force to copy.');
+  const rows=maps.map((m:any)=>({module:m.module,routing_code:m.routing_code,item_code:m.item_code,erp_account_code:m.erp_account_code,effective_from:start,label:('Copied from '+src.company_name+(m.label?': '+m.label:'')).slice(0,200)}));
+  let out:any={saved:0,problems:[]};
+  try{out=await routingMapAction(tx,a,{action:'routing_map_propose',client_id:cid,rows});}
+  catch(e:any){if(e?.status!==400)throw e;out={saved:0,problems:[{row:0,routing_code:'',issues:[e.message]}]};}
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_routing_map','ROUTING_MAP_COPIED_AS_DRAFT',${cid},${tx.json({from_client_id:from,offered:rows.length,saved:out.saved,skipped:out.problems.length})})`;
+  return {ok:true,from:src.company_name,offered:rows.length,saved:out.saved,skipped:out.problems,note:'These are drafts. A different Partner approves each one before it maps anything.'};
  }
  if(p.action==='routing_map_propose'){
   const list=Array.isArray(p.rows)?p.rows:[p];

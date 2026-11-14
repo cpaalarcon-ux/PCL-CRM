@@ -55,8 +55,14 @@ export function readiness({entityType,facts,master}){
   const row={key:f.key,label:f.label,hint:f.hint,state,issue,fact:fact?{fact_id:fact.fact_id,value:fact.value,source_kind:fact.source_kind,document_id:fact.document_id,source_reference:fact.source_reference,status:fact.status,recorded_by:fact.recorded_by,recorded_at:fact.recorded_at,verified_by:fact.verified_by,verified_at:fact.verified_at,revision:fact.revision}:null};
   rows.push(row);if(state!=='Verified')exceptions.push({key:f.key,label:f.label,state,issue});
  }
- const verified=rows.filter(r=>r.state==='Verified').length;
- return {rows,exceptions,required:rows.length,verified,ready:rows.length>0&&verified===rows.length,percent:rows.length?Math.round(verified*100/rows.length):0};
+ const verified=rows.filter(r=>r.state==='Verified').length,required=rows.length;
+ // Facts recorded for something the checklist does not require for this entity type (for example imported ones) are still shown, but never count.
+ for(const [k,fact] of live){if(rows.some(r=>r.key===k))continue;const f=fieldFor(k);if(!f)continue;
+  rows.push({key:k,label:f.label,hint:f.hint,state:fact.status,extra:true,issue:fact.status==='Recorded'?'Not required for this entity type. Kept for reference.':null,fact:{fact_id:fact.fact_id,value:fact.value,source_kind:fact.source_kind,document_id:fact.document_id,source_reference:fact.source_reference,status:fact.status,recorded_by:fact.recorded_by,recorded_at:fact.recorded_at,verified_by:fact.verified_by,verified_at:fact.verified_at,revision:fact.revision}});}
+ // Without a legal entity type the entity-specific facts are unknown, so the client cannot be called ready.
+ const known=!!entityType;
+ if(!known)exceptions.unshift({key:'legal_entity_type',label:'Legal entity type',state:'Missing',issue:'Set the legal structure first; it decides which other facts are required.'});
+ return {rows,exceptions,required,verified,ready:known&&required>0&&verified===required,percent:required?Math.round(verified*100/required):0};
 }
 // Elapsed time between two moments, in whole minutes. This is elapsed time, not effort: it includes waiting for the client and for the verifier.
 export function elapsedMinutes(from,to){const a=Date.parse(from),b=Date.parse(to);return Number.isFinite(a)&&Number.isFinite(b)&&b>=a?Math.round((b-a)/60000):null;}
