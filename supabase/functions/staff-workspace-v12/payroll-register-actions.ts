@@ -39,10 +39,11 @@ export async function payrollRegisterAction(tx:any,a:any,p:any):Promise<any>{
   const d=await load(tx,cid),built=draftLines(d.people,d.pays,ym),changes=registerChanges(d.people,d.pays,ym);
   if(!built.lines.length&&!built.skipped.length)fail(400,'The register has nobody on the payroll for '+ym+'. Add people first, or type the lines.');
   const prev=(await tx`select import_id,status from erp_private.period_imports where client_id=${cid} and kind='Payroll' and starts_on=${monthBounds(previousMonth(ym))!.start} and status in('Submitted','Confirmed') limit 1`)[0]||null;
-  const existing=(await tx`select import_id,status from erp_private.period_imports where client_id=${cid} and kind='Payroll' and starts_on=${b.start} and status in('Draft','Returned','Submitted','Confirmed') limit 1`)[0]||null;
+  const existing=(await tx`select import_id,status from erp_private.period_imports where client_id=${cid} and kind='Payroll' and starts_on=${b.start} and status in('Draft','Submitted','Confirmed') limit 1`)[0]||null;
+  const returned=(await tx`select import_id,status from erp_private.period_imports where client_id=${cid} and kind='Payroll' and starts_on=${b.start} and status='Returned' limit 1`)[0]||null;
   const issues=relationshipIssues({entityType,lines:built.lines.map((l:any,i:number)=>({...l,source_row:i+1,approval_reference:l.approval_reference}))}).filter((x:string)=>!/evidence/i.test(x));
   const missing=built.lines.flatMap((l:any)=>{const m=[];if(!l.pin&&l.employment_type!=='Casual')m.push('KRA PIN');if(!l.employee_id&&l.employment_type==='Casual')m.push('ID number');return m.length?[{name:l.name,missing:m}]:[];});
-  return {month:ym,starts_on:b.start,ends_on:b.end,lines:built.lines,skipped:built.skipped,changes,issues,missing,previous_month_approved:!!prev,existing_run:existing,
+  return {month:ym,starts_on:b.start,ends_on:b.end,lines:built.lines,skipped:built.skipped,changes,issues,missing,previous_month_approved:!!prev,existing_run:existing,returned_run:returned,
    note:'Recurring pay is taken from the register. Overtime, bonuses, other deductions, the date a casual worker is paid and the evidence for the month are entered new. Nothing is saved or submitted.'};
  }
  if(p.action==='payroll_register_add'){
