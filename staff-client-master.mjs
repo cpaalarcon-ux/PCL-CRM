@@ -12,7 +12,7 @@ export function createClientMasterUI(ctx,{show,button}){
    const f=r.fact,acts=[];
    if(x.can_record)acts.push(button('cm-record',f?'Replace':'Record',x.client.client_id,`data-key="${esc(r.key)}"`));
    if(r.can_verify)acts.push(button('cm-verify','Verify',x.client.client_id,`data-key="${esc(r.key)}"`));
-   return `<tr${r.state!=='Verified'?' class="exception"':''}><td>${esc(r.label)}</td><td>${f?esc(f.value):'<span class="muted">Not recorded</span>'}</td><td>${source(f)}</td><td>${badge(r.state)}${r.issue?`<small>${esc(r.issue)}</small>`:''}${f&&f.verified_at?`<small>Verified by ${esc(f.verified_by_name||'a colleague')} on ${esc(shortDate(f.verified_at))}</small>`:''}</td><td>${acts.join(' ')}</td></tr>`;
+   return `<tr${r.state!=='Verified'&&!r.extra?' class="exception"':''}><td>${esc(r.label)}</td><td>${f?esc(f.value):'<span class="muted">Not recorded</span>'}</td><td>${source(f)}</td><td>${badge(r.state)}${r.issue?`<small>${esc(r.issue)}</small>`:''}${f&&f.verified_at?`<small>Verified by ${esc(f.verified_by_name||'a colleague')} on ${esc(shortDate(f.verified_at))}</small>`:''}</td><td>${acts.join(' ')}</td></tr>`;
   }).join('');
   return `<div class="scroll"><table><thead><tr><th>Fact</th><th>Value</th><th>Source</th><th>State</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
  }
