@@ -64,11 +64,11 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  const bytes=new Uint8Array(await result.data.arrayBuffer());
  const sourceInfo:any=await readSourceSheet(bytes,d.file_name,p.sheet_name?text(p.sheet_name,500):null);const {sheet,sheets}=sourceInfo;
  if(sheet.columnCount>80||sheet.rowCount>20000)fail(400,'Split the worksheet into at most 80 columns and 20,000 rows.');
- const standard=purchaseUploadProfile(sheet,p.upload_format===purchaseUploadId),standardData=standard?purchaseUploadRows(sheet):null;
+ const standard=purchaseUploadProfile(sheet,p.upload_format===purchaseUploadId),standardData=standard?purchaseUploadRows(sheet,standard):null;
  const purchaseAccounts=standard?await tx`select code,name,route,category_code,status,is_legacy from erp_private.account_catalog order by code`:[],purchaseClientMappings=standard?await tx`select erp_account_code,effective_from,effective_to,status from erp_private.client_account_mappings where client_id=${project.client_id} and status in ('Active','Draft') order by erp_account_code,effective_from`:[];
  const template=standard?null:detectTemplate(sheet),profile=standard||detectImportProfile(sheet);
- if(standard&&p.header_row!=null&&Number(p.header_row)!==1)fail(400,'The standard purchase template reserves row 1 for headings. Transactions start on row 2.');
- const header=standard?1:p.header_row===0||p.header_row==='0'?0:Math.trunc(Number(p.header_row)||template?.blocks[0].header_row||profile?.header_row||(sourceInfo.headerless?0:1));
+ if(standard&&!standard.source_layout&&p.header_row!=null&&Number(p.header_row)!==1)fail(400,'The standard purchase template reserves row 1 for headings. Transactions start on row 2.');
+ const header=standard?standard.header_row:p.header_row===0||p.header_row==='0'?0:Math.trunc(Number(p.header_row)||template?.blocks[0].header_row||profile?.header_row||(sourceInfo.headerless?0:1));
  if(header<0||header>sheet.rowCount||(!template&&header>200))fail(400,'Choose a valid header row.');
  const block=template?.blocks.find((b:any)=>b.header_row===header);
  if(template&&!block)fail(400,'Choose one of the recognised workbook sections.');
@@ -76,7 +76,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  const previewTotal=standard?standardData.rows.length:Math.max(0,(block?.last_row||sheet.rowCount)-header),previewOffset=Math.max(0,Math.min(previewTotal,Math.trunc(Number(p.preview_offset)||0))),previewPageSize=standard?10:200;
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
  if(p.action==='workbook_preview')return {client_id:project.client_id,client_name:project.company_name,client_pin:project.kra_pin,bank_accounts:(await bankRegister(tx,project.client_id)).filter((b:any)=>b.status==='Active'),document_id:d.document_id,project_id:d.project_id,sheets,sheet_name:sheet.name,header_row:header,headers:standard?purchaseUploadHeaders:block?.headers||(header===0?Array.from({length:sheet.columnCount},(_,i)=>'Column '+(i+1)):values(header)),import_profile:profile,source_inventory:sourceInfo.inventory||null,source_adapter:sourceInfo.adapter||'XLSX',template:template?{...template,selected:block}:null,
-  standard_purchase:standard?{id:purchaseUploadId,template_version:profile.version,rates:purchaseUploadRates,ignored_count:standardData.ignored,approved_client_account_count:new Set(purchaseClientMappings.map((m:any)=>m.erp_account_code)).size,summary:p.vat_category&&p.period_start&&p.period_end?purchaseUploadSummary(standardData.rows,choice(p.vat_category,purchaseUploadRates),date(p.period_start),date(p.period_end),purchaseAccounts,purchaseClientMappings):null}:null,
+  standard_purchase:standard?{id:purchaseUploadId,template_version:profile.version,source_layout:!!standard.source_layout,header_row:standard.header_row,rates:purchaseUploadRates,ignored_count:standardData.ignored,approved_client_account_count:new Set(purchaseClientMappings.map((m:any)=>m.erp_account_code)).size,summary:p.vat_category&&p.period_start&&p.period_end?purchaseUploadSummary(standardData.rows,choice(p.vat_category,purchaseUploadRates),date(p.period_start),date(p.period_end),purchaseAccounts,purchaseClientMappings,standardData.derive_vat):null}:null,
   preview_total:previewTotal,preview_offset:previewOffset,preview_page_size:previewPageSize,
   preview:standard?standardData.rows.slice(previewOffset,previewOffset+previewPageSize).map(r=>({row:r.source_row,values:r.values,display_values:purchaseDisplayValues(r.values)})):Array.from({length:Math.min(previewPageSize,previewTotal-previewOffset)},(_,i)=>({row:header+previewOffset+i+1,values:values(header+previewOffset+i+1).slice(0,block?.headers.length||sheet.columnCount)})),categories:allCategories};
  if((standard||['text/csv','application/zip'].includes(d.mime_type))&&p.confirmed_client_id!==project.client_id)fail(400,'Confirm the legal client before committing this source.');
@@ -90,7 +90,7 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  const start=date(p.period_start),end=date(p.period_end);
  if(!start||!end||end<start)fail(400,'Choose the import period.');await assertSupportedPeriod(tx,project.client_id,start);const map=block?block.column_map:profile?.recognised?profile.column_map:importMap(p.column_map,dataset),batch=crypto.randomUUID();
  if(!one(await tx`select erp_private.tax_period_open(${project.project_id}::uuid,${start}::date,${end}::date) as open`).open)fail(400,'Return the submitted tax case before adding source rows. Locked periods cannot receive imports.');
- const first=standard?2:Number(p.first_row||block?.first_row||header+1),last=standard?sheet.rowCount:Number(p.last_row||block?.last_row||sheet.rowCount);
+ const first=standard?header+1:Number(p.first_row||block?.first_row||header+1),last=standard?sheet.rowCount:Number(p.last_row||block?.last_row||sheet.rowCount);
  if(!standard)importRowRange({header,first,last,rowCount:sheet.rowCount,block});
  if(standard&&!standardData.rows.length)fail(400,'No purchase transactions found. Keep the headings in row 1 and paste transactions from row 2.');
  if(standard&&!purchaseUploadRates.includes(p.vat_category))fail(400,'Select the VAT category in the ERP: 16%, 8%, 0% or Exempt.');
@@ -107,8 +107,8 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  const canonical=(r:any)=>JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k])=>!template&&!standard||['date','invoice','party','party_pin','line_id','description','customs_entry','amount','vat','purchase_type','original_invoice','original_invoice_date'].includes(k)||standard&&k==='vat_category').sort(([a],[b])=>a.localeCompare(b))));
  let ignored=0;
  for(let i=first;i<=last;i++){
-  const v=standard?purchaseUploadValues(sheet,i):template?templateRow(sheet,i,template,block):values(i);if(!v||standard&&!v.some(v=>String(v??'').trim())){ignored++;continue;}
-  const n=standard?normalizePurchaseUpload(v,selectedRate,start,end,purchaseAccounts,purchaseClientMappings):template?normalizeTemplate(v,template,block,start,end):profile?.recognised?profilePurchase(v,profile,start,end):normalizeImport(v,map,dataset,start,end);if(!n){ignored++;continue;}source++;
+  const v=standard?purchaseUploadValues(sheet,i,standard.layout):template?templateRow(sheet,i,template,block):values(i);if(!v||standard&&!v.some(v=>String(v??'').trim())){ignored++;continue;}
+  const n=standard?normalizePurchaseUpload(v,selectedRate,start,end,purchaseAccounts,purchaseClientMappings,!!standard.derive_vat):template?normalizeTemplate(v,template,block,start,end):profile?.recognised?profilePurchase(v,profile,start,end):normalizeImport(v,map,dataset,start,end);if(!n){ignored++;continue;}source++;
   if(n.issues.length){rejected.push({row:i,raw:n.raw,reason:n.issues.join(' ')});continue;}
   if(standard&&n.pending.length){rejected.push({row:i,raw:{...n.raw,_pending_purchase:{key:await hash(n.key),match:purchasePendingMatch(n.row),row:n.row}},reason:'Pending information: '+n.pending.join(' '),pending:true});continue;}
   parsed.push({...n,source_row:i,row_key:await hash(n.key)});

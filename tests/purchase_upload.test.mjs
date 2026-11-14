@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {money} from '../supabase/functions/staff-workspace-v12/workspace-rules.mjs';
-import {purchaseDisplayValues,purchaseUploadHeaders,purchaseUploadLegacyHeaders,purchaseUploadMap,purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload,purchaseUploadSummary,importRowRange} from '../supabase/functions/staff-workspace-v12/purchase-upload.mjs';
+import {purchaseDisplayValues,purchaseUploadHeaders,purchaseUploadLegacyHeaders,purchaseUploadMap,purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload,purchaseUploadSummary,importRowRange,purchaseUploadValues} from '../supabase/functions/staff-workspace-v12/purchase-upload.mjs';
 const sheet=rows=>({name:'Purchase Upload',rowCount:rows.length,columnCount:Math.max(...rows.map(r=>r.length)),getRow:i=>({getCell:c=>({value:rows[i-1]?.[c-1]??null})})});
 const row=()=>['Local','P000000001A','Example supplier','2026-10-03','0000123','Supplies','',100,16,116,'','','',''];
 test('fixed template validates header order but imports only row two onwards, skipping blanks',()=>{
@@ -60,4 +60,26 @@ test('whole-file and pending totals preserve signed credits without disguising m
 });
 test('standard purchase dates display as calendar dates and preserve text references',()=>{
  const v=row();v[3]=46030;v[11]='46043';const shown=purchaseDisplayValues(v);assert.equal(shown[3],'08/01/2026');assert.equal(shown[11],'21/01/2026');assert.equal(shown[4],'0000123');assert.equal(v[3],46030);
+});
+const srcHeaders=['TYPE OF PURCHASE','PIN OF PURCHASER','NAME OF PURCHASER','INVOICE DATE','INVOICE NO.','DESCRIPTION OF GDS/SRVS','CUSTOM ENTRY NUMBER','TAXABLE VALUE','RELV INV NUMBER','RELV INV DATE','ROUTING CODE','T.B CODE'];
+const srcSheet=(rows,name='Sheet2')=>({...sheet(rows),name});
+test('firm source purchase layout (title row, headings on row 2, net only) is recognised for every VAT category and VAT is calculated',()=>{
+ const s=srcSheet([['General rated purchase source layout | source workbook uses header row 2'],srcHeaders,['Local','P000000001A','Supplier','2026-10-03','INV-1','Goods','',1000,'','','','EXP02','61000'],[],['Local','P000000001A','Supplier','2026-10-04','INV-2','Goods','',250.5,'','','','','']]);
+ const p=purchaseUploadProfile(s);assert.equal(p.recognised,true);assert.equal(p.source_layout,true);assert.equal(p.header_row,2);assert.equal(p.derive_vat,true);assert.deepEqual(p.column_map,purchaseUploadMap);
+ const data=purchaseUploadRows(s,p);assert.equal(data.rows.length,2);assert.equal(data.rows[0].source_row,3);assert.equal(data.derive_vat,true);assert.equal(data.rows[0].values.length,14);assert.equal(data.rows[0].values[7],1000);
+ let n=normalizePurchaseUpload(data.rows[0].values,'16%','2026-10-01','2026-10-31',[],undefined,true);assert.deepEqual(n.issues,[]);assert.equal(n.row.vat,160);assert.equal(n.row.gross,1160);assert.equal(n.row.vat_basis,'Calculated from the selected category rate');
+ n=normalizePurchaseUpload(data.rows[1].values,'8%','2026-10-01','2026-10-31',[],undefined,true);assert.deepEqual(n.issues,[]);assert.equal(n.row.vat,20.04);assert.equal(n.row.gross,270.54);
+ for(const rate of ['0%','Exempt']){n=normalizePurchaseUpload(data.rows[0].values,rate,'2026-10-01','2026-10-31',[],undefined,true);assert.deepEqual(n.issues,[]);assert.equal(n.row.vat,0);assert.equal(n.row.gross,1000);assert.equal(n.row.vat_category,rate);}
+ const summary=purchaseUploadSummary(data.rows,'16%','2026-10-01','2026-10-31',[],undefined,true);assert.equal(summary.rejected_count,0);assert.equal(summary.net,1250.5);assert.equal(summary.vat,200.08);
+});
+test('source layout: credit notes use RELV INV columns, the zero-rated variant has no customs column, and nothing is assumed when type is blank',()=>{
+ const zero=['TYPE OF PURCHASE','PIN OF PURCHASER','NAME OF PURCHASER','INVOICE DATE','INVOICE NO.','DESCRIPTION OF GDS/SRVS','TAXABLE VALUE','RELV INV NUMBER','RELV INV DATE','ROUTING CODE','T.B CODE'];
+ const s=srcSheet([['Zero rated'],zero,['Local','P000000001A','Supplier','2026-10-10','CN-1','Return','',-100,'',''].slice(0,6).concat([-100,'0000123','2026-09-24','','']),['','P000000001A','Supplier','2026-10-11','INV-3','Goods',50,'','','','']]);
+ const p=purchaseUploadProfile(s);assert.equal(p.header_row,2);const rows=purchaseUploadRows(s,p).rows;
+ let n=normalizePurchaseUpload(rows[0].values,'0%','2026-10-01','2026-10-31',[],undefined,true);assert.deepEqual(n.issues,[]);assert.equal(n.row.amount,-100);assert.equal(n.row.original_invoice,'0000123');assert.equal(n.row.original_invoice_date,'2026-09-24');assert.equal(n.row.document_type,'Credit note');assert.deepEqual(n.pending,[]);
+ n=normalizePurchaseUpload(rows[1].values,'0%','2026-10-01','2026-10-31',[],undefined,true);assert.match(n.issues.join(' '),/Local or Import/);
+});
+test('files that are neither the 14-column template nor the source layout are still refused when the standard upload is chosen',()=>{
+ assert.equal(purchaseUploadProfile(srcSheet([['a','b'],['c','d']])),null);
+ assert.throws(()=>purchaseUploadProfile(srcSheet([['a','b'],['c','d']]),true),/Column A/);
 });
