@@ -73,7 +73,13 @@ const publicKey=Deno.env.get('SUPABASE_ANON_KEY')||JSON.parse(Deno.env.get('SUPA
 const admin=createClient(url,secret,{auth:{persistSession:false,autoRefreshToken:false}});
 const sql=postgres(Deno.env.get('SUPABASE_DB_URL')!,{prepare:false,max:2,idle_timeout:10,connect_timeout:10});
 const BUCKET='staff-pilot-private';
-const SETUP_BASE='https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot.html';
+// Where this environment's web app lives. Staging keeps its address as the default; any other project must set PCL_SITE_ORIGIN
+// (and PCL_ALLOWED_ORIGINS), otherwise setup links are refused and no browser origin is allowed.
+const IS_STAGING_PROJECT=url==='https://yfjiculexbzpkvtapudk.supabase.co';
+const SITE_ORIGIN=(Deno.env.get('PCL_SITE_ORIGIN')||(IS_STAGING_PROJECT?'https://backend-staging-foundation.pcl-crm.pages.dev':'')).replace(/\/+$/,'');
+const SETUP_BASE=SITE_ORIGIN?SITE_ORIGIN+'/staff-pilot.html':'';
+const ORIGINS=(Deno.env.get('PCL_ALLOWED_ORIGINS')||'').split(',').map(x=>x.trim()).filter(Boolean);
+const ORIGIN_LIST:string[]|null=ORIGINS.length?ORIGINS:(IS_STAGING_PROJECT?null:[]);
 const sha=async(s:string|Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',typeof s==='string'?new TextEncoder().encode(s).buffer:new Uint8Array(s).buffer))).map(x=>x.toString(16).padStart(2,'0')).join('');
 const nonce=()=>Array.from(crypto.getRandomValues(new Uint8Array(32))).map(x=>x.toString(16).padStart(2,'0')).join('');
 const decode=(jwt:string)=>JSON.parse(atob(jwt.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
@@ -207,6 +213,7 @@ async function signIn(p:any){
  return sessionReply(result.data.session);
 }
 async function accountLink(id:any,p:any){
+ if(!SETUP_BASE)fail(503,'The site address for setup links is not configured for this environment.');
  const staffId=uuid(p.staff_id),raw=nonce(),hash=await sha(raw);
  const selected=await scoped(id,async(tx,a)=>{
   await requireStaffArea(tx,a,'staff_access');staffAdmin(a);const s=one(await tx`select staff_id,login_id,category_code from erp_private.staff_members where staff_id=${staffId} and deleted_at is null`);
@@ -604,7 +611,7 @@ async function action(id:any,p:any){
 Deno.serve(async(req:Request)=>{
  const origin=req.headers.get('origin')||'';
  const headers:Record<string,string>={'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Vary':'Origin'};
- if(origin&&allowedOrigin(origin)){headers['Access-Control-Allow-Origin']=origin;headers['Access-Control-Allow-Headers']='authorization,content-type,apikey,x-erp-activity-age-ms,x-erp-upload-kind';headers['Access-Control-Allow-Methods']='POST,OPTIONS';}
+ if(origin&&allowedOrigin(origin,ORIGIN_LIST)){headers['Access-Control-Allow-Origin']=origin;headers['Access-Control-Allow-Headers']='authorization,content-type,apikey,x-erp-activity-age-ms,x-erp-upload-kind';headers['Access-Control-Allow-Methods']='POST,OPTIONS';}
  if(origin&&!allowedOrigin(origin))return new Response(JSON.stringify({error:'Origin not allowed.'}),{status:403,headers});
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
  if(req.method!=='POST')return new Response(JSON.stringify({error:'Use POST.'}),{status:405,headers});

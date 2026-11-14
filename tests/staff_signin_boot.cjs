@@ -5,10 +5,11 @@ const assert = require('node:assert/strict');
 const { chromium } = require(require.resolve('playwright', { paths: [process.env.PCL_BROWSER_MODULES || process.cwd()] }));
 
 const root = path.resolve(__dirname, '..');
+const siteRoot = process.env.PCL_SITE_ROOT ? path.resolve(process.env.PCL_SITE_ROOT) : root; // set to a build folder to test the built site
 const server = http.createServer((req, res) => {
-  let file = path.join(root, decodeURIComponent(req.url.split('?')[0]));
+  let file = path.join(siteRoot, decodeURIComponent(req.url.split('?')[0]));
   if (!path.extname(file)) file += '.html';
-  if (!file.startsWith(root) || !fs.existsSync(file)) {
+  if (!file.startsWith(siteRoot) || !fs.existsSync(file)) {
     res.writeHead(404);
     res.end();
     return;

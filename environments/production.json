@@ -1,0 +1,5 @@
+{
+  "name": "production",
+  "project_ref": "REPLACE_WITH_PRODUCTION_PROJECT_REF",
+  "publishable_key": "REPLACE_WITH_PRODUCTION_PUBLISHABLE_KEY"
+}
