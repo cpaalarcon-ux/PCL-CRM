@@ -1,4 +1,5 @@
 import {routingConfirmed} from './routing-map-rules.mjs';
+import {payrollTotals,buildPayrollJournal,payrollChanges,payrollExceptions} from './payroll-journal-rules.mjs';
 import ExcelJS from 'exceljs';
 import {requireRightChart} from './legal-structure-actions.ts';
 import {pendingPurchases} from './purchase-pending.ts';
@@ -112,6 +113,29 @@ async function writeLines(tx:any,j:any,items:any[]){
   on conflict(journal_id,line_no) do update set account_code=excluded.account_code,legacy_code=excluded.legacy_code,source_name=excluded.source_name,description=excluded.description,debit=excluded.debit,credit=excluded.credit,source_status=excluded.source_status,source_reference=excluded.source_reference,activity_id=excluded.activity_id`;
  }
  await tx`update erp_private.ledger_lines set debit=0,credit=0,activity_id=null,description='Unused draft line retained in audit history' where journal_id=${j.journal_id} and line_no>${items.length}`;
+}
+// A draft journal from a submitted or confirmed payroll summary, at account level, using this client's approved payroll mappings only.
+// The summary stays the review screen: the journal says which summary, month and employee count it came from. Nothing is posted here.
+async function payrollDraft(tx:any,a:any,l:any,project:any,imp:any,create:boolean){
+ const pid=project.project_id;
+ if(!['Submitted','Confirmed'].includes(imp.status))fail(400,'Submit the payroll summary first. A draft journal is prepared from a submitted or confirmed summary.');
+ const start=day(imp.starts_on),end=day(imp.ends_on);if(start<day(l.starts_on)||end>day(l.ends_on))fail(400,'This payroll month is outside the financial year of this ledger.');
+ const calculated=imp.payload?.calculated||[];if(!calculated.length)fail(400,'The payroll summary has no calculated employees.');
+ const totals=payrollTotals(calculated),maps=await tx`select routing_id,version,module,routing_code,item_code,erp_account_code,side,effective_from,effective_to,status from erp_private.client_routing_map where client_id=${project.client_id} and module='Payroll' and status='Active'`;
+ const built=buildPayrollJournal(totals,maps,end);
+ const prior=(await tx`select payload from erp_private.period_imports where project_id=${pid} and kind='Payroll' and status in ('Submitted','Confirmed') and ends_on<${start} order by ends_on desc limit 1`)[0];
+ const changes=payrollChanges(prior?.payload?.employees,imp.payload?.employees||[]),exceptions=payrollExceptions(imp.payload);
+ const review={import_id:imp.import_id,month:start.slice(0,7),employees:totals.employees,totals:{gross:totals.gross/100,deductions:totals.deductions/100,net:totals.net/100,employer_cost:(totals.employer_nssf+totals.employer_ahl+totals.nita)/100},changes,exceptions,problems:built.problems,unmapped:built.unmapped,journal:{debit:built.debit,credit:built.credit,balanced:built.balanced,lines:built.lines}};
+ if(!create)return review;
+ if(built.unmapped.length)fail(400,'These payroll codes have no approved mapping for '+start.slice(0,7)+', so the entry stays unprepared: '+built.unmapped.map((x:any)=>x.code).join(', ')+'. A Manager proposes each account and a Partner approves it in Settings, Client routing map.');
+ if(built.problems.length)fail(400,built.problems.join(' '));
+ if(!built.balanced)fail(400,'The payroll journal does not balance, so it was not prepared.');
+ const used=await tx`select journal_id from erp_private.ledger_sources where source_kind='Period import' and source_key=${imp.import_id}`;
+ if(used.length)return {journal_id:used[0].journal_id,reused:true,review};
+ const ref='PAY-'+start.slice(0,7),items=built.lines.map((x:any)=>({...x,source_status:'Confirmed',source_reference:`Payroll summary ${start.slice(0,7)} · ${totals.employees} employees`}));
+ const result=await newJournal(tx,a,l,'Payroll',{journal_date:end,reference:ref+'-'+String(imp.import_id).slice(0,8),description:`Payroll ${start.slice(0,7)}: ${totals.employees} employees, prepared from approved mappings`,evidence:`Payroll summary ${imp.import_id}, revision ${imp.revision}`},items,{kind:'Period import',import_id:imp.import_id,import_revision:String(imp.revision),source_hash:imp.source_hash,month:start,employees:totals.employees,totals:review.totals,mappings:built.used,changes,exceptions_count:exceptions.length},true);
+ await tx`insert into erp_private.ledger_sources(source_kind,source_key,journal_id,project_id,source_revision) values('Period import',${imp.import_id},${result.journal_id},${pid},${imp.revision})`;
+ return {...result,review};
 }
 async function newJournal(tx:any,a:any,l:any,kind:string,p:any,items:any[],snapshot:any={},generated=false){
  const id=crypto.randomUUID(),reference=text(p.reference||('GL-'+id.slice(0,8).toUpperCase()),100),at=date(p.journal_date||l.ends_on);
@@ -409,7 +433,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
    }
    if(!journalIds.length)fail(400,'A zero summary needs no accounting entry.');
    return {journal_id:journalIds[0],journal_ids:journalIds};
-  }else{const t=source.payload.totals;items=payrollJournal({gross_pay:t.gross,paye:t.paye,shif:t.shif,employee_ahl:t.employee_ahl,employee_nssf:t.employee_nssf,employee_pension:t.employee_pension,other_deductions:t.other_deductions,employer_ahl:t.employer_ahl,employer_nssf:t.employer_nssf,employer_nita:t.nita,evidence:source.import_id});}
+  }else{const made=await payrollDraft(tx,a,l,project,source,true);return {journal_id:made.journal_id,reused:made.reused||false,review:made.review};}
   if(!items.length)fail(400,'A zero summary needs no accounting entry.');
   if(source.activity_id)items=items.map((x:any)=>String(x.account_code||'')>='40000'?{...x,activity_id:source.activity_id}:x);
   const result=await newJournal(tx,a,l,source.kind,{journal_date:day(source.ends_on),reference:source.kind.toUpperCase()+'-'+day(source.starts_on)+'-'+source.import_id.slice(0,8),evidence:'Confirmed import '+source.import_id+'; '+source.review_note,description:'Reviewed '+source.kind.toLowerCase()+' category/control totals'},items,{kind:'Period import',import_id:source.import_id,source_hash:source.source_hash},true);
@@ -437,6 +461,10 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   const items=payrollJournal(p),snapshot={kind:'Payroll control',inputs:{...p,action:undefined}};
   if(p.journal_id){const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);if(j.kind!=='Payroll'||j.source_snapshot.kind!=='Payroll control')fail(400,'Edit a draft payroll control entry.');await writeLines(tx,j,items);await tx`update erp_private.ledger_journals set reference=${text(p.reference,100)},journal_date=${date(p.journal_date)},evidence=${text(p.evidence,5000)},source_snapshot=${tx.json(snapshot)},last_prepared_by=${a.staff_id},status='Draft' where journal_id=${j.journal_id}`;return {journal_id:j.journal_id};}
   return await newJournal(tx,a,l,'Payroll',p,items,snapshot,true);
+ }
+ if(p.action==='ledger_payroll_journal_preview'||p.action==='ledger_payroll_journal_create'){
+  const imp=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid} and kind='Payroll' for update`);
+  return await payrollDraft(tx,a,l,project,imp,p.action==='ledger_payroll_journal_create');
  }
  if(p.action==='ledger_journal_metadata'){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);edit(j,a);const at=date(p.journal_date);if(j.kind==='Depreciation'&&at!==day(j.journal_date))fail(400,'The depreciation date follows its reserved calculation period.');

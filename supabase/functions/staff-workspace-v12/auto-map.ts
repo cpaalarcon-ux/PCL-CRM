@@ -31,7 +31,7 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
  const soldVat=(await tx`select vat_categories_sold from erp_private.clients where client_id=${project.client_id}`)[0]?.vat_categories_sold||null;
  const stamp=new Date().toISOString(),updates:any[]=[],history=await suggestionsFor(tx,project,rows);let viaHistory=0;
  const blocks=await loadBlocks(tx,project.client_id),notes=new Map<string,{code:string,reason:string}>(),exceptionCodes=new Map<string,string>();
- const routingMap=await tx`select module,routing_code,item_code,erp_account_code,side,effective_from,effective_to,status,routing_id from erp_private.client_routing_map where client_id=${project.client_id} and module='Purchases' and status='Active'`;
+ const routingMap=await tx`select module,routing_code,item_code,erp_account_code,side,effective_from,effective_to,status,routing_id,version from erp_private.client_routing_map where client_id=${project.client_id} and module='Purchases' and status='Active'`;
  for(const r of rows){
   const note=(code:string,reason:string)=>{notes.set(r.row_id,{code,reason});};
   try{
@@ -70,7 +70,7 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
    const own=policies.filter((v:any)=>v.activity_id===chosen?.activity_id),dated=own.find((v:any)=>day(v.effective_from)<=at);
    const v=mapValue(r,{route,account_code:account.code},accounts,own.length?dated:policy);
    const details=inventoryDetails(r,{route,account_code:account.code});if(chosen)details.activity_id=chosen.activity_id;delete details.auto_map_note;
-   details.mapping_confirmation={method:viaMap?ROUTING_METHOD:fromHistory?HISTORY_METHOD:AUTO_METHOD,routing_code:viaMap?viaMap.routing_code:account.category_code,tb_item_code:account.code,chart_version:account.catalog_version??null,mapped_at:stamp,imported_by:a.staff_id,...(viaMap?{routing_map_id:viaMap.routing_id,awaiting_review:true}:{})};
+   details.mapping_confirmation={method:viaMap?ROUTING_METHOD:fromHistory?HISTORY_METHOD:AUTO_METHOD,routing_code:viaMap?viaMap.routing_code:account.category_code,tb_item_code:account.code,chart_version:account.catalog_version??null,mapped_at:stamp,imported_by:a.staff_id,...(viaMap?{routing_map_id:viaMap.routing_id,routing_map_version:viaMap.version,awaiting_review:true}:{})};
    if(fromHistory)viaHistory++;
    updates.push({row_id:r.row_id,route:v.route,category_code:v.category_code,account_code:v.account_code,narration:v.narration,asset_details:v.asset_details,first_use_status:v.first_use_status,first_use_date:v.first_use_date,review_details:details});
   }catch(e:any){ /* Anything the manual mapping would refuse stays unmapped for staff to resolve, with the reason. */ note('MAPPING_REFUSED',String(e?.message||'The mapping rules refused this row.').slice(0,300)); }
