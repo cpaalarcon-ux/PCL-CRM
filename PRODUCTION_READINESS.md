@@ -1,5 +1,8 @@
 # PCL CRM / ERP production-readiness runbook
 
+> **Historical target architecture:** This runbook predates the current staging candidate. It is not evidence that its target design is deployed. Use [ERP alignment control](supabase/ERP_ALIGNMENT_CONTROL.md), [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md) and [Full ERP staff UAT](supabase/FULL_ERP_STAFF_UAT.md) for current scope. The root UI is a browser-local preview; shared authenticated testing is at `/staff-pilot`. Apply only versioned `supabase/migrations` to staging, not the historical `database_schema.sql`. Production cutover, restore/load tests, staff UAT and missing integrations remain outstanding. The ERP is firm-scoped, not a verified multi-tenant subscription product; production and subscription-ready claims are not authorized.
+
+
 ## Scope of this release
 
 This release adds the controls required before real client, staff, audit and tax data is admitted to the ERP:

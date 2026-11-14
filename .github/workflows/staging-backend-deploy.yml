@@ -1,0 +1,110 @@
+name: Staging backend deploy
+
+# Deploys the staging backend only: pending database migrations and the
+# staff-workspace-v12 Edge Function for Supabase project pcl-erp-staging.
+# It never targets production. Trigger it by pushing a commit from
+# backend/staging-foundation to the deploy/staging-backend branch:
+#   git push origin <commit>:refs/heads/deploy/staging-backend
+# Required repository secrets:
+#   SUPABASE_ACCESS_TOKEN  – personal access token of a staging project admin
+#   SUPABASE_DB_PASSWORD   – staging database password
+
+on:
+  push:
+    branches:
+      - deploy/staging-backend
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-backend-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_REF: yfjiculexbzpkvtapudk   # pcl-erp-staging – hard-coded, never production
+  LAST_APPLIED_MIGRATION: '20261107103437'   # keep equal to the last line of supabase/staging-migration-history.txt
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse commits that are not on the staging branch
+        run: |
+          git fetch --no-tags origin backend/staging-foundation
+          git merge-base --is-ancestor HEAD origin/backend/staging-foundation \
+            || { echo "::error::This commit is not on backend/staging-foundation."; exit 1; }
+          test -n "$SUPABASE_ACCESS_TOKEN" && test -n "$SUPABASE_DB_PASSWORD" \
+            || { echo "::error::Add SUPABASE_ACCESS_TOKEN and SUPABASE_DB_PASSWORD secrets first."; exit 1; }
+          echo "Deploying $(git rev-parse --short HEAD) to staging project $PROJECT_REF"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Supabase CLI
+        # Installed from npm so the workflow only uses GitHub-owned actions.
+        run: |
+          npm install -g supabase@2
+          supabase --version
+
+      - name: Link the staging project
+        run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Check pending migrations (dry run)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Always query the linked staging database. A failed CLI command must stop here,
+          # not be hidden by tee and reported as "Pending: none".
+          supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" | tee migration-list.txt
+          supabase db push --linked --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee dry-run.txt
+          pending=$(grep -oE '[0-9]{14}_[A-Za-z0-9_]+\.sql' dry-run.txt | sort -u || true)
+          echo "Pending: ${pending:-none}"
+          for f in $pending; do
+            v=${f%%_*}
+            if [ "$v" \< "$LAST_APPLIED_MIGRATION" ] || [ "$v" = "$LAST_APPLIED_MIGRATION" ]; then
+              echo "::error::$f is older than the last applied staging migration. The remote history does not match; stop and reconcile by hand."; exit 1
+            fi
+          done
+
+      - name: Apply pending migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Deploy staff-workspace-v12
+        # Gateway JWT verification stays off: login/setup routes are called before a session exists,
+        # and the function authenticates every protected action itself.
+        run: supabase functions deploy staff-workspace-v12 --project-ref "$PROJECT_REF" --no-verify-jwt
+
+      - name: Record deployed version
+        run: |
+          supabase functions list --project-ref "$PROJECT_REF" | tee functions.txt
+          grep -E 'staff-workspace-v12' functions.txt
+          {
+            echo "### Staging backend deploy"
+            echo "- Commit: \`$(git rev-parse HEAD)\`"
+            echo "- Project: \`$PROJECT_REF\` (pcl-erp-staging)"
+            echo "- Function: \`$(grep -E 'staff-workspace-v12' functions.txt | tr -s ' ')\`"
+            echo "- Migrations applied: $(grep -oE '[0-9]{14}_[A-Za-z0-9_]+\.sql' dry-run.txt | sort -u | tr '\n' ' ' || echo none)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test – protected action refuses an anonymous call
+        run: |
+          code=$(curl -s -o body.txt -w '%{http_code}' -X POST \
+            "https://$PROJECT_REF.supabase.co/functions/v1/staff-workspace-v12" \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: https://backend-staging-foundation.pcl-crm.pages.dev' \
+            -H 'apikey: sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc' \
+            -d '{"action":"workspace"}')
+          echo "HTTP $code"; cat body.txt; echo
+          case "$code" in 401|403) echo "Protected action correctly refused";; *) echo "::error::Expected 401/403, got $code"; exit 1;; esac

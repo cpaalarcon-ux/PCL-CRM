@@ -1,0 +1,130 @@
+{
+ "slug": "staff-workspace-v8",
+ "name": "staff-workspace-v8",
+ "version": 1,
+ "status": "ACTIVE",
+ "verify_jwt": false,
+ "created_at": 1792964562805,
+ "updated_at": 1792964562805,
+ "ezbr_sha256": "084f97b8de9212277db597d21a8350a8a2e9572b585a2fd1cb8ea209a41335e1",
+ "archived_on": "2026-11-04",
+ "source": "Retrieved from pcl-erp-staging (yfjiculexbzpkvtapudk) with the Supabase get_edge_function tool before the function was retired.",
+ "files": [
+  {
+   "name": "index.ts",
+   "bytes": 27195
+  },
+  {
+   "name": "improvement-actions.ts",
+   "bytes": 21227
+  },
+  {
+   "name": "validation.mjs",
+   "bytes": 4985
+  },
+  {
+   "name": "improvement-rules.mjs",
+   "bytes": 6411
+  },
+  {
+   "name": "accounting-rules.mjs",
+   "bytes": 6742
+  },
+  {
+   "name": "procedure-actions.ts",
+   "bytes": 11807
+  },
+  {
+   "name": "procedure-rules.mjs",
+   "bytes": 2324
+  },
+  {
+   "name": "presence-actions.ts",
+   "bytes": 10520
+  },
+  {
+   "name": "attendance-rules.mjs",
+   "bytes": 681
+  },
+  {
+   "name": "accounting-actions.ts",
+   "bytes": 18919
+  },
+  {
+   "name": "tax-config-actions.ts",
+   "bytes": 8320
+  },
+  {
+   "name": "suite-rules.mjs",
+   "bytes": 6006
+  },
+  {
+   "name": "tax-registry.mjs",
+   "bytes": 13666
+  },
+  {
+   "name": "suite-actions.ts",
+   "bytes": 27699
+  },
+  {
+   "name": "workspace-read.ts",
+   "bytes": 4586
+  },
+  {
+   "name": "setup-link-rules.mjs",
+   "bytes": 968
+  },
+  {
+   "name": "lead-actions.ts",
+   "bytes": 5083
+  },
+  {
+   "name": "workspace-actions.ts",
+   "bytes": 11508
+  },
+  {
+   "name": "workspace-rules.mjs",
+   "bytes": 6682
+  },
+  {
+   "name": "workbook-actions.ts",
+   "bytes": 12792
+  },
+  {
+   "name": "workbook-reader.mjs",
+   "bytes": 5153
+  },
+  {
+   "name": "purchase-categories.json",
+   "bytes": 13899
+  },
+  {
+   "name": "workbook-templates.mjs",
+   "bytes": 8930
+  },
+  {
+   "name": "tax-review-actions.ts",
+   "bytes": 22181
+  },
+  {
+   "name": "testing-rates.mjs",
+   "bytes": 647
+  },
+  {
+   "name": "engagement-actions.ts",
+   "bytes": 11372
+  },
+  {
+   "name": "suite-export.ts",
+   "bytes": 14823
+  },
+  {
+   "name": "master-import.ts",
+   "bytes": 6344
+  },
+  {
+   "name": "deno.json",
+   "bytes": 256
+  }
+ ]
+}

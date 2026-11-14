@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {date,password,staffInput,fileType,allowedOrigin,HttpError,uuid} from '../supabase/functions/staff-pilot/validation.mjs';
+test('invalid and rolled calendar dates are rejected',()=>{for(const v of ['2026-13-01','2026-02-29','2026-04-31','not-a-date'])assert.throws(()=>date(v),e=>e instanceof HttpError&&e.status===400);assert.equal(date('2028-02-29'),'2028-02-29');});
+test('password setup rejects short or incomplete passwords',()=>{for(const p of ['short','longpasswordalllowercase','UPPERCASEONLY123456'])assert.throws(()=>password(p));assert.equal(password('A-long-passphrase-2026'),'A-long-passphrase-2026');});
+test('a Manager cannot promote or edit Partner/Manager profiles',()=>{const p={full_name:'Test person',category_code:'PARTNER',employment_type:'Permanent'};assert.throws(()=>staffInput(p,{category_code:'MANAGER'}),e=>e.status===403);assert.throws(()=>staffInput({...p,category_code:'ASSISTANT'},{category_code:'MANAGER'},{category_code:'MANAGER'}),e=>e.status===403);});
+test('contract and intern profiles require an end date',()=>{for(const [category,employment] of [['INTERN','Permanent'],['ASSISTANT','Contract']])assert.throws(()=>staffInput({full_name:'Test',category_code:category,employment_type:employment},{category_code:'PARTNER'}));});
+test('uploads reject extension/content mismatches and oversized input',()=>{assert.throws(()=>fileType('evidence.pdf',new TextEncoder().encode('<html>test</html>')));assert.throws(()=>fileType('evidence.pdf',new Uint8Array(10*1024*1024+1)));assert.equal(fileType('evidence.pdf',new TextEncoder().encode('%PDF-1.4\n')),'application/pdf');});
+test('CORS allows only explicit deployment hosts',()=>{assert.equal(allowedOrigin('https://backend-staging-foundation.pcl-crm.pages.dev'),true);for(const v of ['null','http://pcl.phamalarcon.com','https://pcl-crm.pages.dev.evil.example','https://other.pages.dev'])assert.equal(allowedOrigin(v),false);});
+test('record IDs reject SQL fragments',()=>{assert.throws(()=>uuid("' or true --"));});
