@@ -91,7 +91,7 @@ test('UI: card, table by role, form, escaping and wiring',()=>{
  const suite=rd('staff-suite.mjs');assert.match(suite,/staff-starter-confirm\.mjs\?v=20261112-resources-v1/);assert.match(suite,/\$\{starterConfirm\.card\(\)\}/);assert.match(suite,/starterConfirm\.handle\(action,id\)/);
  assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261112-resources-v1/);
  assert.match(rd(fx+'staff-access-control.mjs'),/bank_starter_confirm_\|/);assert.match(rd(fx+'index.ts'),/starterConfirmAction/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-12.2796');assert.match(rd('staff-pilot.html'),/2026-11-12\.2796/);
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2797');assert.match(rd('staff-pilot.html'),/2026-11-14\.2797/);
  const mig=rd('supabase/migrations/20261111060000_starter_rule_confirmations.sql');assert.doesNotMatch(mig,/forensic|ISRS 4000/i);assert.doesNotMatch(rd('staff-starter-confirm.mjs')+rd(fx+'starter-confirm-actions.ts'),/forensic|ISRS 4000/i);
  assert.doesNotMatch(mig+rd(fx+'bank-starter-rules.mjs'),/\d+(\.\d+)?\s*%/,'no rate is stored');
 });
