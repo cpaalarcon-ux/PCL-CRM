@@ -11,9 +11,29 @@ const optional=v=>/^(?:n\/?a|not applicable|—|-)$/i.test(clean(v))?'':v;
 export const purchaseDate=v=>excelDate(typeof v==='string'&&/^\d{5}(?:\.0+)?$/.test(v.trim())?Number(v):v);
 export const purchaseDisplayValues=values=>values.map((v,i)=>{if(![3,11].includes(i))return v;const d=purchaseDate(optional(v));return d?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):optional(v);});
 export const purchasePendingMatch=row=>Object.fromEntries(['purchase_type','party_pin','party','date','invoice','description','customs_entry','amount','vat','gross','vat_category','return_month'].map(k=>[k,row[k]]));
-export const purchaseUploadValues=(sheet,i)=>Array.from({length:14},(_,j)=>excelValue(sheet.getRow(i).getCell(j+1).value));
+// The firm's source purchase layout (one layout for every VAT category): TYPE OF PURCHASE, PIN, NAME, INVOICE DATE, INVOICE NO.,
+// DESCRIPTION, CUSTOM ENTRY NUMBER, TAXABLE VALUE, RELV INV NUMBER, RELV INV DATE, ROUTING CODE, T.B CODE. It has a title row above the
+// headings and no VAT or gross columns. Columns are found by their headings, so the zero-rated and exempt variants (which drop or rename a
+// column) read the same way. The values are rearranged into the 14 standard positions; VAT and gross are left blank and are calculated
+// from the VAT category chosen at upload.
+export const purchaseSourceLayoutId='PCL-PURCHASES-SOURCE-1';
+const sourceAliases={purchase_type:['TYPE OF PURCHASE','TYPE'],party_pin:['PIN OF PURCHASER','PIN OF SUPPLIER','SUPPLIER PIN'],party:['NAME OF PURCHASER','NAME OF SUPPLIER','SUPPLIER NAME'],date:['INVOICE DATE'],invoice:['INVOICE NO.','INVOICE NO','INVOICE NUMBER'],description:['DESCRIPTION OF GDS/SRVS','DESCRIPTION OF GOODS/SERVICES','DESCRIPTION'],customs_entry:['CUSTOM ENTRY NUMBER','CUSTOM ENTRY NO.','CUSTOM ENTRY NO','CUSTOMS ENTRY NUMBER'],amount:['TAXABLE VALUE'],original_invoice:['RELV INV NUMBER'],original_invoice_date:['RELV INV DATE'],routing_code:['ROUTING CODE'],tb_code:['T.B CODE','TB CODE']};
+export function purchaseSourceLayout(sheet){
+ for(let r=1;r<=Math.min(3,sheet.rowCount);r++){
+  const titles=Array.from({length:Math.min(sheet.columnCount,20)},(_,j)=>norm(excelValue(sheet.getRow(r).getCell(j+1).value))),cols={};
+  for(const [key,names] of Object.entries(sourceAliases)){const hits=titles.map((v,i)=>names.includes(v)?i+1:0).filter(Boolean);if(hits.length===1)cols[key]=hits[0];}
+  if(['party_pin','party','date','invoice','amount'].every(k=>cols[k]))return {header_row:r,cols};
+ }
+ return null;
+}
+export const purchaseUploadValues=(sheet,i,layout)=>{
+ if(!layout)return Array.from({length:14},(_,j)=>excelValue(sheet.getRow(i).getCell(j+1).value));
+ const at=k=>layout.cols[k]?excelValue(sheet.getRow(i).getCell(layout.cols[k]).value):'';
+ return [at('purchase_type'),at('party_pin'),at('party'),at('date'),at('invoice'),at('description'),at('customs_entry'),at('amount'),'','',at('original_invoice'),at('original_invoice_date'),at('routing_code'),at('tb_code')];
+};
 export function purchaseUploadProfile(sheet,required=false){
  const titles=purchaseUploadValues(sheet,1),matches=titles.filter((v,i)=>norm(v)===norm(purchaseUploadHeaders[i])).length;
+ if(matches<6){const layout=purchaseSourceLayout(sheet);if(layout)return {recognised:true,id:purchaseUploadId,name:'Purchase source layout (net amounts, all VAT categories)',dataset:'Purchases',header_row:layout.header_row,column_map:purchaseUploadMap,fixed_columns:true,version:3,source_layout:true,layout,derive_vat:true};}
  if(!required&&matches<6&&!/^Purchase Upload$/i.test(sheet.name.split(' :: ').at(-1)))return null;
  const legacy=sheet.columnCount<=12&&purchaseUploadLegacyHeaders.every((h,i)=>norm(titles[i])===norm(h));
  if(sheet.columnCount>14)fail(400,'The standard purchase template has 14 columns, A–N. Remove columns after N.');
@@ -22,18 +42,23 @@ export function purchaseUploadProfile(sheet,required=false){
  if(!legacy&&sheet.columnCount<14)fail(400,'The standard purchase template needs all 14 columns, A–N. Download the updated template.');
  return {recognised:true,id:purchaseUploadId,name:'Standard purchase upload',dataset:'Purchases',header_row:1,column_map:purchaseUploadMap,fixed_columns:true,version:legacy?1:2};
 }
-export function purchaseUploadRows(sheet){
- const rows=[];let ignored=0;
- for(let i=2;i<=sheet.rowCount;i++){const values=purchaseUploadValues(sheet,i);if(!values.some(v=>clean(v))){ignored++;continue;}rows.push({source_row:i,values});}
+export function purchaseUploadRows(sheet,profile){
+ const rows=[],layout=profile?.layout||null;let ignored=0;
+ for(let i=(profile?.header_row||1)+1;i<=sheet.rowCount;i++){const values=purchaseUploadValues(sheet,i,layout);if(!values.some(v=>clean(v))){ignored++;continue;}rows.push({source_row:i,values});}
  if(rows.length>10000)fail(400,`This file contains ${rows.length.toLocaleString('en-US')} populated purchase rows. The limit is 10,000 per upload. Split the transactions into separate files, each keeping row 1 as the header.`);
- return {rows,ignored};
+ return {rows,ignored,derive_vat:!!layout};
 }
-export function normalizePurchaseUpload(values,rate,start,end,accounts=[],clientMappings){
+export function normalizePurchaseUpload(values,rate,start,end,accounts=[],clientMappings,deriveVat=false){
  if(!purchaseUploadRates.includes(rate))fail(400,'Select the VAT category in the ERP: 16%, 8%, 0% or Exempt. Use one category per upload.');
+ if(deriveVat){
+  // Net-only source layout: VAT and gross are worked out from the category chosen at upload, never read from the file.
+  values=[...values];const net=money(values[7]);
+  if(net!==null){const pct=['16%','8%'].includes(rate)?parseInt(rate):0,vat=Math.sign(net)*Math.round(Math.abs(net)*pct)/100;values[8]=vat;values[9]=Math.round((Math.round(net*100)+Math.round(vat*100)))/100;}
+ }
  const raw=Object.fromEntries(purchaseUploadHeaders.map((h,i)=>[`${i+1}: ${h}`,values[i]??''])),row={},issues=[],pending=[],rounded=[];
  for(const [key,col] of Object.entries(purchaseUploadMap)){const value=[7,11,12,13,14].includes(col)?optional(values[col-1]??''):values[col-1]??'';row[key]=['amount','vat','gross'].includes(key)?money(value):['date','original_invoice_date'].includes(key)?purchaseDate(value):clean(value);}
- row.party_pin=row.party_pin.toUpperCase();row.vat_category=rate;row.source_profile=purchaseUploadId;row.return_month=start;row.vat_basis='Supplied';
- if(!['LOCAL','IMPORT','IMPORTED'].includes(norm(row.purchase_type)))issues.push('Column A: choose Local or Import.');
+ row.party_pin=row.party_pin.toUpperCase();row.vat_category=rate;row.source_profile=purchaseUploadId;row.return_month=start;row.vat_basis=deriveVat?'Calculated from the selected category rate':'Supplied';
+ if(!['LOCAL','IMPORT','IMPORTS','IMPORTED'].includes(norm(row.purchase_type)))issues.push('Column A: choose Local or Import.');
  if(!/^[A-Z]\d{9}[A-Z]$/.test(row.party_pin))issues.push('Column B: enter a valid supplier PIN.');
  if(!row.party)issues.push('Column C: supplier name is required.');
  if(!row.date||row.date>end)issues.push('Column D: enter a valid document date no later than the selected period end.');
@@ -76,9 +101,9 @@ export function normalizePurchaseUpload(values,rate,start,end,accounts=[],client
  const key=JSON.stringify([norm(row.invoice),norm(row.party_pin)||norm(row.party),line]);
  return {raw,row,issues,pending,key,route:null,category_code:null,narration:row.description||null};
 }
-export function purchaseUploadSummary(records,rate,start,end,accounts=[],clientMappings){
+export function purchaseUploadSummary(records,rate,start,end,accounts=[],clientMappings,deriveVat=false){
  const out={source_count:records.length,valid_count:0,rejected_count:0,pending_count:0,credit_count:0,rounded_count:0,mapping_hint_count:0,mapping_issue_count:0,mapping_issues:[],net:0,vat:0,gross:0,source_totals:{net:0,vat:0,gross:0,complete:true},pending_totals:{net:0,vat:0,gross:0},issues:[],pending_issues:[]};
- for(const {source_row,values} of records){const n=normalizePurchaseUpload(values,rate,start,end,accounts,clientMappings);if(n.row.amount<0)out.credit_count++;if(n.row.rounded_fields.length)out.rounded_count++;if(n.row.mapping_suggestion)out.mapping_hint_count++;if(n.row.mapping_suggestion_issue){out.mapping_issue_count++;if(out.mapping_issues.length<100)out.mapping_issues.push({row:source_row,reason:n.row.mapping_suggestion_issue});}
+ for(const {source_row,values} of records){const n=normalizePurchaseUpload(values,rate,start,end,accounts,clientMappings,deriveVat);if(n.row.amount<0)out.credit_count++;if(n.row.rounded_fields.length)out.rounded_count++;if(n.row.mapping_suggestion)out.mapping_hint_count++;if(n.row.mapping_suggestion_issue){out.mapping_issue_count++;if(out.mapping_issues.length<100)out.mapping_issues.push({row:source_row,reason:n.row.mapping_suggestion_issue});}
   for(const k of ['net','vat','gross']){const amount=n.row[k==='net'?'amount':k];if(amount===null)out.source_totals.complete=false;else out.source_totals[k]+=Math.round(amount*100);}
   if(n.issues.length){out.rejected_count++;if(out.issues.length<100)out.issues.push({row:source_row,reason:n.issues.join(' ')});continue;}
   if(n.pending.length){out.pending_count++;if(out.pending_issues.length<100)out.pending_issues.push({row:source_row,invoice:n.row.invoice,reason:n.pending.join(' ')});for(const k of ['net','vat','gross'])out.pending_totals[k]+=Math.round(n.row[k==='net'?'amount':k]*100);continue;}

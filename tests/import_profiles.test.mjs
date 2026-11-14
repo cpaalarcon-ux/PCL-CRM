@@ -34,3 +34,19 @@ test('invalid or later original invoice dates are exceptions while earlier perio
   const values=['03/10/2026','CN-001',-100,-16,'INV-001',date],s=sheet('Purchases.csv',[['Invoice date','Invoice number','Net amount','VAT amount','Original invoice number','Original invoice date'],values]),n=profilePurchase(values,detectImportProfile(s),'2026-10-01','2026-10-31');assert.match(n.issues.join(' '),/Original invoice date/);
  }
 });
+test('three-column Sales Update template (Month, Sales category, Net sales) is recognised as it is and VAT is calculated and flagged',()=>{
+ const rows=[['Month','Sales category','Net sales']];
+ for(const m of ['2026-01','2026-02'])for(const [c,n] of [['16%',1000],['8%',500],['0%',200],['Exempt',0]])rows.push([m,c,n]);
+ const t=sheet('SALES_ERP_TEMPLATE_UPLOAD1.xlsx',rows),profile=detectImportProfile(t);
+ assert.equal(profile.recognised,true);assert.equal(profile.id,'SALES-NET-ONLY-v1');assert.equal(profile.summary,true);assert.equal(profile.dataset,'Sales');
+ const out=salesTotals([{sheet:t,profile}],'2026-01-01','2026-02-28');
+ assert.deepEqual(out.issues,[]);assert.equal(out.vat_calculated,true);
+ const g=(m,c)=>out.groups.find(x=>x.month===m&&x.vat_category===c);
+ assert.equal(g('2026-01','16%').vat,160);assert.equal(g('2026-01','16%').gross,1160);assert.equal(g('2026-02','8%').vat,40);
+ assert.equal(g('2026-01','0%').vat,0);assert.equal(g('2026-01','Exempt').gross,0);assert.equal(out.groups.length,8);
+});
+test('net-only sales template: a blank net amount is an exception, not a zero; three columns plus extras are not net-only',()=>{
+ const t=sheet('s.xlsx',[['Month','Sales category','Net sales'],['2026-01','16%',''],['2026-01','8%',0],['2026-01','0%',0],['2026-01','Exempt',0]]),p=detectImportProfile(t);
+ assert.equal(p.id,'SALES-NET-ONLY-v1');assert.match(salesTotals([{sheet:t,profile:p}],'2026-01-01','2026-01-31').issues[0],/row 2/);
+ const full=sheet('s.xlsx',[['Month','Sales category','Net sales','Output VAT','Gross amount','Credits','Credit notes net','Credit notes VAT'],['2026-01','16%',100,16,116,0,0,0]]);assert.equal(detectImportProfile(full).id,'SALES-CATEGORIES-v3');
+});

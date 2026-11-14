@@ -34,6 +34,9 @@ export function detectImportProfile(sheet){
   if(pay.name&&pay.gross&&((pay.pin&&pay.paye)||(pay.employment_type&&pay.employee_id)))return {recognised:true,id:'PAYROLL-BREAKDOWN-v1',name:'Payroll breakdown',dataset:'Payroll',header_row:i,column_map:pay};
   if(norm(values[0])==='krapin'&&norm(values[1])==='employeename'&&sheet.columnCount===25&&norm(values[6]).startsWith('totalcashpay'))return {recognised:true,id:'PAYE-25-v1',name:'PAYE 25-column template',dataset:'Payroll',header_row:i,column_map:{pin:1,name:2,resident:3,gross:7,shif:15,employee_nssf:16,other_pension:17,postretirement_medical:18,mortgage_interest:19,employee_ahl:20,taxable:21,personal_relief:22,insurance_relief:23,paye:24},benefit_columns:[8,9,10,12,13]};
   if(map.month&&map.vat_category&&map.amount&&map.vat&&map.gross&&map.credits&&map.credit_net&&map.credit_vat&&!map.invoice)return {recognised:true,id:'SALES-CATEGORIES-v3',name:'Sales update template v3 · category totals',dataset:'Sales',header_row:i,column_map:map,summary:true,amount_basis:'Net'};
+  // The firm's three-column Sales Update template: Month, Sales category, Net sales. VAT and gross are not in the file, so
+  // they are calculated from the category rate and the group is marked as calculated (the same way recognised KRA sections work).
+  if(map.month&&map.vat_category&&map.amount&&!map.vat&&!map.gross&&!map.credits&&!map.credit_net&&!map.credit_vat&&!map.invoice&&!map.date&&!map.party&&!map.party_pin&&values.filter(v=>clean(v)).length===3)return {recognised:true,id:'SALES-NET-ONLY-v1',name:'Sales update template · net sales by category (VAT calculated)',dataset:'Sales',header_row:i,column_map:map,summary:true,derived_vat:true,net_only:true,amount_basis:'Net'};
   if(map.date&&map.invoice&&map.amount)return {recognised:true,id:'INVOICE-HEADERS-v1',name:'Invoice export with recognised headers',dataset:'Purchases',header_row:i,column_map:map,amount_basis:'Net'};
  }
  if(sheet.columnCount===25&&/^[A-Z]\d{9}[A-Z]$/i.test(clean(sheetValues(sheet,1)[0]))&&['Resident','Non Resident','Non-Resident'].includes(clean(sheetValues(sheet,1)[2])))return {recognised:true,id:'PAYE-25-v1',name:'Headerless PAYE 25-column template',dataset:'Payroll',header_row:0,column_map:{pin:1,name:2,resident:3,gross:7,shif:15,employee_nssf:16,other_pension:17,postretirement_medical:18,mortgage_interest:19,employee_ahl:20,taxable:21,personal_relief:22,insurance_relief:23,paye:24},benefit_columns:[8,9,10,12,13]};
@@ -70,7 +73,7 @@ export function salesTotals(sheets,start,end){
    if(profile.summary&&start.slice(0,7)!==end.slice(0,7)&&!get('month')){issues.push(`${sheet.name} row ${i}: add a Month value (YYYY-MM) for multi-month category totals.`);continue;}
    if(vat==null&&profile.derived_vat)vat=Math.round(net*(rate==='16%'?.16:rate==='8%'?.08:0)*100)/100;
    if(!profile.summary&&/credit/i.test(clean(get('document_type')))){net=-Math.abs(net);if(vat!=null)vat=-Math.abs(vat);}
-   const gross=money(get('gross')),creditNet=money(get('credit_net')),creditVat=money(get('credit_vat')),genericCredits=money(get('credits'));
+   const gross=profile.net_only?(vat==null?null:Math.round((net+vat)*100)/100):money(get('gross')),creditNet=profile.net_only?0:money(get('credit_net')),creditVat=profile.net_only?0:money(get('credit_vat')),genericCredits=profile.net_only?0:money(get('credits'));
    if(profile.summary&&(genericCredits==null||creditNet==null||creditVat==null||Math.abs(genericCredits-creditNet-creditVat)>.01))issues.push(`${sheet.name} row ${i}: enter Credits and split it exactly between Credit notes net and Credit notes VAT.`);
    if(vat==null||profile.summary&&gross==null||['0%','Exempt'].includes(rate)&&vat!==0||net*vat<0||gross!=null&&Math.abs(gross-net-vat)>.01||creditNet!=null&&creditNet<0||creditVat!=null&&creditVat<0||['0%','Exempt'].includes(rate)&&creditVat){issues.push(`${sheet.name} row ${i}: gross, VAT or credit values are missing or inconsistent with the category.`);continue;}
    if(profile.column_map.credit_net&&creditNet==null||profile.column_map.credit_vat&&creditVat==null){issues.push(`${sheet.name} row ${i}: enter a numeric value, including 0, in both credit-note columns.`);continue;}
@@ -93,7 +96,7 @@ export function salesTotals(sheets,start,end){
   // including zero categories, whether the upload is a summary or invoice detail.
   for(const ym of months)for(const rate of rateGroups)if(!groups.some(g=>g.month===ym&&g.vat_category===rate))groups.push({month:ym,vat_category:rate,net:0,vat:0,gross:0,credit_net:0,credit_vat:0,file_credit_net:0,file_credit_vat:0,generic_credits:0,source_rows:0});
  }
- return {groups:groups.sort((a,b)=>a.month.localeCompare(b.month)||rateGroups.indexOf(a.vat_category)-rateGroups.indexOf(b.vat_category)),issues,source_count:source,duplicate_count:duplicates,credit_basis:'After credit notes',amount_basis:'Net'};
+ return {groups:groups.sort((a,b)=>a.month.localeCompare(b.month)||rateGroups.indexOf(a.vat_category)-rateGroups.indexOf(b.vat_category)),issues,source_count:source,duplicate_count:duplicates,credit_basis:'After credit notes',amount_basis:'Net',...(sheets.some(s=>s.profile?.net_only)?{vat_calculated:true,vat_basis:'Calculated from the category rate. The file has net sales only.'}:{})};
 }
 export function payrollRows(sheet,profile){
  const rows=[],issues=[],pins=new Set(),ids=new Set();
