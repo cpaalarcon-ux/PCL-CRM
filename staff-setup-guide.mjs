@@ -137,7 +137,7 @@ export function createSetupGuideUI(ctx){
    $('#editor').close();
    if(a==='profile')await ctx.openClientSettings(id);
    if(a==='accounts')await ctx.openClientAccounts(id,{onReturn:()=>open(id),returnLabel:'Back to setup and reporting'});
-   if(a==='chart')await ctx.openClientChart(id);
+   if(a==='chart'){if(typeof ctx.openClientChart!=='function')throw new Error('Client chart screen is unavailable. Refresh the workspace and try again.');await ctx.openClientChart(id);}
    if(a==='setup-change')await ctx.openClientSettings(id);
    if(a==='stage-opening')await ctx.stageOpening(id);
    if(a==='ledger')await ctx.openLedger(id);
