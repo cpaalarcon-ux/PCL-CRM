@@ -151,7 +151,7 @@ export function createSetupGuideUI(ctx){
    if(a==='project')ctx.openProject(id);
    if(a==='projects')ctx.openProjects();
    if(a==='clients')ctx.openClients();
-  }catch(error){ctx.notice(error.message,true);}
+  }catch(error){ctx.notice(/is not a function/.test(String(error&&error.message))?'This step is not connected in this build, so it cannot open. Tell the system owner which step you pressed ('+(a||'unknown')+').':error.message,true);}
  });
  return {open};
 }
