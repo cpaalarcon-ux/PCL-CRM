@@ -1,4 +1,5 @@
 import {modeSwitch,loadMode,saveMode,normalizeMode,groupColumns,kanban,listTable} from './staff-items-view.mjs?v=20261107-annualpack-v3';
+import {createPeriodPackUI} from './staff-period-packs.mjs?v=20261115-packs-v1';
 import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261115-redo-v1';
 import {createWithholdingUI} from './staff-withholding.mjs?v=20261107-annualpack-v3';
 import {createCreditAgeingUI} from './staff-credit-ageing.mjs?v=20261107-annualpack-v3';
@@ -11,7 +12,7 @@ import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligation
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 export function createWorkspaceUI(ctx){
  const purchaseLedgers=createPurchaseLedgerUI(ctx);const periodImports=createPeriodImportUI(ctx);const withholding=createWithholdingUI(ctx);const creditAgeing=createCreditAgeingUI(ctx);const standardPurchaseImport=createStandardPurchaseImportUI(ctx);
- const accounting=createAccountingUI(ctx);
+ const accounting=createAccountingUI(ctx);const packs=createPeriodPackUI(ctx);
  const ledger=createLedgerUI(ctx,{onPayrollImport:projectId=>periodImports.newImport(projectId,{kind:'Payroll'})});
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty}=ctx;
  const d=()=>ctx.data(),editor=()=>['PARTNER','MANAGER','SUPERVISOR'].includes(d().me.category_code),leader=()=>['PARTNER','MANAGER'].includes(d().me.category_code);
@@ -165,7 +166,7 @@ const workCards=`<div class="work-board">
     ${workHub.has_more?`<div class="work-board-more"><span class="muted">Showing ${workHub.items.length} engagement(s) in the project list.</span><button type="button" data-v6="work-more" ${workHub.busy?'disabled':''}>${workHub.busy?'Loading…':'Load next 25'}</button></div>`:''}
    </div>`;
 
-  return `<section class="card"><div class="section-head"><div><span class="eyebrow">ONE WORKSPACE · ALL AUTHORISED FIRMS</span><h2>Projects & tasks</h2></div>${editor()?`<div class="actions"><button data-v6="project">+ New project</button>${p?'<button data-v6="task">+ New task</button>':''}</div>`:''}</div>
+  return `<section class="card"><div class="section-head"><div><span class="eyebrow">ONE WORKSPACE · ALL AUTHORISED FIRMS</span><h2>Projects & tasks</h2></div><div class="actions">${editor()?`<button data-v6="project">+ New project</button>${p?'<button data-v6="task">+ New task</button>':''}`:''}${packs.button()}${p?`<button type="button" data-pack="project" data-id="${p.project_id}">Period pack</button>`:''}</div></div>
    <div class="actions subnav"><button data-v6="schedule-view">${showSchedules?'Show monthly work':'Service schedules'}</button>${leader()?'<button data-v6="archive">Archived work</button>':''}</div>
    <div class="items-bar"><span class="muted">Show items as</span>${modeSwitch(itemsView,esc)}</div>
    <div class="filters">${select('project','Engagement / project',list.map(p=>[p.project_id,p.project_name]),selected,'All open work')}${p?.tax_master?select('workPeriod','Monthly / annual work project',current.map(w=>[w.work_period_id,w.period_kind+' · '+w.starts_on.slice(0,10)]),selectedPeriod,'All open periods'):''}</div>
