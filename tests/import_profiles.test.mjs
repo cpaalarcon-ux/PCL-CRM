@@ -18,6 +18,16 @@ test('Sales aggregate credit notes once, deduplicate, preserve zero/exempt and r
 test('Payroll recognises populated headers, retains missing PIN and missing values as exceptions',()=>{
  const p=sheet('Payroll.xlsx',[['Client'],[],['Employee name','KRA PIN','Gross pay','Taxable pay','PAYE deduction','Net amount'],['Staff A','A000000000A',100000,'',20000,80000],['Staff B','',30000,27000,'',27000],['TOTAL','',130000,27000,20000,107000]]),profile=detectImportProfile(p),out=payrollRows(p,profile);assert.equal(profile.header_row,3);assert.equal(out.rows.length,2);assert.equal(out.rows[0].taxable,null);assert.match(out.issues.join(' '),/PIN/);assert.equal(out.rows[1].paye,null);
 });
+test('the master workbook payroll layout is read with its statutory source figures, not guessed',()=>{
+ const headers=['Payroll month','Employee number','Employee name','KRA PIN','ID type','ID number','Residency','Employment type','Basic pay','Taxable allowances','Non-taxable allowances','Taxable benefits','Gross pay','Taxable pay (source)','PAYE (source)','PAYE (ERP calculated)','NSSF employee','NSSF employer','SHIF employee','SHIF employer','Housing levy employee','Housing levy employer','NITA employer','Pension employee','Pension employer','Other deductions','Net pay','Payment date','Source row','Evidence reference','Review status','Reviewer','Variance explanation'];
+ const row=['2026-10','E001','Staff A','A000000000A','National ID','12345678','Resident','Permanent',90000,5000,0,0,100000,90000,20000,19990,2160,2160,2750,0,1500,1500,50,0,0,0,73590,'','', '','Approved','Some Reviewer',''];
+ const p=sheet('Payroll.xlsx',[headers,row]),profile=detectImportProfile(p),out=payrollRows(p,profile),r=out.rows[0];
+ assert.equal(profile.id,'PAYROLL-BREAKDOWN-v1');assert.deepEqual(out.issues,[]);
+ assert.equal(r.taxable,90000);assert.equal(r.paye,20000,'the source PAYE column is read, not the ERP-calculated one');
+ assert.equal(r.employee_nssf,2160);assert.equal(r.employer_nssf,2160);assert.equal(r.shif,2750);assert.equal(r.employee_ahl,1500);assert.equal(r.employer_ahl,1500);assert.equal(r.employer_nita,50);assert.equal(r.resident,true);
+ assert.equal(profile.column_map.employee_id,6,'ID number stays the employee id; Employee number is not guessed to be it');
+ for(const k of ['reviewer','review_status'])assert.equal(profile.column_map[k],undefined,'uploaded reviewer and status are never read');
+});
 test('only original invoice number and date are needed to link signed purchase credits in every VAT category',()=>{
  const headers=['Invoice date','Invoice number','Supplier PIN','Supplier name','Net amount','VAT amount','VAT category','Original invoice number','Original invoice date'];
  for(const [rate,vat] of [['16%',-16],['8%',-8],['0%',0],['Exempt',0]]){
