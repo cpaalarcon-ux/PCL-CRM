@@ -2,7 +2,7 @@
 // in-memory copy of the call rules, so this proves the screen, the connection set-up and the hang-up paths; it cannot judge sound quality.
 const fs=require('fs'),http=require('http'),path=require('path'),dgram=require('dgram'),assert=require('node:assert/strict');
 const {chromium}=require(require.resolve('playwright',{paths:[process.env.PCL_BROWSER_MODULES||process.cwd()]}));
-const root=path.resolve(__dirname,'..');
+const root=path.resolve(__dirname,'..'),siteRoot=process.env.PCL_SITE_ROOT?path.resolve(process.env.PCL_SITE_ROOT):root;
 const PAGE=`<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/staff-pilot.css"></head><body><main><p>Call test page</p></main><script type="module">
 import {createCalls} from '/staff-chat-call.mjs';
 window.__notices=[];
@@ -11,7 +11,7 @@ window.ready=true;</script></body></html>`;
 const server=http.createServer((req,res)=>{
  const url=decodeURIComponent(req.url.split('?')[0]);
  if(url==='/__calls.html'){res.writeHead(200,{'content-type':'text/html'});return res.end(PAGE);}
- const f=path.join(root,url);if(!f.startsWith(root)||!fs.existsSync(f)||fs.statSync(f).isDirectory()){res.writeHead(404);return res.end();}
+ const f=path.join(siteRoot,url);if(!f.startsWith(siteRoot)||!fs.existsSync(f)||fs.statSync(f).isDirectory()){res.writeHead(404);return res.end();}
  res.writeHead(200,{'content-type':f.endsWith('.mjs')||f.endsWith('.js')?'text/javascript':f.endsWith('.css')?'text/css':'text/html'});res.end(fs.readFileSync(f));
 });
 
