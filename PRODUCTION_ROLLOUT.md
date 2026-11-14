@@ -2,6 +2,15 @@
 
 Status reviewed: 3 November 2026 (Africa/Nairobi). This file records staging evidence and gates before production; it does not approve a production release. For the authoritative current snapshot, use [ERP alignment control](supabase/ERP_ALIGNMENT_CONTROL.md) and [Release 0 status](supabase/RELEASE0_STATUS_2026-11-03.md). Older rows below are planning/history when they differ from those records.
 
+## Update, 14 November 2026
+
+The section "Current observed position" and the table "Remaining environment and release decisions" below describe 3 November and are kept as history. The current production plan is [PRODUCTION_BACKEND_PLAN.md](PRODUCTION_BACKEND_PLAN.md). In short:
+
+- Staging runs `staff-workspace-v12` (version 222 on 14 Nov, build 2026-11-14.2797) on `pcl-erp-staging` (`ap-south-1`), with 191 migrations. Staging browser UAT and hosted check pass on the staging line.
+- `main` is still the old browser-only preview (last changed 22 Oct) and is what the Cloudflare Pages project `pcl-crm` publishes at `pcl.phamalarcon.com`. **Merging the staging line into `main` publishes to that domain.** It needs the Partner's written release decision first (see below).
+- Production will be a separate Supabase project and a separate Cloudflare Pages project (`pcl-nexus-production`, created 14 Nov, no deployment, no domain), built with `node scripts/build-site.mjs --env production --out dist`. The production deploy workflow is manual, typed-confirmation, behind the GitHub `production` environment's required reviewer, and refuses the staging project.
+- No production Supabase project exists yet. Region chosen: Mumbai (`ap-south-1`), pending the data-protection adviser's confirmation of the transfer basis.
+
 ## Current observed position
 
 The connected staging workspace is available at `https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot`. The sign-in page renders and Sign in is enabled, but no credentials were used. Supabase project `pcl-erp-staging` is active in `ap-south-1`; `staff-workspace-v12` version **43** is active with a 30-minute session response, and the server-side idle migration is applied. The hosted page still reports build `2026-11-03.2`; branch source is build `2026-11-03.4`.
