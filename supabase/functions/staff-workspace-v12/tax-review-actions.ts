@@ -37,7 +37,9 @@ export async function taxSummary(tx:any,c:any){
  const summaryImports=effectiveImports(await tx`select * from erp_private.period_imports where project_id=${c.project_id} and kind='Sales' and source_type='ETIMS' and status in ('Confirmed','Submitted') and starts_on<=${c.ends_on} and ends_on>=${c.starts_on}`);
  for(const s of summaryImports)batches.push({batch_id:s.import_id,dataset:'Sales',period_start:s.starts_on,period_end:s.ends_on,source_count:Number(s.payload?.source_count||s.payload?.groups?.length||0),new_count:Number(s.payload?.groups?.length||0),rejected_count:0});
  if(rows.length>10000)fail(400,'Split the tax review into smaller periods (maximum 10,000 rows per case).');
- const issues:string[]=profileIssues(profile,{...c,starts_on:dateText(c.starts_on),ends_on:dateText(c.ends_on)});if(batches.some((b:any)=>dateText(b.period_start)<dateText(c.starts_on)||dateText(b.period_end)>dateText(c.ends_on)))issues.push('An imported batch crosses this case period. Use matching period boundaries.');
+ const issues:string[]=profileIssues(profile,{...c,starts_on:dateText(c.starts_on),ends_on:dateText(c.ends_on)});// Only the sources a tax actually reads can block it: PAYE reads the payroll summary alone, and WHT reads purchases and expenditure (finding 52).
+ const crossingDatasets:string[]|null=c.kind==='PAYE'?[]:c.kind==='WHT'?['Purchases','Expenditure','Non-eTIMS']:null;
+ if(batches.some((b:any)=>(!crossingDatasets||crossingDatasets.includes(b.dataset))&&(dateText(b.period_start)<dateText(c.starts_on)||dateText(b.period_end)>dateText(c.ends_on))))issues.push('An imported batch crosses this case period. Use matching period boundaries.');
  if(c.kind==='VAT'){
   const coverage=await salesSourceCoverage(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on),'ETIMS');
   const detailed=batches.some((b:any)=>b.dataset==='Sales'&&dateText(b.period_start)<=dateText(c.starts_on)&&dateText(b.period_end)>=dateText(c.ends_on));
