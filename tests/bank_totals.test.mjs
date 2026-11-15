@@ -50,7 +50,7 @@ test('server wiring: the action is registered and reads only the server-parsed w
  for(const n of ['bank_totals_read','bank_totals_preview','bank_totals_save','bank_totals_confirm','bank_totals_withdraw'])assert.match(act,new RegExp(n));
  assert.doesNotMatch(act,/p\.result|p\.inputs/,'figures sent by the browser are never trusted');
  assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261115-report-gate-v1/);assert.match(rd('staff-ledger.mjs'),/staff-bank-totals\.mjs\?v=20261114-banktotals-v1/);assert.match(rd('staff-ledger.mjs'),/btn\('bank-totals'/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2815');assert.match(rd('staff-pilot.html'),/2026-11-14\.2815/);
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2816');assert.match(rd('staff-pilot.html'),/2026-11-14\.2816/);
 });
 const dom=new JSDOM('<!doctype html><dialog id="editor"><div id="editorBody"></div></dialog>');globalThis.document=dom.window.document;
 const {createBankTotalsUI,resultView}=await import('../staff-bank-totals.mjs');

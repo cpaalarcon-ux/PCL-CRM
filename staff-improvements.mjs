@@ -3,7 +3,7 @@ import {familyOf} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
 import {stockMethodChoices,stockCountChoices,stockPolicyStartDate} from './staff-stock-policy.mjs?v=20261028-stock-settings-date';
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261107-annualpack-v3';
 import {createClientMasterUI} from './staff-client-master.mjs?v=20261115-holders-v1';
-import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261115-holders-v1';
+import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261115-approver-v1';
 export function createImprovementUI(ctx){
  const {$,esc,field,select,form,modal,request,notice,shortDate,today,projectName}=ctx,d=()=>ctx.data(),me=()=>d().me,leader=()=>['PARTNER','MANAGER'].includes(me().category_code),reviewer=()=>['PARTNER','MANAGER','SUPERVISOR'].includes(me().category_code);
  const money=v=>v==null?'Not supplied':new Intl.NumberFormat('en-KE',{style:'currency',currency:'KES'}).format(Number(v)),button=(a,l,id='',extra='')=>`<button type="button" data-v3="${a}" data-id="${esc(id)}" ${extra}>${esc(l)}</button>`,area=(n,l,v='')=>`<label class="full">${esc(l)}<textarea name="${n}" maxlength="4000" required>${esc(v)}</textarea></label>`,table=(h,rows)=>`<div class="scroll"><table><thead><tr>${h.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(v=>`<td>${v??''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;

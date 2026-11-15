@@ -42,7 +42,7 @@ function readInputs(p:any){
 async function buildPlan(tx:any,a:any,i:any){
  const tpl=await templateWithItems(tx,i.template_id);
  const problems:string[]=[],warnings:string[]=[];
- if(tpl.status!=='Approved')problems.push('Only a template a Partner has approved can be used. This one is '+tpl.status.toLowerCase()+'.');
+ if(tpl.status!=='Approved')problems.push('Only an approved template can be used. This one is '+tpl.status.toLowerCase()+'.');
  if(!tpl.services.some((s:any)=>s.service_code===i.service_code))problems.push('This template is not for the service you chose.');
  const svc=(await tx`select service_code,service_name,is_active from erp_private.services where service_code=${i.service_code}`)[0];
  if(!svc||!svc.is_active)problems.push('Choose an active service.');
@@ -104,8 +104,8 @@ export async function serviceTemplateAction(tx:any,a:any,p:any):Promise<any>{
   const out=[];for(const r of rows)out.push(await templateWithItems(tx,r.template_id));
   const names=new Map((await tx`select staff_id,full_name from erp_private.staff_members`).map((s:any)=>[s.staff_id,s.full_name]));
   return {templates:out.map((t:any)=>({...t,proposed_by_name:names.get(t.proposed_by)||(t.source==='Starter'?'Starter set':null),approved_by_name:names.get(t.approved_by)||null})),groups:GROUPS,
-   can_propose:LEADERS.includes(a.category_code),can_approve:a.category_code==='PARTNER',
-   note:'A Partner approves each master template. An approved template is never edited: a change is a new version.'};
+   can_propose:LEADERS.includes(a.category_code),can_approve:LEADERS.includes(a.category_code),can_retire:a.category_code==='PARTNER',
+   note:'The Managing Partner, or a Manager who holds the right, approves each master template, and not the person who proposed it (a Partner who is the firm\'s only Partner may approve their own). An approved template is never edited: a change is a new version.'};
  }
  if(p.action==='service_template_propose'){
   if(!LEADERS.includes(a.category_code))fail(403,'A Manager or Partner proposes a service template.');
@@ -127,7 +127,8 @@ export async function serviceTemplateAction(tx:any,a:any,p:any):Promise<any>{
   return {ok:true,template_id:made.template_id,version:made.version};
  }
  if(p.action==='service_template_approve'||p.action==='service_template_retire'){
-  if(a.category_code!=='PARTNER')fail(403,'A Partner '+(p.action==='service_template_approve'?'approves':'retires')+' a service template.');
+  if(p.action==='service_template_retire'&&a.category_code!=='PARTNER')fail(403,'A Partner retires a service template.');
+  if(p.action==='service_template_approve'&&!LEADERS.includes(a.category_code))fail(403,'A Partner or a Manager who holds the approval right approves a service template.');
   const t=(await tx`select * from erp_private.service_templates where template_id=${uuid(p.template_id)} for update`)[0];if(!t)fail(404,'That service template was not found.');
   if(String(t.revision)!==revision(p.revision))fail(409,'The template changed. Refresh first.');
   if(p.action==='service_template_retire'){
@@ -136,11 +137,16 @@ export async function serviceTemplateAction(tx:any,a:any,p:any):Promise<any>{
    await tx`update erp_private.service_templates set status='Retired',retired_by=${a.staff_id},retired_at=now(),retired_reason=${reason} where template_id=${t.template_id}`;return {ok:true};
   }
   if(t.status!=='Draft')fail(409,'Only a draft can be approved.');
-  if(t.proposed_by&&t.proposed_by===a.staff_id)fail(403,'A different Partner approves a template you proposed.');
+  // The person who proposed a template does not approve it, except a Partner who is the only active Partner in their firm; that is recorded on the template.
+  let sole=false;
+  if(t.proposed_by&&t.proposed_by===a.staff_id){
+   sole=a.category_code==='PARTNER'&&(await tx`select erp_private.sole_active_partner() as sole`)[0]?.sole===true;
+   if(!sole)fail(403,'A different Partner or Manager approves a template you proposed, unless you are your firm\'s only Partner.');
+  }
   const prior=(await tx`select template_id from erp_private.service_templates where template_code=${t.template_code} and status='Approved' for update`)[0];
   if(prior)await tx`update erp_private.service_templates set status='Retired',retired_by=${a.staff_id},retired_at=now(),retired_reason=${'Replaced by version '+t.version} where template_id=${prior.template_id}`;
-  await tx`update erp_private.service_templates set status='Approved',approved_by=${a.staff_id},approved_at=now() where template_id=${t.template_id}`;
-  return {ok:true,replaced:!!prior};
+  await tx`update erp_private.service_templates set status='Approved',approved_by=${a.staff_id},approved_at=now(),sole_partner_approval=${sole} where template_id=${t.template_id}`;
+  return {ok:true,replaced:!!prior,sole_partner_approval:sole};
  }
 
  if(p.action==='engagement_setup_options'){
@@ -229,7 +235,7 @@ async function rolloverInputs(tx:any,prev:any){
  if(later)problems.push('A later period is already set up for this service. Roll forward from the latest one.');
  const old=(await tx`select template_code from erp_private.service_templates where template_id=${prev.template_id}`)[0];
  const cur=(await tx`select template_id,version from erp_private.service_templates where template_code=${old.template_code} and status='Approved'`)[0];
- if(!cur)problems.push('The template this set-up used is no longer approved and nothing replaces it. A Partner approves a template first.');
+ if(!cur)problems.push('The template this set-up used is no longer approved and nothing replaces it. A Partner or authorised Manager approves a template first.');
  const proj=(await tx`select handling_firm_id from erp_private.projects where project_id=${prev.project_id}`)[0];
  const kept=cur?(await tx`select task_key from erp_private.service_template_tasks where template_id=${cur.template_id}`).map((r:any)=>r.task_key):[];
  const exclusions=(prev.exclusions||[]).filter((e:any)=>kept.includes(e.task_key));
