@@ -24,7 +24,7 @@ function view(a:any,{client,facts,ms,tpl}:any){
   :readiness({entityType:client.legal_entity_type,facts,master:{company_name:client.company_name,kra_pin:client.kra_pin},...(tpl&&tpl.structure?{templateKnown:false,unknownIssue:'This legal structure has no client-type template yet. A Partner chooses which template applies.'}:{})});
  const started=ms.find((m:any)=>m.milestone==='Started')?.reached_at||null,ready=ms.find((m:any)=>m.milestone==='Ready')?.reached_at||null;
  const names=new Map(facts.map((f:any)=>[f.fact_id,f]));
- for(const r of rd.rows){if(r.fact){const f:any=names.get(r.fact.fact_id);r.fact.recorded_by_name=f.recorded_by_name;r.fact.verified_by_name=f.verified_by_name;r.fact.document_name=f.document_name;r.can_verify=canVerify({status:r.fact.status,recorded_by:r.fact.recorded_by,source_kind:r.fact.source_kind},a);}}
+ for(const r of rd.rows){if(r.fact){const f:any=names.get(r.fact.fact_id);r.fact.recorded_by_name=f.recorded_by_name;r.fact.verified_by_name=f.verified_by_name;r.fact.document_name=f.document_name;r.can_verify=canVerify({status:r.fact.status,recorded_by:r.fact.recorded_by,source_kind:r.fact.source_kind},a)&&!((tpl?.fields||[]).some((x:any)=>x.field_key===r.key&&x.partner_verified)&&a.category_code!=='PARTNER');}}
  const history=facts.filter((f:any)=>f.status==='Superseded').map((f:any)=>({field_key:f.field_key,value:f.value,source_kind:f.source_kind,recorded_by_name:f.recorded_by_name,recorded_at:f.recorded_at,superseded_at:f.superseded_at,superseded_reason:f.superseded_reason}));
  return {client:{client_id:client.client_id,company_name:client.company_name,legal_entity_type:client.legal_entity_type||null},...rd,history,started_at:started,ready_at:ready,minutes_to_ready:ready?elapsedMinutes(started,ready):null,
   template:tpl?.template?{template_code:tpl.template.template_code,name:tpl.template.name,controls:tpl.template.controls,structure:tpl.structure,subtype:tpl.subtype,evidence:tpl.checklist.evidence,parties:tpl.checklist.parties,licences:tpl.checklist.licences,restricted:!!tpl.checklist.restricted,file_ready:tpl.checklist.ready}:null,
@@ -82,6 +82,7 @@ export async function clientMasterAction(tx:any,a:any,p:any):Promise<any>{
  if(!REVIEWERS.includes(a.category_code))fail(403,'A Supervisor, Manager or Partner verifies a fact.');
  if(fact.recorded_by===a.staff_id)fail(403,'A different person must verify a fact you recorded.');
  if(fact.source_kind==='Client statement')fail(409,'A client\'s own statement cannot be verified. Record the fact again with a document or register check as its source.');
+ if((data.tpl?.fields||[]).some((f:any)=>f.field_key===fact.field_key&&f.partner_verified)&&a.category_code!=='PARTNER')fail(403,'A Partner classifies the legal form: only a Partner verifies this fact.');
  const note=text(p.note||'',500,false).trim();if(note.length<3)fail(400,'Say what you checked it against (at least 3 characters).');
  await tx`update erp_private.client_field_facts set status='Verified',verified_by=${a.staff_id},verified_at=now(),verification_note=${note} where fact_id=${fact.fact_id}`;
  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_field_facts','CLIENT_FACT_VERIFIED',${fact.fact_id},${tx.json({client_id:cid,field_key:fact.field_key,note})})`;

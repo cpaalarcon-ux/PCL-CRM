@@ -24,6 +24,21 @@ export const FIELDS=[
  {key:'funder_regulatory_details',label:'Funder or regulatory details',entities:[],check:v=>v.length>=3,hint:'Main funders, or the regulator the entity reports to.'},
  {key:'regulator',label:'Regulator',entities:[],check:v=>v.length>=2,hint:'The authority that registers or supervises this entity.'},
  {key:'regulator_registration_number',label:'Regulator registration or licence number',entities:[],check:v=>v.length>=2,hint:'As issued by the regulator.'},
+ // Facts asked for by the public sector, association, estate and other-entity templates (build 2812). Entered by hand and verified separately.
+ {key:'establishing_instrument',label:'Establishing instrument',entities:[],check:v=>v.length>=5,hint:'The Act, charter, gazette notice or order that set the entity up, with its number or date.'},
+ {key:'mandate',label:'Mandate',entities:[],check:v=>v.length>=10,hint:'What the entity is set up to do, from its establishing instrument.'},
+ {key:'accounting_officer',label:'Accounting officer',entities:[],check:v=>v.length>=3,hint:'Name and title of the accounting officer or head of the entity.'},
+ {key:'authorised_signatories',label:'Authorised signatories',entities:[],check:v=>v.length>=3,hint:'Names and capacity of the people who may sign for the client.'},
+ {key:'registration_status',label:'Registration status',entities:[],check:v=>/^(Unregistered|Registered (as|with) .{3,})/i.test(v),hint:'Start with "Unregistered", or "Registered as" or "Registered with", then the registrar, form and number.'},
+ {key:'officials',label:'Officials',entities:[],check:v=>v.length>=5,hint:'Chairperson, secretary and treasurer, with ID numbers.'},
+ {key:'deceased_name',label:'Name of the deceased',entities:[],check:v=>v.length>=3,hint:'As on the death certificate and the grant.'},
+ {key:'deceased_id',label:'ID or passport number of the deceased',entities:[],check:v=>v.length>=5,hint:'As on the death certificate.'},
+ {key:'date_of_death',label:'Date of death',entities:[],check:v=>/^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v))&&v>='1900-01-01'&&v<=new Date().toISOString().slice(0,10),hint:'YYYY-MM-DD'},
+ {key:'executor_name',label:'Executor or administrator',entities:[],check:v=>v.length>=3,hint:'The person the court appointed, as named in the grant.'},
+ {key:'grant_details',label:'Grant or court order',entities:[],check:v=>v.length>=5,hint:'Type, number, court and date of the grant of probate, letters of administration or other court order.'},
+ {key:'specific_legal_form',label:'Specific legal form',entities:[],check:v=>v.length>=3&&!/^(unknown|unidentified|not sure|n\/?a|tbc|tbd)$/i.test(v),hint:'The exact legal form as the documents show it. If it cannot be identified, leave this open: a Partner classifies it.'},
+ {key:'registration_authority',label:'Registration authority',entities:[],check:v=>v.length>=3,hint:'Who registered the entity, for example a registrar, board or regulator.'},
+ {key:'responsible_officers',label:'Responsible officers',entities:[],check:v=>v.length>=5,hint:'The people responsible for the entity, with their roles and ID numbers.'},
 ];
 export const fieldFor=key=>FIELDS.find(f=>f.key===key)||null;
 export const requiredFor=entityType=>FIELDS.filter(f=>!f.entities||f.entities.includes(entityType));
