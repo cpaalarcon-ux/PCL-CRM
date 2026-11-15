@@ -18,7 +18,7 @@ test('templates: client type decides the file, never the service; services are c
  // ---- Client types ----
  await tx`update erp_private.clients set legal_structure='Limited Company',legal_subtype='Private Limited Company' where client_id=${C}`;
  const list=await st('ASSISTANT',{action:'client_template_list'});
- assert.deepEqual(list.templates.map(x=>x.template_code),['INDIVIDUAL','PARTNERSHIP','COMPANY','NONPROFIT','COOPERATIVE']);
+ assert.deepEqual(list.templates.map(x=>x.template_code),['INDIVIDUAL','PARTNERSHIP','COMPANY','NONPROFIT','COOPERATIVE','PUBLIC_SECTOR','ASSOCIATION','ESTATE','OTHER_REGISTERED']);
  assert.match(list.note,/does not choose any service/);
  const c0=await st('MANAGER',{action:'client_template_read',client_id:C});
  assert.equal(c0.template.template_code,'COMPANY');assert.equal(c0.checklist.counts.facts.required,10);assert.equal(c0.checklist.ready,false);
@@ -30,7 +30,7 @@ test('templates: client type decides the file, never the service; services are c
  // The client master follows the template.
  const m0=await cm('ASSISTANT',{action:'client_master_read',client_id:C});assert.equal(m0.template.template_code,'COMPANY');assert.equal(m0.required,10);assert.ok(m0.rows.some(r=>r.key==='authority_basis'));assert.ok(m0.fields.some(f=>f.key==='regulator'));
  // A legal structure with no template is shown as missing one, not guessed.
- const C2=id();await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id,legal_entity_type,legal_structure,legal_subtype) values(${C2},'Fictional county client',${actors.ASSISTANT.staff_id},'Other legal entity','Public Entity','County Government')`;await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C2},${F})`;
+ const C2=id();await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id,legal_entity_type,legal_structure,legal_subtype) values(${C2},'Fictional unclassified client',${actors.ASSISTANT.staff_id},'Other legal entity','Other',null)`;await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C2},${F})`;
  const n=await st('MANAGER',{action:'client_template_read',client_id:C2});assert.equal(n.template,null);assert.match(n.message,/no client-type template/);
  const nm=await cm('MANAGER',{action:'client_master_read',client_id:C2});assert.equal(nm.ready,false);assert.match(nm.exceptions[0].issue,/no client-type template/);
  // Individual and co-operative templates carry their own facts and overlay.

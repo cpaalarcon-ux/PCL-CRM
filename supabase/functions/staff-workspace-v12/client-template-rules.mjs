@@ -22,7 +22,10 @@ export function evidenceRequirements(subtype,rows){
 }
 
 // Everything one client's file asks for under its template, with the state of each line. ready is true only when every Required line is confirmed.
-export function templateChecklist({template,fields,facts,master,requirements,ruleLabels,evidence,kycVerified,parties,partyRules,licenceExpectations,licences,restricted,on}){
+// A registration status that says "Registered as/with ..." and names a society, co-operative or company points to a formal legal form with its own template.
+export const FORMAL_FORM=/\b(society|co-?operative|sacco|company|limited|ltd|llp|incorporated)\b/i;
+export const formalRegistration=v=>/^Registered (as|with) /i.test(String(v||''))&&FORMAL_FORM.test(String(v||''));
+export function templateChecklist({template,templateInfo,subtype,fields,facts,master,requirements,ruleLabels,evidence,kycVerified,parties,partyRules,licenceExpectations,licences,restricted,on}){
  const now=on||today();
  const reqDefs=(fields||[]).filter(f=>f.requirement==='Required').map(f=>fieldFor(f.field_key)).filter(Boolean);
  const optional=(fields||[]).filter(f=>f.requirement!=='Required');
@@ -34,13 +37,28 @@ export function templateChecklist({template,fields,facts,master,requirements,rul
   if(i>=0){base.rows[i].optional=true;base.rows[i].extra=false;if(base.rows[i].issue&&/Not required/.test(base.rows[i].issue))base.rows[i].issue=null;}
   else base.rows.push({key:f.field_key,label:def.label,hint:def.hint,state:fact?fact.status:'Missing',optional:true,issue:null,fact:fact?{fact_id:fact.fact_id,value:fact.value,source_kind:fact.source_kind,status:fact.status,revision:fact.revision}:null});}
  const exceptions=[...base.exceptions];
+ const info=templateInfo||{};
+ const liveFact=k=>(facts||[]).find(x=>x.field_key===k&&x.status!=='Superseded')||null;
+ // The subtype decides how the entity is treated, so a template that needs one cannot be ready without it.
+ if(info.requires_subtype&&!subtype)exceptions.unshift({key:'subtype',label:'Subtype',state:'Missing',issue:'Choose the subtype on the legal structure (for example government ministry, state corporation, county government or public institution).'});
+ // A group whose documents show a formal legal form is not an unincorporated association: it is reclassified, never silently kept under this template.
+ if(info.reclassify_if_formal){const rs=liveFact('registration_status');
+  if(rs&&formalRegistration(rs.value))exceptions.unshift({key:'reclassify',label:'Legal form',state:'Differs',issue:'The registration status says "'+rs.value+'". If the documents show a registered society, co-operative or company, change the legal structure so that form\'s template applies.'});}
+ // An entity whose legal form cannot be identified waits for a Partner to classify it. Only a Partner's verification of the legal form counts.
+ let classificationPending=false;
+ for(const f of (fields||[]).filter(x=>x.partner_verified)){
+  const fact=liveFact(f.field_key);const done=!!fact&&fact.status==='Verified';
+  const i=exceptions.findIndex(x=>x.key===f.field_key);if(i>=0)exceptions.splice(i,1);
+  if(!done){classificationPending=true;
+   exceptions.unshift({key:'classification',label:'Partner classification',state:fact?fact.status:'Missing',issue:fact?'A Partner verifies the legal form against its source before the client is activated.':'The legal form is not recorded. If the documents do not show it, a Partner classifies it before the client is activated.'});}
+ }
  // The KYC file (evidence, people, licences) is kept for Managers and Partners. Others see the lines but not their state, and cannot call the file ready.
  const evRows=[];
  if(restricted){
   const hide=(key,label,requirement,note)=>({key,label,requirement,note:note||'',state:'Not visible',restricted:true,issue:'Kept by Managers and Partners.'});
   return {facts:base.rows,evidence:(requirements||[]).map(r=>hide(r.rule_code,ruleLabels?.[r.rule_code]||r.rule_code,r.requirement,r.note)),
    parties:(partyRules||[]).map(r=>hide('party:'+r.role,r.label,r.requirement)),licences:(licenceExpectations||[]).map(e=>hide('licence:'+e.type_code,e.label||e.type_code,'Required')),
-   exceptions,facts_ready:base.ready,ready:false,restricted:true,counts:{facts:{required:base.required,verified:base.verified},evidence:{required:0,verified:0}}};
+   exceptions,facts_ready:base.ready&&!classificationPending,classification_pending:classificationPending,ready:false,restricted:true,counts:{facts:{required:base.required,verified:base.verified},evidence:{required:0,verified:0}}};
  }
  for(const r of requirements||[]){
   const items=(evidence||[]).filter(e=>e.document_type===r.rule_code&&live(e,now));
@@ -69,8 +87,8 @@ export function templateChecklist({template,fields,facts,master,requirements,rul
   licRows.push({key:'licence:'+e.type_code,label:e.label||e.type_code,state:held?'Recorded':'Missing',issue:held?null:'No current licence on record.'});
   if(!held)exceptions.push({key:'licence:'+e.type_code,label:e.label||e.type_code,state:'Missing',issue:'No current licence on record.'});
  }
- const facts_ready=base.ready;
- return {facts:base.rows,evidence:evRows,parties:partyRows,licences:licRows,exceptions,facts_ready,
+ const facts_ready=base.ready&&!classificationPending&&!exceptions.some(x=>['subtype','reclassify'].includes(x.key));
+ return {facts:base.rows,evidence:evRows,parties:partyRows,licences:licRows,exceptions,facts_ready,classification_pending:classificationPending,
   ready:!!template&&facts_ready&&exceptions.length===0,
   counts:{facts:{required:base.required,verified:base.verified},evidence:{required:evRows.filter(r=>r.requirement==='Required').length,verified:evRows.filter(r=>r.requirement==='Required'&&r.state==='Verified').length}}};
 }

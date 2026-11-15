@@ -67,6 +67,7 @@ async function buildPlan(tx:any,a:any,i:any){
  const client=await loadClientTemplate(tx,a,i.client_id,await tx`select * from erp_private.client_field_facts where client_id=${i.client_id}`,null);
  if(!client)fail(403,'This client is unavailable to your account.');
  const clientTemplate=client.template?.template_code||null;
+ if(client.checklist?.classification_pending)problems.push('This client\'s legal form has not been classified. A Partner classifies it before an engagement can be set up.');
  if(!client.template)warnings.push('This client\'s legal structure has no client-type template. Tasks that depend on the type of client are not created.');
  else if(client.checklist&&!client.checklist.ready)warnings.push('The client file is not fully confirmed yet ('+client.checklist.exceptions.length+' item'+(client.checklist.exceptions.length===1?'':'s')+' open). Tasks that need a confirmed registration are not created until it is.');
  const facts=await profileFacts(tx,a,i.client_id,i.period_start,i.period_end,clientTemplate);

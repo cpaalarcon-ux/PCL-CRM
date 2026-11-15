@@ -5,10 +5,10 @@ export async function loadClientTemplate(tx:any,a:any,cid:string,facts:any[],cli
  if(!c)return null;
  const map=await tx`select structure,subtype,template_code from erp_private.client_type_template_map`;
  const code=templateFor(c.legal_structure,c.legal_subtype,map);
- const tpl=code?(await tx`select template_code,name,controls,regulatory_overlay from erp_private.client_type_templates where template_code=${code}`)[0]:null;
+ const tpl=code?(await tx`select template_code,name,controls,regulatory_overlay,requires_subtype,reclassify_if_formal,partner_classifies from erp_private.client_type_templates where template_code=${code}`)[0]:null;
  if(!tpl)return {client:c,template:null,checklist:null,structure:c.legal_structure||null,subtype:c.legal_subtype||null};
  const leader=['PARTNER','MANAGER'].includes(a.category_code);
- const fields=await tx`select field_key,requirement,sort_order from erp_private.client_template_fields where template_code=${code} order by sort_order,field_key`;
+ const fields=await tx`select field_key,requirement,sort_order,partner_verified from erp_private.client_template_fields where template_code=${code} order by sort_order,field_key`;
  const partyRules=await tx`select role,min_count,requirement,label from erp_private.client_template_parties where template_code=${code} order by role`;
  const reqRows=await tx`select subtype,rule_code,requirement,note,sort_order from erp_private.legal_structure_requirements where structure=${c.legal_structure} and subtype in('*',${c.legal_subtype||'*'}) and requirement<>'Permanent file'`;
  const labels=Object.fromEntries((await tx`select rule_code,label from erp_private.kyc_evidence_rules`).map((r:any)=>[r.rule_code,r.label]));
@@ -21,6 +21,6 @@ export async function loadClientTemplate(tx:any,a:any,cid:string,facts:any[],cli
   kycVerified=!!k&&!!k.verified_by&&!!k.review_due&&String(k.review_due).slice(0,10)>=new Date().toISOString().slice(0,10);
  }
  const exp=tpl.regulatory_overlay&&c.legal_subtype?await tx`select e.type_code,t.label from erp_private.licence_expectations e join erp_private.licence_types t on t.type_code=e.type_code where e.structure=${c.legal_structure} and e.subtype=${c.legal_subtype} and e.rule_status<>'Retired'`:[];
- const checklist=templateChecklist({template:tpl.template_code,fields,facts,master:{company_name:c.company_name,kra_pin:c.kra_pin},requirements:evidenceRequirements(c.legal_subtype,reqRows),ruleLabels:labels,evidence,kycVerified,parties,partyRules,licenceExpectations:exp,licences,restricted:!leader});
+ const checklist=templateChecklist({template:tpl.template_code,templateInfo:tpl,subtype:c.legal_subtype||null,fields,facts,master:{company_name:c.company_name,kra_pin:c.kra_pin},requirements:evidenceRequirements(c.legal_subtype,reqRows),ruleLabels:labels,evidence,kycVerified,parties,partyRules,licenceExpectations:exp,licences,restricted:!leader});
  return {client:c,template:tpl,checklist,structure:c.legal_structure,subtype:c.legal_subtype||null,fields};
 }
