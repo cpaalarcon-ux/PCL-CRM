@@ -131,17 +131,23 @@ export async function comparativesRead(tx:any,a:any,l:any,data:any){
 export async function comparativesSave(tx:any,a:any,l:any,p:any){
  if(!isLeader(a))fail(403,'A Manager or Partner must enter prior-year comparatives.');
  if(l.status!=='Open')fail(409,'This ledger year is closed. Its comparatives can no longer be changed.');
- const kind=choice(p.source_kind,['Signed prior-year financial statements','Prior-year accounting records outside the ERP','Management accounts']),ref=text(p.source_reference,500);
+ const kind=choice(p.source_kind,['Signed prior-year financial statements','Prior-year accounting records outside the ERP','Management accounts','Recorded prior-year trial balances']),ref=text(p.source_reference,500);
  if(ref.length<10)fail(400,'Name the source document and its date (at least 10 characters).');
  const parsed=[['Profit or loss',p.pl],['Changes in equity',p.eq],['Cash flow',p.cf]].map(([st,t]:any)=>parseComparativeText(st,typeof t==='string'?t.slice(0,60000):''));
  const errors=parsed.flatMap((x:any)=>x.errors);if(errors.length)fail(400,errors[0]+(errors.length>1?` (${errors.length-1} more row problem(s))`:''));
  const lines=parsed.flatMap((x:any)=>x.rows);if(!lines.length)fail(400,'Enter at least one comparative line.');if(lines.length>400)fail(400,'Too many lines.');
  const defs=await tx`select line_code,statement,section from erp_private.statement_lines`,bad=validateComparativeLines(lines,defs);if(bad.length)fail(400,bad[0]+(bad.length>1?` (${bad.length-1} more problem(s))`:''));
+ const tbIds:string[]=kind==='Recorded prior-year trial balances'?(Array.isArray(p.source_tb_ids)?p.source_tb_ids.slice(0,4).map(uuid):[]):[];
+ if(kind==='Recorded prior-year trial balances'){
+  if(!tbIds.length)fail(400,'Choose the recorded trial balances these comparatives come from.');
+  const have=await tx`select tb_id from erp_private.client_year_tbs where client_id=${l.client_id} and status='Current' and tb_id=any(${tx.array(tbIds)}::uuid[])`;
+  if(have.length!==tbIds.length)fail(409,'A trial balance was replaced or is not this client\u2019s. Prepare the comparatives from the trial balances again.');
+ }
  await tx`select pg_advisory_xact_lock(hashtextextended(${l.period_id+':comparatives'},0))`;
  await tx`update erp_private.period_comparative_sets set status='Superseded' where period_id=${l.period_id} and status='Draft'`;
  const ver=Number((await tx`select coalesce(max(version),0)+1 v from erp_private.period_comparative_sets where period_id=${l.period_id}`)[0].v);
  const pe=new Date(day(l.starts_on)+'T00:00:00Z');pe.setUTCDate(pe.getUTCDate()-1);
- const head=(await tx`insert into erp_private.period_comparative_sets(period_id,project_id,client_id,version,prior_year_end,source_kind,source_reference,entered_by) values(${l.period_id},${l.project_id},${l.client_id},${ver},${pe.toISOString().slice(0,10)},${kind},${ref},${a.staff_id}) returning set_id,version,status`)[0];
+ const head=(await tx`insert into erp_private.period_comparative_sets(period_id,project_id,client_id,version,prior_year_end,source_kind,source_reference,entered_by,source_tb_ids) values(${l.period_id},${l.project_id},${l.client_id},${ver},${pe.toISOString().slice(0,10)},${kind},${ref},${a.staff_id},${tx.array(tbIds)}::uuid[]) returning set_id,version,status`)[0];
  for(const x of lines)await tx`insert into erp_private.period_comparative_lines(set_id,project_id,statement,line_code,movement,amount) values(${head.set_id},${l.project_id},${x.statement},${x.line_code},${x.movement},${x.amount})`;
  return {...head,lines:lines.length};
 }
