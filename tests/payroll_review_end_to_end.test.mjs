@@ -35,6 +35,7 @@ test('payroll review: one-step approval of a clean run; exceptions, unmapped cod
  const o=await reg('ASSISTANT',{action:'payroll_register_add',person:person('Otieno','A000000002Z'),pay:pay(80000,'2026-01-01')});
  const ol=(await reg('ASSISTANT',{action:'payroll_register_read'})).people.find(x=>x.name==='Otieno');
  await reg('ASSISTANT',{action:'payroll_register_leave',person_id:o.person_id,revision:ol.revision,left_on:'2026-08-31',reason:'Resigned, notice served August'});
+ {const sr=(await reg('ASSISTANT',{action:'payroll_register_read'})).changes.find((c)=>c.kind==='Separation'&&c.status==='Requested');await reg('MANAGER',{action:'payroll_register_separation_decide',change_id:sr.change_id,decision:'Approve'});}
  await reg('ASSISTANT',{action:'payroll_register_add',person:person('Kamau','A000000003Z',{started_on:'2026-09-01'}),pay:pay(60000,'2026-09-01','Offer letter September 2026')});
  // Without approved payroll mappings the run is not clean and names the codes; nothing is guessed.
  const s0=await rev('SUPERVISOR',{action:'payroll_review_summary',import_id:sep.import_id});

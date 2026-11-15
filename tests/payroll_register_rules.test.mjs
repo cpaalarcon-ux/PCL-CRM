@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {monthBounds,previousMonth,activeInMonth,payFor,personIssues,payIssues,draftLines,registerChanges,affectedMonths} from '../supabase/functions/staff-workspace-v12/payroll-register-rules.mjs';
-import {registerTable,draftSummary} from '../staff-payroll-register.mjs';
+import {registerTable,draftSummary,changesPanel} from '../staff-payroll-register.mjs';
 const p=(id,name,o={})=>({person_id:id,name,kra_pin:'A00000000'+id+'Z',national_id:'',employment_type:'Permanent',relationship:'Employee',started_on:'2026-01-01',left_on:null,...o});
 const pay=(person_id,gross,eff,extra={})=>({person_id,gross,taxable_benefits:0,other_pension:0,mortgage_interest:0,postretirement_medical:0,effective_from:eff,reason:'r',...extra});
 test('month helpers',()=>{assert.deepEqual(monthBounds('2026-02'),{start:'2026-02-01',end:'2026-02-28'});assert.equal(monthBounds('2026-13'),null);assert.equal(previousMonth('2026-01'),'2025-12');});
@@ -42,4 +42,34 @@ test('screens escape names and show the month summary',()=>{
  const esc=s=>String(s).replace(/</g,'&lt;'),sd=s=>String(s);
  const html=registerTable({people:[p('1','<b>x</b>',{revision:1,status:'Active'})],pays:[pay('1',1000,'2026-01-01')]},esc,sd);assert.ok(!html.includes('<b>x</b>'));assert.ok(html.includes('Change pay'));
  const s=draftSummary({month:'2026-03',lines:[{}],skipped:[],changes:{new_staff:[],pay_changes:[],left:[]},missing:[],issues:[],existing_run:{status:'Confirmed'},note:'n'},esc,sd);assert.ok(s.includes('already exists'));
+});
+
+// ---- Build 2819 ----
+test('inactive periods: whole month out, part of a month flagged, return ends the period the day before',async()=>{
+ const R=await import('../supabase/functions/staff-workspace-v12/payroll-register-rules.mjs');
+ const b=R.monthBounds('2026-11'),ch=(o)=>({person_id:'p1',kind:'Inactive',status:'In force',starts_on:'2026-11-01',ends_on:'2026-12-31',reason:'Unpaid leave agreed',...o});
+ assert.equal(R.inactivity([ch({})],'p1',b).state,'full');
+ assert.equal(R.inactivity([ch({starts_on:'2026-11-10',ends_on:'2026-11-20'})],'p1',b).state,'partial');
+ assert.equal(R.inactivity([ch({starts_on:'2026-11-10',ends_on:null})],'p1',b).state,'partial');
+ assert.equal(R.inactivity([ch({ends_on:null})],'p1',b).state,'full','open-ended inactive covers the month');
+ assert.equal(R.inactivity([ch({})],'p2',b),null);
+ assert.equal(R.inactivity([ch({starts_on:'2026-12-01'})],'p1',b),null);
+ // Returned on 15 Nov: inactive through 14 Nov, so November is partial; December is clear.
+ const back=ch({status:'Returned',returned_on:'2026-11-15'});assert.equal(R.inactivity([back],'p1',b).state,'partial');assert.equal(R.inactivity([back],'p1',R.monthBounds('2026-12')),null);
+ assert.deepEqual(R.inactiveSpan(back),{start:'2026-11-01',end:'2026-11-14'});
+ // Separation requests and ended periods are not inactive.
+ assert.equal(R.inactivity([{...ch({}),kind:'Separation',status:'Requested'}],'p1',b),null);
+});
+test('the register table shows Active, Inactive, separation pending and Separated, with the right buttons',()=>{
+ const esc=s=>String(s).replace(/</g,'&lt;'),sd=s=>String(s);
+ const people=[{person_id:'a',name:'A',relationship:'Employee',employment_type:'Permanent',status:'Active',started_on:'2026-01-01',revision:1},{person_id:'b',name:'B',relationship:'Employee',employment_type:'Permanent',status:'Active',started_on:'2026-01-01',revision:1},{person_id:'c',name:'C',relationship:'Employee',employment_type:'Permanent',status:'Left',started_on:'2026-01-01',left_on:'2026-05-31',revision:2}];
+ const changes=[{change_id:'x1',person_id:'a',kind:'Inactive',status:'In force',starts_on:'2020-01-01',ends_on:null},{change_id:'x2',person_id:'b',kind:'Separation',status:'Requested',starts_on:'2026-12-31',requested_by:'m',requested_by_name:'Mary',reason:'Resigned, notice served',revision:'1'}];
+ const html=registerTable({people,pays:[],changes},esc,sd);
+ assert.match(html,/Inactive/);assert.match(html,/data-period-action="register-return" data-id="x1"/);assert.match(html,/Active, separation pending/);assert.match(html,/Separated/);
+ assert.doesNotMatch(html,/register-leave" data-id="b"/,'a person with a pending separation is not asked twice');assert.match(html,/register-leave" data-id="a"/);assert.match(html,/register-inactive" data-id="b"/);
+ const panel=changesPanel({people,changes,me:'z',can_decide:true},esc,sd);assert.match(panel,/Separations waiting for approval \(1\)/);assert.match(panel,/data-decision="Approve"/);assert.match(panel,/data-decision="Reject"/);
+ assert.doesNotMatch(changesPanel({people,changes,me:'m',can_decide:true},esc,sd),/data-decision="Approve"/);assert.match(changesPanel({people,changes,me:'m',can_decide:true},esc,sd),/Withdraw request/);
+ assert.doesNotMatch(changesPanel({people,changes,me:'z',can_decide:false},esc,sd),/data-decision/);
+ const s=draftSummary({month:'2026-03',lines:[{}],skipped:[],changes:{new_staff:[],pay_changes:[],left:[{name:'C',left_on:'2026-02-28',reason:'Resigned',requested_by:'Mary',approved_by:'Peter'}],inactive:[{name:'A',from:'2026-03-01',to:null,reason:'Leave'}],returned:[],pending_separations:[{name:'B',effective_on:'2026-03-31'}]},warnings:[{name:'D',detail:'Inactive for part'}],missing:[],issues:[],note:'n'},esc,sd);
+ assert.match(s,/approved by Peter/);assert.match(s,/Inactive this month \(1\)/);assert.match(s,/Separations not yet approved/);assert.match(s,/Check before saving/);
 });

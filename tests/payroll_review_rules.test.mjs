@@ -42,5 +42,5 @@ test('wiring: actions routed and classified; the screen is reachable from the pa
  assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/payrollReviewAction\(tx,a,p\)/);assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/payroll_review_\|/);
  const ui=rd('staff-period-imports.mjs');assert.match(ui,/staff-payroll-review\.mjs\?v=20261115-review-v1/);assert.match(ui,/button\('payroll-review','Review payroll summary'/);assert.match(ui,/payrollReview\.isAction\(action\)/);
  assert.doesNotMatch(rd('staff-payroll-review.mjs'),/ledger_journal|ledger_payroll_journal_create/);
- assert.match(rd('staff-workspace-v6.mjs'),/staff-period-imports\.mjs\?v=20261115-redo-v1/);assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261115-reportgate-v1/);
+ assert.match(rd('staff-workspace-v6.mjs'),/staff-period-imports\.mjs\?v=20261116-lifecycle-v1/);assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261116-lifecycle-v1/);
 });
