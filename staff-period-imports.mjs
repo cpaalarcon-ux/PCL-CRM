@@ -5,7 +5,7 @@ import {createSalesReplaceUI} from './staff-sales-replace.mjs?v=20261107-annualp
 import {createSalesAmendUI} from './staff-sales-amend.mjs?v=20261107-annualpack-v3';
 import {createDeleteRedoUI} from './staff-delete-redo.mjs?v=20261115-redo-v1';
 import {createPayrollReviewUI} from './staff-payroll-review.mjs?v=20261115-review-v1';
-import {createPayrollRegisterUI} from './staff-payroll-register.mjs?v=20261115-register-v1';
+import {createPayrollRegisterUI} from './staff-payroll-register.mjs?v=20261116-lifecycle-v1';
 import {lineFieldset,collectLines,syncRelationship} from './staff-payroll-lines.mjs?v=20261107-annualpack-v3';
 export function createPeriodImportUI(ctx){
  const {$,esc,field,select,form,modal,request,notice,shortDate,today,projectName}=ctx,d=()=>ctx.data();
