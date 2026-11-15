@@ -3,7 +3,8 @@ import {loadClientTemplate} from './client-template-data.ts';
 import {FIELDS,SOURCE_KINDS,cleanValue,sourceProblem,readiness,canVerify,setupReport,elapsedMinutes,fieldFor} from './client-master-rules.mjs';
 // Client master (build 2807): record each key fact with its source, verify it independently, and measure how long set-up takes.
 // The rules are in client-master-rules.mjs and the table rules in 20261115120000_client_master_facts.sql. Nothing here changes the client record itself.
-const ACTIONS=['client_master_read','client_master_record','client_master_verify','client_master_report'];
+const ACTIONS=['client_master_read','client_master_record','client_master_verify','client_master_report','client_holder_record','client_holder_verify','client_holder_end'];
+const KINDS=['Officer','Signatory'],BASES=['Resolution','Governing document','Establishing instrument','Court grant','Registration record'];
 const REVIEWERS=['PARTNER','MANAGER','SUPERVISOR'];
 
 async function load(tx:any,a:any,cid:string){
@@ -28,6 +29,8 @@ function view(a:any,{client,facts,ms,tpl}:any){
  const history=facts.filter((f:any)=>f.status==='Superseded').map((f:any)=>({field_key:f.field_key,value:f.value,source_kind:f.source_kind,recorded_by_name:f.recorded_by_name,recorded_at:f.recorded_at,superseded_at:f.superseded_at,superseded_reason:f.superseded_reason}));
  return {client:{client_id:client.client_id,company_name:client.company_name,legal_entity_type:client.legal_entity_type||null},...rd,history,started_at:started,ready_at:ready,minutes_to_ready:ready?elapsedMinutes(started,ready):null,
   template:tpl?.template?{template_code:tpl.template.template_code,name:tpl.template.name,controls:tpl.template.controls,structure:tpl.structure,subtype:tpl.subtype,evidence:tpl.checklist.evidence,parties:tpl.checklist.parties,licences:tpl.checklist.licences,restricted:!!tpl.checklist.restricted,file_ready:tpl.checklist.ready}:null,
+  holders:(tpl?.holders||[]).map((h:any)=>({holder_id:h.holder_id,kind:h.kind,holder_name:h.holder_name,holder_position:h.holder_position,authority:h.authority,basis_kind:h.basis_kind,document_name:h.document_name||null,source_reference:h.source_reference||null,status:h.status,recorded_by_name:h.recorded_by_name,recorded_at:h.recorded_at,verified_by_name:h.verified_by_name||null,verified_at:h.verified_at||null,verification_note:h.verification_note||null,revision:h.revision,can_verify:h.status==='Recorded'&&REVIEWERS.includes(a.category_code)&&h.recorded_by!==a.staff_id,can_end:REVIEWERS.includes(a.category_code)})),
+  holder_rules:tpl?.checklist?.holders||[],kinds:KINDS,basis_kinds:BASES,
   source_kinds:SOURCE_KINDS,fields:FIELDS.map((f:any)=>({key:f.key,label:f.label,hint:f.hint})),can_record:!['INTERN','ADMIN'].includes(a.category_code),
   note:'A fact is verified by a different Supervisor, Manager or Partner against its source. The client\'s own statement alone is never verified.'};
 }
@@ -50,10 +53,49 @@ export async function clientMasterAction(tx:any,a:any,p:any):Promise<any>{
   return {rows:rows.map((r:any)=>({client_id:r.client_id,company_name:r.company_name,started_at:r.started_at,ready_at:r.ready_at,minutes:r.ready_at?elapsedMinutes(r.started_at,r.ready_at):null,statement_only:r.statement_only})),summary:setupReport(rows,baseline)};
  }
 
- const cid=p.fact_id?uuid((await tx`select client_id from erp_private.client_field_facts where fact_id=${uuid(p.fact_id)}`)[0]?.client_id||fail(403,'This fact is unavailable to your account.')):uuid(p.client_id);
+ const cid=p.fact_id?uuid((await tx`select client_id from erp_private.client_field_facts where fact_id=${uuid(p.fact_id)}`)[0]?.client_id||fail(403,'This fact is unavailable to your account.')):p.holder_id?uuid((await tx`select client_id from erp_private.client_office_holders where holder_id=${uuid(p.holder_id)}`)[0]?.client_id||fail(403,'This record is unavailable to your account.')):uuid(p.client_id);
  await tx`select pg_advisory_xact_lock(hashtextextended(${cid+':client-master'},0))`;
  const data=await load(tx,a,cid);
  if(p.action==='client_master_read')return view(a,data);
+
+ // Officers and signatories (build 2813): separate records with the person, position, authority and the paper that supports them.
+ if(p.action==='client_holder_record'){
+  const kind=choice(p.kind,KINDS),basis=choice(p.basis_kind,BASES);
+  const name=text(p.holder_name||'',120).trim(),position=text(p.holder_position||'',120).trim(),authority=text(p.authority||'',300).trim();
+  if(name.length<2)fail(400,'Enter the person\'s name.');if(position.length<2)fail(400,'Enter the position.');if(authority.length<5)fail(400,'Say what they are authorised to do (at least 5 characters).');
+  const documentId=p.document_id?uuid(p.document_id):null,ref=p.source_reference?text(p.source_reference,300).trim():null;
+  if(!documentId&&(!ref||ref.length<3))fail(400,'Choose the uploaded document that supports this, or say where it can be found (for example the resolution number and date).');
+  if(documentId&&!(await tx`select 1 from erp_private.documents where document_id=${documentId} and client_id=${cid} and deleted_at is null`).length)fail(400,'That document does not belong to this client.');
+  if(!data.tpl?.template)fail(409,'This client has no client-type template, so the file does not ask for officers or signatories yet.');
+  const dup=(await tx`select 1 from erp_private.client_office_holders where client_id=${cid} and kind=${kind} and lower(btrim(holder_name))=${name.toLowerCase()} and lower(btrim(holder_position))=${position.toLowerCase()} and status<>'Ended'`)[0];
+  if(dup)fail(409,'This person is already recorded in that position. End the old record first if something changed.');
+  const first=!data.ms.some((m:any)=>m.milestone==='Started');
+  const made=(await tx`insert into erp_private.client_office_holders(client_id,kind,holder_name,holder_position,authority,basis_kind,document_id,source_reference,recorded_by) values(${cid},${kind},${name},${position},${authority},${basis},${documentId},${ref},${a.staff_id}) returning holder_id`)[0];
+  if(first)await milestone(tx,a,cid,'Started',{first_field:'holder:'+kind});
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_office_holders','CLIENT_HOLDER_RECORDED',${made.holder_id},${tx.json({client_id:cid,kind,position,basis_kind:basis})})`;
+  return view(a,await load(tx,a,cid));
+ }
+ if(p.action==='client_holder_verify'||p.action==='client_holder_end'){
+  const h=(data.tpl?.holders||[]).find((x:any)=>x.holder_id===p.holder_id)||(await tx`select * from erp_private.client_office_holders where holder_id=${uuid(p.holder_id)}`)[0];
+  if(!h)fail(403,'This record is unavailable to your account.');
+  if(String(h.revision)!==revision(p.revision))fail(409,'The record changed. Refresh first.');
+  if(h.status==='Ended')fail(409,'This record has already ended.');
+  if(!REVIEWERS.includes(a.category_code))fail(403,'A Supervisor, Manager or Partner '+(p.action==='client_holder_verify'?'verifies':'ends')+' an officer or signatory.');
+  if(p.action==='client_holder_verify'){
+   if(h.status!=='Recorded')fail(409,'This record is already verified.');
+   if(h.recorded_by===a.staff_id)fail(403,'A different person must verify a record you made.');
+   const note=text(p.note||'',500,false).trim();if(note.length<3)fail(400,'Say what you checked it against (at least 3 characters).');
+   await tx`update erp_private.client_office_holders set status='Verified',verified_by=${a.staff_id},verified_at=now(),verification_note=${note} where holder_id=${h.holder_id}`;
+   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_office_holders','CLIENT_HOLDER_VERIFIED',${h.holder_id},${tx.json({client_id:cid,kind:h.kind,note})})`;
+  }else{
+   const why=text(p.reason||'',500,false).trim();if(why.length<5)fail(400,'Say why it ends (at least 5 characters).');
+   await tx`update erp_private.client_office_holders set status='Ended',ended_by=${a.staff_id},ended_at=now(),ended_reason=${why} where holder_id=${h.holder_id}`;
+   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_office_holders','CLIENT_HOLDER_ENDED',${h.holder_id},${tx.json({client_id:cid,kind:h.kind,reason:why})})`;
+  }
+  const after=await load(tx,a,cid),v=view(a,after);
+  if(v.ready&&!after.ms.some((m:any)=>m.milestone==='Ready'))await milestone(tx,a,cid,'Ready',{required:v.required,verified:v.verified});
+  return view(a,await load(tx,a,cid));
+ }
 
  if(p.action==='client_master_record'){
   const key=text(p.field_key||'',60),f=fieldFor(key);if(!f)fail(400,'This is not a field on the client master checklist.');

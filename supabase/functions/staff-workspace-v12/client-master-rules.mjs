@@ -26,6 +26,7 @@ export const FIELDS=[
  {key:'regulator_registration_number',label:'Regulator registration or licence number',entities:[],check:v=>v.length>=2,hint:'As issued by the regulator.'},
  // Facts asked for by the public sector, association, estate and other-entity templates (build 2812). Entered by hand and verified separately.
  {key:'establishing_instrument',label:'Establishing instrument',entities:[],check:v=>v.length>=5,hint:'The Act, charter, gazette notice or order that set the entity up, with its number or date.'},
+ {key:'subtype_basis',label:'Basis for the subtype',entities:[],check:v=>v.length>=10,hint:'The provision of the establishing instrument that supports the subtype (for example public institution or state corporation). If neither fits, use Other registered entity and a Partner classifies it.'},
  {key:'mandate',label:'Mandate',entities:[],check:v=>v.length>=10,hint:'What the entity is set up to do, from its establishing instrument.'},
  {key:'accounting_officer',label:'Accounting officer',entities:[],check:v=>v.length>=3,hint:'Name and title of the accounting officer or head of the entity.'},
  {key:'authorised_signatories',label:'Authorised signatories',entities:[],check:v=>v.length>=3,hint:'Names and capacity of the people who may sign for the client.'},
