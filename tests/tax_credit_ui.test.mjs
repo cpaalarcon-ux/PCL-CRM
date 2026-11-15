@@ -6,7 +6,7 @@ const btn=(a,l,id)=>`<button data-suite="${a}" data-id="${id}">${l}</button>`;
 const me=(cat,id)=>({category_code:cat,staff_id:id});
 const vat={case_id:'c1',project_id:'p1',kind:'VAT',status:'Draft',starts_on:'2026-09-01',ends_on:'2026-09-30'};
 const e=(o={})=>({credit_id:'e1',project_id:'p1',credit_type:'WHT_VAT',applies_to:'VAT',period_start:'2026-09-01',period_end:'2026-09-30',source_reference:'CERT-1',erp_amount:'1000.00',itax_amount:null,variance:null,status:'PENDING',entered_by:'u1',claimed_in_case_id:null,revision:'1',...o});
-const names=x=>x.map(a=>a[0]);
+const names=x=>x.map(a=>a[0]).filter(a=>a!=='credit-links');// the sales-invoice link button (build 2834) is checked on its own below
 
 test('tax kinds map to the right side: VAT credits and income-tax credits are never mixed',()=>{
  assert.equal(appliesToKind('VAT'),'VAT');for(const k of ['Company','Individual','Partnership'])assert.equal(appliesToKind(k),'INCOME_TAX');
@@ -56,4 +56,13 @@ test('the snapshots panel lists each numbered snapshot with its rules status, an
  assert.match(html,/<td>1<\/td><td>Submitted<\/td><td>2026-10-05<\/td><td>Name of u1<\/td>/);assert.match(html,/<td>2<\/td><td>Locked<\/td>/);
  assert.match(html,/Sales: 3 rows/);assert.match(html,new RegExp(RULES_TEXT.UNCONFIRMED));assert.match(html,/badge red/);assert.match(html,/<code>aaaaaaaaaaaa<\/code>/);
  assert.match(read('staff-suite.mjs'),/snapshotsView\(\{snapshots:r\.snapshots,staffName\}\)/);
+});
+test('a withholding VAT credit offers its sales invoices, other credits do not, and an incomplete link is shown',()=>{
+ const e=(o={})=>({credit_id:'c1',credit_type:'WHT_VAT',status:'RECONCILED',entered_by:'u1',erp_amount:480,...o}),me={category_code:'ASSISTANT',staff_id:'u2'},vat={case_id:'k1',kind:'VAT',status:'Draft'};
+ assert.ok(entryActions(e(),me,vat).some(a=>a[0]==='credit-links'));
+ assert.ok(entryActions(e({claimed_in_case_id:'k1'}),me,vat).some(a=>a[0]==='credit-links'),'still viewable once claimed');
+ assert.ok(!entryActions(e({credit_type:'VAT_CARRIED_FORWARD'}),me,vat).some(a=>a[0]==='credit-links'));
+ assert.ok(!entryActions(e({status:'REJECTED'}),me,vat).some(a=>a[0]==='credit-links'));
+ const html=panelView({credits:[{...e(),applies_to:'VAT',period_start:'2026-10-01',period_end:'2026-10-31',source_reference:'C-1'}],caseRec:{...vat,starts_on:'2026-10-01',ends_on:'2026-10-31',project_id:'p'},claimed:[],me,button:(a,l)=>`[${a}]`,links:{c1:{complete:false,linked_total:200,credit_amount:480}}});
+ assert.match(html,/Sales invoices linked[^<]*200[^<]*of[^<]*480[^<]*incomplete/);assert.match(html,/\[credit-links\]/);
 });
