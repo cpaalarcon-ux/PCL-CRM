@@ -8,7 +8,9 @@ import {suggestAccount,normaliseName} from './opening-tb-suggest.mjs';
 import {openingStructure,SECTIONS} from './opening-structure.mjs';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
-import {sourceChecks,monthsBetween,totalsTie,signOffCheck,reportGate,draftBanner} from './report-gate-rules.mjs';
+import {declarationAction} from './declaration-actions.ts';
+import {annualGate,annualBanner} from './annual-gate-rules.mjs';
+import {sourceChecks,monthsBetween,totalsTie,signOffCheck,reportGate,draftBanner,STOCK_WARNING} from './report-gate-rules.mjs';
 import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,notifyOutcome} from './review-queue.ts';
 import {readWorkbookSheet} from './workbook-reader.mjs';
 import {checkWorkbookZip} from './workspace-rules.mjs';
@@ -251,7 +253,8 @@ async function reportGateFor(tx:any,l:any,kind:string,asOf:string,pre?:any){
  const imports=await tx`select kind,status,starts_on,ends_on from erp_private.period_imports where project_id=${l.project_id} and kind in('Sales','Payroll') and status in('Draft','Submitted','Returned','Confirmed') and ends_on>=${day(l.starts_on)} and starts_on<=${day(l.ends_on)}`;
  const batches=await tx`select b.dataset,b.period_start,b.period_end,count(r.row_id)::int as rows,count(r.row_id) filter(where r.route is null and r.account_code is null)::int as unmapped
   from erp_private.workbook_batches b left join erp_private.workbook_rows r on r.batch_id=b.batch_id where b.project_id=${l.project_id} and b.archived_at is null and b.dataset in('Sales','Purchases','Bank') and b.period_end>=${day(l.starts_on)} and b.period_start<=${day(l.ends_on)} group by b.batch_id,b.dataset,b.period_start,b.period_end`;
- const sources=sourceChecks({months:monthsBetween(snapshot.starts_on,asOf),facts:{imports,batches}});
+ const declarations=await tx`select declaration_id,source_key,obligation_code,period_month,declarant_name,declared_on,reason from erp_private.source_declarations where project_id=${l.project_id} and status='Active' and period_month<=${day(l.ends_on)} and period_month>=${day(l.starts_on).slice(0,7)+'-01'}`;
+ const sources=sourceChecks({months:monthsBetween(snapshot.starts_on,asOf),facts:{imports,batches,declarations}});
  const journals=full.journals||[],posted=journals.filter((j:any)=>j.status==='Posted'&&j.kind!=='Opening'),drafts=journals.filter((j:any)=>j.status!=='Posted');
  const yearClosed=journals.some((j:any)=>j.kind==='Year close'&&j.status==='Posted');
  const tie=totalsTie({tb:full.tb,reportedProfit:full.profit?.profit_after_tax,yearClosed});
@@ -259,8 +262,30 @@ async function reportGateFor(tx:any,l:any,kind:string,asOf:string,pre?:any){
  const digestOk=review?.status==='Approved'?(await digest(snapshot))===review.snapshot_digest:false;
  // Problems already shown as their own check are not repeated under open exceptions.
  const issues=(full.issues||[]).filter((x:string)=>!/not mapped to an account|await preparation or review|trial balance is not balanced/.test(x));
- const gate=reportGate({sources,unmapped:full.unmapped,postedJournals:posted.length,draftJournals:drafts.length,tbTotals:snapshot.trial_balance_totals,reportedTotals:snapshot.profit,tie,issues,signOff:signOffCheck({review,digestOk})});
+ const gate=reportGate({sources,unmapped:full.unmapped,postedJournals:posted.length,draftJournals:drafts.length,tbTotals:snapshot.trial_balance_totals,reportedTotals:snapshot.profit,tie,issues,signOff:signOffCheck({review,digestOk}),warnings:(full.warnings||[]).map((w:string)=>({code:'STOCK',label:'Stock and cost of sales',detail:w}))});
  return {gate,review,sources:sources.rows,tie};
+}
+// Build 2817: the annual statements gate. The year-end report gate plus the checks only an annual pack has; stock stays a warning.
+async function annualGateFor(tx:any,l:any,asOf:string){
+ const pre=await reportSnapshot(tx,l,'Year end',asOf),g=await reportGateFor(tx,l,'Year end',asOf,pre),st=await statementsFrom(tx,l,pre.full);
+ return {st,review:g.review,sources:g.sources,gate:annualGate({gate:g.gate,pack:st.readiness,statementProblems:st.statements?.problems??null})};
+}
+async function annualWorkbook({client,st,mark,banner,signedOff,asOf}:any){
+ const book=new ExcelJS.Workbook(),draft=mark!=='FINAL',fmt='#,##0;(#,##0);-';
+ const sheet=(name:string,title:string)=>{const w=book.addWorksheet(name);
+  if(draft){w.addRow([banner||'DRAFT — NOT FOR RELEASE']).font={name:'Arial',size:10,bold:true,color:{argb:'FFC00000'}};w.properties.tabColor={argb:'FFC00000'};w.headerFooter.oddHeader='&C&B&K00C00000DRAFT — NOT FOR RELEASE';}
+  else if(signedOff)w.addRow([signedOff]).font={name:'Arial',size:9,bold:true};
+  w.addRow([`${client.name} · ${title}`]).font={name:'Arial',size:12,bold:true};w.addRow([`${st.reporting.framework}, ${st.reporting.edition}; as of ${asOf}`]).font={name:'Arial',size:9,italic:true};w.addRow([]);return w;};
+ const lines=(w:any,blk:any)=>{w.addRow(['',`Year ended ${st.statements.period.ends_on}`,...(blk.has_prior?['Prior year']:[])]).font={name:'Arial',size:9,bold:true};
+  for(const r of blk.rows){const row=w.addRow([r.label,r.kind==='heading'?null:r.current??null,...(blk.has_prior?[r.kind==='heading'?null:r.prior??'Not available']:[])]);row.font={name:'Arial',size:9,bold:['heading','subtotal','total'].includes(r.kind)};row.eachCell((c:any)=>{if(typeof c.value==='number')c.numFmt=fmt;});}
+  w.columns.forEach((c:any,i:number)=>{c.width=i?18:56;});};
+ const S=st.statements;
+ lines(sheet('Profit or loss',S.profit_or_loss.title),S.profit_or_loss);lines(sheet('Financial position',S.financial_position.title),S.financial_position);
+ if(S.changes_in_equity){const w=sheet('Changes in equity',S.changes_in_equity.title);for(const [label,blk] of [[`Year ended ${S.period.ends_on}`,S.changes_in_equity.current],['Prior year',S.changes_in_equity.prior]] as any[]){if(!blk)continue;w.addRow([label]).font={name:'Arial',size:9,bold:true};w.addRow(['',...blk.columns.map((c:any)=>c.label),'Total']).font={name:'Arial',size:9,bold:true};for(const r of blk.rows){const row=w.addRow([r.label,...blk.columns.map((c:any)=>r.cells[c.code]||0),r.total]);row.font={name:'Arial',size:9};row.eachCell((c:any)=>{if(typeof c.value==='number')c.numFmt=fmt;});}w.addRow([]);}w.columns.forEach((c:any,i:number)=>{c.width=i?18:46;});}
+ if(S.cash_flow)lines(sheet('Cash flows',S.cash_flow.title),S.cash_flow);
+ const bytes=new Uint8Array(await book.xlsx.writeBuffer());let str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));
+ const safe=String(client.name||'client').replace(/[^A-Za-z0-9]+/g,'_').slice(0,60);
+ return {mark:draft?'DRAFT':'FINAL',file_name:`${safe}_Annual_statements_${asOf}${draft?'_DRAFT':''}.xlsx`,mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',base64:btoa(str)};
 }
 async function reportSnapshot(tx:any,l:any,kind:string,asOf:string){
  const starts=reportWindow(l,kind,asOf),full=await report(tx,l,asOf);
@@ -298,9 +323,10 @@ async function report(tx:any,l:any,to:string){
  if(pending.length)issues.push((pending.length>2000?'More than 2,000':pending.length)+' imported row(s) are not posted.');
  if(assets.some((x:any)=>x.status!=='Approved'))issues.push('Asset classifications or rate evidence still await approval.');
  if(ppe_sources.length)issues.push(ppe_sources.length+' PPE source(s) still need an asset and shared-rate record.');
- if(!journals.some((j:any)=>j.kind==='Stock'&&j.status==='Posted'))issues.push('Confirm stock / cost-of-sales completeness separately before relying on gross profit.');
+ // Stock and cost of sales are confirmed separately. This is a warning, never a blocker: it does not stop a report being prepared or finalised, including for a client with no stock.
+ const warnings:string[]=[];if(!journals.some((j:any)=>j.kind==='Stock'&&j.status==='Posted'))warnings.push(STOCK_WARNING);
  const balance=money(tb.reduce((sum:any,r:any)=>sum+r.net,0));if(balance!==0)issues.push('The trial balance is not balanced.');
- return {period:l,pending_information,unmapped,as_of:to,accounts,tb,profit,profit_by_activity,activities,current_week,prior_year,report_reviews,reviewers:await reviewCandidates(tx,(await tx`select client_id from erp_private.projects where project_id=${l.project_id}`)[0].client_id),data_cutoff:DATA_CUTOFF,journals,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,close_checks:[...bankClose.checks,...payables.checks],payables_summary:{register_in_use:payables.register_in_use,totals:payables.totals,unassigned:payables.unassigned},close_explanations:closeExplanations,bank_register,bank_status:bankClose.banks,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
+ return {period:l,pending_information,unmapped,as_of:to,accounts,tb,profit,profit_by_activity,activities,current_week,prior_year,report_reviews,reviewers:await reviewCandidates(tx,(await tx`select client_id from erp_private.projects where project_id=${l.project_id}`)[0].client_id),data_cutoff:DATA_CUTOFF,journals,warnings,pending_sources:pending.slice(0,2000),pending_truncated:pending.length>2000,ppe_sources,assets,charges,issues,close_checks:[...bankClose.checks,...payables.checks],payables_summary:{register_in_use:payables.register_in_use,totals:payables.totals,unassigned:payables.unassigned},close_explanations:closeExplanations,bank_register,bank_status:bankClose.banks,ready_to_close:false,disclosure:'Client working papers. Only independently posted entries feed profit. Stock completeness, tax adjustments and annual return readiness require separate review; year closure and KRA filing export are not enabled here.'};
 }
 
 export async function annualTaxLedgerControl(tx:any,projectId:string,start:string,end:string){
@@ -335,14 +361,30 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   return one(await tx`insert into erp_private.ledger_periods(project_id,client_id,handling_firm_id,starts_on,ends_on,entity_type,entity_evidence,created_by) values(${pid},${project.client_id},${project.handling_firm_id},${start},${end},${c.legal_entity_type},${c.entity_evidence},${a.staff_id}) returning period_id`);
  }
  const l=await period(tx,uuid(p.period_id),pid);
+ {const dec=await declarationAction(tx,a,p,l);if(dec!==undefined)return dec;}
  if(p.action==='ledger_read')return {...await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)),rates};
  if(p.action==='ledger_reporting_read')return await reportingRead(tx,l);
  if(p.action==='ledger_reporting_save')return await reportingSave(tx,a,l,p);
  if(p.action==='ledger_comparatives_save')return await comparativesSave(tx,a,l,p);
  if(p.action==='ledger_comparatives_read')return await comparativesRead(tx,a,l,await report(tx,l,day(l.ends_on)));
  if(p.action==='ledger_comparatives_review')return await comparativesReview(tx,a,l,p,await report(tx,l,day(l.ends_on)));
- if(p.action==='ledger_pack_statements')return await statementsFrom(tx,l,await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)));
- if(p.action==='ledger_pack_readiness')return await packReadinessFrom(tx,l,await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)));
+ if(p.action==='ledger_pack_statements'||p.action==='ledger_pack_export'){
+  const asOf=p.as_of?date(p.as_of):day(l.ends_on),ann=await annualGateFor(tx,l,asOf);
+  if(p.action==='ledger_pack_statements')return {...ann.st,status:ann.gate.status,gate:ann.gate,sources:ann.sources};
+  // Build 2817: the annual statements are a Draft on every sheet until the annual gate passes; the server refuses a final release with the open checks named.
+  const final=p.final===true;
+  if(final&&!ann.gate.ready)fail(400,'The final annual statements are blocked. '+ann.gate.checks.filter((c:any)=>!c.ok).map((c:any)=>`${c.label}: ${c.detail}`).join(' ')+' Download the draft instead.');
+  let signedOff='';if(final&&ann.review){const who=(await tx`select erp_private.reviewer_label(${ann.review.reviewed_by}) n`)[0]?.n;signedOff=`FINAL — signed off by ${who||'the reviewer'} on ${String(ann.review.reviewed_at).slice(0,10)}`;}
+  return {...await annualWorkbook({client:ann.st.client,st:ann.st,mark:ann.gate.ready&&final?'FINAL':'DRAFT',banner:annualBanner(ann.gate)||(final?'':'DRAFT — every check has passed; request the final release to issue it.'),signedOff,asOf}),gate:ann.gate};
+ }
+ if(p.action==='ledger_pack_readiness'){
+  const asOf=p.as_of?date(p.as_of):day(l.ends_on),ann=await annualGateFor(tx,l,asOf),base=ann.st.readiness,seen=new Set((base.checks||[]).map((c:any)=>c.code));
+  // The pack checks keep their own rows; the report-gate checks (sources, journals, totals, sign-off, statements) are added beside them.
+  const extra=ann.gate.checks.filter((c:any)=>!c.code.startsWith('A_')&&!seen.has(c.code)).map((c:any)=>({code:c.code,label:c.label,status:c.ok?'Pass':'Blocked',detail:c.detail||''}));
+  const extraA=ann.gate.checks.filter((c:any)=>c.code==='A_STATEMENTS').map((c:any)=>({code:c.code,label:c.label,status:c.ok?'Pass':'Blocked',detail:c.detail||''}));
+  const checks=[...(base.checks||[]).filter((c:any)=>c.code!=='LEDGER_REVIEW'),...extra.filter((c:any)=>c.code!=='SIGN_OFF'),...extraA,...extra.filter((c:any)=>c.code==='SIGN_OFF')],blocked=checks.filter((c:any)=>c.status==='Blocked');
+  return {...base,checks,blocked:blocked.length,ready:ann.gate.ready_for_review,final:ann.gate.ready,status:ann.gate.status,warnings:ann.gate.warnings,summary:blocked.length?`Not final: ${blocked[0].label}. ${blocked[0].detail}`.trim():'All annual checks pass.',sources:ann.sources};
+ }
  if(p.action==='ledger_debtors_read')return await debtorsRead(tx,l,p.as_of?date(p.as_of):day(l.ends_on));
  if(p.action==='ledger_payables_read')return await payablesReport(tx,l,p.as_of?date(p.as_of):day(l.ends_on));
  if(p.action==='ledger_supplier_save'||p.action==='ledger_supplier_build')return await supplierAction(tx,a,l,p);
