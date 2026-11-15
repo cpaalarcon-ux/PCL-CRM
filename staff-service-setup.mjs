@@ -1,4 +1,4 @@
-// Client-type templates and service set-up (build 2810).
+// Client-type templates, service set-up (build 2810) and roll-forward (build 2811).
 // The type of client decides what the client file asks for. It never selects a service: a Supervisor, Manager or Partner chooses the service, period, scope,
 // responsible person and reviewer, previews the tasks, and only then confirms. Tasks that need a registration the client's verified profile does not show
 // are not created, and the plan says why. Every step is authorised again on the server.
@@ -30,7 +30,7 @@ export function createServiceSetupUI(ctx){
  async function open(cid){
   const o=await request({action:'engagement_setup_options',client_id:cid});
   const setups=await request({action:'engagement_setup_list',client_id:cid});
-  const prior=setups.setups.length?`<h4>Already set up</h4><ul>${setups.setups.map(s=>`<li>${badge(s.status)} <b>${esc(s.template_name)}</b> v${esc(s.version)} · ${esc(s.service_code)} · ${esc(day(s.period_start))} to ${esc(day(s.period_end))} · ${esc(String(s.tasks_created))} task${s.tasks_created===1?'':'s'}${s.status==='Waiting'?` ${editor()?`<button type="button" data-svc="release" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Release if ready</button>`:''}`:''}</li>`).join('')}</ul>`:'';
+  const prior=setups.setups.length?`<h4>Already set up</h4><ul>${setups.setups.map(s=>`<li>${badge(s.status)} <b>${esc(s.template_name)}</b> v${esc(s.version)} · ${esc(s.service_code)} · ${esc(day(s.period_start))} to ${esc(day(s.period_end))} · ${esc(String(s.tasks_created))} task${s.tasks_created===1?'':'s'}${s.status==='Released'&&editor()&&!setups.setups.some(o=>o.service_code===s.service_code&&day(o.period_end)>day(s.period_end))?` <button type="button" data-svc="roll" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Roll forward</button>`:''}${s.status==='Waiting'?` ${editor()?`<button type="button" data-svc="release" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Release if ready</button>`:''}`:''}</li>`).join('')}</ul>`:'';
   if(!o.templates.length){modal('Set up a service · '+o.client.company_name,`<p class="info full">${esc(o.note)}</p><p>No service template has been approved yet. A Partner approves the firm's service templates first${leader()?' (Projects, Service templates)':''}.</p>${prior}`);return;}
   const svcOptions=o.templates.flatMap(t=>t.services.map(s=>[t.template_id+'|'+s.service_code,`${s.service_name} — ${t.name}`]));
   const firms=o.firms.map(f=>[f.firm_id,f.legal_name]);
@@ -74,7 +74,25 @@ export function createServiceSetupUI(ctx){
   modal('Service templates',`<p class="info full">${esc(x.note)}</p><div class="scroll"><table><thead><tr><th>Template</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
   return x;
  }
+ // Roll forward (build 2811): the next period starts from the approved template. Dates, status, evidence and approvals start again; only the open items are listed.
+ async function roll(setupId,cid){
+  const r=await request({action:'engagement_rollover_plan',from_setup_id:setupId});const plan=r.plan;
+  const carried=plan.carried&&plan.carried.length?`<h4>Open items from the last period (${plan.carried.length})</h4><ul>${plan.carried.map(c=>`<li><b>${esc(c.task_name)}</b> · was ${esc(String(c.was).toLowerCase())}${c.blocked_reason?' · '+esc(c.blocked_reason):''}</li>`).join('')}</ul><p class="muted">These come across as new pending tasks with a fresh date. Nothing they showed as done, reviewed or approved is copied.</p>`:'<p class="muted">No open items from the last period.</p>';
+  const kept=plan.kept_exclusions&&plan.kept_exclusions.length?`<p class="muted">Tasks the team dropped last time stay dropped: ${plan.kept_exclusions.map(e=>esc(e.task_key)).join(', ')}.</p>`:'';
+  modal('Roll forward · '+plan.client.company_name,`<p class="info full">Next period: <b>${esc(plan.next.period_start)}</b> to <b>${esc(plan.next.period_end)}</b>. The template, scope, responsible person and reviewer carry over; dates, evidence, status and approval start again.</p>${planView(plan)}${carried}${kept}`+
+   (plan.problems.length?'':form(`<p class="info full">Confirm to create this period's tasks. They are not made twice if you confirm again.</p>`,'Confirm roll-forward')),
+   f=>request({action:'engagement_rollover_apply',from_setup_id:setupId,confirm:true}),
+   x=>{notice(x.released?`Rolled forward: ${x.tasks_created} task${x.tasks_created===1?'':'s'} made.`:'Roll-forward saved. The tasks are made as soon as the project can take them: '+(x.waiting_reason||''));},
+   {refreshWorkspace:true,pendingLabel:'Creating…',pendingMessage:'Creating the next period.',successMessage:null});
+ }
+ async function due(){
+  const x=await request({action:'engagement_rollover_due',look_ahead_days:7});
+  const rows=x.due.length?`<ul>${x.due.map(d=>`<li><b>${esc(d.client_name)}</b> · ${esc(d.service_code)} · ended ${esc(d.period_end)} · next ${esc(d.next.start)} to ${esc(d.next.end)}${d.overdue?' '+badge('Draft').replace('Draft','overdue'):''} <button type="button" data-svc="roll" data-id="${esc(d.setup_id)}" data-client="${esc(d.client_id)}">Roll forward</button></li>`).join('')}</ul>`:'<p class="muted">Nothing is due to roll forward.</p>';
+  modal('Due to roll forward',`<p class="info full">${esc(x.note)}</p>${rows}`);
+ }
  async function handle(a,id,ds={}){
+  if(a==='roll')return roll(id,ds.client);
+  if(a==='due')return due();
   if(a==='setup')return open(id);
   if(a==='templates')return templates();
   if(a==='release'){const r=await request({action:'engagement_setup_release',setup_id:id});notice(r.released?`Released: ${r.tasks_created} task${r.tasks_created===1?'':'s'} made.`:'Still waiting: '+r.waiting_reason);return open(ds.client);}
@@ -87,5 +105,5 @@ export function createServiceSetupUI(ctx){
   }
  }
  if(typeof document!=='undefined')document.addEventListener('click',async e=>{const b=e.target.closest?.('[data-svc]');if(!b)return;e.preventDefault();b.disabled=true;try{await handle(b.dataset.svc,b.dataset.id,{rev:b.dataset.rev,client:b.dataset.client});}catch(err){ctx.notice(err.message,true);}finally{b.disabled=false;}});
- return {open,templates,handle,clientTypeBlock,editor,button:()=>editor()?'<button type="button" data-svc="templates">Service templates</button>':'',isAction:a=>['setup','templates','release','approve','retire','propose'].includes(a)};
+ return {open,templates,handle,clientTypeBlock,editor,button:()=>editor()?'<button type="button" data-svc="templates">Service templates</button><button type="button" data-svc="due">Roll forward</button>':'',isAction:a=>['setup','templates','roll','due','release','approve','retire','propose'].includes(a)};
 }

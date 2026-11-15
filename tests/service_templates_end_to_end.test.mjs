@@ -124,6 +124,40 @@ test('templates: client type decides the file, never the service; services are c
  const ap2=await st('MANAGER',{...base,...q2,template_id:T2,action:'engagement_setup_apply',confirm:true});assert.equal(ap2.released,true);assert.equal(ap2.tasks_created,12);
  assert.equal((await tx`select count(*)::int n from erp_private.tasks where project_id=${P} and template_key like 'tpl:%'`)[0].n,24);
  assert.equal((await tx`select count(*)::int n from erp_private.tasks where project_id=${P} and template_key like 'tpl:%' and status<>'Pending'`)[0].n,0);
+ // ---- Roll forward: the next period starts from the approved template, not from last period's work ----
+ {
+  const q2tasks=await tx`select task_id,task_name from erp_private.tasks where project_id=${P} and template_key like 'tpl:%' and period_start='2026-04-01' order by task_name`;
+  await tx`update erp_private.tasks set status='Blocked',blocked_reason='Client has not sent the April bank statement' where task_id=${q2tasks[0].task_id}`;
+  await tx`update erp_private.tasks set status='In Progress' where task_id=${q2tasks[1].task_id}`;
+  await tx`update erp_private.tasks set status='Cancelled' where task_id=${q2tasks[2].task_id}`;
+  const due=await st('MANAGER',{action:'engagement_rollover_due',look_ahead_days:0});
+  assert.ok(due.due.some(d=>d.setup_id===ap2.setup_id&&d.next.start==='2026-07-01'&&d.next.end==='2026-09-30'&&d.overdue),JSON.stringify(due.due.map(d=>[d.client_name,d.period_end])));
+  assert.equal(due.due.some(d=>d.setup_id===ap1.setup_id),false);
+  const rp=await st('MANAGER',{action:'engagement_rollover_plan',from_setup_id:ap2.setup_id});
+  assert.equal(rp.ok,true,JSON.stringify(rp.plan.problems));assert.deepEqual(rp.plan.next,{period_start:'2026-07-01',period_end:'2026-09-30'});
+  assert.equal(rp.plan.create.length,12);assert.equal(rp.plan.carried.length,11);
+  assert.ok(rp.plan.carried.some(c=>c.was==='Blocked'&&/April bank statement/.test(c.blocked_reason)));assert.ok(rp.plan.carried.every(c=>c.was!=='Cancelled'));
+  await assert.rejects(()=>st('MANAGER',{action:'engagement_rollover_apply',from_setup_id:ap2.setup_id}),/Confirm the plan/);
+  await assert.rejects(()=>st('ASSISTANT',{action:'engagement_rollover_apply',from_setup_id:ap2.setup_id,confirm:true}),/Supervisor, Manager or Partner/);
+  // The earlier set-up is not the latest one, so it cannot be rolled again.
+  assert.match((await st('MANAGER',{action:'engagement_rollover_plan',from_setup_id:ap1.setup_id})).plan.problems.join(' '),/Roll forward from the latest one/);
+  const rf=await st('MANAGER',{action:'engagement_rollover_apply',from_setup_id:ap2.setup_id,confirm:true});
+  assert.equal(rf.released,true);assert.equal(rf.tasks_created,23);assert.equal(rf.carried_created,11);
+  const q3=await tx`select task_name,status,assigned_to,due_at,template_key,recurring_key,period_start,blocked_reason from erp_private.tasks where project_id=${P} and period_start>='2026-07-01'`;
+  assert.equal(q3.length,23);assert.ok(q3.every(t=>t.status==='Pending'&&t.blocked_reason===null));assert.equal(new Set(q3.map(t=>t.recurring_key)).size,23);
+  assert.equal(q3.filter(t=>t.template_key==='carry').length,11);assert.ok(q3.filter(t=>t.template_key==='carry').every(t=>/^Carried forward: /.test(t.task_name)&&t.assigned_to===actors.ASSISTANT.staff_id));
+  assert.ok(q3.every(t=>t.due_at>=new Date('2026-07-01T00:00:00Z')));
+  // Last period is untouched: still the same statuses.
+  assert.equal((await tx`select count(*)::int n from erp_private.tasks where project_id=${P} and period_start='2026-04-01' and status='Blocked'`)[0].n,1);
+  const link=(await tx`select rolled_from,jsonb_array_length(carried) n,exclusions from erp_private.engagement_setups where setup_id=${rf.setup_id}`)[0];assert.equal(link.rolled_from,ap2.setup_id);assert.equal(link.n,11);
+  // The same period cannot be rolled twice, and an overlapping set-up is refused by the database too.
+  assert.match((await st('MANAGER',{action:'engagement_rollover_plan',from_setup_id:ap2.setup_id})).plan.problems.join(' '),/Roll forward from the latest one/);
+  await assert.rejects(()=>tx`insert into erp_private.engagement_setups(client_id,project_id,template_id,service_code,period_start,period_end,scope,responsible_staff,reviewer_staff,applied_by) values(${C},${P},${T2},'TAX-COMP','2026-08-01','2026-08-31','Overlapping period for the test',${actors.ASSISTANT.staff_id},${actors.SUPERVISOR.staff_id},${actors.MANAGER.staff_id})`,/part of that period/);
+  // A template retired with nothing to replace it blocks the next roll-forward until a Partner approves one.
+  const cur=(await st('PARTNER',{action:'service_template_list'})).templates.find(x=>x.template_id===T2);
+  await st('PARTNER2',{action:'service_template_retire',template_id:T2,revision:cur.revision,reason:'Retired to test the roll-forward block'});
+  assert.match((await st('MANAGER',{action:'engagement_rollover_plan',from_setup_id:rf.setup_id})).plan.problems.join(' '),/no longer approved/);
+ }
  // A project that already makes its tasks from a recurring schedule is not given the same work twice.
  await tx`insert into erp_private.project_schedules(project_id,frequency,pack,starts_on,ends_on,effective_from,enabled,obligations,assigned_to,reviewer_id) values(${P},'Monthly','Tax Compilation','2026-01-01','2026-12-31','2026-01-01',true,${tx.array(['VAT'])},${actors.ASSISTANT.staff_id},${actors.SUPERVISOR.staff_id})`;
  assert.match((await plan('MANAGER',{period_start:'2026-07-01',period_end:'2026-09-30'})).plan.problems.join(' '),/recurring schedule/);
