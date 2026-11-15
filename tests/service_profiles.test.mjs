@@ -21,7 +21,7 @@ test('Step 5: service profiles, references, file checklist',async t=>{
 
  // ---- 1. Catalogue: 25 services, every one with a profile, references and a checklist --------------------------------------------------------
  const svc=await tx`select service_code,service_group from erp_private.services order by 1`;
- assert.equal(svc.length,25);
+ assert.equal(svc.length,35);
  assert.deepEqual(svc.filter(s=>['ADV-AUP','TAX-KRA'].includes(s.service_code)).map(s=>[s.service_code,s.service_group]),[['ADV-AUP','Advisory & Consulting'],['TAX-KRA','Tax Services']]);
  assert.equal((await tx`select count(*)::int n from erp_private.services where service_code like 'AUD-%'`)[0].n,6,'the new services do not use the AUD- prefix, which creates a statutory audit file');
  assert.equal((await tx`select count(*)::int n from erp_private.services s where not exists(select 1 from erp_private.service_profiles p where p.service_code=s.service_code)`)[0].n,0,'every service has a profile');
