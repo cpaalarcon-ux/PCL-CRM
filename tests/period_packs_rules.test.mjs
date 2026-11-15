@@ -31,7 +31,7 @@ test('pack stage and supervisor overview list exceptions only',()=>{
 });
 test('screens and server are wired',()=>{
  assert.match(rd('staff-workspace-v6.mjs'),/staff-period-packs\.mjs\?v=20261115-packs-v1/);assert.match(rd('staff-workspace-v6.mjs'),/Period pack/);
- assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261116-statutory-v1/);
+ assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261116-profiles-v1/);
  assert.match(rd('staff-period-packs.mjs'),/period_pack_overview/);assert.match(rd('staff-period-packs.mjs'),/never as zero|never as zero\./i);
  assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/periodPackAction/);assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/period_pack_/);
 });

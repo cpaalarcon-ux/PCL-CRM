@@ -1,4 +1,4 @@
-import {monthsPanel,resultPanel,idsForm,downloadCsv} from './staff-statutory-files.mjs?v=20261116-statutory-v1';
+import {monthsPanel,resultPanel,idsForm,downloadCsv} from './staff-statutory-files.mjs?v=20261116-profiles-v1';
 // Payroll register screens (build 2804): who is on a client's payroll and what they are paid, then "Start month from register".
 // The server (payroll-register-actions.ts, payroll-register-rules.mjs) owns every rule. A month started here opens the typed payroll screen pre-filled;
 // nothing is saved, submitted or posted from this screen.
@@ -108,7 +108,7 @@ export function createPayrollRegisterUI(ctx,{show,button,startManual}){
   },
   async 'statutory-release'(id,el){
    const x=await request({action:'statutory_file_prepare',project_id:pid,import_id:id,kind:el?.dataset.kind,release:true,confirm_defaults:!!$('#statutoryDefaults')?.checked});
-   if(x.csv){downloadCsv(x.file_name,x.csv);notice('Released and downloaded: '+x.file_name+'. The release is recorded.');}
+   if(x.csv){downloadCsv(x.file_name,x.csv);for(const f of x.extra_files||[])downloadCsv(f.file_name,f.csv);notice('Released and downloaded: '+[x.file_name,...(x.extra_files||[]).map(f=>f.file_name)].join(', ')+'. The release is recorded.');}
    show('Statutory file',resultPanel({...x,csv:undefined},esc));
   },
   async 'register-open'(){

@@ -35,14 +35,16 @@ test('statutory files: NSSF, SHIF and P10 are built from a confirmed summary, fi
  const A={GROSS_SALARY:'60000',NSSF_EMPLOYER:'60050',AHL_EMPLOYER:'60060',NITA_EMPLOYER:'60070',PAYE:'21600',NSSF_EMPLOYEE:'21603',SHIF:'21601',AHL_EMPLOYEE:'21602',NITA_PAYABLE:'21604',NET_PAY_PAYABLE:'21610'};
  for(const c of Object.values(A))assert.ok(acct.includes(c),'chart has '+c);
  const {statutoryFileAction}=await import('../supabase/functions/staff-workspace-v12/statutory-file-actions.ts');
+ const {exportProfileAction}=await import('../supabase/functions/staff-workspace-v12/export-profile-actions.ts');
+ const ep=(role,p)=>as(role,a=>exportProfileAction(tx,a,p));
  const sf=(role,p)=>as(role,a=>statutoryFileAction(tx,a,{project_id:P,...p}));
  const emp=(name,n,gross,extra={})=>({name,employee_id:'2'+String(n).padStart(7,'0'),pin:extra.pin===undefined?'A00000000'+n+'Z':extra.pin,gross,source_row:n+1,resident:true,employment_type:extra.type||'Permanent',taxable_benefits:0,other_pension:0,postretirement_medical:0,mortgage_interest:0});
  const calc=(n,gross,paye,nssf,shif,ahl,enssf,eahl,nita,extra={})=>({gross,paye,employee_nssf:nssf,shif,employee_ahl:ahl,other_deductions:0,employer_nssf:enssf,employer_ahl:eahl,nita,net_pay:Math.round((gross-paye-nssf-shif-ahl)*100)/100,source_row:n+1,taxable:gross-nssf-shif-ahl,personal_relief:2400,insurance_relief:0,taxable_benefits:0,...extra});
  const month=(start,end,rows,calcRows,status='Confirmed')=>({import_id:id(),start,end,rows,calcRows,status});
  async function addImport(m){await db.exec('set session_replication_role=replica');try{await tx`insert into erp_private.period_imports(import_id,project_id,client_id,document_id,kind,source_type,coverage_mode,starts_on,ends_on,payload,source_hash,status,prepared_by) values(${m.import_id},${P},${C},${D},'Payroll','PAYROLL','PAYROLL_MONTHLY',${m.start},${m.end},${tx.json({employees:m.rows,calculated:m.calcRows,issues:[],differences:[]})},${'h'+m.import_id},${m.status},${actors.ASSISTANT.staff_id})`;}finally{await db.exec('set session_replication_role=origin');}}
  // Three people: two permanent on the register, one casual with no PIN (PAYE without PIN is Section E item 5, not a Section B row).
- const sep=month('2026-09-01','2026-09-30',[emp('Wanjiru Kamau',1,100000),emp('Otieno Odhiambo',2,80000),emp('Casual Worker',3,9000,{pin:'',type:'Casual'})],
-  [calc(1,100000,20000,2160,2750,1500,2160,1500,50),calc(2,80000,14000,2160,2200,1200,2160,1200,50),calc(3,9000,150,0,0,135,0,135,0,{})]);
+ const sep=month('2026-09-01','2026-09-30',[emp('Wanjiru Kamau',1,100000),emp('Otieno Odhiambo',2,80000.4),emp('Casual Worker',3,9000,{pin:'',type:'Casual'})],
+  [calc(1,100000,20000,2160,2750,1500,2160,1500,50),calc(2,80000.4,14000,2160,2200,1200,2160,1200,50),calc(3,9000,150,0,0,135,0,135,0,{})]);
  await addImport(sep);
  const draft=month('2026-10-01','2026-10-31',[emp('Wanjiru Kamau',1,100000)],[calc(1,100000,20000,2160,2750,1500,2160,1500,50)],'Submitted');await addImport(draft);
  const people=[['Wanjiru Kamau','A000000001Z','20000001'],['Otieno Odhiambo','A000000002Z','20000002']];
@@ -63,7 +65,7 @@ test('statutory files: NSSF, SHIF and P10 are built from a confirmed summary, fi
  await assert.rejects(()=>sf('ASSISTANT',{action:'payroll_register_identifiers',person_id:pr2.person_id,revision:String(pr2.revision),...ids[1],exemption_certificate:'EX1'}),/disability/);
  // The register is filled, but the journal is still not posted, so nothing is released.
  const stillBlocked=await sf('ASSISTANT',{action:'statutory_file_prepare',kind:'NSSF',import_id:sep.import_id});
- assert.equal(stillBlocked.issues.length,1);assert.match(stillBlocked.issues[0],/not posted yet/);assert.equal(stillBlocked.row_count,2);
+ assert.equal(stillBlocked.issues.length,2);assert.ok(stillBlocked.issues.some(x=>/not posted yet/.test(x)));assert.ok(stillBlocked.issues.some(x=>/No published export profile/.test(x)),'starter profiles are drafts, so nothing is releasable until they are confirmed');assert.equal(stillBlocked.row_count,2);
  // Map the payroll codes, prepare the journal, review and post it.
  const rm=(role,p)=>as(role,a=>routingMapAction(tx,a,{client_id:C,...p}));
  const rows=Object.entries(A).map(([code,acc])=>({module:'Payroll',routing_code:code,erp_account_code:acc,effective_from:'2026-01-01'}));
@@ -76,16 +78,26 @@ test('statutory files: NSSF, SHIF and P10 are built from a confirmed summary, fi
  const draftJ=await sf('ASSISTANT',{action:'statutory_file_prepare',kind:'SHIF',import_id:sep.import_id});assert.ok(draftJ.issues.some(x=>/not posted yet/.test(x)));
  const j1=await jr(made.journal_id);
  await ledger('MANAGER',{...base,action:'ledger_journal_review',journal_id:made.journal_id,revision:j1.journal.revision,status:'Posted',review_note:'Checked totals against the confirmed payroll.'});
+
+ // Export profiles: the three starter profiles are Drafts. A Manager or Partner confirms each against its source; nothing releases before that.
+ const list0=await ep('MANAGER',{action:'export_profile_list'});assert.equal(list0.profiles.length,3);assert.ok(list0.profiles.every(x=>x.status==='Draft'&&x.provenance==='Starter'));
+ const prof=code=>list0.profiles.find(x=>x.return_code===code);
+ assert.equal(prof('NSSF').rounding_rule,'ROUND_UP_WHOLE');assert.deepEqual(prof('NSSF').rounded_columns,['GROSS PAY']);assert.equal(prof('SHIF').rounding_rule,'EXACT_2DP');assert.equal(prof('PAYE_P10').employer_housing_levy,'SEPARATE_SHEET');
+ await assert.rejects(()=>ep('ASSISTANT',{action:'export_profile_publish',profile_id:prof('NSSF').profile_id,revision:prof('NSSF').revision,verified_against:'NSSF return specification',verified_on:'2026-11-15'}),/Manager or Partner/);
+ await assert.rejects(()=>ep('PARTNER',{action:'export_profile_publish',profile_id:prof('NSSF').profile_id,revision:prof('NSSF').revision,verified_against:'x',verified_on:'2026-11-15'}),/checked against/);
+ for(const code of ['NSSF','SHIF','PAYE_P10'])await ep('PARTNER',{action:'export_profile_publish',profile_id:prof(code).profile_id,revision:prof(code).revision,verified_against:'Sample file supplied 15 Nov 2026 and the agency specification',verified_on:'2026-11-15'});
+ assert.ok((await ep('MANAGER',{action:'export_profile_list'})).profiles.every(x=>x.status==='Published'&&x.verified_on==='2026-11-15'));
+ await assert.rejects(()=>as('PARTNER',()=>tx`update erp_private.statutory_export_profiles set rounding_rule='EXACT_2DP',rounded_columns='{}' where return_code='NSSF'`),/never edited/);
  // NSSF: seven columns in the NSSF sample's order, casual left out, totals agree with the summary, journal agrees.
  const nssf=await sf('ASSISTANT',{action:'statutory_file_prepare',kind:'NSSF',import_id:sep.import_id});
  assert.deepEqual(nssf.issues,[]);assert.equal(nssf.ready,true);assert.equal(nssf.reconciliation.status,'Agrees');assert.equal(nssf.row_count,2);
  assert.deepEqual(nssf.layout.columns,['PAYROLL NUMBER','SURNAME','OTHER NAMES','ID Number','KRA Pin','NSSF Number','GROSS PAY']);
- assert.deepEqual(nssf.preview[0],['P001','Kamau','Wanjiru Grace','20000001','A000000001Z','NS1001',100000]);
+ assert.deepEqual(nssf.preview[0],['P001','Kamau','Wanjiru Grace','20000001','A000000001Z','NS1001',100000]);assert.equal(nssf.preview[1][6],80001,'80,000.40 is rounded up to 80,001 in the export only');assert.deepEqual(nssf.rounding['GROSS PAY'],{exact:180000.4,rounded:180001,difference:0.6});assert.equal(nssf.profile.version,1);
  assert.equal(nssf.totals.employee_nssf,4320);assert.equal(nssf.totals.employer_nssf,4320);assert.equal(nssf.csv,undefined,'a plain prepare never hands out the file');
  assert.equal((await tx`select count(*)::int n from erp_private.statutory_file_exports`)[0].n,0);
  const rel=await sf('ASSISTANT',{action:'statutory_file_prepare',kind:'NSSF',import_id:sep.import_id,release:true});
  assert.equal(rel.released,true);assert.match(rel.csv,/^﻿PAYROLL NUMBER,SURNAME,OTHER NAMES,ID Number,KRA Pin,NSSF Number,GROSS PAY\r\nP001,Kamau,Wanjiru Grace,20000001,A000000001Z,NS1001,100000\r\n/);assert.match(rel.file_name,/^NSSF_2026-09_Fictional_V3_client\.csv$/);
- const rec=(await tx`select * from erp_private.statutory_file_exports`);assert.equal(rec.length,1);assert.equal(rec[0].content_sha256,rel.sha256);assert.equal(rec[0].layout_code,'NSSF_MONTHLY_7COL_V1');assert.equal(rec[0].row_count,2);
+ const rec=(await tx`select * from erp_private.statutory_file_exports`);assert.equal(rec.length,1);assert.equal(rec[0].content_sha256,rel.sha256);assert.equal(rec[0].layout_code,'NSSF_MONTHLY_7COL_V1');assert.equal(rec[0].row_count,2);assert.equal(rec[0].profile_version,1);assert.ok(rec[0].profile_id);assert.equal(rec[0].rounding['GROSS PAY'].difference,0.6);
  await assert.rejects(()=>as('PARTNER',()=>tx`update erp_private.statutory_file_exports set row_count=0`),/never edited|permission denied/);
  await assert.rejects(()=>as('PARTNER',()=>tx`delete from erp_private.statutory_file_exports`),/permission denied|never deleted|cannot be deleted/i);
  // SHIF: nine columns; a missing phone stops it.
@@ -98,16 +110,31 @@ test('statutory files: NSSF, SHIF and P10 are built from a confirmed summary, fi
  // P10: Section B rows have a PIN; the casual with no PIN is Section E item 5; housing levy and NITA totals; the screen says it is not the KRA file.
  const p10=await sf('ASSISTANT',{action:'statutory_file_prepare',kind:'PAYE_P10',import_id:sep.import_id});
  assert.equal(p10.not_the_agency_file,true);assert.equal(p10.row_count,2);assert.equal(p10.section_e.total_employees,2);assert.equal(p10.section_e.paye_deducted,34000);assert.equal(p10.section_e.paye_without_pin,150);assert.equal(p10.section_e.total_paye_payable,34150);
- assert.equal(p10.section_e.nita_members,2);assert.equal(p10.section_e.nita_levy,100);assert.equal(p10.section_e.housing_levy_employer,2835);assert.equal(p10.layout.columns.length,26);
+ assert.equal(p10.section_e.nita_members,2);assert.equal(p10.section_e.nita_levy,100);assert.equal(p10.section_e.housing_levy_employee,2700,'Section E item 7 is the employee levy only');assert.equal(p10.section_e.housing_levy_without_pin,270);assert.equal(p10.extra_tables.length,1);assert.equal(p10.extra_tables[0].key,'sheet_m');assert.deepEqual(p10.extra_tables[0].totals,{employee:2700,employer:2700,total:5400});assert.deepEqual(p10.extra_tables[0].preview[0],['A000000001Z','Wanjiru Kamau',1500,1500,3000]);assert.ok(p10.notes.some(x=>/no KRA PIN/.test(x)));assert.equal(p10.layout.columns.length,26);
  assert.deepEqual(p10.preview[0].slice(0,8),['A000000001Z','Wanjiru Kamau','Resident','Primary Employee','No','',100000,0]);
  assert.equal(p10.preview[0][24],20000,'Self assessed PAYE equals PAYE deducted');
- assert.ok(p10.notes.some(x=>/Other Benefits \(G\)/.test(x)));assert.ok(p10.notes.some(x=>/employee share/.test(x)));
+ assert.ok(p10.notes.some(x=>/Other Benefits \(G\)/.test(x)));assert.ok(p10.notes.some(x=>/employee share only/.test(x)));
  assert.equal(p10.ready,true);
  // A person missing from the register: P10 needs the user to confirm the defaults before release.
  await tx`update erp_private.client_payroll_people set kra_pin='A000000009Z',national_id='29999999' where person_id=${pr2.person_id}`;
  const unreg=await sf('ASSISTANT',{action:'statutory_file_prepare',kind:'PAYE_P10',import_id:sep.import_id});assert.equal(unreg.needs_default_confirmation,true);assert.equal(unreg.ready,false);assert.ok(unreg.issues.some(x=>/Confirm that Primary Employee/.test(x)));
  const okd=await sf('ASSISTANT',{action:'statutory_file_prepare',kind:'PAYE_P10',import_id:sep.import_id,confirm_defaults:true});assert.equal(okd.ready,true);
  await tx`update erp_private.client_payroll_people set kra_pin='A000000002Z',national_id='20000002' where person_id=${pr2.person_id}`;
+
+ // A newer version never changes an old month: v2 starts 1 Oct 2026, v1 is ended on 30 Sep. September still uses v1.
+ const v1=prof('NSSF');
+ const draft2=await ep('MANAGER',{action:'export_profile_create',return_code:'NSSF',template_version:'NSSF return, Year 4 (Feb 2026)',rounding_rule:'EXACT_2DP',effective_from:'2026-10-01'});assert.equal(draft2.version,2);
+ const l1=(await ep('MANAGER',{action:'export_profile_list'})).profiles,d2=l1.find(x=>x.version===2&&x.return_code==='NSSF');
+ await assert.rejects(()=>ep('MANAGER',{action:'export_profile_publish',profile_id:d2.profile_id,revision:d2.revision,verified_against:'NSSF return specification Year 4',verified_on:'2026-11-15'}),/different Manager or Partner/);
+ await assert.rejects(()=>ep('PARTNER',{action:'export_profile_publish',profile_id:d2.profile_id,revision:d2.revision,verified_against:'NSSF return specification Year 4',verified_on:'2026-11-15'}),/End it the day before/);
+ const v1now=(await ep('MANAGER',{action:'export_profile_list'})).profiles.find(x=>x.profile_id===v1.profile_id);
+ await assert.rejects(()=>ep('PARTNER',{action:'export_profile_end',profile_id:v1.profile_id,revision:v1now.revision,effective_to:'2026-09-30',reason:'x'}),/Say why/);
+ await ep('PARTNER',{action:'export_profile_end',profile_id:v1.profile_id,revision:v1now.revision,effective_to:'2026-09-30',reason:'Replaced by the Year 4 specification from October'});
+ await ep('PARTNER',{action:'export_profile_publish',profile_id:d2.profile_id,revision:d2.revision,verified_against:'NSSF return specification Year 4',verified_on:'2026-11-15'});
+ const sepStill=await sf('ASSISTANT',{action:'statutory_file_prepare',kind:'NSSF',import_id:sep.import_id});assert.equal(sepStill.profile.version,1,'a later version does not change an earlier month');assert.equal(sepStill.preview[1][6],80001);
+ const v1after=(await ep('MANAGER',{action:'export_profile_list'})).profiles.find(x=>x.profile_id===v1.profile_id);
+ await assert.rejects(()=>ep('PARTNER',{action:'export_profile_retire',profile_id:v1.profile_id,revision:v1after.revision,reason:'No longer needed'}),/produced files|End it on a date/);
+ await assert.rejects(()=>ep('PARTNER',{action:'export_profile_end',profile_id:v1.profile_id,revision:v1after.revision,effective_to:'2026-12-31',reason:'Try to extend it'}),/never extended/);
  // A variance between the summary and the posted journal blocks release: change a posted line (as the database owner, simulating a later difference).
  await db.exec('set session_replication_role=replica');
  await tx`update erp_private.ledger_lines set credit=credit+10 where journal_id=${made.journal_id} and account_code='21600'`;

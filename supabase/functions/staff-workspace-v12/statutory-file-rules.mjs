@@ -8,6 +8,7 @@
 // The KRA P10 is a macro workbook with its own validation and import, so the P10 output is the Section B workings in the template's column order for
 // pasting into the official workbook. It is not the KRA file, and the screen says so.
 import {payrollTotals,buildPayrollJournal} from './payroll-journal-rules.mjs';
+import {applyRounding} from './export-profile-rules.mjs';
 
 const cents=v=>Math.round(Number(v||0)*100);
 const money=c=>c/100;
@@ -25,6 +26,7 @@ export const LAYOUTS={
   source:'P10_Return_Simplified.xlsm v30.0.3 (B_Employees_Dtls_Simplified, E_Tax_Due), supplied 15 Nov 2026'}
 };
 export const KINDS=Object.keys(LAYOUTS);
+export const SHEET_M_COLUMNS=['PIN of Employee','Name of Employee','Employee Contribution (A)','Employer Contribution (B)','Total (A+B)'];
 export const ID_TYPES=['National ID','Passport','Alien ID'];
 export const P10_EMPLOYEE_TYPES=['Primary Employee','Secondary Employee'];
 // The identifiers the register must hold. Validation mirrors the table's CHECK constraints so the screen can say what is wrong before the database does.
@@ -77,8 +79,8 @@ export function buildShif({joined}){
 }
 // P10. Section B needs a KRA PIN for every row (it is mandatory in the template); PAYE deducted from a person with no PIN is not a Section B row, it is
 // Section E item 5. Benefits are held in one figure in the register, so they are reported under Other Benefits (G); the car, meals and housing split is not held.
-export function buildP10({joined}){
- const rows=[],issues=[],notes=[],t={emp:0,paye:0,paye_no_pin:0,no_pin_people:0,ahl_employee:0,ahl_employer:0,nita:0,nita_members:0,nssf_employee:0,nssf_employer:0,shif:0,gross:0,housing_in_rows:0};
+export function buildP10({joined,sheetM=false}){
+ const rows=[],sheet=[],issues=[],notes=[],t={ahl_no_pin:0,emp:0,paye:0,paye_no_pin:0,no_pin_people:0,ahl_employee:0,ahl_employer:0,nita:0,nita_members:0,nssf_employee:0,nssf_employer:0,shif:0,gross:0,housing_in_rows:0};
  let notInRegister=0;
  for(const {e,c,p,casual} of joined){
   if(!c){issues.push(`${e.name||'A line'} (row ${e.source_row}) has no calculation in the confirmed summary.`);continue;}
@@ -86,13 +88,14 @@ export function buildP10({joined}){
   t.ahl_employee+=cents(c.employee_ahl);t.ahl_employer+=cents(c.employer_ahl);t.nita+=cents(c.nita);if(cents(c.nita)>0)t.nita_members++;
   t.nssf_employee+=cents(c.employee_nssf);t.nssf_employer+=cents(c.employer_nssf);t.shif+=cents(c.shif);t.gross+=cents(c.gross);
   const pin=String(e.pin||'').toUpperCase();
-  if(!pin){t.paye_no_pin+=paye;t.no_pin_people++;continue;}
+  if(!pin){t.paye_no_pin+=paye;t.no_pin_people++;t.ahl_no_pin+=cents(c.employee_ahl)+cents(c.employer_ahl);continue;}
   if(!p)notInRegister++;
   const type=p?.p10_employee_type||'Primary Employee',pwd=p?.disability===true,cert=pwd?clean(p?.exemption_certificate):'';
   if(pwd&&!cert)issues.push(`${e.name}: a person with a disability needs the exemption certificate number in the register.`);
   const cash=cents(c.gross),other=cents(c.taxable_benefits);
   rows.push([pin,clean(e.name),e.resident===true?'Resident':'Non-Resident',type,pwd?'Yes':'No',cert,money(cash),0,0,0,'Benefit not given',0,money(other),money(cash+other),money(cents(c.shif)),money(cents(c.employee_nssf)),money(cents(e.other_pension)),money(cents(e.postretirement_medical)),money(cents(e.mortgage_interest)),money(cents(c.employee_ahl)),money(cents(c.taxable)),money(cents(c.personal_relief)),money(cents(c.insurance_relief)),money(paye),money(paye),0]);
-  t.emp++;t.paye+=paye;t.housing_in_rows+=cents(c.employee_ahl);
+  t.emp++;t.paye+=paye;t.housing_in_rows+=cents(c.employee_ahl);t.ahl_rows_employer=(t.ahl_rows_employer||0)+cents(c.employer_ahl);
+  if(sheetM)sheet.push([pin,clean(e.name),money(cents(c.employee_ahl)),money(cents(c.employer_ahl)),money(cents(c.employee_ahl)+cents(c.employer_ahl))]);
  }
  if(notInRegister)notes.push(`${notInRegister} ${notInRegister===1?'person is':'people are'} not on the payroll register, so Primary Employee and no disability are used for them. Add them to the register to set these properly.`);
  if(t.no_pin_people)notes.push(`${t.no_pin_people} ${t.no_pin_people===1?'person has':'people have'} no KRA PIN. They are not Section B rows; their PAYE is Section E item 5.`);
@@ -100,16 +103,24 @@ export function buildP10({joined}){
  notes.push('Taxable pay, relief and PAYE columns are the ERP\'s own figures. The KRA workbook recalculates them: compare its result with these before filing.');
  const nitaExpected=t.nita_members*5000;
  if(t.nita!==nitaExpected)issues.push(`The NITA levy in the summary (${money(t.nita).toFixed(2)}) is not KES 50 per member for ${t.nita_members} members (${money(nitaExpected).toFixed(2)}). The P10 computes members × 50, so correct the NITA rate or the summary first.`);
- const section_e={total_employees:t.emp,paye_deducted:t.paye,lump_sum_paye:0,fbt:0,paye_without_pin:t.paye_no_pin,total_paye_payable:t.paye+t.paye_no_pin,housing_levy_section_b_total:t.ahl_employee,housing_levy_employee_all:t.ahl_employee,housing_levy_employer:t.ahl_employer,nita_members:t.nita_members,nita_levy:nitaExpected,
-  total_payable:t.paye+t.paye_no_pin+t.ahl_employee+nitaExpected};
- notes.push('Section E item 7 (housing levy) is the total of the Affordable Housing Levy column, which is the employee share. The employer share is shown separately below. Confirm with KRA\'s current P10 instructions where the employer share is declared before filing.');
- return {rows,issues,notes,totals:{employees:t.emp,gross:t.gross,paye:t.paye,paye_without_pin:t.paye_no_pin,employee_ahl:t.ahl_employee,employer_ahl:t.ahl_employer,nita:t.nita,shif:t.shif,employee_nssf:t.nssf_employee},section_e,gapCount:0,notInRegister};
+ const section_e={total_employees:t.emp,paye_deducted:t.paye,lump_sum_paye:0,fbt:0,paye_without_pin:t.paye_no_pin,total_paye_payable:t.paye+t.paye_no_pin,housing_levy_employee:t.housing_in_rows,housing_levy_employer_shown_separately:t.ahl_rows_employer||0,housing_levy_without_pin:t.ahl_no_pin,nita_members:t.nita_members,nita_levy:nitaExpected,
+  total_payable:t.paye+t.paye_no_pin+t.housing_in_rows+nitaExpected};
+ notes.push('Section E item 7 (housing levy) is the employee share only, the total of the Affordable Housing Levy column.'+(sheetM?' The employer share is in the separate Sheet M file, with the employee share and the total (A+B).':' This profile does not show the employer share.'));
+ if(t.ahl_no_pin)notes.push(`Housing levy of ${money(t.ahl_no_pin).toFixed(2)} (employee and employer) belongs to people with no KRA PIN, so it is in neither Section B nor Sheet M. Get their PINs to declare it.`);
+ return {rows,issues,notes,totals:{employees:t.emp,gross:t.gross,paye:t.paye,paye_without_pin:t.paye_no_pin,employee_ahl:t.ahl_employee,employer_ahl:t.ahl_employer,nita:t.nita,shif:t.shif,employee_nssf:t.nssf_employee},section_e,gapCount:0,notInRegister,extra_tables:sheetM?[{key:'sheet_m',label:'Affordable Housing Levy, Sheet M workings',columns:SHEET_M_COLUMNS,rows:sheet,file_prefix:'P10_SheetM',totals:{employee:t.housing_in_rows,employer:t.ahl_rows_employer||0,total:t.housing_in_rows+(t.ahl_rows_employer||0)}}]:[]};
 }
-export function buildFile(kind,{employees,calculated,people}){
+export function buildFile(kind,{employees,calculated,people,profile=null}){
  const joined=joinPayroll({employees,calculated,people});
- const b=kind==='NSSF'?buildNssf({joined}):kind==='SHIF'?buildShif({joined}):kind==='PAYE_P10'?buildP10({joined}):null;
+ const b=kind==='NSSF'?buildNssf({joined}):kind==='SHIF'?buildShif({joined}):kind==='PAYE_P10'?buildP10({joined,sheetM:profile?.employer_housing_levy==='SEPARATE_SHEET'}):null;
  if(!b)return {issues:['Choose NSSF, SHIF or PAYE (P10).'],rows:[],totals:{},notes:[]};
- return {notes:[],...b,layout:LAYOUTS[kind]};
+ const layout=LAYOUTS[kind],issues=[...b.issues],notes=[...(b.notes||[])];
+ if(!profile)issues.push('No published export profile is in force for this return and month. A Manager or Partner publishes one in Settings, Templates and Statutory Rules.');
+ // Accepted identifiers (SHIF): the profile lists the ID types the authority accepts; a person with another type is named, never silently changed.
+ if(profile&&kind==='SHIF'){for(const r of b.rows){if(!(profile.accepted_id_types||[]).includes(r[3]))issues.push(`${r[1]} ${r[2]}: ID type ${r[3]} is not accepted by the export profile in force.`);}}
+ // Rounding is applied to the file only. The exact amounts stay in the totals so the file reconciles to the ledger through the stored difference.
+ const rounded=applyRounding(layout.columns,b.rows,profile);
+ if(Object.keys(rounded.rounding).length)notes.push('Rounded up in this file only: '+Object.entries(rounded.rounding).map(([c,v])=>`${c} ${v.exact.toFixed(2)} becomes ${v.rounded.toFixed(2)} (difference ${v.difference.toFixed(2)})`).join('; ')+'. The exact amounts stay in the payroll records.');
+ return {...b,issues,notes,rows:rounded.rows,rounding:rounded.rounding,layout,profile_id:profile?.profile_id||null,profile_version:profile?.version||null};
 }
 // The file's own totals must equal the confirmed summary for the same heads. This catches a person dropped from the file (for example a row skipped for
 // missing data) so the file can never quietly under-declare.
