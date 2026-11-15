@@ -1,4 +1,5 @@
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
+import {certificateState} from './wht-vat-rules.mjs';
 
 // Tax credit register: withholding VAT, withholding income tax, instalment tax and balances carried forward, checked against iTax before a return can claim them.
 // The rules (a different person checks iTax, a Manager/Partner approves a difference, one claim at a time, no editing) live in the database
@@ -57,6 +58,8 @@ export async function creditAction(tx:any,a:any,p:any):Promise<any>{
    if(c.project_id!==e.project_id)fail(400,'Choose a return of the same engagement.');
    if(!['Draft','Returned'].includes(c.status))fail(400,'Credits can be claimed only while the return is a draft.');
    if(c.prepared_by!==a.staff_id&&!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'The preparer of this return claims its credits.');
+   // A withholding VAT credit is claimed only when the sales invoices on its certificate add up to it (build 2834).
+   if(e.credit_type==='WHT_VAT'){const l=await tx`select vat_withheld from erp_private.wht_vat_certificate_lines where credit_id=${e.credit_id}`,st=certificateState(e,l,[]);if(!st.complete)fail(409,st.problems[0]+' Link the sales invoices the certificate covers before claiming it.');}
    await tx`update erp_private.tax_credit_entries set claimed_in_case_id=${c.case_id} where credit_id=${e.credit_id}`;return {ok:true};
   }
   if(!e.claimed_in_case_id)fail(400,'This credit is not claimed in a return.');

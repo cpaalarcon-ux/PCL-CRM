@@ -4,6 +4,7 @@ import {PDFDocument,StandardFonts} from 'pdf-lib';
 import {fail,uuid} from './validation.mjs';
 import {taxSummary} from './tax-review-actions.ts';
 import {vat3File} from './vat3-export.ts';
+import {tot3File} from './tot3-export.ts';
 import {approvalTrailRows,TRAIL_HEADERS} from './approval-trail.ts';
 import {one,leader} from './suite-actions.ts';
 const clean=(v:any)=>typeof v==='object'&&v!==null?JSON.stringify(v):v??'';
@@ -59,6 +60,11 @@ export async function suiteExport(tx:any,a:any,p:any,storage:any){
   if(p.format==='vat3'){
    const f=await vat3File(c,client,staffNames,rows,calculated,locked);bytes=f.bytes;mime=f.mime;name=f.name;
    await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'exports','DOWNLOAD',${id},${tx.json({kind:'VAT3',name})})`;
+   return {name,mime,base64:base64(bytes)};
+  }
+  if(p.format==='tot3'){
+   const f=await tot3File(c,client,staffNames,rows,calculated,locked);bytes=f.bytes;mime=f.mime;name=f.name;
+   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'exports','DOWNLOAD',${id},${tx.json({kind:'TOT3',name})})`;
    return {name,mime,base64:base64(bytes)};
   }
   const statusText=testing?'TESTING — NOT FOR FILING':c.status==='Filed'?'ERP filing status recorded — confirm the KRA acknowledgment in the linked task':locked?'Manager-reviewed working pack — complete the current KRA return separately':c.status==='Submitted'?'Submitted for internal review':'Draft — complete the preparation and review';

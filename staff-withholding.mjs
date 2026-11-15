@@ -1,4 +1,5 @@
 import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261107-annualpack-v3';
+import {createWhtVatUI} from './staff-whtvat.mjs?v=20261116-whtvat-v1';
 // Withholding schedule: tax withheld on payments for one month. Purchase rows marked on the purchases screen appear here automatically;
 // payments that are not purchases (dividends, interest, royalties, rent to non-residents and similar) are added here. The withholding
 // return and the monthly journal read this list only.
@@ -9,6 +10,7 @@ export function createWithholdingUI(ctx){
  const table=(heads,rows)=>`<div class="scroll purchase-ledger-scroll"><table><thead><tr>${heads.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c??''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
   const lastDay=m=>new Date(Date.UTC(Number(m.slice(0,4)),Number(m.slice(5,7)),0)).toISOString().slice(0,10);
  let pid='',month='',data=null,periods=[];
+ const whtvat=createWhtVatUI(ctx,{back:(id,m)=>open(id,m)});
  const show=(title,html,save,done)=>{if($('#editor').open)$('#editor').close();modal(title,html,save,done);$('#editor').classList.add('mapping-workspace');};
  async function open(id,m){
   pid=id;month=m||month||new Date().toISOString().slice(0,7);
@@ -20,7 +22,7 @@ export function createWithholdingUI(ctx){
    +(testing?'<p class="info">Some lines use testing rates. They need formal approval before the return is filed.</p>':'')
    +`<p>${info.totals.lines} line${info.totals.lines===1?'':'s'} · Subject to withholding ${money(info.totals.taxable_amount)} · <b>Tax withheld ${money(info.totals.tax_withheld)}</b> · ${info.totals.uncertificated} without a certificate · ${info.totals.unjournalled} not in a journal</p>`
    +(info.period_open?'':'<p class="missing">This month’s withholding return is submitted or locked. Return it before changing lines.</p>')
-   +`<div class="actions">${button('add','Add a payment that is not a purchase',pid,info.period_open?'':'disabled')}${button('journal','Create the month’s journal',pid,info.totals.unjournalled&&info.period_open?'':'disabled')}<button type="button" data-purchase-ledger="${pid}">Purchase ledgers</button></div>`
+   +`<div class="actions">${button('add','Add a payment that is not a purchase',pid,info.period_open?'':'disabled')}${button('whtvat','Withholding VAT schedule',pid)}${button('journal','Create the month’s journal',pid,info.totals.unjournalled&&info.period_open?'':'disabled')}<button type="button" data-purchase-ledger="${pid}">Purchase ledgers</button></div>`
    +(info.groups.length?`<h3>By payment category</h3>`+table(['Category','Lines','Subject to withholding','Rate','Tax withheld'],info.groups.map(g=>[esc(g.payment_label),g.lines,money(g.taxable_amount),g.rate+'%',money(g.tax_withheld)])):'<p class="muted">No withholding recorded for this month. On the purchases screen, tick professional or contractual fee rows and choose Withhold tax. Add other payments here.</p>')
    +(info.lines.length?`<h3>Lines</h3>`+table(['Payee / PIN','Payment date','Category','Subject to withholding','Rate','Tax withheld','Source','Certificate','Journal',''],info.lines.map(l=>[esc(l.payee_name)+`<small>${esc(l.payee_pin||'No PIN')} · ${esc(l.payee_residency)}</small>`,shortDate(l.payment_date),esc(l.payment_label)+(l.rate_status==='Testing'?'<small>Testing rate</small>':''),money(l.taxable_amount),l.rate+'%',money(l.tax_withheld),esc(l.source)+`<small>${esc(l.invoice_reference||'')} ${esc(l.evidence_reference)}</small>`,`<label><input type="checkbox" data-wht-cert="${l.line_id}" ${l.certificate_issued?'checked':''}> Issued</label>`,l.journal_id?'In journal':'Not yet',l.journal_id?'':button('void','Remove',l.line_id)])):'');
   show('Withholding schedule',body);
@@ -52,6 +54,7 @@ export function createWithholdingUI(ctx){
    if(a==='open')await open(b.dataset.id);
    else if(a==='load'){const m=$('#editorBody [name=wht_month]')?.value;if(m)await open(pid,m);}
    else if(a==='add')addForm();
+   else if(a==='whtvat')await whtvat.open(b.dataset.id||pid,month);
    else if(a==='void')voidForm(b.dataset.id);
    else if(a==='journal')journalForm();
   }catch(error){notice(error.message,true);}finally{b.disabled=false;}
