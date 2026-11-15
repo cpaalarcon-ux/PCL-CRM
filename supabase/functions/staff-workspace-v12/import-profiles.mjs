@@ -11,7 +11,7 @@ const payrollAliases={name:['employeename','name'],pin:['krapin','employeepin','
 function headerMap(values,dict){const out={};for(const [key,names] of Object.entries(dict)){const matches=values.map((v,i)=>names.includes(norm(v))?i+1:0).filter(Boolean);if(matches.length===1)out[key]=matches[0];}return out;}
 // Versioned contracts from the supplied KRA CSV sections. An exact shape and all
 // nonblank transaction dates/amounts are checked; a filename alone is insufficient.
-const sections={
+export const sections={
  B:{dataset:'Sales',rate:'16%',columns:10,map:{party_pin:1,party:2,date:4,invoice:5,description:6,amount:7,vat:8,original_invoice:9}},
  C:{dataset:'Sales',rate:'8%',columns:10,map:{party_pin:1,party:2,date:4,invoice:5,description:6,amount:7,vat:8,original_invoice:9}},
  D1:{dataset:'Sales',rate:'0%',columns:10,map:{party_pin:2,party:3,date:5,invoice:6,description:7,amount:10}},
