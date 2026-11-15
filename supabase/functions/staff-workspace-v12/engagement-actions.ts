@@ -242,7 +242,8 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   return {ok:true};
  }
  if(p.action==='engagement_activate'){
-  if((await tx`select change_id from erp_private.client_setup_change_sets where client_id=${project.client_id} and status='Pending review' limit 1`).length)fail(400,'A client activity / dependency-map change is waiting for independent review. Complete that client setup review before activating the engagement.');
+  // A pending client activity change is a routine set-up review. It no longer stops activation; it is reported back and stays on the set-up review screen.
+  const pendingSetupChange=(await tx`select change_id from erp_private.client_setup_change_sets where client_id=${project.client_id} and status='Pending review' limit 1`).length>0;
   const k=(await tx`select * from erp_private.client_compliance where client_id=${project.client_id}`)[0];
   const iso=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
   const [opening]=await tx`select c.opening_balance_status,s.starts_on from erp_private.clients c left join erp_private.project_schedules s on s.project_id=${project.project_id} and s.deleted_at is null where c.client_id=${project.client_id}`;
@@ -258,7 +259,7 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   if(project.sme_audit_exempt&&project.service_code.startsWith('AUD-')&&!project.audit_requested)fail(400,'Confirm that the client has requested an optional audit before activating it.');
   await tx`update erp_private.projects set status='Active' where project_id=${project.project_id}`;await syncClientDependencyTasks(tx,a,project.client_id);
   const [generated]=await tx`select erp_private.generate_project_tasks(${project.project_id}::uuid) generated`;
-  return {ok:true,project_status:'Active',generated:generated.generated};
+  return {ok:true,project_status:'Active',generated:generated.generated,warnings:pendingSetupChange?['A client activity change is still waiting for review. The engagement is active; the change joins the dependency map when a Manager or Partner approves it.']:[]};
  }
  if(p.action==='engagement_finalize'){
   if(project.tax_master&&(await tx`select project_id from erp_private.project_schedules where project_id=${project.project_id} and enabled and ends_on>=(now() at time zone 'Africa/Nairobi')::date and frequency<>'Once-off'`).length)fail(400,'Archive closed monthly periods from Projects & tasks. End or pause the ongoing service schedule before finalising the master engagement.');

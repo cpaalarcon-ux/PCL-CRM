@@ -61,6 +61,7 @@ import {templateLibraryAction} from './template-library-actions.ts';
 import {recordReopenAction} from './record-reopen-actions.ts';
 import {deleteRedoAction} from './delete-redo-actions.ts';
 import {clientMasterAction} from './client-master-actions.ts';
+import {clientSetupReviewAction} from './client-setup-review-actions.ts';
 import {obligationCheckAction} from './obligation-check-actions.ts';
 import {periodPackAction} from './period-pack-actions.ts';
 import {serviceTemplateAction} from './service-template-actions.ts';
@@ -469,6 +470,7 @@ async function action(id:any,p:any){
   const recordReopen=await recordReopenAction(tx,a,p);if(recordReopen!==undefined)return recordReopen;
   const deleteRedo=await deleteRedoAction(tx,a,p);if(deleteRedo!==undefined)return deleteRedo;
   const clientMaster=await clientMasterAction(tx,a,p);if(clientMaster!==undefined)return clientMaster;
+  const setupReview=await clientSetupReviewAction(tx,a,p);if(setupReview!==undefined)return setupReview;
   const obligationCheck=await obligationCheckAction(tx,a,p);if(obligationCheck!==undefined)return obligationCheck;
   const periodPack=await periodPackAction(tx,a,p);if(periodPack!==undefined)return periodPack;
   const serviceTemplate=await serviceTemplateAction(tx,a,p);if(serviceTemplate!==undefined)return serviceTemplate;
