@@ -15,6 +15,7 @@ async function packs(tx:any,projects:any[],month:string){
  const tasks=await tx`select t.project_id,t.task_name,t.status,t.blocked_reason,t.due_at from erp_private.tasks t join erp_private.work_period_tasks w on w.task_id=t.task_id join erp_private.project_work_periods wp on wp.work_period_id=w.work_period_id
   where t.project_id=any(${arr}::uuid[]) and wp.starts_on<=${r.end}::date and wp.ends_on>=${r.start}::date`;
  const cases=await tx`select project_id,kind,status from erp_private.tax_cases where project_id=any(${arr}::uuid[]) and deleted_at is null and starts_on<=${r.end}::date and ends_on>=${r.start}::date`;
+ const declarations=await tx`select project_id,source_key,obligation_code,period_month,declarant_name,declared_on,reason from erp_private.source_declarations where project_id=any(${arr}::uuid[]) and status='Active' and period_month=${r.start}::date`;
  const now=new Date().toISOString();
  return projects.map((p:any)=>{
   const mine=imports.filter((i:any)=>i.project_id===p.project_id),bs=batches.filter((b:any)=>b.project_id===p.project_id);
@@ -22,7 +23,7 @@ async function packs(tx:any,projects:any[],month:string){
    purchases:bs.some((b:any)=>b.dataset==='Purchases'&&day(b.period_end)<r.start),bank:bs.some((b:any)=>b.dataset==='Bank'&&day(b.period_end)<r.start),payroll:mine.some((i:any)=>i.kind==='Payroll'&&day(i.ends_on)<r.start)};
   const priorList=mine.filter((i:any)=>i.kind==='Payroll'&&day(i.starts_on)===prev.start).map((i:any)=>i.status);
   const prior=priorList.includes('Confirmed')?'Confirmed':priorList[0]||null;
-  const pack=packStatus({month,facts:{imports:mine,batches:bs,earlier,prior_payroll:prior},tasks:tasks.filter((t:any)=>t.project_id===p.project_id),cases:cases.filter((c:any)=>c.project_id===p.project_id),now});
+  const pack=packStatus({month,facts:{imports:mine,batches:bs,earlier,prior_payroll:prior,declarations:declarations.filter((x:any)=>x.project_id===p.project_id)},tasks:tasks.filter((t:any)=>t.project_id===p.project_id),cases:cases.filter((c:any)=>c.project_id===p.project_id),now});
   return {project_id:p.project_id,project_name:p.project_name,client_name:p.company_name,pack};
  });
 }

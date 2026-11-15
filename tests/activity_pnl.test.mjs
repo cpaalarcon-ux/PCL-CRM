@@ -67,6 +67,42 @@ test('journal lines carry the activity, profit is reported per activity, reports
  assert.equal(gate.gate.ready,false);assert.equal(by.SIGN_OFF.ok,true,by.SIGN_OFF.detail);assert.equal(by.TB_BALANCED.ok,true);assert.equal(by.TOTALS_TIE.ok,true,by.TOTALS_TIE.detail);assert.equal(by.SOURCES.ok,false);
  const ytd=await ledger('ASSISTANT',{...base,action:'ledger_report_gate',report_kind:'Year to date',as_of:'2026-12-31'});assert.equal(ytd.gate.checks.find(c=>c.code==='SIGN_OFF').ok,false);
  await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_report_export',report_kind:'Month',as_of:'2026-01-31',final:true}),/The final report is blocked\./);
+ // Build 2817: stock is a warning, not a blocker, and a documented "nothing to report" declaration satisfies source completeness without filing anything.
+ assert.equal(by.EXCEPTIONS.ok,true,by.EXCEPTIONS.detail);assert.deepEqual(gate.gate.warnings.map(w=>w.code),['STOCK']);assert.match(gate.gate.warnings[0].detail,/does not stop the report/);
+ const dec={...base,action:'ledger_declaration_record',source_key:'payroll',obligation_code:'PAYE',month:'2026-01',declarant_name:'Fictional Client Director',declared_on:'2026-02-03',reason:'No employees were paid in January 2026.'};
+ await assert.rejects(()=>ledger('ASSISTANT',dec),/Supervisor, Manager or Partner/);
+ await assert.rejects(()=>ledger('MANAGER',{...dec,reason:'None'}),/at least 15 characters/);
+ await assert.rejects(()=>ledger('MANAGER',{...dec,month:'2027-01'}),/outside this client financial year/);
+ await assert.rejects(()=>ledger('MANAGER',{...dec,declared_on:'2099-01-01'}),/cannot be in the future/);
+ await assert.rejects(()=>ledger('MANAGER',{...dec,declarant_name:''}),/./);
+ const filedBefore=(await tx`select count(*)::int n from erp_private.tax_cases`)[0].n;
+ const made=await ledger('MANAGER',dec);assert.equal(made.ok,true);assert.match(made.note,/still filed and acknowledged as its own step/);
+ await assert.rejects(()=>ledger('MANAGER',dec),/already covers this source, obligation and month/);
+ const g2=await ledger('ASSISTANT',{...base,action:'ledger_report_gate',report_kind:'Month',as_of:'2026-01-31'});
+ assert.equal(g2.gate.checks.find(c=>c.code==='SOURCES').ok,true);assert.equal(g2.sources.find(r=>r.key==='payroll').state,'Nothing to report');assert.deepEqual(g2.gate.failing,['JOURNALS'],'only the journals still waiting keep this report a draft; sources, exceptions and the stock warning do not');
+ // The stock warning and the declared source do not appear among the reasons the final report is refused.
+ await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_report_export',report_kind:'Month',as_of:'2026-01-31',final:true}),e=>/The final report is blocked\./.test(e.message)&&!/Stock|Expected sources/.test(e.message));
+ // Nothing was filed, acknowledged or approved by the declaration.
+ assert.equal((await tx`select count(*)::int n from erp_private.tax_cases`)[0].n,filedBefore);
+ const listed=await ledger('ASSISTANT',{...base,action:'ledger_declaration_list'}).catch(e=>e);assert.match(String(listed.message),/Supervisor, Manager or Partner/);
+ const list=await ledger('MANAGER',{...base,action:'ledger_declaration_list'});assert.equal(list.declarations.length,1);assert.equal(list.declarations[0].declarant_name,'Fictional Client Director');assert.ok(list.declarations[0].recorded_by_name);
+ // The facts are never edited and never deleted; the declaration is ended with a reason, after which the source check fails again.
+ await assert.rejects(()=>as('MANAGER',()=>tx`update erp_private.source_declarations set reason='Changed my mind about this one' where declaration_id=${made.declaration_id}`),/never edited/);
+ await assert.rejects(()=>as('MANAGER',()=>tx`delete from erp_private.source_declarations where declaration_id=${made.declaration_id}`),/./);
+ await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_declaration_end',declaration_id:made.declaration_id,reason:'no'}),/at least 5/);
+ await ledger('MANAGER',{...base,action:'ledger_declaration_end',declaration_id:made.declaration_id,reason:'The client later sent a payroll run.'});
+ await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_declaration_end',declaration_id:made.declaration_id,reason:'Again, ending twice'}),/already been ended/);
+ const g3=await ledger('ASSISTANT',{...base,action:'ledger_report_gate',report_kind:'Month',as_of:'2026-01-31'});assert.equal(g3.gate.checks.find(c=>c.code==='SOURCES').ok,false);
+ // Build 2817: the annual statements pack goes through the same gate, with its own annual checks; the draft is marked and the final release is refused by the server.
+ const ann=await ledger('ASSISTANT',{...base,action:'ledger_pack_statements',as_of:'2026-12-31'});
+ assert.equal(ann.gate.ready,false);assert.equal(ann.status,'Draft - not ready');assert.equal(ann.gate.mark,'DRAFT');
+ for(const c of ['A_COMPARATIVES','A_STATEMENTS','SIGN_OFF'])assert.ok(ann.gate.failing.includes(c),c+' should be open: '+ann.gate.failing);
+ assert.ok(ann.gate.checks.some(c=>c.code==='A_MAP_APPROVED'),'the statement-line map is an annual check');
+ assert.deepEqual(ann.gate.warnings.map(w=>w.code),['STOCK']);assert.equal(ann.gate.failing.includes('EXCEPTIONS'),false,'the stock line is not an open exception');
+ const annReady=await ledger('ASSISTANT',{...base,action:'ledger_pack_readiness',as_of:'2026-12-31'});assert.equal(annReady.final,false);assert.ok(annReady.checks.some(c=>c.code==='SOURCES'));assert.ok(annReady.checks.some(c=>c.code==='SIGN_OFF'));assert.equal(annReady.checks.at(-1).code,'SIGN_OFF');
+ const annX=await ledger('ASSISTANT',{...base,action:'ledger_pack_export',as_of:'2026-12-31'});assert.equal(annX.mark,'DRAFT');assert.match(annX.file_name,/_Annual_statements_2026-12-31_DRAFT\.xlsx$/);
+ await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_pack_export',as_of:'2026-12-31',final:true}),/The final annual statements are blocked\./);
+ {const ExcelJS2=(await import('exceljs')).default,w2=new ExcelJS2.Workbook();await w2.xlsx.load(Buffer.from(annX.base64,'base64'));assert.ok(w2.worksheets.length>=2);for(const ws of w2.worksheets)assert.match(String(ws.getRow(1).getCell(1).value),/^DRAFT/,ws.name);}
  // The draft workbook says so on every sheet.
  const ExcelJS=(await import('exceljs')).default,wb=new ExcelJS.Workbook();await wb.xlsx.load(Buffer.from(x.base64,'base64'));
  for(const ws of wb.worksheets)assert.match(String(ws.getRow(1).getCell(1).value),/^DRAFT/,ws.name);

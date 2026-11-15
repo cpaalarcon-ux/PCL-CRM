@@ -10,7 +10,7 @@ export const previousMonth=ym=>{const m=MONTH.exec(String(ym||''));if(!m)return 
 const day=v=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 export const SOURCE_LABEL={sales:'Sales',purchases:'Purchases',bank:'Bank',payroll:'Payroll'};
 const IMPORT_STATE={Confirmed:'Ready',Submitted:'Waiting for review',Draft:'In progress',Returned:'Returned for correction'};
-const RANK=['Ready','Received','Waiting for review','In progress','Returned for correction','Blocked','Not received'];
+const RANK=['Ready','Nothing to report','Received','Waiting for review','In progress','Returned for correction','Blocked','Not received'];
 const worst=list=>list.slice().sort((a,b)=>RANK.indexOf(b)-RANK.indexOf(a))[0];
 
 // facts: {imports:[{kind,status,starts_on,ends_on}], batches:[{dataset,period_start,period_end,rows,unmapped}], earlier:{sales,purchases,bank,payroll:boolean}, prior_payroll:status|null}
@@ -20,11 +20,15 @@ export function sourceStates(month,facts){
  const imp=kind=>(f.imports||[]).filter(i=>i.kind===kind&&overlaps(i.starts_on,i.ends_on)&&IMPORT_STATE[i.status]);
  const bat=ds=>(f.batches||[]).filter(x=>x.dataset===ds&&overlaps(x.period_start,x.period_end));
  const add=(key,state,detail,blocked_by=null)=>out.push({key,label:SOURCE_LABEL[key],state,detail,blocked_by});
+ // A documented "nothing to report" declaration stands in only for a source that has not arrived this month; it never hides data that is in, and files nothing.
+ const decl=key=>(f.declarations||[]).find(x=>x.source_key===key&&day(x.period_month).slice(0,7)===b.start.slice(0,7));
+ const declared=key=>{const x=decl(key);add(key,'Nothing to report',`Declared by ${x.declarant_name} on ${day(x.declared_on)} (${x.obligation_code}): ${x.reason}`);};
  for(const key of ['sales','payroll']){
   const kind=key==='sales'?'Sales':'Payroll',rows=imp(kind);
   if(!rows.length){
    const wb=key==='sales'?bat('Sales'):[];
    if(wb.length)add(key,'Received',wb.length+' upload'+(wb.length===1?'':'s')+' in, no saved summary yet');
+   else if(decl(key))declared(key);
    else if(f.earlier?.[key])add(key,'Not received','Came in before; nothing yet for this month');
    continue;
   }
@@ -35,7 +39,7 @@ export function sourceStates(month,facts){
  }
  for(const [key,ds] of [['purchases','Purchases'],['bank','Bank']]){
   const rows=bat(ds);
-  if(!rows.length){if(f.earlier?.[key])add(key,'Not received','Came in before; nothing yet for this month');continue;}
+  if(!rows.length){if(decl(key))declared(key);else if(f.earlier?.[key])add(key,'Not received','Came in before; nothing yet for this month');continue;}
   const total=rows.reduce((n,r)=>n+Number(r.rows||0),0),un=rows.reduce((n,r)=>n+Number(r.unmapped||0),0);
   if(key==='purchases'&&un>0)add(key,'In progress',un+' of '+total+' rows still unmapped');
   else add(key,'Received',total+' row'+(total===1?'':'s')+' in'+(key==='purchases'?', all mapped':''));
@@ -56,7 +60,7 @@ export function taxSummary(cases){
 // One pack: its sources, tasks and tax cases, and the exceptions a supervisor has to look at (and nothing else).
 export function packStatus({month,facts,tasks,cases,now}){
  const sources=sourceStates(month,facts),t=taskSummary(tasks,now),tax=taxSummary(cases),exceptions=[];
- for(const s of sources)if(!['Ready','Received'].includes(s.state))exceptions.push({kind:'source',key:s.key,label:s.label,state:s.state,detail:s.detail});
+ for(const s of sources)if(!['Ready','Received','Nothing to report'].includes(s.state))exceptions.push({kind:'source',key:s.key,label:s.label,state:s.state,detail:s.detail});
  if(t.overdue)exceptions.push({kind:'tasks',key:'overdue',label:'Tasks',state:'Overdue',detail:t.overdue+' open task'+(t.overdue===1?' is':'s are')+' past due'});
  for(const b of t.blocked)exceptions.push({kind:'tasks',key:'blocked',label:'Tasks',state:'Blocked',detail:b.task_name+': '+b.reason});
  const stage=!sources.length&&!t.total?'Nothing started':exceptions.some(e=>e.state==='Blocked')?'Blocked':exceptions.length?'Not ready':tax.cases&&tax.filed===tax.cases?'Filed':'Ready for review';

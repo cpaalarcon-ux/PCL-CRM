@@ -200,6 +200,6 @@ export async function statementsFrom(tx:any,l:any,data:any){
  if(!approved&&priorInErp)statements.problems.push('The prior year is held in the ERP. Comparatives taken from that ledger year are not shown yet.');
  const readiness=await packReadinessFrom(tx,l,data);
  return {client:{name:client.company_name||'',kra_pin:client.kra_pin||''},reporting:{framework:reporting.framework,edition:reporting.edition,presentation_currency:reporting.presentation_currency,rounding:reporting.rounding,early_application_note:reporting.early_application_note||'',saved:reporting.saved!==false},
-  statements,readiness:{ready:readiness.ready,status:readiness.status,summary:readiness.summary,blocked:readiness.blocked},
+  statements,readiness:{ready:readiness.ready,status:readiness.status,summary:readiness.summary,blocked:readiness.blocked,checks:readiness.checks},
   status:readiness.ready&&statements.complete?'Ready for review':'Draft - not ready',as_of:data.as_of};
 }
