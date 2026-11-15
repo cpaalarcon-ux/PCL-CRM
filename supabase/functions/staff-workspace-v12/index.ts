@@ -57,6 +57,7 @@ import {routingMapAction} from './routing-map-actions.ts';
 import {payrollRegisterAction} from './payroll-register-actions.ts';
 import {payrollReviewAction} from './payroll-review-actions.ts';
 import {payrollConfirmationAction} from './payroll-confirmation-actions.ts';
+import {templateLibraryAction} from './template-library-actions.ts';
 import {deleteRedoAction} from './delete-redo-actions.ts';
 import {clientMasterAction} from './client-master-actions.ts';
 import {obligationCheckAction} from './obligation-check-actions.ts';
@@ -463,6 +464,7 @@ async function action(id:any,p:any){
   const payrollRegister=await payrollRegisterAction(tx,a,p);if(payrollRegister!==undefined)return payrollRegister;
   const payrollReview=await payrollReviewAction(tx,a,p);if(payrollReview!==undefined)return payrollReview;
   const payrollConfirmation=await payrollConfirmationAction(tx,a,p);if(payrollConfirmation!==undefined)return payrollConfirmation;
+  const templateLibrary=await templateLibraryAction(tx,a,p);if(templateLibrary!==undefined)return templateLibrary;
   const deleteRedo=await deleteRedoAction(tx,a,p);if(deleteRedo!==undefined)return deleteRedo;
   const clientMaster=await clientMasterAction(tx,a,p);if(clientMaster!==undefined)return clientMaster;
   const obligationCheck=await obligationCheckAction(tx,a,p);if(obligationCheck!==undefined)return obligationCheck;

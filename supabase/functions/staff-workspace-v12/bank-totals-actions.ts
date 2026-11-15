@@ -1,3 +1,4 @@
+import {templateInForce} from './template-library-actions.ts';
 import {fail,text,uuid,revision} from './validation.mjs';
 import {readSourceSheet} from './source-reader.mjs';
 import {readBankInputs,computeBankTotals,reviewProblem} from './bank-totals-rules.mjs';
@@ -63,7 +64,7 @@ export async function bankTotalsAction(tx:any,a:any,p:any,storage:any):Promise<a
    if(!changed.length)fail(403,'This draft is not editable by your account.');
    return {ok:true,batch_id:old.batch_id,result:got.result};
   }
-  const r=await tx`insert into erp_private.bank_total_batches(client_id,starts_on,ends_on,source_document_id,inputs,result,created_by) values(${cid},${starts},${ends},${got.doc.document_id},${tx.json(got.inputs)},${tx.json(got.result)},${a.staff_id}) returning batch_id`;
+  const r=await tx`insert into erp_private.bank_total_batches(client_id,starts_on,ends_on,source_document_id,inputs,result,created_by,template_id) values(${cid},${starts},${ends},${got.doc.document_id},${tx.json(got.inputs)},${tx.json(got.result)},${a.staff_id},${await templateInForce(tx,'BANK_ANALYSIS',starts)}) returning batch_id`;
   return {ok:true,batch_id:r[0].batch_id,result:got.result};
  }
  const b=one(await tx`select * from erp_private.bank_total_batches where batch_id=${uuid(p.batch_id)} and client_id=${cid} for update`);
