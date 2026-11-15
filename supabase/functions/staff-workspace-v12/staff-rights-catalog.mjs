@@ -9,6 +9,7 @@ export const STAFF_RIGHTS=Object.freeze([
  {code:'client.owners',area:'clients',group:'Client records',label:'Record owners, beneficial owners, partners, directors, shareholders, trustees, the group profile, and licences and permits',roles:['PARTNER','MANAGER'],actions:['owner_add','party_add','party_end','group_profile_save','licence_add','licence_end','v3_partners_add']},
  {code:'client.setup',area:'clients',group:'Client records',label:'Client set-up: activities, VAT categories and the draft tax profile',roles:['PARTNER','MANAGER'],actions:['tax_profile_save','tax_profile_dependency_preview','v3_activity_add','v3_activities_preview','v3_activities_submit','v3_vat_categories_save']},
  {code:'client.tax_verify',area:'clients',group:'Client records',label:'Verify the client tax profile',roles:['PARTNER','MANAGER'],actions:['tax_profile_verify']},
+ {code:'service.template_approve',area:'projects',group:'Service templates',label:'Approve a master service template (not one you proposed, unless you are the firm\'s only Partner)',roles:['PARTNER','MANAGER'],actions:['service_template_approve']},
  {code:'kyc.file',area:'clients',group:'KYC',label:'Edit the KYC file and record evidence',roles:['PARTNER','MANAGER'],actions:['compliance_save','compliance_evidence_save','compliance_evidence_remove']},
  {code:'kyc.verify',area:'clients',group:'KYC',label:'Verify KYC',roles:['PARTNER','MANAGER'],actions:['compliance_verify']},
  {code:'kyc.edd',area:'clients',group:'KYC',label:'Approve enhanced due diligence',roles:['PARTNER'],actions:['edd_approve']},

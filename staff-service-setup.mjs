@@ -31,7 +31,7 @@ export function createServiceSetupUI(ctx){
   const o=await request({action:'engagement_setup_options',client_id:cid});
   const setups=await request({action:'engagement_setup_list',client_id:cid});
   const prior=setups.setups.length?`<h4>Already set up</h4><ul>${setups.setups.map(s=>`<li>${badge(s.status)} <b>${esc(s.template_name)}</b> v${esc(s.version)} · ${esc(s.service_code)} · ${esc(day(s.period_start))} to ${esc(day(s.period_end))} · ${esc(String(s.tasks_created))} task${s.tasks_created===1?'':'s'}${s.status==='Released'&&editor()&&!setups.setups.some(o=>o.service_code===s.service_code&&day(o.period_end)>day(s.period_end))?` <button type="button" data-svc="roll" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Roll forward</button>`:''}${s.status==='Waiting'?` ${editor()?`<button type="button" data-svc="release" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Release if ready</button>`:''}`:''}</li>`).join('')}</ul>`:'';
-  if(!o.templates.length){modal('Set up a service · '+o.client.company_name,`<p class="info full">${esc(o.note)}</p><p>No service template has been approved yet. A Partner approves the firm's service templates first${leader()?' (Projects, Service templates)':''}.</p>${prior}`);return;}
+  if(!o.templates.length){modal('Set up a service · '+o.client.company_name,`<p class="info full">${esc(o.note)}</p><p>No service template has been approved yet. A Partner or authorised Manager approves the firm's service templates first${leader()?' (Projects, Service templates)':''}.</p>${prior}`);return;}
   const svcOptions=o.templates.flatMap(t=>t.services.map(s=>[t.template_id+'|'+s.service_code,`${s.service_name} — ${t.name}`]));
   const firms=o.firms.map(f=>[f.firm_id,f.legal_name]);
   const firmName=new Map(o.firms.map(f=>[f.firm_id,f.legal_name]));
@@ -67,9 +67,9 @@ export function createServiceSetupUI(ctx){
    const tasks=`<details><summary>${t.tasks.length} tasks · ${t.services.map(s=>esc(s.service_code)).join(', ')}</summary><ul>${t.tasks.map(k=>`<li><b>${esc(k.task_name)}</b> · ${esc(k.stage)} · ${esc(k.recurrence)}${k.mandatory?'':' · optional'}${k.requires_obligation?' · needs '+esc(k.requires_obligation)+' on the verified tax profile':''}</li>`).join('')}</ul></details>`;
    const acts=[];
    if(t.status==='Draft'&&x.can_approve)acts.push(`<button type="button" data-svc="approve" data-id="${esc(t.template_id)}" data-rev="${esc(t.revision)}">Approve</button>`);
-   if(t.status!=='Retired'&&x.can_approve)acts.push(`<button type="button" data-svc="retire" data-id="${esc(t.template_id)}" data-rev="${esc(t.revision)}">Retire</button>`);
+   if(t.status!=='Retired'&&x.can_retire)acts.push(`<button type="button" data-svc="retire" data-id="${esc(t.template_id)}" data-rev="${esc(t.revision)}">Retire</button>`);
    if(t.status==='Approved'&&x.can_propose)acts.push(`<button type="button" data-svc="propose" data-id="${esc(t.template_id)}">Propose a changed version</button>`);
-   return `<tr><td><b>${esc(t.name)}</b> v${esc(t.version)}<small>${esc(t.service_group)}</small>${tasks}</td><td>${badge(t.status)}<small>${t.status==='Approved'?'Approved by '+esc(t.approved_by_name||'a Partner'):t.source==='Starter'?'Starter set, not yet approved':'Proposed by '+esc(t.proposed_by_name||'staff')}</small></td><td>${acts.join(' ')}</td></tr>`;
+   return `<tr><td><b>${esc(t.name)}</b> v${esc(t.version)}<small>${esc(t.service_group)}</small>${tasks}</td><td>${badge(t.status)}<small>${t.status==='Approved'?'Approved by '+esc(t.approved_by_name||'a Partner')+(t.sole_partner_approval?' as the firm\u2019s only Partner (also the proposer)':''):t.source==='Starter'?'Starter set, not yet approved':'Proposed by '+esc(t.proposed_by_name||'staff')}</small></td><td>${acts.join(' ')}</td></tr>`;
   }).join('');
   modal('Service templates',`<p class="info full">${esc(x.note)}</p><div class="scroll"><table><thead><tr><th>Template</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
   return x;
@@ -100,7 +100,7 @@ export function createServiceSetupUI(ctx){
   if(a==='retire'){return modal('Retire this template',form(`<label class="full">Why? *<textarea name="reason" required minlength="5" maxlength="500"></textarea></label>`,'Retire'),f=>request({action:'service_template_retire',template_id:id,revision:ds.rev,reason:f.get('reason')}),()=>templates(),{refreshWorkspace:false,successMessage:'Template retired.'});}
   if(a==='propose'){
    const x=await request({action:'service_template_list'}),t=x.templates.find(y=>y.template_id===id);
-   return modal('Propose a changed version of '+t.name,form(`<p class="info full">The approved template stays as it is. This makes version ${t.version+1} as a draft for a different Partner to approve. Tick any task to leave out of the new version.</p>`+t.tasks.map(k=>`<label class="full"><input type="checkbox" name="drop_${esc(k.task_key)}"> Leave out <b>${esc(k.task_name)}</b></label>`).join(''),'Propose version'),
+   return modal('Propose a changed version of '+t.name,form(`<p class="info full">The approved template stays as it is. This makes version ${t.version+1} as a draft for a different Partner or Manager (with the approval right) to approve. Tick any task to leave out of the new version.</p>`+t.tasks.map(k=>`<label class="full"><input type="checkbox" name="drop_${esc(k.task_key)}"> Leave out <b>${esc(k.task_name)}</b></label>`).join(''),'Propose version'),
     f=>request({action:'service_template_propose',from_template_id:id,drop_task_keys:t.tasks.filter(k=>f.get('drop_'+k.task_key)).map(k=>k.task_key)}),()=>templates(),{refreshWorkspace:false,successMessage:'Draft version proposed. A different Partner approves it.'});
   }
  }

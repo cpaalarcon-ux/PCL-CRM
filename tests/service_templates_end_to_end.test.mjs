@@ -49,14 +49,15 @@ test('templates: client type decides the file, never the service; services are c
  const base={action:'engagement_setup_plan',client_id:C,firm_id:F,template_id:tax.template_id,service_code:'TAX-COMP',period_start:'2026-01-01',period_end:'2026-03-31',scope:'Monthly VAT and PAYE working for the first quarter of 2026.',responsible_staff:actors.ASSISTANT.staff_id,reviewer_staff:actors.SUPERVISOR.staff_id,project_id:P};
  // Nothing is created from a template that no Partner has approved, whatever the client type.
  const p0=await st('MANAGER',base);assert.equal(p0.ok,false);assert.match(p0.plan.problems[0],/approved/);
- await assert.rejects(()=>st('MANAGER',{action:'service_template_approve',template_id:tax.template_id,revision:tax.revision}),/Partner approves/);
+ // Build 2816: a Supervisor cannot approve; the Managing Partner or a Manager who holds the right can, when they did not propose it.
+ await assert.rejects(()=>st('SUPERVISOR',{action:'service_template_approve',template_id:tax.template_id,revision:tax.revision}),/Partner or a Manager who holds the approval right/);
  await st('PARTNER',{action:'service_template_approve',template_id:tax.template_id,revision:tax.revision});
  const opts1=await st('MANAGER',{action:'engagement_setup_options',client_id:C});assert.deepEqual(opts1.templates.map(x=>x.template_code),['TAX-MONTHLY']);
  // A changed version: a Manager proposes, a different Partner approves; the old version is retired, never edited.
  const v1=(await st('MANAGER',{action:'service_template_list'})).templates.find(x=>x.template_id===tax.template_id);
  const prop=await st('MANAGER',{action:'service_template_propose',from_template_id:tax.template_id,drop_task_keys:['tot_working'],due_days:{vat_working:10},mandatory:{purchases:false}});assert.equal(prop.version,2);
  await assert.rejects(()=>st('MANAGER',{action:'service_template_propose',from_template_id:tax.template_id}),/already waiting/);
- await assert.rejects(()=>st('MANAGER',{action:'service_template_approve',template_id:prop.template_id,revision:1}),/Partner approves/);
+ await assert.rejects(()=>st('MANAGER',{action:'service_template_approve',template_id:prop.template_id,revision:1}),/different Partner or Manager approves a template you proposed/);
  const sl2=(await st('PARTNER',{action:'service_template_list'})).templates;const d2=sl2.find(x=>x.template_id===prop.template_id);
  assert.equal(d2.tasks.length,v1.tasks.length-1);assert.equal(d2.tasks.find(x=>x.task_key==='vat_working').due_days,10);assert.equal(d2.tasks.find(x=>x.task_key==='purchases').mandatory,false);
  // The Partner who is not the proposer approves it.
@@ -69,7 +70,7 @@ test('templates: client type decides the file, never the service; services are c
  // The Partner who proposes a version cannot approve it.
  const p3=await st('PARTNER',{action:'service_template_propose',from_template_id:T2,name:'Tax compliance, monthly (draft change)'});
  const d3=(await st('PARTNER',{action:'service_template_list'})).templates.find(x=>x.template_id===p3.template_id);
- await assert.rejects(()=>st('PARTNER',{action:'service_template_approve',template_id:p3.template_id,revision:d3.revision}),/different Partner approves/);
+ await assert.rejects(()=>st('PARTNER',{action:'service_template_approve',template_id:p3.template_id,revision:d3.revision}),/different Partner or Manager approves a template you proposed, unless you are your firm's only Partner/);
  await st('PARTNER2',{action:'service_template_retire',template_id:p3.template_id,revision:d3.revision,reason:'Not needed after review'});
 
  // ---- Engagement set-up ----
@@ -175,4 +176,27 @@ test('templates: client type decides the file, never the service; services are c
  await assert.rejects(()=>st('PARTNER',{action:'service_template_retire',template_id:other.template_id,revision:other.revision,reason:'no'}),/at least 5/);
  await st('PARTNER',{action:'service_template_retire',template_id:other.template_id,revision:other.revision,reason:'Not used by the firm'});
  await assert.rejects(()=>st('INTERN',{action:'service_template_list'}),/client access/);
+ // ---- Build 2816: who approves a template ----
+ const adv=(await st('MANAGER',{action:'service_template_list'})).templates.find(x=>x.template_code==='AUDIT-ANNUAL'&&x.status==='Draft');
+ assert.equal((await st('MANAGER',{action:'service_template_list'})).can_approve,true);assert.equal((await st('MANAGER',{action:'service_template_list'})).can_retire,false);
+ assert.equal((await st('SUPERVISOR',{action:'service_template_list'})).can_approve,false);
+ // A Manager approves a template nobody on the firm proposed (a starter), and records it under their own name.
+ await st('MANAGER',{action:'service_template_approve',template_id:adv.template_id,revision:adv.revision});
+ await assert.rejects(()=>st('MANAGER',{action:'service_template_retire',template_id:adv.template_id,revision:adv.revision+1,reason:'A Manager may not retire'}),/Partner retires/);
+ // A Manager who proposes a new version cannot approve it; a Partner can, and the Manager is never marked as a sole Partner.
+ const mp1=await st('MANAGER',{action:'service_template_propose',from_template_id:adv.template_id});
+ const dmp=(await st('PARTNER',{action:'service_template_list'})).templates.find(x=>x.template_id===mp1.template_id);
+ await assert.rejects(()=>st('MANAGER',{action:'service_template_approve',template_id:mp1.template_id,revision:dmp.revision}),/different Partner or Manager approves/);
+ assert.equal((await st('PARTNER',{action:'service_template_approve',template_id:mp1.template_id,revision:dmp.revision})).sole_partner_approval,false);
+ // A Partner who proposes and is not alone in the firm cannot approve; once they are the only active Partner they can, and it is recorded.
+ const sp4=await st('PARTNER',{action:'service_template_propose',from_template_id:mp1.template_id,name:'Advisory, project (change)'});
+ const dsp4=(await st('PARTNER',{action:'service_template_list'})).templates.find(x=>x.template_id===sp4.template_id);
+ await assert.rejects(()=>st('PARTNER',{action:'service_template_approve',template_id:sp4.template_id,revision:dsp4.revision}),/unless you are your firm's only Partner/);
+ await tx`update erp_private.staff_members set access_status='Inactive' where staff_id=${actors.PARTNER2.staff_id}`;
+ const soleDone=await st('PARTNER',{action:'service_template_approve',template_id:sp4.template_id,revision:dsp4.revision});assert.equal(soleDone.sole_partner_approval,true);
+ const finT=(await st('PARTNER',{action:'service_template_list'})).templates.find(x=>x.template_id===sp4.template_id);
+ assert.equal(finT.status,'Approved');assert.equal(finT.sole_partner_approval,true);assert.equal(finT.approved_by,finT.proposed_by);
+ // The database refuses the same thing when the app is bypassed.
+ await assert.rejects(()=>tx`update erp_private.service_templates set sole_partner_approval=false where template_id=${sp4.template_id}`,/./);
+
 });
