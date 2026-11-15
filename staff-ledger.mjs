@@ -2,6 +2,7 @@ import {createBankTotalsUI} from './staff-bank-totals.mjs?v=20261114-banktotals-
 import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261107-annualpack-v3';
 import {newState,splitView,filterItems,similarLines} from './staff-fixit-screen.mjs?v=20261111-fixit-v1';
 import {tbListHtml,deriveHtml} from './staff-year-tbs.mjs?v=20261116-yeartb-v1';
+import {sourceAmount,amountProblem,isControlRow,mappingConflict} from './staff-tb-source-rules.mjs?v=20261116-tbimport-v1';
 import {gateHtml,finalAvailable,declarationsHtml} from './staff-report-gate.mjs?v=20261115-declare-v1';
 // Client working papers. All reads and mutations are authorised again by the API.
 export function createLedgerUI(ctx,{onPayrollImport}={}){
@@ -398,13 +399,13 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
    ?`<p class="full muted">Opening date: ${esc(shortDate(r.period.starts_on))} (start of this financial year)</p>`
    :field('journal_date','Entry date *',r.as_of,'date','required');
   const defaultReference=isOpening?'OPEN-TB-'+String(r.period.starts_on).slice(0,4):'';
-  const previewRows=[...(x.preview||[])],previewTotal=Number(x.preview_total??previewRows.length),previewRowHtml=row=>'<tr><th>'+esc(row.source_row)+'</th>'+row.values.map(v=>'<td>'+esc(v instanceof Object?JSON.stringify(v):String(v??''))+'</td>').join('')+'</tr>',previewHtml='<div class="scroll full"><table><thead><tr><th>Source row</th>'+x.headers.map((h,i)=>'<th>'+letters(i)+' · '+esc(h||'(blank header)')+'</th>').join('')+'</tr></thead><tbody id="ledgerImportPreviewBody">'+previewRows.map(previewRowHtml).join('')+'</tbody></table></div><p id="ledgerImportPreviewCount" class="full" role="status">'+previewRows.length+' of '+previewTotal+' worksheet rows loaded.</p><button type="button" id="ledgerImportPreviewAll" class="full" '+(previewRows.length>=previewTotal?'hidden':'')+'>Load all rows before importing</button>';
+  const previewRows=[...(x.preview||[])],previewTotal=Number(x.preview_total??previewRows.length),previewRowHtml=row=>'<tr><th>'+esc(row.source_row)+'</th>'+row.values.map(v=>'<td>'+esc(v instanceof Object?JSON.stringify(v):String(v??''))+'</td>').join('')+'</tr>',previewHtml='<div class="scroll full"><table><thead><tr><th>Source row</th>'+x.headers.map((h,i)=>'<th>'+letters(i)+' · '+esc(h||'(blank header)')+'</th>').join('')+'</tr></thead><tbody id="ledgerImportPreviewBody">'+previewRows.map(previewRowHtml).join('')+'</tbody></table></div><p id="ledgerImportPreviewCount" class="full" role="status">'+previewRows.length+' of '+previewTotal+' worksheet rows loaded'+(x.row_counts?' ('+x.row_counts.candidate_account_rows+' look like account rows, '+x.row_counts.total_or_control_rows+' total or control lines, '+x.row_counts.blank_rows+' blank). Every row is shown; none is dropped because of a template size.':'.')+'</p><button type="button" id="ledgerImportPreviewAll" class="full" '+(previewRows.length>=previewTotal?'hidden':'')+'>Load all rows before importing</button>';
 
-  let openingGroups=[];
+  let openingGroups=[],hasProblems=false;
   const openingValues=new Map();
   const suggestions=new Map(),suggestAsked=new Set();
   const saveOpeningValues=()=>openingGroups.forEach((g,i)=>{const target=document.querySelector('[data-opening-target="'+i+'"]'),confirmed=document.querySelector('[data-opening-confirm="'+i+'"]');if(target&&confirmed)openingValues.set(g.key,{account_code:target.value,confirmed:confirmed.checked});});
-  const updateImportSubmit=()=>{const submit=$('#editForm')?.querySelector('button[type="submit"]');if(!submit)return;const incomplete=previewRows.length<previewTotal;const mappingsReady=!isOpening||(openingGroups.length>0&&openingGroups.every((g,i)=>{const target=document.querySelector('[data-opening-target="'+i+'"]'),confirmed=document.querySelector('[data-opening-confirm="'+i+'"]');return !g.duplicate&&!!target?.value&&!!confirmed?.checked;}));submit.disabled=incomplete||!mappingsReady;};
+  const updateImportSubmit=()=>{const submit=$('#editForm')?.querySelector('button[type="submit"]');if(!submit)return;const incomplete=previewRows.length<previewTotal;const mappingsReady=!isOpening||(openingGroups.length>0&&openingGroups.every((g,i)=>{const target=document.querySelector('[data-opening-target="'+i+'"]'),confirmed=document.querySelector('[data-opening-confirm="'+i+'"]');return !g.duplicate&&!!target?.value&&!!confirmed?.checked&&!mappingConflict(g.source_name,target.value);}));submit.disabled=incomplete||!mappingsReady||hasProblems;};
   const renderOpeningAccountMappings=()=>{
    if(!isOpening)return;
    const host=$('#openingAccountMapping');if(!host)return;
@@ -412,12 +413,18 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
    const formEl=$('#editForm'),column=k=>Number((standardOpening?autoMap[k]:formEl?.elements[k]?.value)||0),cell=(row,k)=>column(k)?row.values[column(k)-1]:null;
    if(!column('source_name')||!column('debit')||!column('credit')){host.innerHTML='<p class="info">Map the source name, debit and credit columns to build the account list.</p>';openingGroups=[];updateImportSubmit();return;}
    const normName=value=>String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
-   const num=value=>{const raw=String(value??'').replace(/[,\s]/g,'');const n=Number(raw);return Number.isFinite(n)?n:0;};
-   const isControl=value=>/^(total|subtotal|grand total|net total|balance check|difference in books)\b/i.test(String(value||'').trim());
-   const groups=new Map();
+   const groups=new Map(),report={problems:[],skipped:[],converted:[],accounts:0};
    for(const row of previewRows){
-    const name=String(cell(row,'source_name')||'').trim(),code=String(cell(row,'legacy_code')||'').trim(),debit=num(cell(row,'debit')),credit=num(cell(row,'credit'));
-    if((!name&&!code)||isControl(name)||isControl(code)||(!debit&&!credit))continue;
+    const rowNo=Number(row.source_row),name=String(cell(row,'source_name')||'').trim(),code=String(cell(row,'legacy_code')||'').trim(),rawD=cell(row,'debit'),rawC=cell(row,'credit'),gd=sourceAmount(rawD),gc=sourceAmount(rawC);
+    if(!name&&!code){if(!gd.ok||!gc.ok||gd.value||gc.value)report.skipped.push({row:rowNo,name:'(no name)',why:'No account name or code, so it cannot be an account row'});continue;}
+    if(isControlRow(name,code)){report.skipped.push({row:rowNo,name:name||code,why:'Total or control line, excluded so balances are not counted twice'});continue;}
+    if(!gd.ok)report.problems.push({row:rowNo,text:amountProblem({row:rowNo,column:column('debit'),label:'Debit',raw:rawD,problem:gd.problem})});
+    if(!gc.ok)report.problems.push({row:rowNo,text:amountProblem({row:rowNo,column:column('credit'),label:'Credit',raw:rawC,problem:gc.problem})});
+    if(!gd.ok||!gc.ok)continue;
+    const debit=gd.value,credit=gc.value;
+    if(!debit&&!credit){report.skipped.push({row:rowNo,name,why:'Nil balance (no debit or credit)'});continue;}
+    if(debit<0||credit<0){const net=debit-credit;report.converted.push({row:rowNo,name,original:(rawD==null||rawD===''?'':'Dr '+rawD)+(rawC==null||rawC===''?'':' Cr '+rawC),as:net>=0?'Debit '+kes(net):'Credit '+kes(-net)});}
+    report.accounts++;
     const key=code.toLowerCase()+'|'+normName(name),prior=groups.get(key);
     if(prior){prior.rows.push(Number(row.source_row));prior.duplicate=true;continue;}
     groups.set(key,{key,source_code:code,source_name:name,rows:[Number(row.source_row)],duplicate:false,workbook_code:String(cell(row,'tb_item_code')||'').trim()});
@@ -446,9 +453,15 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
    if(unresolved.length){unresolved.forEach(g=>suggestAsked.add(g.key));request({...payload('ledger_opening_suggest'),rows:unresolved.slice(0,600).map(g=>({key:g.key,source_code:g.source_code,source_name:g.source_name}))}).then(res=>{let found=0;for(const [k,v] of Object.entries(res?.suggestions||{})){suggestions.set(k,v);found++;}if(found&&host.isConnected){saveOpeningValues();renderOpeningAccountMappings();}}).catch(()=>{});}
    const suggestedCount=openingGroups.filter(g=>g.suggested&&!g.confirmed&&!g.low).length;
    const acceptBar=suggestedCount?'<p class="info">'+suggestedCount+' account'+(suggestedCount===1?' is':'s are')+' suggested from the template code, this firm’s approved mappings or the account name. Low-confidence suggestions are never accepted in bulk. <button type="button" class="secondary" id="acceptSuggested">Accept suggested accounts</button></p>':'';
-   host.innerHTML=acceptBar+(openingGroups.length?'<div class="scroll"><table><thead><tr><th>Source TB account</th><th>ERP account</th><th>Mapping check</th></tr></thead><tbody>'+openingGroups.map((g,i)=>'<tr><td>'+esc(g.source_code||'—')+' · '+esc(g.source_name)+'<small>Source rows '+g.rows.join(', ')+'</small></td><td><select data-opening-target="'+i+'">'+opt(accounts.map(a=>[a.code,a.code+' · '+a.name+' · '+a.category_code]),g.account_code)+'</select></td><td><small>'+esc(g.method)+'</small><label><input type="checkbox" data-opening-confirm="'+i+'"'+(g.confirmed?' checked':'')+'> I confirmed this account meaning</label>'+(g.duplicate?'<small class="error">Duplicate source rows must be corrected in the workbook.</small>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="info">No nonzero detail account rows were found. Check the source columns.</p>');
+   const li=(rows,fn)=>rows.map(fn).join('');
+   const rowReport='<div class="full" id="openingRowReport"><p><b>Rows read:</b> '+previewRows.length+' worksheet rows after the header. '+report.accounts+' account row'+(report.accounts===1?'':'s')+' will be imported, '+report.skipped.length+' skipped, '+report.converted.length+' with a bracket or minus sign converted, '+report.problems.length+' needing correction. The original values are kept with the import.</p>'
+    +(report.problems.length?'<ul class="error">'+li(report.problems,p=>'<li>'+esc(p.text)+'</li>')+'</ul>':'')
+    +(report.skipped.length?'<details><summary>'+report.skipped.length+' skipped row'+(report.skipped.length===1?'':'s')+'</summary><ul>'+li(report.skipped,k=>'<li>Row '+k.row+' · '+esc(k.name)+' — '+esc(k.why)+'</li>')+'</ul></details>':'')
+    +(report.converted.length?'<details open><summary>'+report.converted.length+' converted row'+(report.converted.length===1?'':'s')+' (check against the source)</summary><ul>'+li(report.converted,k=>'<li>Row '+k.row+' · '+esc(k.name)+' — source '+esc(k.original)+' → '+esc(k.as)+'</li>')+'</ul></details>':'')+'</div>';
+   hasProblems=report.problems.length>0;
+   host.innerHTML=rowReport+acceptBar+(openingGroups.length?'<div class="scroll"><table><thead><tr><th>Source TB account</th><th>ERP account</th><th>Mapping check</th></tr></thead><tbody>'+openingGroups.map((g,i)=>'<tr><td>'+esc(g.source_code||'—')+' · '+esc(g.source_name)+'<small>Source rows '+g.rows.join(', ')+'</small></td><td><select data-opening-target="'+i+'">'+opt(accounts.map(a=>[a.code,a.code+' · '+a.name+' · '+a.category_code]),g.account_code)+'</select></td><td><small>'+esc(g.method)+'</small><label><input type="checkbox" data-opening-confirm="'+i+'"'+(g.confirmed?' checked':'')+'> I confirmed this account meaning</label>'+(g.duplicate?'<small class="error">Duplicate source rows must be corrected in the workbook.</small>':'')+(mappingConflict(g.source_name,g.account_code)?'<small class="error" data-opening-conflict="'+i+'">'+esc(mappingConflict(g.source_name,g.account_code))+'</small>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="info">No nonzero detail account rows were found. Check the source columns.</p>');
    const acceptBtn=host.querySelector('#acceptSuggested');if(acceptBtn)acceptBtn.onclick=()=>{openingGroups.forEach((g,i)=>{if(g.suggested&&!g.confirmed&&!g.low&&!g.duplicate)openingValues.set(g.key,{account_code:g.account_code,confirmed:true});});renderOpeningAccountMappings();};
-   host.querySelectorAll('[data-opening-target]').forEach(el=>el.onchange=()=>{const i=Number(el.dataset.openingTarget),g=openingGroups[i];openingValues.set(g.key,{account_code:el.value,confirmed:false});const check=host.querySelector('[data-opening-confirm="'+i+'"]');if(check)check.checked=false;updateImportSubmit();});
+   host.querySelectorAll('[data-opening-target]').forEach(el=>el.onchange=()=>{const i=Number(el.dataset.openingTarget),g=openingGroups[i];openingValues.set(g.key,{account_code:el.value,confirmed:false});const check=host.querySelector('[data-opening-confirm="'+i+'"]');if(check)check.checked=false;saveOpeningValues();renderOpeningAccountMappings();});
    host.querySelectorAll('[data-opening-confirm]').forEach(el=>el.onchange=()=>{const i=Number(el.dataset.openingConfirm),g=openingGroups[i],target=host.querySelector('[data-opening-target="'+i+'"]');openingValues.set(g.key,{account_code:target?.value||'',confirmed:el.checked});updateImportSubmit();});
    if(!standardOpening)keys.forEach(k=>{const field=formEl?.elements[k];if(field)field.onchange=()=>{saveOpeningValues();renderOpeningAccountMappings();};});
    updateImportSubmit();
