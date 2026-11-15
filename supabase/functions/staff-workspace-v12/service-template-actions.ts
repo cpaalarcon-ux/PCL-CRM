@@ -4,10 +4,11 @@ import {assign,projectTaskGate,requireProjectSetup} from './workspace-actions.ts
 import {requireRightChart} from './legal-structure-actions.ts';
 import {loadClientTemplate} from './client-template-data.ts';
 import {planTasks,periodProblem,taskKey,lateCount,OWNER_ROLES} from './engagement-setup-rules.mjs';
+import {nextPeriod,carriedItems,dueForRollover} from './engagement-rollover-rules.mjs';
 // Service templates and engagement set-up (build 2810). The client type never selects a service: a Manager or Partner chooses the service, period,
 // scope, responsible person and reviewer, and only then are tasks made, only those whose conditions the client's confirmed profile meets.
 // The table rules are repeated in 20261115130000_client_and_service_templates.sql.
-const ACTIONS=['client_template_read','client_template_list','service_template_list','service_template_propose','service_template_approve','service_template_retire','engagement_setup_options','engagement_setup_plan','engagement_setup_apply','engagement_setup_release','engagement_setup_list'];
+const ACTIONS=['client_template_read','client_template_list','service_template_list','service_template_propose','service_template_approve','service_template_retire','engagement_setup_options','engagement_setup_plan','engagement_setup_apply','engagement_setup_release','engagement_setup_list','engagement_rollover_due','engagement_rollover_plan','engagement_rollover_apply'];
 const day=(v:any)=>v?String(v instanceof Date?v.toISOString():v).slice(0,10):'';
 const GROUPS=['Tax Compliance','Accounting and Bookkeeping','Payroll','Audit and Assurance','Advisory and Other'];
 const LEADERS=['PARTNER','MANAGER'];
@@ -164,30 +165,74 @@ export async function serviceTemplateAction(tx:any,a:any,p:any):Promise<any>{
 
  if(p.action==='engagement_setup_apply'){
   const i=readInputs(p);
-  await tx`select pg_advisory_xact_lock(hashtextextended(${i.client_id+':'+i.service_code+':'+i.period_start+':'+i.period_end+':setup'},0))`;
-  const plan=await buildPlan(tx,a,i);
-  if(plan.problems.length)fail(400,plan.problems[0]);
   if(p.confirm!==true)fail(400,'Confirm the plan before it is applied.');
-  let pid=i.project_id;
-  if(!pid){
-   // A new project goes through the same checks as any new project.
-   await requireProjectSetup(tx,i.client_id);await requireRightChart(tx,i.client_id,'creating the project for this service');
-   if(a.category_code==='PARTNER')await tx`insert into erp_private.staff_firm_access(staff_id,firm_id) values(${a.staff_id},${i.firm_id}) on conflict(staff_id,firm_id) do update set deleted_at=null`;
-   const c=(await tx`select company_name from erp_private.clients where client_id=${i.client_id}`)[0];
-   const name=defaultProjectName(c.company_name,plan.service.service_name,i.period_start);
-   pid=(await tx`insert into erp_private.projects(client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${i.client_id},${i.firm_id},${name},${i.service_code},${a.staff_id}) returning project_id`)[0].project_id;
+  return await applySetup(tx,a,i,{rolled_from:null,carried:[]});
+ }
+
+ if(p.action==='engagement_rollover_due'){
+  const rows=await tx`select e.setup_id,e.client_id,c.company_name as client_name,e.service_code,e.period_start,e.period_end,e.status,e.project_id,t.name as template_name,t.template_code
+   from erp_private.engagement_setups e join erp_private.clients c on c.client_id=e.client_id join erp_private.service_templates t on t.template_id=e.template_id
+   where c.deleted_at is null order by e.period_end desc limit 1000`;
+  const due=dueForRollover(rows.map((r:any)=>({...r,period_start:day(r.period_start),period_end:day(r.period_end)})),nairobiDate(),Number(p.look_ahead_days)>=0?Math.min(31,Number(p.look_ahead_days)):7);
+  return {due:due.slice(0,200),note:'Only released set-ups with no later period appear. Rolling forward never copies a completion or a sign-off.'};
+ }
+ if(p.action==='engagement_rollover_plan'||p.action==='engagement_rollover_apply'){
+  const prev=(await tx`select * from erp_private.engagement_setups where setup_id=${uuid(p.from_setup_id)}`)[0];if(!prev)fail(403,'This set-up is unavailable to your account.');
+  const i=await rolloverInputs(tx,prev);
+  if(p.action==='engagement_rollover_plan'){
+   const plan=await buildPlan(tx,a,i.inputs);plan.problems.push(...i.problems);
+   return {ok:plan.problems.length===0,plan:{...strip(plan),next:{period_start:i.inputs.period_start,period_end:i.inputs.period_end},carried:i.carried,kept_exclusions:i.inputs.exclusions,from_setup_id:prev.setup_id}};
   }
-  await assign(tx,pid,i.firm_id,a.staff_id);await assign(tx,pid,i.firm_id,i.responsible);await assign(tx,pid,i.firm_id,i.reviewer);
-  const setup=(await tx`insert into erp_private.engagement_setups(client_id,project_id,template_id,service_code,period_start,period_end,scope,responsible_staff,reviewer_staff,client_template_code,exclusions,applied_by)
-   values(${i.client_id},${pid},${i.template_id},${i.service_code},${i.period_start},${i.period_end},${i.scope},${i.responsible},${i.reviewer},${plan.client.template_code},${tx.json(i.exclusions)},${a.staff_id}) returning setup_id`)[0];
-  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'engagement_setups','ENGAGEMENT_SETUP_APPLIED',${setup.setup_id},${tx.json({client_id:i.client_id,project_id:pid,template:plan.template.template_code,version:plan.template.version,service_code:i.service_code,period_start:i.period_start,period_end:i.period_end,planned:plan.create.length,skipped:plan.skipped.length})})`;
-  const released=await release(tx,a,setup.setup_id);
-  return {ok:true,setup_id:setup.setup_id,project_id:pid,...released};
+  if(p.confirm!==true)fail(400,'Confirm the plan before it is applied.');
+  if(i.problems.length)fail(400,i.problems[0]);
+  return await applySetup(tx,a,i.inputs,{rolled_from:prev.setup_id,carried:i.carried});
  }
 
  // engagement_setup_release
  const s=(await tx`select setup_id from erp_private.engagement_setups where setup_id=${uuid(p.setup_id)}`)[0];if(!s)fail(403,'This set-up is unavailable to your account.');
  return {ok:true,...await release(tx,a,s.setup_id)};
+}
+
+// The one place a set-up is applied, for a fresh set-up and for a roll-forward alike.
+async function applySetup(tx:any,a:any,i:any,extra:{rolled_from:string|null,carried:any[]}){
+ await tx`select pg_advisory_xact_lock(hashtextextended(${i.client_id+':'+i.service_code+':setup'},0))`;
+ const plan=await buildPlan(tx,a,i);
+ if(plan.problems.length)fail(400,plan.problems[0]);
+ let pid=i.project_id;
+ if(!pid){
+  // A new project goes through the same checks as any new project.
+  await requireProjectSetup(tx,i.client_id);await requireRightChart(tx,i.client_id,'creating the project for this service');
+  if(a.category_code==='PARTNER')await tx`insert into erp_private.staff_firm_access(staff_id,firm_id) values(${a.staff_id},${i.firm_id}) on conflict(staff_id,firm_id) do update set deleted_at=null`;
+  const c=(await tx`select company_name from erp_private.clients where client_id=${i.client_id}`)[0];
+  const name=defaultProjectName(c.company_name,plan.service.service_name,i.period_start);
+  pid=(await tx`insert into erp_private.projects(client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${i.client_id},${i.firm_id},${name},${i.service_code},${a.staff_id}) returning project_id`)[0].project_id;
+ }
+ await assign(tx,pid,i.firm_id,a.staff_id);await assign(tx,pid,i.firm_id,i.responsible);await assign(tx,pid,i.firm_id,i.reviewer);
+ const setup=(await tx`insert into erp_private.engagement_setups(client_id,project_id,template_id,service_code,period_start,period_end,scope,responsible_staff,reviewer_staff,client_template_code,exclusions,applied_by,rolled_from,carried)
+  values(${i.client_id},${pid},${i.template_id},${i.service_code},${i.period_start},${i.period_end},${i.scope},${i.responsible},${i.reviewer},${plan.client.template_code},${tx.json(i.exclusions)},${a.staff_id},${extra.rolled_from},${tx.json(extra.carried)}) returning setup_id`)[0];
+ await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'engagement_setups',${extra.rolled_from?'ENGAGEMENT_SETUP_ROLLED_FORWARD':'ENGAGEMENT_SETUP_APPLIED'},${setup.setup_id},${tx.json({client_id:i.client_id,project_id:pid,template:plan.template.template_code,version:plan.template.version,service_code:i.service_code,period_start:i.period_start,period_end:i.period_end,planned:plan.create.length,skipped:plan.skipped.length,rolled_from:extra.rolled_from,carried:extra.carried.length})})`;
+ const released=await release(tx,a,setup.setup_id);
+ return {ok:true,setup_id:setup.setup_id,project_id:pid,...released};
+}
+
+// What a roll-forward starts from. The template is the current approved version of the same template, not the old one; the dates are the next period; everything else
+// the team decided (scope, people, tasks dropped) is kept. Open items of the period just ended are listed as facts; no status, evidence or approval is copied.
+async function rolloverInputs(tx:any,prev:any){
+ const problems:string[]=[];
+ if(prev.status!=='Released')problems.push('Only a released set-up is rolled forward.');
+ const next=nextPeriod(day(prev.period_start),day(prev.period_end));if(!next)problems.push('The next period could not be worked out.');
+ const later=(await tx`select 1 from erp_private.engagement_setups where client_id=${prev.client_id} and service_code=${prev.service_code} and period_end>${prev.period_end} limit 1`)[0];
+ if(later)problems.push('A later period is already set up for this service. Roll forward from the latest one.');
+ const old=(await tx`select template_code from erp_private.service_templates where template_id=${prev.template_id}`)[0];
+ const cur=(await tx`select template_id,version from erp_private.service_templates where template_code=${old.template_code} and status='Approved'`)[0];
+ if(!cur)problems.push('The template this set-up used is no longer approved and nothing replaces it. A Partner approves a template first.');
+ const proj=(await tx`select handling_firm_id from erp_private.projects where project_id=${prev.project_id}`)[0];
+ const kept=cur?(await tx`select task_key from erp_private.service_template_tasks where template_id=${cur.template_id}`).map((r:any)=>r.task_key):[];
+ const exclusions=(prev.exclusions||[]).filter((e:any)=>kept.includes(e.task_key));
+ const open=await tx`select task_id,task_name,status,due_at,blocked_reason,deleted_at from erp_private.tasks where project_id=${prev.project_id} and period_start>=${prev.period_start} and period_end<=${prev.period_end} and (template_key like 'tpl:%' or template_key='carry') and deleted_at is null order by due_at nulls last,task_name`;
+ const carried=carriedItems(open.map((t:any)=>({...t,task_name:String(t.task_name).replace(/^Carried forward: /,''),due_at:t.due_at?new Date(t.due_at).toISOString():null}))).map((c:any)=>({...c,due_at:c.due_at?c.due_at.slice(0,10):null}));
+ const inputs={client_id:prev.client_id,firm_id:proj?.handling_firm_id,template_id:cur?.template_id||prev.template_id,service_code:prev.service_code,period_start:next?.start||day(prev.period_end),period_end:next?.end||day(prev.period_end),scope:prev.scope,responsible:prev.responsible_staff,reviewer:prev.reviewer_staff,exclusions,project_id:prev.project_id};
+ return {inputs,problems,carried,template_changed:!!cur&&cur.template_id!==prev.template_id};
 }
 
 // Creates the tasks of a waiting set-up once the project may take them. The conditions are checked again now, so a profile verified later is honoured and nothing stale is used.
@@ -210,7 +255,16 @@ async function release(tx:any,a:any,setupId:string){
    on conflict(project_id,recurring_key) do nothing returning task_id`;
   made+=rows.length;
  }
- await tx`update erp_private.engagement_setups set status='Released',released_by=${a.staff_id},released_at=now(),tasks_created=${made},skipped=${tx.json(plan.skipped)} where setup_id=${setupId}`;
- await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'engagement_setups','ENGAGEMENT_SETUP_RELEASED',${setupId},${tx.json({project_id:e.project_id,tasks_created:made,skipped:plan.skipped.length})})`;
- return {released:true,tasks_created:made,skipped:plan.skipped};
+ // Items still open from the period before come across as new Pending tasks with a fresh date; nothing about their old status, evidence or approval is copied.
+ let carriedMade=0;
+ for(const c of (Array.isArray(e.carried)?e.carried:[])){
+  const due=new Date(Date.parse(day(e.period_start)+'T00:00:00Z')+7*86400000).toISOString().slice(0,10);
+  const note='Carried forward from the previous period (it was '+String(c.was).toLowerCase()+(c.blocked_reason?': '+String(c.blocked_reason).slice(0,200):'')+'). Check it again; nothing from the old task counts as done.';
+  const rows=await tx`insert into erp_private.tasks(project_id,assigned_to,task_name,description,due_at,recurring_key,requires_document,period_start,period_end,template_key)
+   values(${e.project_id},${e.responsible_staff},${'Carried forward: '+String(c.task_name).slice(0,150)},${note},${due+'T17:00:00+03:00'},${'carry:'+setupId+':'+c.task_id},false,${e.period_start},${e.period_end},'carry') on conflict(project_id,recurring_key) do nothing returning task_id`;
+  carriedMade+=rows.length;
+ }
+ await tx`update erp_private.engagement_setups set status='Released',released_by=${a.staff_id},released_at=now(),tasks_created=${made+carriedMade},skipped=${tx.json(plan.skipped)} where setup_id=${setupId}`;
+ await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'engagement_setups','ENGAGEMENT_SETUP_RELEASED',${setupId},${tx.json({project_id:e.project_id,tasks_created:made,carried:carriedMade,skipped:plan.skipped.length})})`;
+ return {released:true,tasks_created:made+carriedMade,carried_created:carriedMade,skipped:plan.skipped};
 }

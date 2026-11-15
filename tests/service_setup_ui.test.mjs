@@ -12,8 +12,13 @@ test('the client-type block names the type, lists evidence, people and licences,
 });
 test('only reviewers see the Service templates button; the screens are wired with versioned imports',()=>{
  assert.match(mk('MANAGER').button(),/data-svc="templates"/);assert.equal(mk('ASSISTANT').button(),'');assert.equal(mk('INTERN').button(),'');
- assert.match(rd('staff-improvements.mjs'),/staff-service-setup\.mjs\?v=20261115-types-v1/);assert.match(rd('staff-improvements.mjs'),/Set up a service/);assert.match(rd('staff-improvements.mjs'),/templateBlock/);
+ assert.match(rd('staff-improvements.mjs'),/staff-service-setup\.mjs\?v=20261115-types-v2/);assert.match(rd('staff-improvements.mjs'),/Set up a service/);assert.match(rd('staff-improvements.mjs'),/templateBlock/);
  assert.match(rd('staff-client-master.mjs'),/templateBlock/);assert.match(rd('staff-workspace-v6.mjs'),/data-svc="templates"/);
  const src=rd('staff-service-setup.mjs');assert.match(src,/engagement_setup_plan/);assert.match(src,/engagement_setup_apply/);assert.match(src,/confirm:true/);assert.match(src,/service_template_approve/);
  assert.match(src,/does not select|never selects|Choose the service yourself|selects a service/);
+});
+
+test('roll forward: the screen lists open items, says nothing is copied, and asks for confirmation',async()=>{
+ const src=rd('staff-service-setup.mjs');assert.match(src,/engagement_rollover_plan/);assert.match(src,/engagement_rollover_apply/);assert.match(src,/engagement_rollover_due/);assert.match(src,/Nothing they showed as done, reviewed or approved is copied/);assert.match(src,/confirm:true/);
+ assert.match(mk('MANAGER').button(),/data-svc="due"/);assert.equal(mk('ASSISTANT').button(),'');
 });
