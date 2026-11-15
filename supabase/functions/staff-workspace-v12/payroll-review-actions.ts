@@ -2,6 +2,7 @@ import {fail,text,uuid,revision} from './validation.mjs';
 import {reviewSummary,approvalNote,reopenNote} from './payroll-review-rules.mjs';
 import {monthBounds,previousMonth} from './payroll-register-rules.mjs';
 import {confirmPeriodImport} from './period-import-actions.ts';
+import {payrollConfirmationGate} from './payroll-confirmation-actions.ts';
 
 // The supervisor's one-screen review of a payroll month (build 2805): totals, changes, exceptions, mapping, journal balance and register comparison together.
 // A clean run is approved in one step. A run with anything to decide is not: the usual review (confirm with a note, or return) stays. A submitted month that the
@@ -29,7 +30,7 @@ export async function payrollReviewAction(tx:any,a:any,p:any):Promise<any>{
  const r=one(p.action==='payroll_review_summary'
   ?await tx`select * from erp_private.period_imports where import_id=${iid} and project_id=${pid} and kind='Payroll'`
   :await tx`select * from erp_private.period_imports where import_id=${iid} and project_id=${pid} and kind='Payroll' for update`);
- if(p.action==='payroll_review_summary')return {import_id:r.import_id,status:r.status,revision:String(r.revision),can_review:r.status==='Submitted'&&isReviewer(a)&&r.prepared_by!==a.staff_id,...(await gather(tx,project,r))};
+ if(p.action==='payroll_review_summary')return {import_id:r.import_id,status:r.status,revision:String(r.revision),can_review:r.status==='Submitted'&&isReviewer(a)&&r.prepared_by!==a.staff_id,client_confirmation:(({state,message,blocks})=>({state,message,blocks}))(await payrollConfirmationGate(tx,project,r)),...(await gather(tx,project,r))};
  if(project.status==='Archived')fail(400,'Archived projects retain read-only accounting history.');
  if(r.status!=='Submitted')fail(409,'Only a submitted payroll can be reviewed.');
  if(!isReviewer(a)||r.prepared_by===a.staff_id)fail(403,'A different Supervisor, Manager or Partner must review this payroll.');

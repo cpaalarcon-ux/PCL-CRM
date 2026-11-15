@@ -1,6 +1,7 @@
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {assertSupportedPeriod} from './supported-period.ts';
 import {readSourceSheet} from './source-reader.mjs';
+import {payrollConfirmationGate} from './payroll-confirmation-actions.ts';
 import {detectImportProfile,salesTotals,payrollRows,rateKeys} from './import-profiles.mjs';
 import {recordedCreditBasis,creditBasisIssue} from './legacy-sales-lock.ts';
 import {bankDepositCheck} from './sales-bank-check.mjs';
@@ -280,6 +281,8 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
  }
  if(p.action==='period_import_submit'){
   if(r.prepared_by!==a.staff_id||!['Draft','Returned'].includes(r.status))fail(403,'The preparer must submit this draft.');
+  // Once a client confirmation report has been issued for a payroll run, the run goes for review only when the client has confirmed the figures as they now stand.
+  const gate=await payrollConfirmationGate(tx,project,r);if(gate.blocks)fail(409,'Client confirmation is not complete. '+gate.message);
   await tx`update erp_private.period_imports set status='Submitted' where import_id=${r.import_id}`;return {ok:true};
  }
  if(p.action==='period_import_review'){
