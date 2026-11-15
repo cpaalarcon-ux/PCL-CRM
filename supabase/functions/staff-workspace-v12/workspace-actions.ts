@@ -4,7 +4,7 @@ import {obligationWorkIssue} from './tax-registry.mjs';
 import {requireRightChart} from './legal-structure-actions.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'This record is not available to your account.');return r[0];};
 const editor=(a:any)=>{if(!projectEditor(a))fail(403,'A Partner, Manager or Supervisor must manage this project.');};
-async function requireProjectSetup(tx:any,cid:string){
+export async function requireProjectSetup(tx:any,cid:string){
  const c=one(await tx`select legal_entity_type,entity_evidence,year_end_month,year_end_day from erp_private.clients where client_id=${cid} and deleted_at is null`);
  if(!c.legal_entity_type||String(c.entity_evidence||'').trim().length<10||!c.year_end_month||!c.year_end_day)fail(400,'Complete Clients → Entity / activities: confirm legal entity, supporting source and financial year-end before creating project work.');
 }
