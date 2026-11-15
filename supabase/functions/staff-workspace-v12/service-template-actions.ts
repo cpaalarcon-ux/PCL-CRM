@@ -3,6 +3,7 @@ import {defaultProjectName,nairobiDate} from './workspace-rules.mjs';
 import {assign,projectTaskGate,requireProjectSetup} from './workspace-actions.ts';
 import {requireRightChart} from './legal-structure-actions.ts';
 import {loadClientTemplate} from './client-template-data.ts';
+import {allowedObligations} from './obligation-check-actions.ts';
 import {planTasks,periodProblem,taskKey,lateCount,OWNER_ROLES} from './engagement-setup-rules.mjs';
 import {nextPeriod,carriedItems,dueForRollover} from './engagement-rollover-rules.mjs';
 // Service templates and engagement set-up (build 2810). The client type never selects a service: a Manager or Partner chooses the service, period,
@@ -21,9 +22,11 @@ async function templateWithItems(tx:any,id:string){
  return {...t,tasks,services};
 }
 async function profileFacts(tx:any,a:any,cid:string,start:string,end:string,clientTemplate:string|null){
- // Only a verified tax profile counts, and only for registrations it covers within the period. A draft profile confirms nothing.
- const profiles=await tx`select obligations from erp_private.client_tax_profiles where client_id=${cid} and status='Verified' and deleted_at is null and effective_from<=${end} and effective_to>=${start}`;
- const obligations=new Set<string>();for(const p of profiles)for(const o of p.obligations||[])obligations.add(o);
+ // Build 2814: an obligation counts only when it is Confirmed on a verified profile for the whole period (registered, applicable, dated, evidenced) or covered by an approved exception.
+ const obligations=await allowedObligations(tx,cid,start,end);
+ // Payroll and Income Tax are not filing obligations on the schedule; they stay as the verified profile lists them.
+ const listed=await tx`select obligations from erp_private.client_tax_profiles where client_id=${cid} and status='Verified' and deleted_at is null and effective_from<=${end} and effective_to>=${start}`;
+ for(const p of listed)for(const o of p.obligations||[])if(o==='Payroll'||o==='Income Tax')obligations.add(o);
  let licences=new Set<string>();
  // Licences are kept by Managers and Partners; for anyone else they cannot be read here, so a task that needs one is not created.
  if(['PARTNER','MANAGER'].includes(a.category_code)){const rows=await tx`select licence_type from erp_private.client_licences where client_id=${cid} and ended_on is null and expires_on>=${start}`;licences=new Set(rows.map((r:any)=>r.licence_type));}
