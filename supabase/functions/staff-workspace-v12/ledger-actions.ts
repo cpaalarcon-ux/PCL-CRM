@@ -20,6 +20,7 @@ import {debtorsRead,receiptAction} from './debtors.ts';
 import {payablesReport,supplierAction} from './payables.ts';
 import {bankRegister,bankAccountAction} from './bank-accounts.ts';
 import {bankLineAction} from './bank-lines.ts';
+import {yearTbAction} from './year-tb-actions.ts';
 import {statementMapAction,reportingRead,reportingSave,packReadinessFrom,statementsFrom,comparativesRead,comparativesSave,comparativesReview} from './annual-pack.ts';
 import {stockRollsRead,stockJournalPlan} from './stock-journal.ts';
 import {money} from './accounting-rules.mjs';
@@ -365,6 +366,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(p.action==='ledger_read')return {...await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)),rates};
  if(p.action==='ledger_reporting_read')return await reportingRead(tx,l);
  if(p.action==='ledger_reporting_save')return await reportingSave(tx,a,l,p);
+ {const yt=await yearTbAction(tx,a,l,p);if(yt!==undefined)return yt;}
  if(p.action==='ledger_comparatives_save')return await comparativesSave(tx,a,l,p);
  if(p.action==='ledger_comparatives_read')return await comparativesRead(tx,a,l,await report(tx,l,day(l.ends_on)));
  if(p.action==='ledger_comparatives_review')return await comparativesReview(tx,a,l,p,await report(tx,l,day(l.ends_on)));

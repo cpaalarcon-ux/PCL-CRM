@@ -31,7 +31,7 @@ const profitOf=(by,lineDefs)=>lineDefs.filter(d=>d.statement==='Profit or loss'&
 
 // ---------------------------------------------------------------- changes in equity
 const MOVE_ROWS=[['OPENING','Balance at the start of the year'],['PROFIT','Profit for the year'],['DIVIDENDS_DRAWINGS','Dividends or drawings'],['CAPITAL','Capital introduced or repaid'],['OTHER','Other movements'],['CLOSING','Balance at the end of the year']];
-function classify(code,movement){
+export function classify(code,movement){
  if(code==='SFP.DRAWINGS')return 'DIVIDENDS_DRAWINGS';
  if(CAPITAL_LINES.has(code))return 'CAPITAL';
  if(code==='SFP.RETAINED')return movement<0?'DIVIDENDS_DRAWINGS':'OTHER';
