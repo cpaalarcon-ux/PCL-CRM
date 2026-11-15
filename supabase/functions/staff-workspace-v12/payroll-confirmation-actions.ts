@@ -1,3 +1,4 @@
+import {logPayrollRead} from './payroll-access-log.ts';
 import {fail,text,uuid,date,choice,revision} from './validation.mjs';
 import {confirmationSnapshot,digestInput,confirmationState,answerIssues,CONFIRM_DECISIONS} from './payroll-confirmation-rules.mjs';
 import {confirmationPdf} from './payroll-confirmation-pdf.mjs';
@@ -44,11 +45,13 @@ export async function payrollConfirmationAction(tx:any,a:any,p:any):Promise<any>
  const LEADERS=['PARTNER','MANAGER','SUPERVISOR'];
  const mayWork=r.prepared_by===a.staff_id||LEADERS.includes(a.category_code);
  if(p.action==='payroll_confirmation_read'){
+  await logPayrollRead(tx,a,{client_id:project.client_id,project_id:project.project_id,import_id:r.import_id,surface:'Client confirmation'});
   const rows=await versions(tx,r.import_id),cur=await build(tx,project,r);
   return {import_id:r.import_id,run_status:r.status,month:day(r.starts_on).slice(0,7),versions:rows.map(present),gate:{...confirmationState(rows,cur.digest),latest:undefined},current_digest:cur.digest,current_totals:cur.snapshot.totals,can_issue:mayWork&&['Draft','Returned'].includes(r.status),can_record:mayWork&&['Draft','Returned'].includes(r.status),run_editable:['Draft','Returned'].includes(r.status),documents:await tx`select document_id,file_name from erp_private.documents where project_id=${pid} and deleted_at is null and archived_at is null order by uploaded_at desc limit 200`};
  }
  if(project.status==='Archived')fail(400,'Archived projects retain read-only history.');
  if(p.action==='payroll_confirmation_pdf'){
+  await logPayrollRead(tx,a,{client_id:project.client_id,project_id:project.project_id,import_id:r.import_id,surface:'Confirmation PDF'});
   const row=one(await tx`select c.*,erp_private.staff_name(c.issued_by) as issued_by_name from erp_private.payroll_client_confirmations c where c.confirmation_id=${uuid(p.confirmation_id)} and c.import_id=${r.import_id}`);
   const firm=one(await tx`select f.legal_name,f.physical_address,f.phone,f.email,f.kra_pin from erp_private.firms f join erp_private.projects pr on pr.handling_firm_id=f.firm_id where pr.project_id=${pid}`);
   const lib=pdfLib();if(!lib)fail(500,'PDF generation is not available.');

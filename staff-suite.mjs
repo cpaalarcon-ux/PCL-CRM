@@ -15,6 +15,8 @@ import {createRoutingMapUI} from './staff-routing-map.mjs?v=20261115-copy-v1';
 import {createTemplateLibraryUI} from './staff-template-library.mjs?v=20261116-library-v1';
 import {createExportProfilesUI} from './staff-export-profiles.mjs?v=20261116-profiles-v1';
 import {createEligibilityUI} from './staff-eligibility.mjs?v=20261116-elig-v1';
+import {createToolsUI} from './staff-tools.mjs?v=20261116-tools-v1';
+import {createRolloverUI} from './staff-rollover.mjs?v=20261116-roll-v1';
 import {createTaxRolesUI} from './staff-tax-roles.mjs?v=20261112-resources-v1';
 import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
 import {createResourcesUI} from './staff-resources.mjs?v=20261114-templates-v1';
@@ -45,6 +47,8 @@ export function createSuiteUI(ctx){
  const templateLibrary=createTemplateLibraryUI({...ctx,button,area,check});
  const exportProfiles=createExportProfilesUI({...ctx,button,area,check});
  const eligibility=createEligibilityUI({...ctx,button,area,check});
+ const tools=createToolsUI({...ctx,button,area,check});
+ const rollover=createRolloverUI({...ctx,button,area,check});
  const taxRoles=createTaxRolesUI({...ctx,button,area,check});
  const dueBacklog=createDueBacklogUI({...ctx,button,area,check});
  const resources=createResourcesUI(ctx);
@@ -75,7 +79,7 @@ export function createSuiteUI(ctx){
  }
  function support(){return `<div class="section-head"><p>Raise an internal support request and track its first-response deadline. Notifications remain inside the ERP.</p>${button('ticket-new','+ New ticket')}</div>${table(['Ticket','Subject','Assigned to','Priority / response due','Status','Action'],s().tickets.map(t=>[esc('ALC-'+t.ticket_number),esc(t.subject),esc(staffName(t.assigned_to)),`${badge(t.priority)}<small>${new Date(t.sla_due_at).toLocaleString('en-GB',{timeZone:'Africa/Nairobi'})}</small>${!t.first_response_at&&new Date(t.sla_due_at)<new Date()?'<span class="missing">Response overdue</span>':''}`,badge(t.status),button('ticket','Open',t.ticket_id)]))}`;}
  function adminSettings(){return `<section class="card"><div class="section-head"><h2>System settings</h2></div><p class="muted">A System Administrator keeps the application lists and reference material up to date. You do not see or change client records, and you cannot approve anything. Tax rules, chart of accounts changes and release decisions stay with Managers and Partners.</p><div class="actions"><button type="button" data-v6="sector">+ Add sector</button>${button('references','Private reference documents')}${button('release-read','Go-live readiness (read only)')}</div></section><section class="card section-space"><h3>Sectors</h3>${(d().sectors||[]).map(x=>`<span class="badge">${esc(x.name)}</span>`).join(' ')||empty('No sectors yet.')}</section>`;}
- function settings(){if(d().me.category_code==='ADMIN')return adminSettings();return `${settingsHub.card()}${settingsCard({id:'referenceCard',title:'Reference documents & change control',purpose:'Review the consolidated Word specifications and retain each approved version inside the ERP.',audience:'Managers and Partners',actions:button('references','Open')})}${settingsCard({id:'chartCard',title:'Chart of accounts',purpose:'Attached account master, controlled additions and separate tax rules. Every staff member can search the chart under Documents, Resources.',audience:'Managers and Partners',actions:'<button type="button" data-accounting="catalog">Browse chart of accounts</button>'+button('resources-open','Resources')})}${deadlines.card()}${taxRoles.card()}${dueBacklog.card()}${taxConfig.rates()}${starterConfirm.card()}${routingMap.card()}${templateLibrary.card()}${exportProfiles.card()}${eligibility.card()}
+ function settings(){if(d().me.category_code==='ADMIN')return adminSettings();return `${settingsHub.card()}${settingsCard({id:'referenceCard',title:'Reference documents & change control',purpose:'Review the consolidated Word specifications and retain each approved version inside the ERP.',audience:'Managers and Partners',actions:button('references','Open')})}${settingsCard({id:'chartCard',title:'Chart of accounts',purpose:'Attached account master, controlled additions and separate tax rules. Every staff member can search the chart under Documents, Resources.',audience:'Managers and Partners',actions:'<button type="button" data-accounting="catalog">Browse chart of accounts</button>'+button('resources-open','Resources')})}${deadlines.card()}${taxRoles.card()}${dueBacklog.card()}${taxConfig.rates()}${starterConfirm.card()}${routingMap.card()}${templateLibrary.card()}${exportProfiles.card()}${eligibility.card()}${tools.card()}
   ${partner()?`<section class="card section-space"><div class="section-head"><h2>Staff cost & billing rates</h2>${button('staff-rate','+ Add rate period')}</div>${table(['Staff','Effective dates','Cost / hour','Billable / hour'],s().staff_rates.map(r=>[esc(staffName(r.staff_id)),`${shortDate(r.effective_from)} – ${shortDate(r.effective_to)}`,money(r.cost_rate),money(r.billable_rate)]))}</section><section class="card section-space"><div class="section-head"><h2>Handling firms</h2><button data-new="firm">+ Add firm</button></div>${table(['Firm','Registered name','Invoice prefix','Action'],d().firms.map(f=>[esc(f.firm_code),esc(f.legal_name),esc(f.invoice_prefix||'INV/'+f.firm_code),button('firm','Edit details',f.firm_id)]))}</section>`:''}`;}
  function hr(){
   const me=d().me.staff_id,open=s().attendance.find(x=>x.staff_id===me&&date(x.work_date)===today()),mine=s().leave.filter(l=>l.staff_id===me),team=leader();
@@ -208,6 +212,8 @@ export function createSuiteUI(ctx){
   if(await templateLibrary.handle(action,id))return;
   if(await exportProfiles.handle(action,id))return;
   if(await eligibility.handle(action,id))return;
+  if(await tools.handle(action,id))return;
+  if(await rollover.handle(action,id))return;
   if(await taxRoles.handle(action,id))return;
   if(await dueBacklog.handle(action,id))return;
   if(await resources.handle(action))return;
