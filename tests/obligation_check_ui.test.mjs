@@ -22,6 +22,6 @@ test('the project form mounts the panel and the server dispatches its actions',(
  const v6=read('staff-workspace-v6.mjs'),pilot=read('staff-pilot.mjs'),idx=read('supabase/functions/staff-workspace-v12/index.ts'),acc=read('supabase/functions/staff-workspace-v12/staff-access-control.mjs');
  assert.match(v6,/import \{mountObligationCheck\} from '\.\/staff-obligation-check\.mjs\?v=20261115-obligation-check-v1'/);
  assert.match(v6,/id="obligationCheck"/);assert.match(v6,/mountObligationCheck\(\$\('#obligationCheck'\)/);
- assert.match(pilot,/staff-workspace-v6\.mjs\?v=20261116-statutory-v1/);
+ assert.match(pilot,/staff-workspace-v6\.mjs\?v=20261116-profiles-v1/);
  assert.match(idx,/obligationCheckAction\(tx,a,p\)/);assert.match(acc,/\|obligation_\|/);
 });
