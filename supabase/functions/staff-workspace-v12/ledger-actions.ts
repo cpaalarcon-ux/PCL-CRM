@@ -8,6 +8,7 @@ import {suggestAccount,normaliseName} from './opening-tb-suggest.mjs';
 import {openingStructure,SECTIONS} from './opening-structure.mjs';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {digest} from './improvement-actions.ts';
+import {sourceChecks,monthsBetween,totalsTie,signOffCheck,reportGate,draftBanner} from './report-gate-rules.mjs';
 import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,notifyOutcome} from './review-queue.ts';
 import {readWorkbookSheet} from './workbook-reader.mjs';
 import {checkWorkbookZip} from './workspace-rules.mjs';
@@ -217,10 +218,14 @@ function reportWindow(l:any,kind:string,asOf:string){
  const d=new Date(ys+'T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+q);return d.toISOString().slice(0,10);
 }
 const PNL_LINES:[string,string][]=[['sales','Sales'],['cost_of_sales','Cost of sales'],['gross_profit','Gross profit'],['other_income','Other income'],['payroll','Staff costs'],['operating_expenses','Operating expenses'],['finance','Finance costs'],['depreciation','Depreciation'],['profit_before_tax','Profit before tax'],['income_tax','Income tax'],['profit_after_tax','Profit after tax']];
-async function reportWorkbook({client,l,full,snapshot}:any){
- const book=new ExcelJS.Workbook(),money='#,##0.00;(#,##0.00);-';
- const head=(sheet:any,title:string,sub:string)=>{sheet.addRow([client.company_name+' · '+title]).font={name:'Arial',size:12,bold:true};sheet.addRow([sub]).font={name:'Arial',size:9,italic:true};sheet.addRow([]);};
- const style=(sheet:any,from:number)=>{sheet.eachRow((r:any,n:number)=>{if(n<from)return;r.eachCell((c:any)=>{c.font={name:'Arial',size:9,bold:n===from};if(typeof c.value==='number')c.numFmt=money;});});sheet.columns.forEach((c:any,i:number)=>c.width=i===0?34:18);};
+async function reportWorkbook({client,l,full,snapshot,mark='FINAL',banner='',signedOff=''}:any){
+ // Build 2815: a report that has not passed every readiness check is a Draft on every sheet, in the header, and in the file name.
+ const book=new ExcelJS.Workbook(),money='#,##0.00;(#,##0.00);-',draft=mark!=='FINAL';
+ const head=(sheet:any,title:string,sub:string)=>{
+  if(draft){const b=sheet.addRow([banner||'DRAFT — NOT FOR RELEASE']);b.font={name:'Arial',size:10,bold:true,color:{argb:'FFC00000'}};sheet.properties.tabColor={argb:'FFC00000'};sheet.headerFooter.oddHeader='&C&B&K00C00000DRAFT — NOT FOR RELEASE';}
+  else if(signedOff){sheet.addRow([signedOff]).font={name:'Arial',size:9,bold:true};}
+  sheet.addRow([client.company_name+' · '+title]).font={name:'Arial',size:12,bold:true};sheet.addRow([sub]).font={name:'Arial',size:9,italic:true};sheet.addRow([]);};
+ const style=(sheet:any,from:number)=>{from+=(draft||signedOff)?1:0;sheet.eachRow((r:any,n:number)=>{if(n<from)return;r.eachCell((c:any)=>{c.font={name:'Arial',size:9,bold:n===from};if(typeof c.value==='number')c.numFmt=money;});});sheet.columns.forEach((c:any,i:number)=>c.width=i===0?34:18);};
  const cur=book.addWorksheet('Current period');head(cur,`${snapshot.report_kind} ${snapshot.starts_on} to ${snapshot.as_of}`,`${reportPeriodLine(snapshot.starts_on,snapshot.as_of,new Date().toLocaleDateString('en-CA',{timeZone:'Africa/Nairobi'}))} Posted entries only. Data cut-off: periods ending ${DATA_CUTOFF} onwards.`);
  cur.addRow(['Line','This report (KES)','Year to date (KES)']);for(const [k,label] of PNL_LINES)cur.addRow([label,Number(snapshot.profit[k]||0),Number(full.profit[k]||0)]);style(cur,4);
  const act=book.addWorksheet('Profit by activity');head(act,'Profit and loss by business activity',`${snapshot.starts_on} to ${snapshot.as_of}. Unallocated = income and expense lines without an activity.`);
@@ -238,7 +243,24 @@ async function reportWorkbook({client,l,full,snapshot}:any){
  for(const s of book.worksheets)s.pageSetup={paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0};
  const bytes=new Uint8Array(await book.xlsx.writeBuffer());let str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));
  const safe=String(client.company_name).replace(/[^A-Za-z0-9]+/g,'_').slice(0,60);
- return {file_name:`${safe}_${snapshot.report_kind.replace(/ /g,'_')}_${snapshot.as_of}.xlsx`,mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',base64:btoa(str)};
+ return {mark:draft?'DRAFT':'FINAL',file_name:`${safe}_${snapshot.report_kind.replace(/ /g,'_')}_${snapshot.as_of}${draft?'_DRAFT':''}.xlsx`,mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',base64:btoa(str)};
+}
+// Build 2815: the readiness gate for one report. Every check is worked out on the server from posted records; the screen only displays it.
+async function reportGateFor(tx:any,l:any,kind:string,asOf:string,pre?:any){
+ const {full,snapshot}=pre||await reportSnapshot(tx,l,kind,asOf);
+ const imports=await tx`select kind,status,starts_on,ends_on from erp_private.period_imports where project_id=${l.project_id} and kind in('Sales','Payroll') and status in('Draft','Submitted','Returned','Confirmed') and ends_on>=${day(l.starts_on)} and starts_on<=${day(l.ends_on)}`;
+ const batches=await tx`select b.dataset,b.period_start,b.period_end,count(r.row_id)::int as rows,count(r.row_id) filter(where r.route is null and r.account_code is null)::int as unmapped
+  from erp_private.workbook_batches b left join erp_private.workbook_rows r on r.batch_id=b.batch_id where b.project_id=${l.project_id} and b.archived_at is null and b.dataset in('Sales','Purchases','Bank') and b.period_end>=${day(l.starts_on)} and b.period_start<=${day(l.ends_on)} group by b.batch_id,b.dataset,b.period_start,b.period_end`;
+ const sources=sourceChecks({months:monthsBetween(snapshot.starts_on,asOf),facts:{imports,batches}});
+ const journals=full.journals||[],posted=journals.filter((j:any)=>j.status==='Posted'&&j.kind!=='Opening'),drafts=journals.filter((j:any)=>j.status!=='Posted');
+ const yearClosed=journals.some((j:any)=>j.kind==='Year close'&&j.status==='Posted');
+ const tie=totalsTie({tb:full.tb,reportedProfit:full.profit?.profit_after_tax,yearClosed});
+ const review=(await tx`select review_id,status,prepared_by,reviewed_by,reviewed_at,review_note,snapshot_digest from erp_private.ledger_report_reviews where period_id=${l.period_id} and report_kind=${kind} and as_of=${asOf} order by created_at desc limit 1`)[0]||null;
+ const digestOk=review?.status==='Approved'?(await digest(snapshot))===review.snapshot_digest:false;
+ // Problems already shown as their own check are not repeated under open exceptions.
+ const issues=(full.issues||[]).filter((x:string)=>!/not mapped to an account|await preparation or review|trial balance is not balanced/.test(x));
+ const gate=reportGate({sources,unmapped:full.unmapped,postedJournals:posted.length,draftJournals:drafts.length,tbTotals:snapshot.trial_balance_totals,reportedTotals:snapshot.profit,tie,issues,signOff:signOffCheck({review,digestOk})});
+ return {gate,review,sources:sources.rows,tie};
 }
 async function reportSnapshot(tx:any,l:any,kind:string,asOf:string){
  const starts=reportWindow(l,kind,asOf),full=await report(tx,l,asOf);
@@ -344,10 +366,18 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   if(status==='Approved'){const {snapshot}=await reportSnapshot(tx,l,r.report_kind,day(r.as_of));if(await digest(snapshot)!==r.snapshot_digest)fail(409,'The posted figures changed after this report was submitted. Return it so the preparer submits the current figures.');}
   await tx`update erp_private.ledger_report_reviews set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where review_id=${r.review_id}`;await notifyOutcome(tx,r.prepared_by,l.client_id,`${r.report_kind} report`,status,note,'outcome:report:'+r.review_id+':'+status);return {ok:true,status};
  }
+ if(p.action==='ledger_report_gate'){
+  const asOf=date(p.as_of)||day(l.ends_on),kind=choice(p.report_kind||'Year to date',['Month','Quarter','Year to date','Year end']),g=await reportGateFor(tx,l,kind,asOf);
+  return {report_kind:kind,as_of:asOf,gate:g.gate,sources:g.sources,tie:g.tie,review:g.review?{status:g.review.status,reviewed_at:g.review.reviewed_at}:null};
+ }
  if(p.action==='ledger_report_export'){
-  const asOf=date(p.as_of)||day(l.ends_on),kind=p.report_kind?choice(p.report_kind,['Month','Quarter','Year to date','Year end']):'Year to date';
-  const {full,snapshot}=await reportSnapshot(tx,l,kind,asOf),client=one(await tx`select company_name,kra_pin,legal_entity_type from erp_private.clients where client_id=${l.client_id}`);
-  return await reportWorkbook({client,l,full,snapshot});
+  const asOf=date(p.as_of)||day(l.ends_on),kind=p.report_kind?choice(p.report_kind,['Month','Quarter','Year to date','Year end']):'Year to date',final=p.final===true;
+  const pre=await reportSnapshot(tx,l,kind,asOf),{full,snapshot}=pre,client=one(await tx`select company_name,kra_pin,legal_entity_type from erp_private.clients where client_id=${l.client_id}`);
+  const g=await reportGateFor(tx,l,kind,asOf,pre);
+  // The final export is refused unless every check passes; a draft preview is always available and says so.
+  if(final&&!g.gate.ready)fail(400,'The final report is blocked. '+g.gate.checks.filter((c:any)=>!c.ok).map((c:any)=>`${c.label}: ${c.detail}`).join(' ')+' Download the draft preview instead.');
+  let signedOff='';if(final&&g.review){const who=(await tx`select erp_private.reviewer_label(${g.review.reviewed_by}) n`)[0]?.n;signedOff=`FINAL — signed off by ${who||'the reviewer'} on ${String(g.review.reviewed_at).slice(0,10)}`;}
+  return {...await reportWorkbook({client,l,full,snapshot,mark:g.gate.ready&&final?'FINAL':'DRAFT',banner:draftBanner(g.gate)||(final?'':'DRAFT PREVIEW — every check has passed; request the final export to release it.'),signedOff}),gate:g.gate};
  }
  if(p.action==='ledger_account_read'){
   const code=text(p.account_code,5),to=p.as_of?date(p.as_of):day(l.ends_on);if(to<day(l.starts_on)||to>day(l.ends_on))fail(400,'Choose an as-of date inside this financial year.');return {lines:await tx`select x.*,j.reference,j.kind,j.journal_date,j.status,j.reviewed_by from erp_private.ledger_lines x join erp_private.ledger_journals j using(journal_id) where j.period_id=${l.period_id} and x.account_code=${code} and j.status='Posted' and j.journal_date<=${to} order by j.journal_date,j.reference,x.line_no limit 2001`};
