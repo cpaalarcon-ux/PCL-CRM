@@ -16,6 +16,14 @@ export const FIELDS=[
  {key:'contact_phone',label:'Contact phone',entities:null,check:v=>/^\+?\d{9,13}$/.test(v.replace(/[\s-]/g,'')),hint:'Digits only, 9 to 13.'},
  {key:'contact_email',label:'Contact email',entities:null,check:v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),hint:'name@example.com'},
  {key:'year_end',label:'Financial year end',entities:null,check:v=>/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v),hint:'MM-DD, for example 12-31.'},
+ // Facts asked for by the client-type templates (build 2810). entities:[] means the older entity-type list never asks for them; only a template does.
+ {key:'business_name',label:'Business name',entities:[],check:v=>v.length>=2,hint:'The registered business name, if the business trades under one.'},
+ {key:'business_details',label:'Business details',entities:[],check:v=>v.length>=5,hint:'What the business does and where.'},
+ {key:'authority_basis',label:'Authority to act',entities:[],check:v=>v.length>=5,hint:'Who may sign for the client and on what authority (deed clause, resolution or letter of authority).'},
+ {key:'registration_category',label:'Registration category',entities:[],check:v=>v.length>=2,hint:'For example NGO, CBO, PBO, trust or society, as registered.'},
+ {key:'funder_regulatory_details',label:'Funder or regulatory details',entities:[],check:v=>v.length>=3,hint:'Main funders, or the regulator the entity reports to.'},
+ {key:'regulator',label:'Regulator',entities:[],check:v=>v.length>=2,hint:'The authority that registers or supervises this entity.'},
+ {key:'regulator_registration_number',label:'Regulator registration or licence number',entities:[],check:v=>v.length>=2,hint:'As issued by the regulator.'},
 ];
 export const fieldFor=key=>FIELDS.find(f=>f.key===key)||null;
 export const requiredFor=entityType=>FIELDS.filter(f=>!f.entities||f.entities.includes(entityType));
@@ -40,10 +48,11 @@ export const canVerify=(fact,me)=>!!fact&&!!me&&fact.status==='Recorded'&&['PART
 export const canRecord=me=>!!me&&!['INTERN','ADMIN'].includes(me.category_code);
 
 // One row per required fact, plus any extra live fact. master: values already on the client record, for the comparison.
-export function readiness({entityType,facts,master}){
+// required: optional list of field definitions (from a client-type template). Without it the older entity-type list applies.
+export function readiness({entityType,facts,master,required:requiredFields,templateKnown,unknownIssue}){
  const live=new Map((facts||[]).filter(f=>f.status!=='Superseded').map(f=>[f.field_key,f]));
  const rows=[],exceptions=[];
- for(const f of requiredFor(entityType)){
+ for(const f of (requiredFields||requiredFor(entityType))){
   const fact=live.get(f.key)||null;let state='Missing',issue=null;
   if(fact){
    state=fact.status;
@@ -60,8 +69,8 @@ export function readiness({entityType,facts,master}){
  for(const [k,fact] of live){if(rows.some(r=>r.key===k))continue;const f=fieldFor(k);if(!f)continue;
   rows.push({key:k,label:f.label,hint:f.hint,state:fact.status,extra:true,issue:fact.status==='Recorded'?'Not required for this entity type. Kept for reference.':null,fact:{fact_id:fact.fact_id,value:fact.value,source_kind:fact.source_kind,document_id:fact.document_id,source_reference:fact.source_reference,status:fact.status,recorded_by:fact.recorded_by,recorded_at:fact.recorded_at,verified_by:fact.verified_by,verified_at:fact.verified_at,revision:fact.revision}});}
  // Without a legal entity type the entity-specific facts are unknown, so the client cannot be called ready.
- const known=!!entityType;
- if(!known)exceptions.unshift({key:'legal_entity_type',label:'Legal entity type',state:'Missing',issue:'Set the legal structure first; it decides which other facts are required.'});
+ const known=templateKnown!==undefined?!!templateKnown:!!entityType;
+ if(!known)exceptions.unshift({key:'legal_entity_type',label:'Legal entity type',state:'Missing',issue:unknownIssue||'Set the legal structure first; it decides which other facts are required.'});
  return {rows,exceptions,required,verified,ready:known&&required>0&&verified===required,percent:required?Math.round(verified*100/required):0};
 }
 // Elapsed time between two moments, in whole minutes. This is elapsed time, not effort: it includes waiting for the client and for the verifier.

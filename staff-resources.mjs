@@ -9,6 +9,7 @@ export const TEMPLATES=[
  {area:'Purchases',file:'/templates/Purchases_Monthly_Four_Sheet_Template.xlsx',label:'Purchases, monthly four-sheet layout',about:'The firm\'s own layout: General, Other, Zero and Exempt sheets with net amounts. Read as it is.'},
  {area:'Purchases',file:'/templates/Non_eTIMS_Manual_Template.xlsx',label:'Non-eTIMS expenditure (D09)',about:'Supported exceptions only, each with a legal basis and evidence.'},
  {area:'Payroll',file:'/templates/Payroll_Monthly_Template.xlsx',label:'Monthly payroll',about:'One row per employee. PAYE and statutory amounts are calculated by the ERP; source figures are kept for comparison.'},
+ {area:'Payroll',file:'/templates/Payroll_Routing_Map_Template.xlsx',label:'Payroll routing map',about:'Which of the client\'s accounts each payroll code posts to. Accounts stay blank until a Manager proposes them and a different Partner approves.'},
  {area:'Bank',file:'/templates/Bank_Statement_Template.xlsx',label:'Bank statement',about:'Date, reference, description, debit, credit and balance. Columns are mapped on screen.'},
  {area:'Bank',file:'/templates/Bank_Monthly_Totals_Workbook.xlsx',label:'Five-bank monthly totals and adjustments',about:'Statement credits, bank charges and finance costs by bank and month, with non-trade credits, bounced cheques and receipt corrections.'},
  {area:'Clients',file:'/templates/Client_Import_Template.xlsx',label:'Client import',about:'Many clients at once: details, KYC, contacts, owners, branches, obligations and engagements.'}
