@@ -60,6 +60,8 @@ setPdfLib(PDFLib);
  await assert.rejects(()=>cf('ASSISTANT',{action:'payroll_confirmation_record',import_id:sep.import_id,confirmation_id:v1.confirmation_id,decision:'Confirmed',responder_name:'Grace Achieng',responded_on:'2026-10-03',note:'Email 3 Oct from the finance manager'}),/replaced by a newer one/);
  await cf('ASSISTANT',{action:'payroll_confirmation_record',import_id:sep.import_id,confirmation_id:v2.confirmation_id,decision:'Confirmed',responder_name:'Grace Achieng',responded_on:'2026-10-03',evidence_document_id:D});
  const done=await cf('ASSISTANT',{action:'payroll_confirmation_read',import_id:sep.import_id});assert.equal(done.gate.state,'Confirmed');assert.equal(done.versions[0].evidence_file_name,'Fictional.xlsx');assert.equal(done.versions[0].recorded_by_name.length>0,true);
+ // Another colleague sees every version and the names (a join on staff records would hide rows written by someone else).
+ {const sv=await cf('SUPERVISOR',{action:'payroll_confirmation_read',import_id:sep.import_id});assert.equal(sv.versions.length,2);assert.ok(sv.versions.every(x=>x.issued_by_name),'issuer name shown to a colleague');}
  // A change after the client confirmed makes the confirmation out of date. The database also refuses editing an issued version.
  await edit([emp('Wanjiru','1',110000),emp('Kamau','3',66000)],[calc(110000,23000,2160,3025,1650),calc(66000,9500,2160,1900,990)]);
  assert.equal((await cf('ASSISTANT',{action:'payroll_confirmation_read',import_id:sep.import_id})).gate.state,'Out of date');

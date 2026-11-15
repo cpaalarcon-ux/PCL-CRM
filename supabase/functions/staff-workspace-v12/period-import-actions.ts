@@ -1,6 +1,7 @@
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {assertSupportedPeriod} from './supported-period.ts';
 import {readSourceSheet} from './source-reader.mjs';
+import {templateInForce} from './template-library-actions.ts';
 import {payrollConfirmationGate} from './payroll-confirmation-actions.ts';
 import {detectImportProfile,salesTotals,payrollRows,rateKeys} from './import-profiles.mjs';
 import {recordedCreditBasis,creditBasisIssue} from './legacy-sales-lock.ts';
@@ -259,7 +260,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   const amendments=confirmedIds.length?await tx`select amendment_id,import_id,status,outcome from erp_private.import_amendments where import_id=any(${tx.array(confirmedIds)}::uuid[]) and status in ('Ready','Replacement saved')`:[];
   for(const cid of confirmedIds){const am=amendments.find((m:any)=>m.import_id===cid&&m.status==='Ready'&&m.outcome==='Replace');if(!am)fail(409,'A confirmed summary can only be replaced after an approved amendment. Open the confirmed summary and choose “Amend this period”.');}
   const activityId=await importActivity(tx,project.client_id,x.starts_on,x.ends_on,p.activity_id,x.kind);
-  const saved=one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,entry_mode,kind,source_type,coverage_mode,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,activity_id,notes) values(${pid},${project.client_id},${x.document_id},${x.entry_mode},${x.kind},${x.source_type},${x.coverage_mode},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${activityId},${text(p.notes||'',4000,false)}) returning import_id`);
+  const saved=one(await tx`insert into erp_private.period_imports(project_id,client_id,document_id,entry_mode,kind,source_type,coverage_mode,starts_on,ends_on,payload,source_hash,source_members,replaces_ids,prepared_by,activity_id,notes,template_id) values(${pid},${project.client_id},${x.document_id},${x.entry_mode},${x.kind},${x.source_type},${x.coverage_mode},${x.starts_on},${x.ends_on},${tx.json(x.payload)},${x.source_hash},${tx.json(x.source_members)},${tx.array(ids)}::uuid[],${a.staff_id},${activityId},${text(p.notes||'',4000,false)},${await templateInForce(tx,x.kind==='Sales'?'SALES':x.kind==='Payroll'?'PAYROLL':null,x.starts_on)}) returning import_id`);
   for(const am of amendments.filter((m:any)=>m.status==='Ready'))await tx`update erp_private.import_amendments set status='Replacement saved',replacement_import_id=${saved.import_id} where amendment_id=${am.amendment_id} and status='Ready'`;
   return saved;
  }

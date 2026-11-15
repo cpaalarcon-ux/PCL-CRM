@@ -25,7 +25,7 @@ async function build(tx:any,project:any,r:any){
 }
 const present=(x:any)=>({confirmation_id:x.confirmation_id,version:x.version,status:x.status,digest:x.digest,issued_at:x.issued_at,issued_by_name:x.issued_by_name,responder_name:x.responder_name,responded_on:x.responded_on?day(x.responded_on):null,response_note:x.response_note,evidence_document_id:x.evidence_document_id,evidence_file_name:x.evidence_file_name||null,recorded_by_name:x.recorded_by_name,recorded_at:x.recorded_at,totals:x.snapshot?.totals,revision:String(x.revision)});
 async function versions(tx:any,importId:string){
- return await tx`select c.*,ib.full_name as issued_by_name,rb.full_name as recorded_by_name,d.file_name as evidence_file_name from erp_private.payroll_client_confirmations c join erp_private.staff_members ib on ib.staff_id=c.issued_by left join erp_private.staff_members rb on rb.staff_id=c.recorded_by left join erp_private.documents d on d.document_id=c.evidence_document_id where c.import_id=${importId} order by c.version desc`;
+ return await tx`select c.*,erp_private.staff_name(c.issued_by) as issued_by_name,erp_private.staff_name(c.recorded_by) as recorded_by_name,d.file_name as evidence_file_name from erp_private.payroll_client_confirmations c left join erp_private.documents d on d.document_id=c.evidence_document_id where c.import_id=${importId} order by c.version desc`;
 }
 // Used by the submit step and the review summary: does this run still match what the client confirmed?
 export async function payrollConfirmationGate(tx:any,project:any,r:any){
@@ -49,7 +49,7 @@ export async function payrollConfirmationAction(tx:any,a:any,p:any):Promise<any>
  }
  if(project.status==='Archived')fail(400,'Archived projects retain read-only history.');
  if(p.action==='payroll_confirmation_pdf'){
-  const row=one(await tx`select c.*,ib.full_name as issued_by_name from erp_private.payroll_client_confirmations c join erp_private.staff_members ib on ib.staff_id=c.issued_by where c.confirmation_id=${uuid(p.confirmation_id)} and c.import_id=${r.import_id}`);
+  const row=one(await tx`select c.*,erp_private.staff_name(c.issued_by) as issued_by_name from erp_private.payroll_client_confirmations c where c.confirmation_id=${uuid(p.confirmation_id)} and c.import_id=${r.import_id}`);
   const firm=one(await tx`select f.legal_name,f.physical_address,f.phone,f.email,f.kra_pin from erp_private.firms f join erp_private.projects pr on pr.handling_firm_id=f.firm_id where pr.project_id=${pid}`);
   const lib=pdfLib();if(!lib)fail(500,'PDF generation is not available.');
   const issuedAt=new Date(row.issued_at);
