@@ -9,7 +9,8 @@ export function reviewView(r,esc=e0){
  const c=r.changes||{},d=r.drift||{};
  const verdict=r.clean?'<p><span class="badge good">Clean run</span> Nothing needs a decision. It can be approved in one step.</p>':`<div class="info full error"><b>Not a clean run. Needs the usual review.</b>${li(r.blockers||[],x=>esc(x))}</div>`;
  const lines=(r.journal?.lines||[]).map(l=>`<tr><td>${esc(l.account_code)}</td><td>${esc(l.description)}</td><td class="num">${l.debit?kes(l.debit):''}</td><td class="num">${l.credit?kes(l.credit):''}</td></tr>`).join('');
- return `<p class="info full">${esc(REVIEW_NOTE)}</p>${verdict}<h4>${esc(r.month||'')} · ${esc(r.employees||0)} employees</h4>`+
+ const cc=r.client_confirmation,ccLine=cc?`<p>Client confirmation: <span class="badge ${cc.state==='Confirmed'?'good':'warn'}">${esc(cc.state)}</span> ${esc(cc.message||'')}</p>`:'';
+ return `<p class="info full">${esc(REVIEW_NOTE)}</p>${verdict}${ccLine}<h4>${esc(r.month||'')} · ${esc(r.employees||0)} employees</h4>`+
   `<table><tbody><tr><td>Gross pay</td><td class="num">${kes(r.totals?.gross)}</td></tr><tr><td>Deductions</td><td class="num">${kes(r.totals?.deductions)}</td></tr><tr><td>Net pay</td><td class="num">${kes(r.totals?.net)}</td></tr><tr><td>Employer cost</td><td class="num">${kes(r.totals?.employer_cost)}</td></tr></tbody></table>`+
   `<h4>New staff (${(c.new_staff||[]).length})</h4>${li(c.new_staff||[],x=>`${esc(x.name)}: gross ${kes(x.gross)}`)}`+
   `<h4>Salary changes (${(c.salary_changes||[]).length})</h4>${li(c.salary_changes||[],x=>`${esc(x.name)}: ${kes(x.from)} to ${kes(x.to)}`)}`+

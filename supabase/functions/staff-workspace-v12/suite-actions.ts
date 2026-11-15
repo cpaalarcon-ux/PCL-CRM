@@ -4,7 +4,7 @@ import {automaticBreakMinutes,lateClockIn} from './attendance-rules.mjs';
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
 import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,FIRM_VAT_RATE,VAT_POLICY,busySeason,weekdays,round,recurringFeePeriods,servicePeriod,serviceNarration,formatDay} from './suite-rules.mjs';
 // pdf-lib is supplied by index.ts so modules loaded in tests do not need it.
-let PDFLib:any=null;export function setPdfLib(lib:any){PDFLib=lib;}
+let PDFLib:any=null;export function setPdfLib(lib:any){PDFLib=lib;}export const pdfLib=()=>PDFLib;
 const roleLabels:any={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Supervisor',ASSISTANT:'Assistant',INTERN:'Intern'};
 async function issuedLetter(tx:any,c:any){
  const firm=(await tx`select legal_name,physical_address,phone,email,kra_pin from erp_private.firms where firm_id=${c.firm_id}`)[0];

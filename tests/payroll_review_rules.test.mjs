@@ -40,7 +40,7 @@ test('the review screen escapes names and shows why a run is not clean',()=>{
 test('wiring: actions routed and classified; the screen is reachable from the payroll summary',()=>{
  const rd=f=>readFileSync(new URL('../'+f,import.meta.url),'utf8');
  assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/payrollReviewAction\(tx,a,p\)/);assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/payroll_review_\|/);
- const ui=rd('staff-period-imports.mjs');assert.match(ui,/staff-payroll-review\.mjs\?v=20261115-review-v1/);assert.match(ui,/button\('payroll-review','Review payroll summary'/);assert.match(ui,/payrollReview\.isAction\(action\)/);
+ const ui=rd('staff-period-imports.mjs');assert.match(ui,/staff-payroll-review\.mjs\?v=20261116-confirm-v1/);assert.match(ui,/button\('payroll-review','Review payroll summary'/);assert.match(ui,/payrollReview\.isAction\(action\)/);
  assert.doesNotMatch(rd('staff-payroll-review.mjs'),/ledger_journal|ledger_payroll_journal_create/);
- assert.match(rd('staff-workspace-v6.mjs'),/staff-period-imports\.mjs\?v=20261116-lifecycle-v1/);assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261116-lifecycle-v1/);
+ assert.match(rd('staff-workspace-v6.mjs'),/staff-period-imports\.mjs\?v=20261116-confirm-v1/);assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261116-confirm-v1/);
 });
