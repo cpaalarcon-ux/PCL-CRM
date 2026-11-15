@@ -1,4 +1,5 @@
 import {fail,uuid,choice,revision} from './validation.mjs';
+import {logPayrollRead} from './payroll-access-log.ts';
 import {LAYOUTS,KINDS,ID_TYPES,P10_EMPLOYEE_TYPES,identifierIssues,buildFile,totalsAgree,reconcileToJournal,toCsv,fileName} from './statutory-file-rules.mjs';
 import {profileInForce} from './export-profile-rules.mjs';
 import {listProfiles} from './export-profile-actions.ts';
@@ -58,6 +59,7 @@ export async function statutoryFileAction(tx:any,a:any,p:any):Promise<any>{
  // statutory_file_prepare
  const kind=choice(String(p.kind||''),KINDS),imp=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and client_id=${cid} and kind='Payroll'`);
  if(imp.status!=='Confirmed')fail(409,'A statutory file is built only from a confirmed payroll summary. This one is '+String(imp.status).toLowerCase()+'.');
+ await logPayrollRead(tx,a,{client_id:cid,project_id:project.project_id,import_id:imp.import_id,surface:'Payroll file',detail:`${kind} file prepared`});
  const payload=imp.payload||{},employees=payload.employees||[],calculated=payload.calculated||[];
  if(!calculated.length)fail(400,'The confirmed summary has no calculated employees.');
  const month=day(imp.starts_on).slice(0,7),layout=LAYOUTS[kind as keyof typeof LAYOUTS];

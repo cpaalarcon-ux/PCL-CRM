@@ -1,3 +1,4 @@
+import {logPayrollRead} from './payroll-access-log.ts';
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {assertSupportedPeriod} from './supported-period.ts';
 import {readSourceSheet} from './source-reader.mjs';
@@ -228,7 +229,7 @@ export async function periodImportAction(tx:any,a:any,p:any,storage:any){
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,before_values,after_values) values(${a.auth_user_id},current_user,'payroll_tolerance','PAYROLL_ROUNDING_CAP_CHANGED',${pid},${tx.json({monthly_cap_kes:before?.monthly_cap_kes})},${tx.json({monthly_cap_kes:cap,reason:why})})`;
   return {ok:true,monthly_cap_kes:Number(done[0].monthly_cap_kes)};
  }
- if(p.action==='period_import_read')return {record:one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid}`)};
+ if(p.action==='period_import_read'){const record=one(await tx`select * from erp_private.period_imports where import_id=${uuid(p.import_id)} and project_id=${pid}`);if(record.kind==='Payroll')await logPayrollRead(tx,a,{client_id:project.client_id,project_id:pid,import_id:record.import_id,surface:'Payroll run'});return {record};}
  if(project.status==='Archived')fail(400,'Archived projects retain read-only accounting history.');
  if(p.action==='period_import_preview')return await prepare(tx,a,project,p,storage);
  if(p.action==='period_import_save'){

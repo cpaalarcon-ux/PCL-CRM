@@ -22,6 +22,7 @@ import {payablesReport,supplierAction} from './payables.ts';
 import {bankRegister,bankAccountAction} from './bank-accounts.ts';
 import {bankLineAction} from './bank-lines.ts';
 import {yearTbAction} from './year-tb-actions.ts';
+import {statementVersionAction,isFsverAction} from './statement-version-actions.ts';
 import {statementMapAction,reportingRead,reportingSave,packReadinessFrom,statementsFrom,comparativesRead,comparativesSave,comparativesReview} from './annual-pack.ts';
 import {stockRollsRead,stockJournalPlan} from './stock-journal.ts';
 import {money} from './accounting-rules.mjs';
@@ -365,6 +366,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  const l=await period(tx,uuid(p.period_id),pid);
  {const dec=await declarationAction(tx,a,p,l);if(dec!==undefined)return dec;}
  if(p.action==='ledger_read')return {...await report(tx,l,p.as_of?date(p.as_of):day(l.ends_on)),rates};
+ if(isFsverAction(p.action))return await statementVersionAction(tx,a,p,l,async(asOf:string)=>{const ann=await annualGateFor(tx,l,asOf);return {client:ann.st.client,reporting:ann.st.reporting,statements:ann.st.statements,gate_status:ann.gate.status,ready:ann.gate.ready===true&&ann.st.statements?.complete===true,problems:[...(ann.gate.checks||[]).filter((c:any)=>!c.ok).map((c:any)=>`${c.label}: ${c.detail}`)]};});
  if(p.action==='ledger_reporting_read')return await reportingRead(tx,l);
  if(p.action==='ledger_reporting_save')return await reportingSave(tx,a,l,p);
  {const yt=await yearTbAction(tx,a,l,p);if(yt!==undefined)return yt;}

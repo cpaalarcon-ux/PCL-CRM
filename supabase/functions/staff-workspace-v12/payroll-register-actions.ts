@@ -1,6 +1,7 @@
 import {fail,text,uuid,date,revision,choice} from './validation.mjs';
 import {personIssues,payIssues,draftLines,registerChanges,affectedMonths,monthBounds,previousMonth,PAY_FIELDS,REGISTER_RELATIONSHIPS} from './payroll-register-rules.mjs';
 import {relationshipIssues} from './payroll-lines.mjs';
+import {logPayrollRead} from './payroll-access-log.ts';
 
 // The payroll register (build 2804): people on a client's payroll and their effective-dated recurring pay, kept apart from each month's run.
 // A month starts as a draft taken from the register; the draft goes through the same preview, review and posting path as any typed payroll.
@@ -33,6 +34,7 @@ export async function payrollRegisterAction(tx:any,a:any,p:any):Promise<any>{
  const {project,entityType}=await context(tx,p),cid=project.client_id;
  if(p.action==='payroll_register_read'){
   const d=await load(tx,cid);
+  await logPayrollRead(tx,a,{client_id:cid,project_id:project.project_id,surface:'Payroll register',detail:`${d.people?.length??0} people`});
   return {...d,relationships:REGISTER_RELATIONSHIPS,client_id:cid,me:a.staff_id,can_decide:LEADERS.includes(a.category_code)};
  }
  if(project.status==='Archived')fail(400,'Archived projects retain read-only history.');
