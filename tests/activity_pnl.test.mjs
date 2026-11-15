@@ -60,4 +60,14 @@ test('journal lines carry the activity, profit is reported per activity, reports
 
  const x=await ledger('ASSISTANT',{...base,action:'ledger_report_export',report_kind:'Year to date',as_of:'2026-12-31'});
  assert.match(x.file_name,/\.xlsx$/);assert.ok(x.base64.length>1000,'an Excel workbook is returned');
+ // Build 2815: the export is a Draft unless every readiness check passes; the final report is refused with the open checks named.
+ assert.equal(x.mark,'DRAFT');assert.match(x.file_name,/_DRAFT\.xlsx$/);
+ // The approval above is for the January report; the year-to-date report has no sign-off of its own.
+ const gate=await ledger('ASSISTANT',{...base,action:'ledger_report_gate',report_kind:'Month',as_of:'2026-01-31'}),by=Object.fromEntries(gate.gate.checks.map(c=>[c.code,c]));
+ assert.equal(gate.gate.ready,false);assert.equal(by.SIGN_OFF.ok,true,by.SIGN_OFF.detail);assert.equal(by.TB_BALANCED.ok,true);assert.equal(by.TOTALS_TIE.ok,true,by.TOTALS_TIE.detail);assert.equal(by.SOURCES.ok,false);
+ const ytd=await ledger('ASSISTANT',{...base,action:'ledger_report_gate',report_kind:'Year to date',as_of:'2026-12-31'});assert.equal(ytd.gate.checks.find(c=>c.code==='SIGN_OFF').ok,false);
+ await assert.rejects(()=>ledger('MANAGER',{...base,action:'ledger_report_export',report_kind:'Month',as_of:'2026-01-31',final:true}),/The final report is blocked\./);
+ // The draft workbook says so on every sheet.
+ const ExcelJS=(await import('exceljs')).default,wb=new ExcelJS.Workbook();await wb.xlsx.load(Buffer.from(x.base64,'base64'));
+ for(const ws of wb.worksheets)assert.match(String(ws.getRow(1).getCell(1).value),/^DRAFT/,ws.name);
 });
