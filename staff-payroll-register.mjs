@@ -1,3 +1,4 @@
+import {monthsPanel,resultPanel,idsForm,downloadCsv} from './staff-statutory-files.mjs?v=20261116-statutory-v1';
 // Payroll register screens (build 2804): who is on a client's payroll and what they are paid, then "Start month from register".
 // The server (payroll-register-actions.ts, payroll-register-rules.mjs) owns every rule. A month started here opens the typed payroll screen pre-filled;
 // nothing is saved, submitted or posted from this screen.
@@ -18,7 +19,7 @@ export function personStatus(p,changes,today){
 export function registerTable(r,esc,shortDate){
  const pay=new Map();for(const x of r.pays||[])if(!pay.has(x.person_id))pay.set(x.person_id,x);
  const rows=(r.people||[]).map(p=>{const cur=pay.get(p.person_id),st=personStatus(p,r.changes),
-  btns=p.status==='Active'?`<button type="button" data-period-action="register-pay" data-id="${esc(p.person_id)}">Change pay</button>${st.change?`<button type="button" data-period-action="register-return" data-id="${esc(st.change.change_id)}">Return to active</button>`:`<button type="button" data-period-action="register-inactive" data-id="${esc(p.person_id)}">Make inactive</button>`}${st.sep?'':`<button type="button" data-period-action="register-leave" data-id="${esc(p.person_id)}" data-revision="${esc(p.revision)}">Remove from payroll</button>`}`:'';
+  btns=p.status==='Active'?`<button type="button" data-period-action="register-pay" data-id="${esc(p.person_id)}">Change pay</button><button type="button" data-period-action="register-ids" data-id="${esc(p.person_id)}" data-revision="${esc(p.revision)}">Statutory details</button>${st.change?`<button type="button" data-period-action="register-return" data-id="${esc(st.change.change_id)}">Return to active</button>`:`<button type="button" data-period-action="register-inactive" data-id="${esc(p.person_id)}">Make inactive</button>`}${st.sep?'':`<button type="button" data-period-action="register-leave" data-id="${esc(p.person_id)}" data-revision="${esc(p.revision)}">Remove from payroll</button>`}`:'';
   return `<tr><td>${esc(p.name)}<small>${esc(p.relationship)} · ${esc(p.employment_type)}</small></td><td>${esc(p.kra_pin||'No PIN')}</td><td>${esc(shortDate(p.started_on))}${p.left_on?`<small>separated ${esc(shortDate(p.left_on))}</small>`:''}</td><td class="num">${cur?kes(cur.gross):'—'}${cur?`<small>from ${esc(shortDate(cur.effective_from))}</small>`:''}</td><td><span class="badge ${st.cls}">${esc(st.label)}</span>${st.detail?`<small>${esc(st.detail)}</small>`:''}</td><td>${btns}</td></tr>`;}).join('');
  return rows?`<div class="scroll"><table id="payrollRegisterTable"><thead><tr><th>Person</th><th>KRA PIN</th><th>Started</th><th class="num">Gross pay</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">Nobody is on the register yet. Add the people on this client\'s payroll once; every later month starts from it.</p>';
 }
@@ -58,7 +59,7 @@ export function createPayrollRegisterUI(ctx,{show,button,startManual}){
  const payFields=()=>field('gross','Gross cash pay per month *','','number','required min="0.01" step="0.01"')+field('taxable_benefits','Taxable benefits','','number','min="0" step="0.01"')+field('other_pension','Other pension contribution','','number','min="0" step="0.01"')+field('mortgage_interest','Mortgage interest','','number','min="0" step="0.01"')+field('postretirement_medical','Post-retirement medical','','number','min="0" step="0.01"');
  async function list(){
   const r=await request({action:'payroll_register_read',project_id:pid});
-  show('Payroll register',`<p><b>${esc(projectName(pid))}</b></p><p class="info full">${esc(REGISTER_NOTE)}</p><div class="actions">${button('register-add','Add person')}${button('register-start','Start a month from the register')}${button('back','Back')}</div>${registerTable(r,esc,shortDate)}${changesPanel(r,esc,shortDate)}`);
+  show('Payroll register',`<p><b>${esc(projectName(pid))}</b></p><p class="info full">${esc(REGISTER_NOTE)}</p><div class="actions">${button('register-add','Add person')}${button('register-start','Start a month from the register')}${button('statutory-files','Statutory files')}${button('back','Back')}</div>${registerTable(r,esc,shortDate)}${changesPanel(r,esc,shortDate)}`);
  }
  const monthDefault=()=>{const t=new Date();return t.toISOString().slice(0,7);};
  const handlers={
@@ -91,6 +92,24 @@ export function createPayrollRegisterUI(ctx,{show,button,startManual}){
   },
   async 'register-sep-withdraw'(id){
    await request({action:'payroll_register_separation_withdraw',project_id:pid,change_id:id});notice('Request withdrawn.');return list();
+  },
+  async 'register-ids'(id,el){
+   const r=await request({action:'payroll_register_read',project_id:pid}),person=(r.people||[]).find(x=>x.person_id===id);if(!person)return list();
+   show('Statutory details: '+person.name,form(idsForm(person,field,select,esc),'Save details'),
+    async f=>request({action:'payroll_register_identifiers',project_id:pid,person_id:id,revision:String(person.revision),...Object.fromEntries(f),disability:f.get('disability')==='yes'}),()=>{notice('Statutory details saved.');return list();});
+  },
+  async 'statutory-files'(){
+   const r=await request({action:'statutory_file_read',project_id:pid});
+   show('Statutory files',monthsPanel(r,esc)+`<div class="actions">${button('register','Back to register')}</div>`);
+  },
+  async 'statutory-prepare'(id,el){
+   const x=await request({action:'statutory_file_prepare',project_id:pid,import_id:id,kind:el?.dataset.kind});
+   show('Statutory file',resultPanel(x,esc));
+  },
+  async 'statutory-release'(id,el){
+   const x=await request({action:'statutory_file_prepare',project_id:pid,import_id:id,kind:el?.dataset.kind,release:true,confirm_defaults:!!$('#statutoryDefaults')?.checked});
+   if(x.csv){downloadCsv(x.file_name,x.csv);notice('Released and downloaded: '+x.file_name+'. The release is recorded.');}
+   show('Statutory file',resultPanel({...x,csv:undefined},esc));
   },
   async 'register-open'(){
    if(!pendingDraft)return list();
