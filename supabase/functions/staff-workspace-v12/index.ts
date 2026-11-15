@@ -63,6 +63,7 @@ import {deleteRedoAction} from './delete-redo-actions.ts';
 import {clientMasterAction} from './client-master-actions.ts';
 import {clientSetupReviewAction} from './client-setup-review-actions.ts';
 import {statutoryFileAction} from './statutory-file-actions.ts';
+import {kraCsvAction} from './kra-csv-actions.ts';
 import {exportProfileAction} from './export-profile-actions.ts';
 import {obligationCheckAction} from './obligation-check-actions.ts';
 import {periodPackAction} from './period-pack-actions.ts';
@@ -474,6 +475,7 @@ async function action(id:any,p:any){
   const clientMaster=await clientMasterAction(tx,a,p);if(clientMaster!==undefined)return clientMaster;
   const setupReview=await clientSetupReviewAction(tx,a,p);if(setupReview!==undefined)return setupReview;
   const statutoryFile=await statutoryFileAction(tx,a,p);if(statutoryFile!==undefined)return statutoryFile;
+  const kraCsv=await kraCsvAction(tx,a,p);if(kraCsv!==undefined)return kraCsv;
   const exportProfile=await exportProfileAction(tx,a,p);if(exportProfile!==undefined)return exportProfile;
   const obligationCheck=await obligationCheckAction(tx,a,p);if(obligationCheck!==undefined)return obligationCheck;
   const periodPack=await periodPackAction(tx,a,p);if(periodPack!==undefined)return periodPack;
