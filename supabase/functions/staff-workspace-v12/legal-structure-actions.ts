@@ -48,6 +48,7 @@ export async function requireClassified(tx:any,cid:string,what:string){
 export async function requireRightChart(tx:any,cid:string,what:string){
  const c=await requireClassified(tx,cid,what);
  const types=await tx`select structure,subtype,engine_family from erp_private.legal_structure_types`,family=familyFor(types,c.legal_structure,c.legal_subtype);
+ if((await tx`select erp_private.client_classification_pending(${cid}) as pending`)[0].pending)fail(409,`A Partner classifies this entity's legal form before accounting defaults are applied. Record the legal form in the client master and have a Partner verify it before ${what}.`);
  if(!c.legal_entity_type)fail(400,`Confirm the client’s legal entity type and evidence under Entity / activities before ${what}.`);
  if(family&&c.legal_entity_type!==family)fail(409,`The client’s accounting family (${c.legal_entity_type}) does not match its Legal structure (${family}). Confirm it under Entity / activities before ${what}.`);
  const chart=(await tx`select version_id from erp_private.client_chart_versions where client_id=${cid} and status='Approved' and entity_type=${c.legal_entity_type} limit 1`)[0];
