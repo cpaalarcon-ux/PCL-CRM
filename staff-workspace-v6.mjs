@@ -1,6 +1,6 @@
 import {modeSwitch,loadMode,saveMode,normalizeMode,groupColumns,kanban,listTable} from './staff-items-view.mjs?v=20261107-annualpack-v3';
 import {createPeriodPackUI} from './staff-period-packs.mjs?v=20261115-packs-v1';
-import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261117-frame-v1';
+import {createPeriodImportUI} from './staff-period-imports.mjs?v=20261117-links-v1';
 import {createWithholdingUI} from './staff-withholding.mjs?v=20261116-whtvat-v1';
 import {createCreditAgeingUI} from './staff-credit-ageing.mjs?v=20261107-annualpack-v3';
 import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261116-tbimport-v1';

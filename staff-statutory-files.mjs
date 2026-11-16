@@ -1,4 +1,5 @@
 // Statutory return file screens (build 2829): NSSF, SHIF and PAYE (P10) files from a confirmed payroll summary.
+import {blockerKinds,configureLinksHtml} from './staff-configure-links.mjs?v=20261117-links-v1';
 // The server (statutory-file-actions.ts, statutory-file-rules.mjs) owns every rule. This module only draws the readiness, the reconciliation and the download.
 const kes=v=>v==null||v===''?'':Number(v).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
 export const FILES_NOTE='A statutory file is built from a confirmed payroll summary. It is released only when every column the agency needs is filled from the payroll register, the file\'s totals equal the confirmed summary, and the summary agrees with the posted payroll journal. Each release is recorded with who produced it, the layout used and a fingerprint of the file.';
@@ -8,15 +9,10 @@ export function monthsPanel(r,esc){
  const made=(r.exports||[]).slice(0,8).map(x=>`<li>${esc(x.month)} · ${esc(x.file_kind==='PAYE_P10'?'PAYE (P10)':x.file_kind)} · ${esc(x.row_count)} rows · ${esc(x.generated_by_name||'')} · ${esc(String(x.generated_at||'').slice(0,10))}</li>`).join('');
  return `<p class="info full">${esc(FILES_NOTE)}</p>${rows?`<div class="scroll"><table id="statutoryMonths"><thead><tr><th>Month</th><th class="num">Employees</th><th>Books</th><th>Build</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">No confirmed payroll summary yet. Confirm a month\'s payroll first.</p>'}${made?`<h4>Released files</h4><ul>${made}</ul>`:''}`;
 }
-// "Configure this setting" for a blocker that a setting fixes (build 2837). The button takes the person to that setting and brings them back here.
-export function configureKinds(issues){
- const kinds=[];
- if((issues||[]).some(i=>/No published export profile/.test(i)))kinds.push('export_profile');
- if((issues||[]).some(i=>/No approved payroll mapping/.test(i)))kinds.push('routing_map');
- return kinds;
-}
+// "Configure this setting" for a blocker that a setting fixes (builds 2837, 2838). The matching lives in staff-configure-links.mjs so every screen words it the same way.
+export const configureKinds=blockerKinds;
 const CONFIGURE_FROM='the statutory file';
-export const configureHtml=(issues,esc)=>configureKinds(issues).map(k=>`<button type="button" class="configure-link" data-suite="configure-go" data-id="${esc(k)}::${esc(CONFIGURE_FROM)}">Configure this setting${k==='export_profile'?' (export profile)':' (payroll mapping)'}</button>`).join(' ');
+export const configureHtml=(issues,esc)=>configureLinksHtml(issues,CONFIGURE_FROM,esc);
 export function resultPanel(x,esc){
  const issues=(x.issues||[]).length?`<div class="notice error"><b>Not ready to release</b><ul>${x.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>${configureHtml(x.issues,esc)}</div>`:'<p><span class="badge good">Ready to release</span></p>';
  const rec=x.reconciliation||{},recLines=(rec.lines||[]).map(l=>`<tr><td>${esc(l.account_code)}</td><td class="num">${kes(l.expected)}</td><td class="num">${kes(l.posted)}</td><td class="num">${l.difference?`<b>${kes(l.difference)}</b>`:kes(l.difference)}</td></tr>`).join('');
