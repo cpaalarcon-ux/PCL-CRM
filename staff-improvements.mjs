@@ -8,7 +8,7 @@ import {panelHtml,queueHtml,collectSubmit,collectDecisions} from './staff-setup-
 import {queueHtml as tasksQueueHtml,queueBody as tasksQueueBody,configurationHtml} from './staff-setup-tasks.mjs?v=20261116-choices-v1';
 import {createClientChoicesUI} from './staff-client-choices.mjs?v=20261116-choices-v1';
 import {createBulkSetupUI} from './staff-bulk-setup.mjs?v=20261116-bulk-v1';
-import {createServiceCategoriesUI} from './staff-service-categories.mjs?v=20261116-practice-v1';
+import {createServiceCategoriesUI} from './staff-service-categories.mjs?v=20261116-versions-v1';
 import {nextSetupStep} from './staff-setup-order.mjs?v=20261116-setupreview-v1';
 export function createImprovementUI(ctx){
  const {$,esc,field,select,form,modal,request,notice,shortDate,today,projectName}=ctx,d=()=>ctx.data(),me=()=>d().me,leader=()=>['PARTNER','MANAGER'].includes(me().category_code),reviewer=()=>['PARTNER','MANAGER','SUPERVISOR'].includes(me().category_code);
