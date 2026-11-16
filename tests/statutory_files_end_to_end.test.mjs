@@ -143,4 +143,11 @@ test('statutory files: NSSF, SHIF and P10 are built from a confirmed summary, fi
  await assert.rejects(()=>sf('ASSISTANT',{action:'statutory_file_prepare',kind:'NSSF',import_id:sep.import_id,release:true}),/not ready to release/);
  // The month list: only confirmed summaries, with whether the journal is posted.
  const read=await sf('ASSISTANT',{action:'statutory_file_read'});assert.deepEqual(read.months.map(m=>m.month),['2026-09']);assert.equal(read.exports.length,1);assert.equal(read.layouts.length,3);
+ // Build 2841: with no choice recorded every return is offered (above). Once a Manager chooses NSSF only, the other two are refused for the month.
+ assert.equal(read.chosen.configured,false);assert.deepEqual(read.months[0].allowed_kinds,['NSSF','SHIF','PAYE_P10']);
+ const {clientChoicesAction}=await import('../supabase/functions/staff-workspace-v12/client-choices-actions.ts');
+ const cho=await as('MANAGER',a=>clientChoicesAction(tx,a,{action:'client_setup_returns_choose',client_id:C,return_code:'NSSF',effective_from:'2026-01-01'}));assert.equal(cho.chosen,true);
+ const read2=await sf('ASSISTANT',{action:'statutory_file_read'});assert.equal(read2.chosen.configured,true);assert.deepEqual(read2.months[0].allowed_kinds,['NSSF']);
+ await assert.rejects(()=>sf('ASSISTANT',{action:'statutory_file_prepare',kind:'SHIF',import_id:sep.import_id}),/not chosen for this client's payroll service for 2026-09/);
+ const stillNssf=await sf('ASSISTANT',{action:'statutory_file_prepare',kind:'NSSF',import_id:sep.import_id});assert.equal(stillNssf.kind,'NSSF');
 });

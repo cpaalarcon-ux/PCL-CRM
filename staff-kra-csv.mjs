@@ -1,6 +1,6 @@
 // KRA VAT CSV evidence screens (build 2831a). The server (kra-csv-actions.ts, kra-csv-rules.mjs) owns every rule.
 // This module draws the retained files, the reconciliation to the approved registers and the reviewer decisions. It never changes a register.
-import {downloadCsv} from './staff-statutory-files.mjs?v=20261117-links-v1';
+import {downloadCsv} from './staff-statutory-files.mjs?v=20261116-choices-v1';
 export const KRA_NOTE='Upload each section of the KRA VAT auto-populated return exactly as downloaded. The ERP keeps the original file, reads invoice numbers and PINs as text so leading zeros survive, and compares the totals with the approved sales register and the lines with your supplier invoices. A corrected file becomes a new version; the earlier one is kept. Nothing here changes a register or posts anything.';
 const kes=v=>v==null||v===''?'':Number(v).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
 const STATUS_CLASS={Agrees:'good','Differs':'bad','Incomplete':'warn','No CSV uploaded':'warn','CSV not uploaded':'warn','No register':'bad'};

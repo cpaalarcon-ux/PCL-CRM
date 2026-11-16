@@ -4,8 +4,14 @@ import {blockerKinds,configureLinksHtml} from './staff-configure-links.mjs?v=202
 const kes=v=>v==null||v===''?'':Number(v).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
 export const FILES_NOTE='A statutory file is built from a confirmed payroll summary. It is released only when every column the agency needs is filled from the payroll register, the file\'s totals equal the confirmed summary, and the summary agrees with the posted payroll journal. Each release is recorded with who produced it, the layout used and a fingerprint of the file.';
 export const KIND_BUTTONS=[['NSSF','NSSF file'],['SHIF','SHIF file'],['PAYE_P10','PAYE (P10) workings']];
+// Build 2841: only the returns chosen for this client are offered for a month. A client with no choice recorded is offered all three, as before.
+export function kindButtons(m,chosen,esc){
+ const allowed=Array.isArray(m.allowed_kinds)?m.allowed_kinds:KIND_BUTTONS.map(([k])=>k),list=KIND_BUTTONS.filter(([k])=>allowed.includes(k));
+ if(!list.length)return `<span class="muted">No return is chosen for this month. Choose one in Client Setup \u2192 Payroll returns.</span>`;
+ return list.map(([k,l])=>`<button type="button" data-period-action="statutory-prepare" data-id="${esc(m.import_id)}" data-kind="${esc(k)}">${esc(l)}</button>`).join('');
+}
 export function monthsPanel(r,esc){
- const rows=(r.months||[]).map(m=>`<tr><td>${esc(m.month)}</td><td class="num">${esc(m.employees)}</td><td>${m.journal_posted?'<span class="badge good">Journal posted</span>':'<span class="badge warn">Journal not posted</span>'}</td><td>${KIND_BUTTONS.map(([k,l])=>`<button type="button" data-period-action="statutory-prepare" data-id="${esc(m.import_id)}" data-kind="${esc(k)}">${esc(l)}</button>`).join('')}</td></tr>`).join('');
+ const rows=(r.months||[]).map(m=>`<tr><td>${esc(m.month)}</td><td class="num">${esc(m.employees)}</td><td>${m.journal_posted?'<span class="badge good">Journal posted</span>':'<span class="badge warn">Journal not posted</span>'}</td><td>${kindButtons(m,r.chosen,esc)}</td></tr>`).join('');
  const made=(r.exports||[]).slice(0,8).map(x=>`<li>${esc(x.month)} · ${esc(x.file_kind==='PAYE_P10'?'PAYE (P10)':x.file_kind)} · ${esc(x.row_count)} rows · ${esc(x.generated_by_name||'')} · ${esc(String(x.generated_at||'').slice(0,10))}</li>`).join('');
  return `<p class="info full">${esc(FILES_NOTE)}</p>${rows?`<div class="scroll"><table id="statutoryMonths"><thead><tr><th>Month</th><th class="num">Employees</th><th>Books</th><th>Build</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">No confirmed payroll summary yet. Confirm a month\'s payroll first.</p>'}${made?`<h4>Released files</h4><ul>${made}</ul>`:''}`;
 }

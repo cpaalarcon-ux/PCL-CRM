@@ -1,4 +1,4 @@
-import {monthsPanel,resultPanel,idsForm,downloadCsv} from './staff-statutory-files.mjs?v=20261117-links-v1';
+import {monthsPanel,resultPanel,idsForm,downloadCsv} from './staff-statutory-files.mjs?v=20261116-choices-v1';
 // Payroll register screens (build 2804): who is on a client's payroll and what they are paid, then "Start month from register".
 // The server (payroll-register-actions.ts, payroll-register-rules.mjs) owns every rule. A month started here opens the typed payroll screen pre-filled;
 // nothing is saved, submitted or posted from this screen.

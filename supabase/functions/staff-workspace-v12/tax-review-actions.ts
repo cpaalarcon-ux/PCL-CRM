@@ -166,7 +166,9 @@ export async function taxSummary(tx:any,c:any){
  if(creditOpen>0)issues.push(`${creditOpen} tax credit ${creditOpen===1?'entry needs':'entries need'} the iTax check or a decision on a difference (Tax credits).`);
  const annualBankDocLinked=!!c.inputs.annual_bank_review_document_id&&!issues.includes('Annual bank statement / review evidence is unavailable.');
  const source_checklist=sourceChecklist({kind:c.kind,batches,bankPending:salesReview?.result?.bank_status==='Bank pending',annualBankDocLinked});
- return {result,source_checklist,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
+ // Build 2841: approved client-specific exceptions to the rules used here are shown beside them. They change no rate and no figure.
+ const appliedKeys=new Set(applied.map((r:any)=>r.rate_key)),client_exceptions=(await tx`select exception_id,rate_key,kind,effective_from,effective_to,reason,legal_basis from erp_private.client_tax_exceptions where client_id=${project.client_id} and status='Active' and effective_from<=${c.ends_on} and coalesce(effective_to,'9999-12-31')>=${c.starts_on} order by rate_key`).filter((x:any)=>appliedKeys.has(x.rate_key)).map((x:any)=>({exception_id:x.exception_id,rate_key:x.rate_key,kind:x.kind,effective_from:dateText(x.effective_from),effective_to:x.effective_to?dateText(x.effective_to):null,reason:x.reason,legal_basis:x.legal_basis}));
+ return {result,client_exceptions,source_checklist,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
 }
 
 // Numbered, immutable computation snapshots (20261110274000_computation_snapshots.sql). The server records what the reviewer is shown at the moment of submission and again at lock;
@@ -258,7 +260,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   }
   const rid=null; // Applicable versions are resolved on the server from client, tax and period.
   const next={...c,inputs,source_document_id:source,rate_id:rid};const s=await taxSummary(tx,next);
-  if(p.action==='tax_preview')return {result:s.result,issues:s.issues,applied_rates:s.applied_rates,profile:s.profile,source_application:s.source_application};
+  if(p.action==='tax_preview')return {result:s.result,client_exceptions:s.client_exceptions||[],issues:s.issues,applied_rates:s.applied_rates,profile:s.profile,source_application:s.source_application};
   await tx`update erp_private.tax_cases set inputs=${tx.json(inputs)},source_document_id=${source},rate_id=${s.rate?.rate_id||null},result=${tx.json(s.result)},status='Draft',review_note=null where case_id=${c.case_id}`;return {ok:true,issues:s.issues};
  }
  if(p.action==='tax_submit'){
