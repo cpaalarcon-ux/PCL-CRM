@@ -6,6 +6,8 @@ import {loadClientTemplate} from './client-template-data.ts';
 import {allowedObligations} from './obligation-check-actions.ts';
 import {planTasks,periodProblem,taskKey,lateCount,OWNER_ROLES} from './engagement-setup-rules.mjs';
 import {nextPeriod,carriedItems,dueForRollover} from './engagement-rollover-rules.mjs';
+import {dateWarnings} from './practice-rules.mjs';
+import {currentDates,noDates} from './template-dates.ts';
 // Service templates and engagement set-up (build 2810). The client type never selects a service: a Manager or Partner chooses the service, period,
 // scope, responsible person and reviewer, and only then are tasks made, only those whose conditions the client's confirmed profile meets.
 // The table rules are repeated in 20261115130000_client_and_service_templates.sql.
@@ -19,7 +21,9 @@ async function templateWithItems(tx:any,id:string){
  const t=(await tx`select * from erp_private.service_templates where template_id=${id}`)[0];if(!t)fail(404,'That service template was not found.');
  const tasks=await tx`select * from erp_private.service_template_tasks where template_id=${id} order by sort_order,task_key`;
  const services=await tx`select s.service_code,v.service_name from erp_private.service_template_services s join erp_private.services v using(service_code) where s.template_id=${id} order by s.service_code`;
- return {...t,tasks,services};
+ // Build 2845: the effective-from and last-reviewed dates in force (an insert-only history beside the template).
+ const dates=(await currentDates(tx,id)).get(id)||noDates;
+ return {...t,tasks,services,...dates};
 }
 async function profileFacts(tx:any,a:any,cid:string,start:string,end:string,clientTemplate:string|null){
  // Build 2814: an obligation counts only when it is Confirmed on a verified profile for the whole period (registered, applicable, dated, evidenced) or covered by an approved exception.
@@ -77,7 +81,8 @@ async function buildPlan(tx:any,a:any,i:any){
  const tasks=planTasks({tasks:tpl.tasks,period:{start:i.period_start,end:i.period_end},facts,exclusions:i.exclusions,actorCategory:a.category_code});
  problems.push(...tasks.problems);
  const today=nairobiDate();
- return {template:{template_id:tpl.template_id,template_code:tpl.template_code,version:tpl.version,name:tpl.name,service_group:tpl.service_group},service:svc||null,client:{client_id:i.client_id,company_name:client.client.company_name,template_code:clientTemplate},
+ warnings.push(...dateWarnings(tpl,i.period_start,today));
+ return {template:{template_id:tpl.template_id,template_code:tpl.template_code,version:tpl.version,name:tpl.name,service_group:tpl.service_group,effective_from:tpl.effective_from,last_reviewed:tpl.last_reviewed},service:svc||null,client:{client_id:i.client_id,company_name:client.client.company_name,template_code:clientTemplate},
   project:project?{project_id:project.project_id,project_name:project.project_name,status:project.status}:null,
   create:tasks.create,skipped:tasks.skipped,problems,warnings,late:lateCount(tasks.create,today),tpl,staff:{resp,rev}};
 }
@@ -158,13 +163,13 @@ export async function serviceTemplateAction(tx:any,a:any,p:any):Promise<any>{
   const staff=await tx`select staff_id,full_name,category_code,firm_id from erp_private.assignment_candidates()`;
   const projects=await tx`select project_id,project_name,service_code,status,handling_firm_id from erp_private.projects where client_id=${cid} and deleted_at is null and status<>'Archived' and erp_private.project_allowed(project_id) order by created_at desc`;
   const t=await loadClientTemplate(tx,a,cid,await tx`select * from erp_private.client_field_facts where client_id=${cid}`,null);
-  return {client,firms,templates:templates.map((x:any)=>({template_id:x.template_id,template_code:x.template_code,version:x.version,name:x.name,service_group:x.service_group,services:x.services,tasks:x.tasks.map((k:any)=>({task_key:k.task_key,task_name:k.task_name,stage:k.stage,recurrence:k.recurrence,mandatory:k.mandatory,requires_obligation:k.requires_obligation,requires_licence:k.requires_licence}))})),
+  return {client,firms,templates:templates.map((x:any)=>({template_id:x.template_id,template_code:x.template_code,version:x.version,name:x.name,service_group:x.service_group,effective_from:x.effective_from,last_reviewed:x.last_reviewed,services:x.services,tasks:x.tasks.map((k:any)=>({task_key:k.task_key,task_name:k.task_name,stage:k.stage,recurrence:k.recurrence,mandatory:k.mandatory,requires_obligation:k.requires_obligation,requires_licence:k.requires_licence}))})),
    staff,projects,client_template:t?.template?{template_code:t.template.template_code,name:t.template.name}:null,
    note:'Choose the service yourself. The type of client does not select one.'};
  }
  if(p.action==='engagement_setup_list'){
   const cid=uuid(p.client_id);
-  const rows=await tx`select e.setup_id,e.service_code,e.period_start,e.period_end,e.scope,e.status,e.tasks_created,e.skipped,e.applied_at,e.released_at,e.project_id,t.name as template_name,t.version,s.full_name as responsible_name,r.full_name as reviewer_name
+  const rows=await tx`select e.setup_id,e.service_code,e.period_start,e.period_end,e.scope,e.status,e.tasks_created,e.skipped,e.applied_at,e.released_at,e.project_id,t.name as template_name,t.version,(select d.effective_from::text from erp_private.service_template_dates d where d.template_id=e.template_id order by d.recorded_at desc,d.date_id desc limit 1) template_effective_from,(select d.last_reviewed::text from erp_private.service_template_dates d where d.template_id=e.template_id order by d.recorded_at desc,d.date_id desc limit 1) template_last_reviewed,s.full_name as responsible_name,r.full_name as reviewer_name
    from erp_private.engagement_setups e join erp_private.service_templates t on t.template_id=e.template_id left join erp_private.staff_members s on s.staff_id=e.responsible_staff left join erp_private.staff_members r on r.staff_id=e.reviewer_staff
    where e.client_id=${cid} order by e.period_start desc,e.applied_at desc limit 100`;
   return {setups:rows};

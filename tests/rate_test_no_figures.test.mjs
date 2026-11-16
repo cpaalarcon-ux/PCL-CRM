@@ -15,5 +15,5 @@ test('the server refuses a rule with no figures before it checks the note, with 
 });
 test('wiring and build label',()=>{
  assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261115-holders-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261116-choices-v1/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2844');assert.match(rd('staff-pilot.html'),/2026-11-14\.2844/);
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2845');assert.match(rd('staff-pilot.html'),/2026-11-14\.2845/);
 });

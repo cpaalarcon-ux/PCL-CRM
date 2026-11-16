@@ -55,6 +55,7 @@ test('the form: every category can be ticked, the new-version box is shown, reti
  const m=categoriesHtml({sole:false,can_retire:false,templates:[t({})]});assert.doesNotMatch(m,/id="scRetire"|check-retire/,'a Manager does not see the retire box');assert.match(m,/id="scVersion"/);
  const r=resultsHtml({dry:false,kind:'propose',summary:{total:2,done:1,skipped:1},results:[{label:'A',outcome:'Proposed',version:2,note:'2 changes. Not in this category, left alone: <k>.'},{label:'B',outcome:'Skipped',reason:'None of the changes applies to this category.'}]});
  assert.match(r,/proposed as a new version/);assert.match(r,/New version 2, a draft waiting for approval/);assert.doesNotMatch(r,/<k>/);assert.match(r,/None of the changes applies/);
+ assert.match(resultsHtml({dry:true,kind:'propose',summary:{total:1,done:1,skipped:0},results:[{label:'A',outcome:'Ready',version:2}]}),/Would be version 2, a draft for a different person to approve/);
  assert.match(resultsHtml({dry:true,kind:'retire',summary:{total:1,done:1,skipped:0},results:[{label:'A',outcome:'Ready',note:'No approved version of this category will remain.'}]}),/ready to be retired[\s\S]*No approved version/);
 });
 
@@ -64,5 +65,5 @@ test('wiring: new actions in the server file, existing single actions reused, no
  assert.match(act,/A Partner retires service categories/);assert.doesNotMatch(act.replace(/\/\/[^\n]*/g,''),/update erp_private\.|delete from|insert into erp_private\.service_templates/i,'only the existing single actions write');
  assert.match(rd(fx+'staff-access-control.mjs'),/service_template_\|service_category_\|/,'routed by the existing prefix');
  assert.match(rd('staff-service-categories.mjs'),/service_category_retire/);
- assert.match(rd(fx+'release.json'),/2026-11-14\.2844/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2844"/);
+ assert.match(rd(fx+'release.json'),/2026-11-14\.2845/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2845"/);
 });

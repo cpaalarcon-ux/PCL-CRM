@@ -18,7 +18,7 @@ export function optionsHtml(opts,{esc=e0}={}){
   <p class="info full">${esc(opts.note)} Up to ${esc(opts.max_rows)} clients in one run.</p>
   ${sel('operation','What to set up',opts.operations.map(o=>[o.code,o.label]),'Choose')}
   <fieldset class="full" data-op="ENGAGEMENT" hidden><legend>Service from an approved template</legend>
-   ${sel('template_id','Approved service template',(opts.templates||[]).map(t=>[t.template_id,`${t.name} (version ${t.version})`]),'Choose')}
+   ${sel('template_id','Approved service template',(opts.templates||[]).map(t=>[t.template_id,`${t.name} (version ${t.version}${t.effective_from?', from '+t.effective_from:''}${t.last_reviewed?', reviewed '+t.last_reviewed:''})`]),'Choose')}
    <label>Service<select name="service_code" required><option value="">Choose the template first</option></select></label>
    <label>Period starts<input type="date" name="period_start" required></label><label>Period ends<input type="date" name="period_end" required></label>
    ${sel('responsible_staff','Responsible person',staff.map(s=>[s.staff_id,`${s.full_name} (${String(s.category_code).toLowerCase()})`]),'Choose')}

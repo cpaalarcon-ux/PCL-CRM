@@ -30,9 +30,10 @@ export function createServiceSetupUI(ctx){
  async function open(cid){
   const o=await request({action:'engagement_setup_options',client_id:cid});
   const setups=await request({action:'engagement_setup_list',client_id:cid});
-  const prior=setups.setups.length?`<h4>Already set up</h4><ul>${setups.setups.map(s=>`<li>${badge(s.status)} <b>${esc(s.template_name)}</b> v${esc(s.version)} · ${esc(s.service_code)} · ${esc(day(s.period_start))} to ${esc(day(s.period_end))} · ${esc(String(s.tasks_created))} task${s.tasks_created===1?'':'s'}${s.status==='Released'&&editor()&&!setups.setups.some(o=>o.service_code===s.service_code&&day(o.period_end)>day(s.period_end))?` <button type="button" data-svc="roll" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Roll forward</button>`:''}${s.status==='Waiting'?` ${editor()?`<button type="button" data-svc="release" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Release if ready</button>`:''}`:''}</li>`).join('')}</ul>`:'';
+  const prior=setups.setups.length?`<h4>Already set up</h4><ul>${setups.setups.map(s=>`<li>${badge(s.status)} <b>${esc(s.template_name)}</b> v${esc(s.version)}${s.template_effective_from?' (from '+esc(s.template_effective_from)+')':''} · ${esc(s.service_code)} · ${esc(day(s.period_start))} to ${esc(day(s.period_end))} · ${esc(String(s.tasks_created))} task${s.tasks_created===1?'':'s'}${s.status==='Released'&&editor()&&!setups.setups.some(o=>o.service_code===s.service_code&&day(o.period_end)>day(s.period_end))?` <button type="button" data-svc="roll" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Roll forward</button>`:''}${s.status==='Waiting'?` ${editor()?`<button type="button" data-svc="release" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Release if ready</button>`:''}`:''}</li>`).join('')}</ul>`:'';
   if(!o.templates.length){modal('Set up a service · '+o.client.company_name,`<p class="info full">${esc(o.note)}</p><p>No service template has been approved yet. A Partner or authorised Manager approves the firm's service templates first${leader()?' (Projects, Service templates)':''}.</p>${prior}`);return;}
-  const svcOptions=o.templates.flatMap(t=>t.services.map(s=>[t.template_id+'|'+s.service_code,`${s.service_name} — ${t.name}`]));
+  const dtag=t=>t.effective_from||t.last_reviewed?` (version ${t.version}${t.effective_from?', from '+t.effective_from:''}${t.last_reviewed?', reviewed '+t.last_reviewed:''})`:` (version ${t.version}, no dates recorded)`;
+  const svcOptions=o.templates.flatMap(t=>t.services.map(s=>[t.template_id+'|'+s.service_code,`${s.service_name} — ${t.name}${dtag(t)}`]));
   const firms=o.firms.map(f=>[f.firm_id,f.legal_name]);
   const firmName=new Map(o.firms.map(f=>[f.firm_id,f.legal_name]));
   const staff=o.staff.filter(s=>firmName.has(s.firm_id)).map(s=>[s.staff_id+'|'+s.firm_id,`${s.full_name} (${s.category_code.toLowerCase()}) · ${firmName.get(s.firm_id)}`]);
@@ -64,7 +65,8 @@ export function createServiceSetupUI(ctx){
  async function templates(){
   const x=await request({action:'service_template_list'});
   const rows=x.templates.map(t=>{
-   const tasks=`<details><summary>${t.tasks.length} tasks · ${t.services.map(s=>esc(s.service_code)).join(', ')}</summary><ul>${t.tasks.map(k=>`<li><b>${esc(k.task_name)}</b> · ${esc(k.stage)} · ${esc(k.recurrence)}${k.mandatory?'':' · optional'}${k.requires_obligation?' · needs '+esc(k.requires_obligation)+' on the verified tax profile':''}</li>`).join('')}</ul></details>`;
+   const dl=`<small class="dates">${t.effective_from||t.last_reviewed?[t.effective_from?'From '+esc(t.effective_from):'',t.last_reviewed?'reviewed '+esc(t.last_reviewed):''].filter(Boolean).join(' · '):'No dates recorded'}</small>`;
+   const tasks=dl+`<details><summary>${t.tasks.length} tasks · ${t.services.map(s=>esc(s.service_code)).join(', ')}</summary><ul>${t.tasks.map(k=>`<li><b>${esc(k.task_name)}</b> · ${esc(k.stage)} · ${esc(k.recurrence)}${k.mandatory?'':' · optional'}${k.requires_obligation?' · needs '+esc(k.requires_obligation)+' on the verified tax profile':''}</li>`).join('')}</ul></details>`;
    const acts=[];
    if(t.status==='Draft'&&x.can_approve)acts.push(`<button type="button" data-svc="approve" data-id="${esc(t.template_id)}" data-rev="${esc(t.revision)}">Approve</button>`);
    if(t.status!=='Retired'&&x.can_retire)acts.push(`<button type="button" data-svc="retire" data-id="${esc(t.template_id)}" data-rev="${esc(t.revision)}">Retire</button>`);
