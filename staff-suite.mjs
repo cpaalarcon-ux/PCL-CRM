@@ -10,7 +10,7 @@ import {createKraUI} from './staff-kra.mjs?v=20261111-kraprog-v1';
 import {createIncomingUI} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {createForensicUI} from './staff-forensic.mjs?v=20261110-taxrole-v3';
 import {createDeadlineUI} from './staff-deadlines.mjs?v=20261112-resources-v1';
-import {createSettingsHubUI} from './staff-settings-hub.mjs?v=20261112-resources-v1';
+import {createSettingsHubUI} from './staff-settings-hub.mjs?v=20261117-actions-v1';
 import {createStarterConfirmUI} from './staff-starter-confirm.mjs?v=20261112-resources-v1';
 import {createRoutingMapUI} from './staff-routing-map.mjs?v=20261115-copy-v1';
 import {createTemplateLibraryUI} from './staff-template-library.mjs?v=20261116-library-v1';
@@ -20,8 +20,11 @@ import {createToolsUI} from './staff-tools.mjs?v=20261116-tools-v1';
 import {createRolloverUI} from './staff-rollover.mjs?v=20261116-roll-v1';
 import {createTaxRolesUI} from './staff-tax-roles.mjs?v=20261112-resources-v1';
 import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
-import {SETTINGS_TABS,tabForCard,layoutView,rightsView} from './staff-settings-layout.mjs?v=20261117-frame-v1';
+import {SETTINGS_TABS,tabForCard,layoutView,rightsView} from './staff-settings-layout.mjs?v=20261117-actions-v1';
 import {createSettingsFrameUI} from './staff-settings-frame.mjs?v=20261117-frame-v1';
+import {createStatementReviewUI} from './staff-statement-review.mjs?v=20261117-actions-v1';
+import {createOwnerMatrixUI} from './staff-owner-matrix.mjs?v=20261117-actions-v1';
+import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261117-actions-v1';
 import {createResourcesUI} from './staff-resources.mjs?v=20261114-templates-v1';
 import {createDueBacklogUI} from './staff-due-backlog.mjs?v=20261112-resources-v1';
 import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261116-whtvat-v1';
@@ -44,7 +47,18 @@ export function createSuiteUI(ctx){
  const incoming=createIncomingUI({...ctx,button,area,check});
  const forensic=createForensicUI({...ctx,button,area,check});
  const deadlines=createDeadlineUI({...ctx,button,area,check});
- const settingsHub=createSettingsHubUI(ctx);
+ const hubCtx={...ctx,openSection:(o,s)=>openSection(o,s)};
+ const settingsHub=createSettingsHubUI(hubCtx);
+ const stmtReview=createStatementReviewUI(ctx);
+ const ownerMatrix=createOwnerMatrixUI({...ctx,hubRefresh:()=>{settingsHub.refresh();}});
+ const myApprovals=createMyApprovalsUI(hubCtx);
+ // Where an Open button goes (build 2839): a Settings tab, the grouped statement-line review, or the area that holds the setting.
+ const AREA_NAMES={projects:'Projects & tasks',clients:'Clients',documents:'Documents',audit:'Audit & assurance'};
+ function openSection(o,s){
+  if(o.review==='statement'){stmtReview.open();return;}
+  if(o.tab){settingsTab=o.tab;ctx.render();return;}
+  if(o.view){ctx.navigate(o.view);ctx.notice(`Opened ${AREA_NAMES[o.view]||o.view}. ${s.title}: ${s.where}.`);}
+ }
  const frame=createSettingsFrameUI({...ctx,setSettingsTab:code=>{settingsTab=code;}});
  const starterConfirm=createStarterConfirmUI({...ctx,button,area,check});
  const routingMap=createRoutingMapUI({...ctx,button,area,check});
@@ -85,7 +99,7 @@ export function createSuiteUI(ctx){
  function adminSettings(){return `<section class="card"><div class="section-head"><h2>System settings</h2></div><p class="muted">A System Administrator keeps the application lists and reference material up to date. You do not see or change client records, and you cannot approve anything. Tax rules, chart of accounts changes and release decisions stay with Managers and Partners.</p><div class="actions"><button type="button" data-v6="sector">+ Add sector</button>${button('references','Private reference documents')}${button('release-read','Go-live readiness (read only)')}</div></section><section class="card section-space"><h3>Sectors</h3>${(d().sectors||[]).map(x=>`<span class="badge">${esc(x.name)}</span>`).join(' ')||empty('No sectors yet.')}</section>`;}
  function settings(){if(d().me.category_code==='ADMIN')return adminSettings();
   if(frame.open())return frame.bar()+frame.page();
-  const pieces={overviewFeedsCard:frame.card(),settingsHub:settingsHub.card(),referenceCard:settingsCard({id:'referenceCard',title:'Reference documents & change control',purpose:'Review the consolidated Word specifications and retain each approved version inside the ERP.',audience:'Managers and Partners',actions:button('references','Open')}),chartCard:settingsCard({id:'chartCard',title:'Chart of accounts',purpose:'Attached account master, controlled additions and separate tax rules. Every staff member can search the chart under Documents, Resources.',audience:'Managers and Partners',actions:'<button type="button" data-accounting="catalog">Browse chart of accounts</button>'+button('resources-open','Resources')}),deadlineCard:deadlines.card(),taxRoleCard:taxRoles.card(),dueBacklogCard:dueBacklog.card(),taxRatesCard:taxConfig.rates(),starterConfirmCard:starterConfirm.card(),routingMapCard:routingMap.card(),templateLibraryCard:templateLibrary.card(),exportProfilesCard:exportProfiles.card(),eligibilityCard:eligibility.card(),toolsCard:tools.card(),
+  const pieces={overviewFeedsCard:frame.card(),myApprovalsCard:myApprovals.card(),settingsHub:settingsHub.card(),ownerMatrixCard:ownerMatrix.card(),referenceCard:settingsCard({id:'referenceCard',title:'Reference documents & change control',purpose:'Review the consolidated Word specifications and retain each approved version inside the ERP.',audience:'Managers and Partners',actions:button('references','Open')}),chartCard:settingsCard({id:'chartCard',title:'Chart of accounts',purpose:'Attached account master, controlled additions and separate tax rules. Every staff member can search the chart under Documents, Resources.',audience:'Managers and Partners',actions:'<button type="button" data-accounting="catalog">Browse chart of accounts</button>'+button('resources-open','Resources')}),deadlineCard:deadlines.card(),taxRoleCard:taxRoles.card(),dueBacklogCard:dueBacklog.card(),taxRatesCard:taxConfig.rates(),starterConfirmCard:starterConfirm.card(),routingMapCard:routingMap.card(),templateLibraryCard:templateLibrary.card(),exportProfilesCard:exportProfiles.card(),eligibilityCard:eligibility.card(),toolsCard:tools.card(),
    staffRatesCard:partner()?`<section class="card section-space"><div class="section-head"><h2>Staff cost & billing rates</h2>${button('staff-rate','+ Add rate period')}</div>${table(['Staff','Effective dates','Cost / hour','Billable / hour'],s().staff_rates.map(r=>[esc(staffName(r.staff_id)),`${shortDate(r.effective_from)} – ${shortDate(r.effective_to)}`,money(r.cost_rate),money(r.billable_rate)]))}</section>`:'',handlingFirmsCard:partner()?`<section class="card section-space"><div class="section-head"><h2>Handling firms</h2><button data-new="firm">+ Add firm</button></div>${table(['Firm','Registered name','Invoice prefix','Action'],d().firms.map(f=>[esc(f.firm_code),esc(f.legal_name),esc(f.invoice_prefix||'INV/'+f.firm_code),button('firm','Edit details',f.firm_id)]))}</section>`:''};
   const panels={};for(const t of SETTINGS_TABS)panels[t.code]='';
   for(const [id,html] of Object.entries(pieces))panels[tabForCard(id)]+=html;
@@ -228,7 +242,7 @@ export function createSuiteUI(ctx){
   if(await dueBacklog.handle(action,id))return;
   if(await resources.handle(action))return;
   if(await credits.handle(action,id))return;
-  if(await frame.handle(action,id))return;if(action==='settings-tab'){settingsTab=id;if(id==='overview')frame.refresh();ctx.render();return;}if(action==='finance-tab'){financeTab=id;ctx.render();return;}if(action==='comms-tab'){commsTab=id;ctx.render();return;}if(action==='hr-tab'){timeTab=id;ctx.render();return;}
+  if(await frame.handle(action,id))return;if(await settingsHub.handle(action,id))return;if(await myApprovals.handle(action,id))return;if(await ownerMatrix.handle(action,id))return;if(await stmtReview.handle(action,id))return;if(action==='settings-tab'){settingsTab=id;if(id==='overview'){frame.refresh();myApprovals.refresh();}ctx.render();return;}if(action==='finance-tab'){financeTab=id;ctx.render();return;}if(action==='comms-tab'){commsTab=id;ctx.render();return;}if(action==='hr-tab'){timeTab=id;ctx.render();return;}
   if(action==='add-line'){$('#invoiceLines').insertAdjacentHTML('beforeend',lineInputs());invoiceTotals();return;}if(action==='add-employee'){$('#employeeRows').insertAdjacentHTML('beforeend',employeeInputs());return;}if(action==='add-partner'){$('#partnerRows').insertAdjacentHTML('beforeend',partnerInputs());return;}if(action==='print'){window.print();return;}
   if(action==='add-band'){$('#bands').insertAdjacentHTML('beforeend',bandInputs());return;}if(action==='remove-band'){b.closest('[data-band-row]').remove();return;}
   if(action==='rate-new'||action==='rate-edit'){editRate(id||null);return;}

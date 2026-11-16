@@ -16,7 +16,7 @@ export const SETTINGS_TABS=Object.freeze([
 
 // Which tab each Settings card sits on. A card that is not listed falls into "Records & Audit History", so a new card can never disappear.
 export const CARD_TAB=Object.freeze({
- overviewFeedsCard:'overview',settingsHub:'overview',
+ overviewFeedsCard:'overview',myApprovalsCard:'overview',settingsHub:'overview',ownerMatrixCard:'access',
  staffRatesCard:'firm',handlingFirmsCard:'firm',
  taxRoleCard:'access',
  templateLibraryCard:'services',eligibilityCard:'services',

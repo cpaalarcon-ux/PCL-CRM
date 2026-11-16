@@ -2,6 +2,10 @@ import {fail} from './validation.mjs';
 import {buildHub} from './settings-hub-rules.mjs';
 import {lockedStarters} from './bank-starter-rules.mjs';
 
+// The confirmed owners now in force (build 2839). An ended confirmation is history and is not read here.
+export async function openOwners(tx:any){
+ return await tx`select o.section_key,o.owner_role,o.owner_staff_id,erp_private.staff_name(o.owner_staff_id) staff_name,erp_private.staff_name(o.confirmed_by) confirmed_by_name,o.confirmed_at,o.note from erp_private.settings_section_owners o where o.ended_at is null`;
+}
 // Settings hub (build 2787): counts only, read through erp_private.settings_hub(). It changes nothing.
 export async function settingsHubAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action!=='settings_hub_read')return undefined;
@@ -15,5 +19,5 @@ export async function settingsHubAction(tx:any,a:any,p:any):Promise<any>{
  // Tax periods still waiting for a confirmed KRA due date (build 2796): counted from the same list the Settings card opens.
  const backlog=(await tx`select erp_private.period_due_backlog() as items`)[0]?.items||[];
  counts.push({section_key:'due_date_backlog',pending:backlog.filter((x:any)=>x.due_status==='MISSING').length,total:backlog.length});
- return buildHub(counts);
+ return buildHub(counts,(await openOwners(tx)).map((o:any)=>({...o,confirmed_at:o.confirmed_at?new Date(o.confirmed_at).toISOString():null})));
 }
