@@ -1,7 +1,6 @@
 // The approved routing map (build 2802). One list per client of which of the client's accounts a routing code posts to, for purchases, sales and payroll.
 // A Manager or Partner proposes a mapping; a Partner who did not propose it approves it. An approved mapping is ended on a date or withdrawn with a reason, never edited.
 // Once approved, every purchase row with that routing code and an invoice date inside the mapping is mapped automatically as "Mapped, awaiting review". Nothing is posted.
-import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
 const e0=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const day=v=>v?String(v).slice(0,10):'';
 export const ROUTING_NOTE='A routing code says which of the client\'s accounts a purchase, sale or payroll line belongs to. Approve it once and every row with that code is mapped automatically for the dates it covers, ready for review. Rows with no approved mapping, or more than one, are listed with the reason. Nothing is posted by a mapping.';
@@ -19,10 +18,6 @@ export function createRoutingMapUI(ctx){
  const {$,esc,field,select,form,modal,request,notice}=ctx,d=()=>ctx.data();
  const leaderRole=()=>['PARTNER','MANAGER'].includes(d().me?.category_code),canUse=()=>!['INTERN','ADMIN'].includes(d().me?.category_code);
  let cid='',cur=null;
- function card(){
-  if(!leaderRole())return '';
-  return settingsCard({id:'routingMapCard',title:'Client routing map',purpose:'Approve which of a client\'s accounts each purchase, sales and payroll routing code posts to, once, with dates.',audience:'Managers propose; Partners approve',actions:ctx.button('routing-map-open','Open')});
- }
  function pickClient(){
   const clients=(d().clients||[]).map(c=>[c.client_id,c.legal_name||c.name||c.client_id]);
   modal('Client routing map',form(select('client_id','Client *',clients,'','Choose a client'),'Open'),async f=>{if(!f.get('client_id'))throw Error('Choose a client.');return f.get('client_id');},id=>open(id),{refreshWorkspace:false,pendingLabel:'Opening…',pendingMessage:'Opening the routing map.',successMessage:'Opened.'});
@@ -52,9 +47,11 @@ export function createRoutingMapUI(ctx){
   modal('Propose a mapping',form(select('module','For *',['Purchases','Sales','Payroll'],'Purchases','Choose')+field('routing_code','Routing code * (for payroll, one of: '+(codes.map(c=>c[0]).join(', '))+')','','text')+field('item_code','TB item code (optional: only to choose between several accounts for one purchase code)','','text')+select('erp_account_code','Client account *',accountList(),'','Choose an account')+field('effective_from','Applies from *','','date')+field('effective_to','Applies to (leave blank if open)','','date')+field('label','Note (optional)','','text'),'Propose'),
    f=>request({action:'routing_map_propose',client_id:cid,module:f.get('module'),routing_code:f.get('routing_code'),item_code:f.get('item_code')||null,erp_account_code:f.get('erp_account_code'),effective_from:f.get('effective_from'),effective_to:f.get('effective_to')||null,label:f.get('label')||null}),()=>open(cid),{refreshWorkspace:false});
  }
- async function handle(action){
+ // From a client's own Client Setup screen the id is given and that client's map opens; from the Settings register no client is named, so one is chosen first.
+ async function handle(action,id){
   if(action!=='routing-map-open')return false;
+  if(id){if($('#editor')?.open)$('#editor').close();await open(id);return true;}
   pickClient();return true;
  }
- return {card,open,handle,canUse};
+ return {open,handle,canUse};
 }

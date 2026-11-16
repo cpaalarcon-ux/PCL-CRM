@@ -81,6 +81,7 @@ test('grouped statement-line review, Owner Matrix and My Approvals through the r
  // ---- My Approvals ----
  const before=(await tx`select count(*)::int n from erp_private.audit_events`)[0].n;
  const apP=await own('PARTNER',{action:'settings_approvals_read'}),apM=await own('MANAGER',{action:'settings_approvals_read'});
+ assert.ok(Array.isArray(apP.renewals),'renewals are returned beside queues and records');assert.ok(apP.renewals.every(r=>typeof r.days==='number'&&typeof r.lapsed==='boolean'&&r.label),'each renewal says what ends and when');
  assert.equal((await tx`select count(*)::int n from erp_private.audit_events`)[0].n,before,'reading writes nothing');
  const q=(ap,k)=>ap.queues.find(x=>x.key===k);
  assert(q(apP,'approve_statement_lines').count>0);assert.equal(q(apP,'approve_statement_lines').needs_my_action,true);assert.equal(q(apM,'approve_statement_lines').needs_my_action,false,'a Manager does not approve statement lines');

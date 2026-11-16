@@ -85,7 +85,7 @@ export function recordView(d,tab='overview'){
 // A blocker in a piece of work names the setting that fixes it. The link takes the person to that setting and brings them back to the same place.
 export const CONFIGURE_TARGETS=Object.freeze({
  export_profile:{area:'export_profile',label:'Statutory export profile',tab:'templates',where:'Settings → Upload & Export Templates → Statutory export profiles'},
- routing_map:{area:'routing_map',label:'Routing mapping',tab:'accounting',where:'Settings → Accounting & Tax Rules → Client routing map'},
+ routing_map:{area:'routing_map',label:'Routing mapping',view:'clients',where:'Clients → open the client → Client Setup → Routing map'},
  eligibility:{area:'eligibility',label:'Service eligibility',tab:'services',where:'Settings → Service Catalogue → Service eligibility'},
  tax_rate:{area:'tax_rate',label:'Tax rule',tab:'accounting',where:'Settings → Accounting & Tax Rules → Tax rules'}
 });
@@ -119,6 +119,7 @@ export function createSettingsFrameUI(ctx){
   if(action==='settings-record-close'){const t=rec?.tab;rec=null;recFailed='';ov=null;if(t)ctx.setSettingsTab(t);ctx.render();return true;}
   if(action==='configure-go'){
    const {kind,from,target}=parseConfigure(id);if(!target){notice('That setting cannot be opened from here.');return true;}
+   if(target.view){document.getElementById('editor')?.close?.();ctx.navigate(target.view);notice(`Opened Clients. ${target.label}: ${target.where}.`);return true;}
    ret={label:from,where:target.where,hash:ctx.currentHash()};rec=null;recFailed='';ctx.setSettingsTab(target.tab);
    document.getElementById('editor')?.close?.();ctx.navigate('firms');return true;
   }

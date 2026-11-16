@@ -14,6 +14,12 @@ export function recordsView(items,{esc=e0}={}){
  if(!items.length)return '<p class="muted" id="apRecords">No records match these filters.</p>';
  return `<div class="scroll"><table id="apRecords"><thead><tr><th>Record</th><th>State</th><th>Scope</th><th>Owner</th><th>Effective from</th><th>Prepared by</th><th></th></tr></thead><tbody>${items.slice(0,200).map(i=>`<tr><td><b>${esc(i.label)}</b><small>${esc(i.area_label)}</small></td><td>${esc(i.state)}${i.needs_my_action?' <span class="badge warn">Needs my action</span>':''}</td><td>${esc(i.scope)}</td><td>${esc(i.owner_label||'')}</td><td>${esc(i.effective_from||'')}</td><td>${esc(i.prepared_by||'')}</td><td>${btn('settings-record','Open',i.area+':'+i.record_id)}</td></tr>`).join('')}</tbody></table></div>${items.length>200?`<p class="muted">Showing the first 200 of ${esc(items.length)}. Narrow the filters.</p>`:''}`;
 }
+// Renewals (build 2840): lapsed or ending within 60 days. A lapsed authorisation or rule period blocks the work that uses it until it is renewed, so these come first.
+export function renewalsView(items,{esc=e0}={}){
+ if(!items||!items.length)return '<p class="ok" id="apRenewals">Nothing lapsed or ending within 60 days.</p>';
+ const when=i=>i.lapsed?`Lapsed ${esc(-i.days)} day${i.days===-1?'':'s'} ago`:i.days===0?'Ends today':`Ends in ${esc(i.days)} day${i.days===1?'':'s'}`;
+ return `<div class="scroll"><table id="apRenewals"><thead><tr><th>Record</th><th>What ends</th><th>Date</th><th>Owner</th><th></th></tr></thead><tbody>${items.map(i=>`<tr data-lapsed="${i.lapsed?'yes':'no'}"><td><b>${esc(i.label)}</b><small>${esc(i.area_label)}</small></td><td>${esc(i.what)}</td><td>${esc(i.date)} <span class="badge ${i.lapsed?'bad':'warn'}">${when(i)}</span></td><td>${esc(i.owner_label||'')}</td><td>${btn('settings-record','Open',i.area+':'+i.record_id)}</td></tr>`).join('')}</tbody></table></div>`;
+}
 export function filtersView(f,data,{esc=e0}={}){
  const opt=(v,l,sel)=>`<option value="${esc(v)}"${v===sel?' selected':''}>${esc(l)}</option>`;
  return `<div class="filters" id="apFilters"><label><input type="checkbox" data-ap="mine"${f.mine?' checked':''}> Needs my action</label>
@@ -25,7 +31,7 @@ export function filtersView(f,data,{esc=e0}={}){
 }
 export function approvalsView(data,f,{esc=e0}={}){
  const recs=visibleRecords(data.records,f);
- return `<p class="muted">${esc(data.note)}</p>${filtersView(f,data,{esc})}<h3>Waiting by setting type</h3>${queuesView(data.queues,{mine:f.mine,esc})}<h3>Records</h3><p class="muted">Draft and In Review records. Choose another state to see approved, active, suspended or retired records.</p><div id="apRecordsBody">${recordsView(recs,{esc})}</div>`;
+ return `<p class="muted">${esc(data.note)}</p><p class="muted">These are firm-wide settings. Client set-up (sections, charts, opening balances, routing mappings and service set-ups) is a separate queue. <button type="button" data-v3="setup-tasks">Open Client Setup Tasks</button></p>${filtersView(f,data,{esc})}<h3>Waiting by setting type</h3>${queuesView(data.queues,{mine:f.mine,esc})}<h3>Renewals</h3>${renewalsView(data.renewals,{esc})}<h3>Records</h3><p class="muted">Draft and In Review records. Choose another state to see approved, active, suspended or retired records.</p><div id="apRecordsBody">${recordsView(recs,{esc})}</div>`;
 }
 export function createMyApprovalsUI(ctx){
  const {request}=ctx;

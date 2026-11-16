@@ -1,22 +1,17 @@
 import {fail,uuid,text} from './validation.mjs';
+import {mandatoryState,buildClientTasks,clientConfigurationItems,TASK_ORDER} from './client-setup-tasks-rules.mjs';
 import {SECTIONS,SECTION_CODES,SOURCE_KINDS,sourceProblem,submitPlan,decidePlan,sectionState,sectionLabel,milestones} from './setup-review-rules.mjs';
 // Build 2828: deferred review of client set-up sections. The preparer submits and carries on; a Manager or Partner reviews later, all at once.
 // The Chart of Accounts and Opening Trial Balance keep their own blocking approvals; here they are only reported so the whole picture is on one screen.
-const ACTIONS=['client_setup_review_read','client_setup_section_submit','client_setup_review_queue','client_setup_section_decide'];
+const ACTIONS=['client_setup_tasks_read','client_setup_review_read','client_setup_section_submit','client_setup_review_queue','client_setup_section_decide'];
 const LEADERS=['PARTNER','MANAGER'];
 
 async function mandatory(tx:any,cid:string){
  const v=await tx`select status from erp_private.client_chart_versions where client_id=${cid} order by created_at desc`;
- const chart=v.some((x:any)=>x.status==='Approved')?'Approved':v.some((x:any)=>x.status==='Draft')?'Pending Review':v.length&&v[0].status==='Returned'?'Correction Required':'Draft';
  const c=(await tx`select opening_balance_status from erp_private.clients where client_id=${cid}`)[0];
  const j=await tx`select j.status from erp_private.ledger_journals j join erp_private.ledger_periods p on p.period_id=j.period_id where p.client_id=${cid} and j.kind='Opening' order by j.created_at desc`;
- let opening='Draft';
- if(c?.opening_balance_status==='No opening balances')opening='Approved';
- else if(j.some((x:any)=>x.status==='Posted'))opening='Approved';
- else if(j.some((x:any)=>x.status==='Submitted'))opening='Pending Review';
- else if(j.length&&j[0].status==='Returned')opening='Correction Required';
- else if(!j.length&&chart!=='Approved')opening='Blocked';
- return {chart:{status:chart,label:'Chart of Accounts'},opening:{status:opening,label:'Opening Trial Balance',not_applicable:c?.opening_balance_status==='No opening balances'}};
+ const m=mandatoryState(v,j,c?.opening_balance_status);
+ return {chart:{status:m.chart,label:'Chart of Accounts'},opening:{status:m.opening,label:'Opening Trial Balance',not_applicable:m.opening_not_applicable}};
 }
 const digest=async(tx:any,cid:string,code:string)=>String((await tx`select erp_private.client_setup_section_digest(${cid}::uuid,${code}) d`)[0].d);
 
@@ -35,6 +30,25 @@ async function readClient(tx:any,cid:string){
 export async function clientSetupReviewAction(tx:any,a:any,p:any):Promise<any>{
  if(!ACTIONS.includes(p.action))return undefined;
  if(['INTERN','ADMIN'].includes(a.category_code))fail(403,'Client set-up review is kept by staff with client access.');
+
+ if(p.action==='client_setup_tasks_read'){
+  // One set-based read per table, all under the caller's client access. Only clients that are active and not archived have tasks.
+  const only=p.client_id?uuid(p.client_id):null;
+  const clients=await tx`select client_id,company_name from erp_private.clients where deleted_at is null and service_status='Active' and record_status<>'Archived' and (${only}::uuid is null or client_id=${only}::uuid) order by company_name`;
+  const ids=clients.map((c:any)=>c.client_id);
+  const sections=ids.length?await tx`select client_id,section_code,status,submitted_by from erp_private.client_setup_sections where client_id=any(${ids}::uuid[])`:[];
+  const vrows=ids.length?await tx`select client_id,status from erp_private.client_chart_versions where client_id=any(${ids}::uuid[]) order by created_at desc`:[];
+  const jrows=ids.length?await tx`select p.client_id,j.status from erp_private.ledger_journals j join erp_private.ledger_periods p on p.period_id=j.period_id where j.kind='Opening' and p.client_id=any(${ids}::uuid[]) order by j.created_at desc`:[];
+  const ob=ids.length?await tx`select client_id,opening_balance_status from erp_private.clients where client_id=any(${ids}::uuid[])`:[];
+  const routing=ids.length?await tx`select client_id,status,created_by from erp_private.client_routing_map where status='Draft' and client_id=any(${ids}::uuid[])`:[];
+  const engagements=ids.length?await tx`select client_id,service_code,period_start::text period_start,period_end::text period_end,status from erp_private.engagement_setups where status='Waiting' and client_id=any(${ids}::uuid[])`:[];
+  const group=(rows:any[])=>{const o:any={};for(const r of rows)(o[r.client_id]=o[r.client_id]||[]).push(r);return o;};
+  const openingStatus:any={};for(const r of ob)openingStatus[r.client_id]=r.opening_balance_status;
+  const me={staff_id:a.staff_id,leader:LEADERS.includes(a.category_code)};
+  const tasks=buildClientTasks({clients,sections,versions:group(vrows),journals:group(jrows),openingStatus,routing,engagements,me});
+  tasks.sort((x:any,y:any)=>x.company_name.localeCompare(y.company_name)||TASK_ORDER.indexOf(x.kind)-TASK_ORDER.indexOf(y.kind));
+  return {tasks,configuration:clientConfigurationItems(tasks),clients_checked:clients.length,clients_with_tasks:new Set(tasks.map((t:any)=>t.client_id)).size,leader:me.leader};
+ }
 
  if(p.action==='client_setup_review_queue'){
   if(!LEADERS.includes(a.category_code))fail(403,'A Manager or Partner reviews set-up sections.');

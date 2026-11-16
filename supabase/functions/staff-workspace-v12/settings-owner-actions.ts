@@ -1,6 +1,6 @@
 import {fail,uuid} from './validation.mjs';
 import {ownerMatrix,checkItems,OWNER_ROLES,AREA_SECTION,queueNeedsMe,recordNeedsMe,roleLabel} from './settings-owner-rules.mjs';
-import {present} from './settings-state-rules.mjs';
+import {present,buildOverview} from './settings-state-rules.mjs';
 import {settingsHubAction,openOwners} from './settings-hub-actions.ts';
 
 // Owner Matrix and My Approvals (build 2839). The matrix is the only write here: a Partner confirms who owns each section. Confirming never edits an earlier row;
@@ -48,6 +48,8 @@ export async function settingsOwnerAction(tx:any,a:any,p:any):Promise<any>{
   return {area:r.area,area_label:r.area_label,record_id:r.record_id,label:r.label,state:r.state,native_status:r.native_status,effective_from:r.effective_from,effective_to:r.effective_to,expires_on:r.expires_on,
    prepared_by:r.prepared_by,approver:r.approver,tab:r.tab,scope:r.extra?.client_name||'Firm-wide',owner_role:role,owner_label:role?roleLabel(role):'',
    needs_my_action:recordNeedsMe(r,a.category_code,me,canTax)};});
+ // Renewals: authorisations, policy reviews and rule periods that end within 60 days or have already lapsed, oldest first, each with its owner and the record to open.
+ const renewals=buildOverview(Array.isArray(reg)?reg:[],[],t).expiring.map((e:any)=>{const key=(AREA_SECTION as any)[e.area]||null,role=key?ownerRole(key):null;return {...e,owner_label:role?roleLabel(role):''};});
  const scopes=[...new Set(records.map((r:any)=>r.scope).filter((s:string)=>s!=='Firm-wide'))].sort();
- return {queues,records,scopes,roles:OWNER_ROLES.map(([code,label]:any)=>({code,label})),me,note:'The setting\'s own screen still decides who may approve. "Needs my action" means it is waiting, you may act on that kind of item, and you did not prepare it.'};
+ return {queues,records,renewals,scopes,roles:OWNER_ROLES.map(([code,label]:any)=>({code,label})),me,note:'The setting\'s own screen still decides who may approve. "Needs my action" means it is waiting, you may act on that kind of item, and you did not prepare it.'};
 }
