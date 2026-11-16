@@ -4,6 +4,7 @@ import {EQUITY_MOVES,CASH_FLOW_LINES,STATEMENTS,parseComparativeText,formatCompa
 import {buildStatements} from './annual-pack-statements.mjs';
 import {buildEquityStatement,buildCashFlow} from './annual-pack-flows.mjs';
 import {DATA_CUTOFF} from './ledger-rules.mjs';
+import {buildReview,checkGroupIds,checkException} from './statement-review-rules.mjs';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 const addDays=(d:string,n:number)=>{const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10);};
@@ -19,9 +20,50 @@ export async function statementMapRead(tx:any){
  return {lines,maps:rows,unmapped:accounts.filter((x:any)=>!mapped.has(x.code)),totals:{accounts:accounts.length,approved:rows.filter((m:any)=>m.status==='Approved'&&!m.effective_to).length,draft:rows.filter((m:any)=>m.status==='Draft').length}};
 }
 
+// Approve or reject the selected Draft mappings, one by one, recording the reviewer on every row (builds 2825, 2839).
+async function decideMaps(tx:any,a:any,ids:string[],approve:boolean,note:string){
+  let done=0;
+  for(const id of ids){
+   const m=(await tx`select * from erp_private.account_statement_map where map_id=${id} for update`)[0];
+   if(!m)fail(404,'A selected mapping no longer exists.');
+   if(m.status!=='Draft')fail(409,'A selected mapping has already been reviewed. Refresh the list.');
+   if(approve&&m.proposed_by&&m.proposed_by===a.staff_id)fail(403,'A mapping must be approved by a Partner other than the person who proposed it. The proposer can withdraw it by rejecting it.');
+   if(approve){
+    const open=(await tx`select map_id,effective_from from erp_private.account_statement_map where account_code=${m.account_code} and status='Approved' and effective_to is null for update`)[0];
+    if(open){
+     if(day(m.effective_from)<=day(open.effective_from))fail(409,`Account ${m.account_code}: the new line must start after the current one.`);
+     await tx`update erp_private.account_statement_map set effective_to=${addDays(day(m.effective_from),-1)} where map_id=${open.map_id}`;
+    }
+    await tx`update erp_private.account_statement_map set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note||null} where map_id=${id}`;
+   }else await tx`update erp_private.account_statement_map set status='Rejected',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where map_id=${id}`;
+   done++;
+  }
+  return {reviewed:done,status:approve?'Approved':'Rejected'};
+}
+
+// Every Draft mapping with what the review needs to classify it (build 2839). Reads only; the rules are in statement-review-rules.mjs.
+async function reviewRows(tx:any){
+ return await tx`select m.map_id,m.account_code,c.name account_name,c.statement account_statement,c.status account_status,c.is_legacy,m.line_code,l.label line_label,l.statement line_statement,m.effective_from,m.reason,m.proposed_by,erp_private.staff_name(m.proposed_by) proposed_by_name,
+   o.line_code open_line_code,o.effective_from open_from,(select count(*) from erp_private.account_statement_map d where d.account_code=m.account_code and d.status='Draft')::int drafts
+  from erp_private.account_statement_map m join erp_private.account_catalog c on c.code=m.account_code join erp_private.statement_lines l on l.line_code=m.line_code
+  left join erp_private.account_statement_map o on o.account_code=m.account_code and o.status='Approved' and o.effective_to is null
+  where m.status='Draft' order by l.statement,l.sort_order,m.account_code`;
+}
+
 export async function statementMapAction(tx:any,a:any,p:any){
  if(p.action==='ledger_statement_map_read')return await statementMapRead(tx);
+ if(p.action==='ledger_statement_map_review_read'){if(!isLeader(a))fail(403,'The statement-line review is for Managers and Partners.');return buildReview(await reviewRows(tx));}
  await tx`select pg_advisory_xact_lock(hashtextextended('statement-map',0))`;
+ if(p.action==='ledger_statement_map_review_approve'){
+  if(a.category_code!=='PARTNER')fail(403,'Only a Partner can approve a statement-line mapping.');
+  const note=text(p.review_note??'',500,false),rows=await reviewRows(tx);let ids:string[];
+  if(p.scope==='group'){
+   ids=(Array.isArray(p.map_ids)?p.map_ids:[]).map(uuid);const c=checkGroupIds(ids,rows);if(!c.ok)fail(409,c.message);
+  }else if(p.scope==='one'){
+   const id=uuid(p.map_id),c=checkException(rows.find((r:any)=>r.map_id===id),note);if(!c.ok)fail(400,c.message);ids=[id];
+  }else fail(400,'Choose a group or one mapping to approve.');
+  return {...await decideMaps(tx,a,ids,true,note),scope:p.scope};
+ }
  if(p.action==='ledger_statement_map_propose'){
   if(!isLeader(a))fail(403,'A Manager or Partner must propose a statement-line change.');
   const code=text(p.account_code,20),line=text(p.line_code,40),from=date(p.effective_from),reason=text(p.reason,500);
@@ -48,23 +90,7 @@ export async function statementMapAction(tx:any,a:any,p:any){
   }
   const note=approve?text(p.review_note??'',500,false):text(p.review_note,500);
   if(!approve&&note.length<10)fail(400,'Give a reason of at least 10 characters.');
-  let done=0;
-  for(const id of ids){
-   const m=(await tx`select * from erp_private.account_statement_map where map_id=${id} for update`)[0];
-   if(!m)fail(404,'A selected mapping no longer exists.');
-   if(m.status!=='Draft')fail(409,'A selected mapping has already been reviewed. Refresh the list.');
-   if(approve&&m.proposed_by&&m.proposed_by===a.staff_id)fail(403,'A mapping must be approved by a Partner other than the person who proposed it. The proposer can withdraw it by rejecting it.');
-   if(approve){
-    const open=(await tx`select map_id,effective_from from erp_private.account_statement_map where account_code=${m.account_code} and status='Approved' and effective_to is null for update`)[0];
-    if(open){
-     if(day(m.effective_from)<=day(open.effective_from))fail(409,`Account ${m.account_code}: the new line must start after the current one.`);
-     await tx`update erp_private.account_statement_map set effective_to=${addDays(day(m.effective_from),-1)} where map_id=${open.map_id}`;
-    }
-    await tx`update erp_private.account_statement_map set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note||null} where map_id=${id}`;
-   }else await tx`update erp_private.account_statement_map set status='Rejected',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where map_id=${id}`;
-   done++;
-  }
-  return {reviewed:done,status:approve?'Approved':'Rejected'};
+  return await decideMaps(tx,a,ids,approve,note);
  }
  fail(400,'Unknown statement-map action.');
 }
