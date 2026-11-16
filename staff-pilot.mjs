@@ -5,7 +5,7 @@ import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-an
 import {createImprovementUI} from './staff-improvements.mjs?v=20261116-dates-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261109-ptm-v1';
-import {clientProfile} from './staff-client-profile.mjs?v=20261109-dr-v1';
+import {clientProfile} from './staff-client-profile.mjs?v=20261118-spine-v1';
 import {paintDocRequests,bindDocRequests} from './staff-doc-requests.mjs?v=20261109-dr-v1';
 import {LIFECYCLE_WORDS,lifecycleForm,isArchived} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';
 import {DEFAULT_QUERY,queryToRequest,toolbar as registerBar,pager as registerPager,rowMeta} from './staff-client-register.mjs?v=20261110-taxrole-v3';
@@ -26,11 +26,11 @@ import {createSuiteUI} from './staff-suite.mjs?v=20261116-choices-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {moduleLinks,GROUP_ENGAGEMENTS,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261112-resources-v1';
-import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261111-urgent-v1';
+import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261118-spine-v1';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261110-taxrole-v3';
-import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261114-setupguide-v1';
+import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261118-spine-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 import {renderAccessGuide} from './staff-access-guide.mjs?v=20261106-rights-v1';
 import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261105-check-v1';
@@ -484,7 +484,9 @@ bindProposals({$,esc,field,form,modal,request,load,notice,data:()=>data});
 bindPolicies({esc,form,modal,request,data:()=>data});
 bindDocRequests({esc,form,field,select,modal,request,data:()=>data,notice,shortDate,today,load});
 bindGoLive({esc,form,modal,request,field});
-const setupGuide=createSetupGuideUI({$,esc,modal,request,notice,shortDate,data:()=>data,filtered,openClientSettings:improvements.client,openClientAccounts:(id,options)=>clientAccountSetup(id,options),stageOpening:stageOpeningTB,openLedger:id=>v6.openLedger(id),openOpeningImport:(id,settings)=>v6.openOpeningImport(id,settings),uploadOpeningAndImport,removeOpeningSource:(id,after)=>removeImportSource(id,after),openOpeningJournal:(id,periodId,journalId)=>v6.openOpeningJournal(id,periodId,journalId),openPurchases:id=>v6.openPurchases(id),openPeriodImports:id=>v6.openPeriodImports(id),openTaxPeriods:()=>suite.taxList(),openProject:id=>navigateWorkspace('projects',id),openProjects:()=>navigateWorkspace('projects'),openClients:()=>navigateWorkspace('clients'),openClientChart:improvements.chart});
+// Build 2846: the guide's KYC and Tax profile buttons open through the same suite buttons the card menu uses (openSuite below), so there is no second copy of that logic.
+const setupGuide=createSetupGuideUI({$,esc,modal,request,notice,shortDate,data:()=>data,filtered,openClientSettings:improvements.client,openClientAccounts:(id,options)=>clientAccountSetup(id,options),stageOpening:stageOpeningTB,openLedger:id=>v6.openLedger(id),openOpeningImport:(id,settings)=>v6.openOpeningImport(id,settings),uploadOpeningAndImport,removeOpeningSource:(id,after)=>removeImportSource(id,after),openOpeningJournal:(id,periodId,journalId)=>v6.openOpeningJournal(id,periodId,journalId),openPurchases:id=>v6.openPurchases(id),openPeriodImports:id=>v6.openPeriodImports(id),openTaxPeriods:()=>suite.taxList(),openProject:id=>navigateWorkspace('projects',id),openProjects:()=>navigateWorkspace('projects'),openClients:()=>navigateWorkspace('clients'),openClientChart:improvements.chart,
+ openSuite:(name,id)=>{const b=document.createElement('button');b.type='button';b.hidden=true;b.dataset.suite=name;b.dataset.id=id;document.body.appendChild(b);b.click();b.remove();}});
 const audit=createAuditUI({esc,field,select,form,modal,request,notice,shortDate,empty,render,data:()=>data,openClients:()=>navigateWorkspace('clients'),openProjects:()=>navigateWorkspace('projects'),createAuditProject:()=>{navigateWorkspace('projects');v6.editProject(null,{service_code:'AUD-STAT'});}});
 presence=createPresenceUI({$,esc,modal,form,field,select,request,load,notice,logout:()=>signedOut('Signed out.'),logTime:(id,taskId,suggest)=>v6.editTime(id,taskId,suggest),data:()=>data});
 procedures=createProcedureUI({$,esc,field,select,form,modal,request,notice,today,data:()=>data});

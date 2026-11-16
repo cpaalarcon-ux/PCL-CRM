@@ -2,8 +2,8 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const read=f=>fs.readFileSync(new URL('../'+f,import.meta.url),'utf8');
 test('the setup guide shows the chart of accounts as its own stage and opens the chart screen',()=>{
  const g=read('staff-setup-guide.mjs'),p=read('staff-pilot.mjs'),i=read('staff-improvements.mjs');
- assert.match(g,/title:'Chart of accounts'/);assert.match(g,/v3_client_chart_read/);assert.match(g,/openClientChart/);
- assert.match(g,/\{n:7,title:'Release'/);assert.match(g,/step\('2 · Chart of accounts'/);assert.match(g,/step\('4 · Opening trial balance'/);
+ assert.match(g,/step\('4a · Chart of accounts'/);assert.match(g,/v3_client_chart_read/);assert.match(g,/openClientChart/);
+ assert.match(g,/\{n:8,key:'release',title:T\.release/);assert.match(g,/step\('5 · Opening trial balance'/);
  assert.match(p,/openClientChart:improvements\.chart/);
  assert.match(i,/Opening T-structure/);
 });

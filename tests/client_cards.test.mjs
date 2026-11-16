@@ -71,19 +71,19 @@ test('main button: KYC and tax steps open their screens; ready clients get a tas
  assert.equal(nextAction(nextStep(base({readiness:undefined})),null).step,'loading','while mappings load the button opens the set-up guide');
 });
 
-test('set-up completion: four equal parts, and the tooltip names exactly what is missing',()=>{
- const full=setupCompletion(done());assert.deepEqual([full.pct,full.done,full.total,full.missing,full.checking],[100,4,4,[],false]);
- const noTb=setupCompletion(base());assert.equal(noTb.pct,75);assert.deepEqual(noTb.missing,['Opening trial balance: not yet staged']);
+test('set-up completion: five equal steps (build 2846 counts the client profile), and the tooltip names exactly what is missing',()=>{
+ const full=setupCompletion(done());assert.deepEqual([full.pct,full.done,full.total,full.missing,full.checking],[100,5,5,[],false]);
+ const noTb=setupCompletion(base());assert.equal(noTb.pct,80);assert.deepEqual(noTb.missing,['Opening trial balance: not yet staged']);
  assert.deepEqual(setupCompletion(base({stagedTB:true})).missing,['Opening trial balance: staged, still to be posted']);
  const kyc=setupCompletion(base({client:{...client,kra_pin:''},compliance:null,contacts:[]}));
- assert.equal(kyc.pct,50,'tax profile and activities are done; KYC and the opening TB are not');
+ assert.equal(kyc.pct,60,'profile, tax profile and activities are done; KYC and the opening TB are not');
  assert.deepEqual(kyc.missing.slice(0,1),['KYC and contacts: KRA PIN, KYC verification, a contact']);
  const profile=setupCompletion(base({missing:['Financial year-end','Sector','Branch','Address']}));
  assert.match(profile.missing[0],/^Client profile: Financial year-end, Sector, Branch and 1 more$/);
  const loading=setupCompletion(base({readiness:undefined}));assert.equal(loading.checking,true);
  assert.match(setupRing(noTb,'c1',esc),/Missing: Opening trial balance: not yet staged\./);
  assert.match(setupRing(noTb,'c1',esc),/role="tooltip"/);assert.match(setupRing(noTb,'c1',esc),/tabindex="0"/,'the ring can be reached with the keyboard');
- assert.match(setupRing(noTb,'c1',esc),/aria-label="Client set-up 75%\. Missing: /);assert.match(setupRing(noTb,'c1',esc),/stroke-dasharray="80\.11 106\.81"/);
+ assert.match(setupRing(noTb,'c1',esc),/aria-label="Client set-up 80%\. Missing: /);assert.match(setupRing(noTb,'c1',esc),/stroke-dasharray="85\.45 106\.81"/);
  assert.match(setupRing(full,'c1',esc),/Client set-up is complete\./);assert.match(setupRing(loading,'c1',esc),/Checking activities and mappings/);
 });
 

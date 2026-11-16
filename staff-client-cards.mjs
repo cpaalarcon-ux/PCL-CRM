@@ -1,4 +1,5 @@
 import {lifecycleBadge} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';
+import {identityChecks,clientSpine} from './staff-setup-spine.mjs?v=20261118-spine-v1';
 // Client list as cards: three set-up pillars, one computed next step, one status badge.
 // Pure functions so the rules can be tested without a browser. The page passes in its own helpers.
 
@@ -9,12 +10,8 @@ const cleanText=x=>String(x||'').trim();
 
 // Everything the card needs to decide. `readiness` is the async per-client mapping read (undefined until loaded).
 export function clientProgress({client:c,missing=[],compliance,contacts=[],taxProfiles=[],readiness,stagedTB=false}){
- const kycMissing=[];
- if(!cleanText(c.kra_pin))kycMissing.push('KRA PIN');
- if(!compliance?.verified_at)kycMissing.push('KYC verification');
- if(!contacts.length)kycMissing.push('a contact');
- const kycOk=!kycMissing.length;
- const taxOk=taxProfiles.some(x=>x.client_id===c.client_id&&x.status==='Verified');
+ // Build 2846: the KYC and tax-profile facts come from the shared set-up spine, so the card and the guide cannot read them differently.
+ const {kycOk,kycMissing,taxOk}=identityChecks({client:c,compliance,contacts,taxProfiles});
  const profileOk=!missing.length;
  let activitiesOk=null; // null = still loading
  if(readiness){
@@ -54,16 +51,11 @@ export function stateCounts(cards){
  return counts;
 }
 
-// ---- Set-up completion: four equal parts. The ring shows the share done; the tooltip lists exactly what is missing. ----
+// ---- Set-up completion: five equal steps from the shared set-up spine (build 2846). The ring shows the share done; the tooltip lists exactly what is missing. ----
+// Complete means what it always meant: profile, KYC and contacts, a verified tax profile, activities and mappings, and the opening trial balance.
 export function setupCompletion(p){
- const missing=[];
- if(!p.profileOk)missing.push('Client profile: '+p.missing.slice(0,3).join(', ')+(p.missing.length>3?` and ${p.missing.length-3} more`:''));
- if(!p.kycOk)missing.push('KYC and contacts: '+p.kycMissing.join(', '));
- if(!p.taxOk)missing.push('A verified tax profile');
- if(p.activitiesOk===false&&p.profileOk)missing.push('Activities, stock set-up or general mappings');
- if(!p.openingDone)missing.push(p.stagedTB?'Opening trial balance: staged, still to be posted':'Opening trial balance: not yet staged');
- const parts=[p.kycOk,p.taxOk,p.activitiesOk===true,p.openingDone],done=parts.filter(Boolean).length,checking=p.activitiesOk===null;
- return {done,total:parts.length,pct:Math.round(done/parts.length*100),missing,checking};
+ const sp=clientSpine(p);
+ return {done:sp.done,total:sp.total,pct:sp.pct,missing:sp.missing,checking:p.activitiesOk===null};
 }
 
 // ---- Status: red first, then amber, then green. Overdue tasks are known only where the register figures are loaded (Managers and Partners). ----
