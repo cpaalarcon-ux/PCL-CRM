@@ -2,7 +2,7 @@ let documentKind='Evidence';
 import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261116-choices-v1';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261116-bulk-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261109-ptm-v1';
 import {clientProfile} from './staff-client-profile.mjs?v=20261109-dr-v1';
@@ -210,7 +210,7 @@ function clients(){
  if(leaderView&&!clientPage&&!clientPageLoading)void fetchClientPage();
  const rows=leaderView?(clientPage?.rows||[]).map(r=>byId.get(r.client_id)).filter(Boolean):filtered().clients.filter(c=>!isArchived(c));
  if(isLeader())void ensureCardFacts(rows.map(c=>c.client_id));
- const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button data-v6="sector">+ Add sector</button><button class="primary" data-new="client">+ Add client</button><button data-suite="import-clients">Import clients from Excel</button></div>':'';
+ const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button type="button" data-v3="bulk-setup">Bulk set-up</button><button data-v6="sector">+ Add sector</button><button class="primary" data-new="client">+ Add client</button><button data-suite="import-clients">Import clients from Excel</button></div>':'';
  const cards=rows.map(c=>{
   const missing=c.details_visible?clientMissing(c):[],stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);
   const progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB});
