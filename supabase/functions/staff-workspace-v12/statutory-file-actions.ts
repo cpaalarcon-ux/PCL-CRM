@@ -3,6 +3,7 @@ import {logPayrollRead} from './payroll-access-log.ts';
 import {LAYOUTS,KINDS,ID_TYPES,P10_EMPLOYEE_TYPES,identifierIssues,buildFile,totalsAgree,reconcileToJournal,toCsv,fileName} from './statutory-file-rules.mjs';
 import {profileInForce} from './export-profile-rules.mjs';
 import {listProfiles} from './export-profile-actions.ts';
+import {returnAllowed} from './client-choices-rules.mjs';
 // Build 2829: statutory return files (NSSF, SHIF, PAYE P10) from a confirmed payroll summary.
 // Preparing a file never changes anything. Releasing one (release=true) is allowed only when every required column is filled from real data, the file's totals equal
 // the confirmed summary, and the summary agrees with the POSTED payroll journal account by account. The release is recorded (insert-only) with a hash of the file.
@@ -38,7 +39,9 @@ export async function statutoryFileAction(tx:any,a:any,p:any):Promise<any>{
     exists(select 1 from erp_private.ledger_sources s join erp_private.ledger_journals j on j.journal_id=s.journal_id where s.source_kind='Period import' and s.source_key=i.import_id::text and j.status='Posted') as journal_posted
     from erp_private.period_imports i where i.client_id=${cid} and i.kind='Payroll' and i.status='Confirmed' order by i.starts_on desc limit 36`;
   const exports=await tx`select export_id,import_id,file_kind,layout_code,month,row_count,generated_at,erp_private.reviewer_label(generated_by) as generated_by_name from erp_private.statutory_file_exports where client_id=${cid} order by generated_at desc limit 30`;
-  return {months:months.map((m:any)=>({import_id:m.import_id,month:day(m.starts_on).slice(0,7),starts_on:day(m.starts_on),ends_on:day(m.ends_on),employees:Number(m.employees),journal_posted:m.journal_posted})),
+  // Build 2841: the returns chosen for this client's payroll service. Nothing chosen yet means every return is offered, as before.
+  const chosen=(await tx`select return_code,effective_from,effective_to,status from erp_private.client_payroll_returns where client_id=${cid}`).map((r:any)=>({return_code:r.return_code,effective_from:day(r.effective_from),effective_to:r.effective_to?day(r.effective_to):null,status:r.status}));
+  return {chosen:{configured:chosen.length>0,rows:chosen},months:months.map((m:any)=>({import_id:m.import_id,month:day(m.starts_on).slice(0,7),starts_on:day(m.starts_on),ends_on:day(m.ends_on),employees:Number(m.employees),journal_posted:m.journal_posted,allowed_kinds:KINDS.filter((k:string)=>returnAllowed(chosen,k,day(m.starts_on),day(m.ends_on)).allowed)})),
    exports:exports.map((x:any)=>({...x,month:day(x.month).slice(0,7)})),
    layouts:KINDS.map(k=>({kind:k,code:LAYOUTS[k as keyof typeof LAYOUTS].code,label:LAYOUTS[k as keyof typeof LAYOUTS].label,agency:LAYOUTS[k as keyof typeof LAYOUTS].agency,source:LAYOUTS[k as keyof typeof LAYOUTS].source,columns:LAYOUTS[k as keyof typeof LAYOUTS].columns})),
    id_types:ID_TYPES,p10_employee_types:P10_EMPLOYEE_TYPES};
@@ -63,6 +66,9 @@ export async function statutoryFileAction(tx:any,a:any,p:any):Promise<any>{
  const payload=imp.payload||{},employees=payload.employees||[],calculated=payload.calculated||[];
  if(!calculated.length)fail(400,'The confirmed summary has no calculated employees.');
  const month=day(imp.starts_on).slice(0,7),layout=LAYOUTS[kind as keyof typeof LAYOUTS];
+ const chosenRows=await tx`select return_code,effective_from,effective_to from erp_private.client_payroll_returns where client_id=${cid}`;
+ const allowed=returnAllowed(chosenRows.map((r:any)=>({return_code:r.return_code,effective_from:day(r.effective_from),effective_to:r.effective_to?day(r.effective_to):null})),kind,day(imp.starts_on),day(imp.ends_on));
+ if(!allowed.allowed)fail(409,allowed.problem||'This return is not chosen for this client.');
  const people=await tx`select person_id,name,kra_pin,national_id,phone,surname,other_names,id_type,nssf_number,sha_number,payroll_number,p10_employee_type,disability,exemption_certificate from erp_private.client_payroll_people where client_id=${cid} order by created_at`;
  // The profile in force on the last day of the payroll month decides the formatting. A later profile never changes an earlier month.
  const profiles=(await listProfiles(tx)).map((x:any)=>({...x,effective_from:day(x.effective_from),effective_to:x.effective_to?day(x.effective_to):null})),profile=profileInForce(profiles,kind,day(imp.ends_on));

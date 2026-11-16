@@ -127,7 +127,7 @@ test('server wiring: read-only actions for Managers and Partners; no write in th
 test('readiness stays scoped: export profiles hold only the statutory payroll files, and the report gate does not read them',()=>{
  const files=fs.readdirSync(path.join(root,fx)).filter(f=>/\.(ts|mjs)$/.test(f));
  const users=files.filter(f=>/statutory_export_profiles|listProfiles|profileInForce/.test(rd(fx+f))).sort();
- const allowed=new Set(['export-profile-actions.ts','export-profile-rules.mjs','statutory-file-actions.ts','statutory-file-rules.mjs']);
+ const allowed=new Set(['client-choices-actions.ts','client-choices-rules.mjs','export-profile-actions.ts','export-profile-rules.mjs','statutory-file-actions.ts','statutory-file-rules.mjs']);
  for(const f of users)assert.ok(allowed.has(f),f+' reads export profiles; only the profile screens and the statutory file builder may');
  assert.ok(!/profile/i.test(rd(fx+'report-gate-rules.mjs').replace(/service[_ ]profile|profile_id|tax_profile|client profile/gi,'')),'the report-readiness gate does not look at export profiles');
  assert.match(rd(fx+'statutory-file-rules.mjs'),/if\(!profile\)issues\.push\('No published export profile is in force for this return and month\./,'a missing profile is an issue on the file, not on the client');

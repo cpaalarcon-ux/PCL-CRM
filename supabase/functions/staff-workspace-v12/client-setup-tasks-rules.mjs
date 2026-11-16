@@ -25,7 +25,7 @@ const needsClient=(code,status)=>CLIENT_INPUT_SECTIONS.includes(code)&&['Draft',
 // input: clients [{client_id,company_name}], sections [{client_id,section_code,status,submitted_by}], versions {client_id:[...]}, journals {client_id:[...]},
 // openingStatus {client_id:text}, routing [{client_id,status,created_by}], engagements [{client_id,service_code,period_start,period_end,status}],
 // me {staff_id,leader}. Returns one task per client and kind, with the specific items inside it.
-export function buildClientTasks({clients,sections,versions,journals,openingStatus,routing,engagements,me}){
+export function buildClientTasks({clients,sections,versions,journals,openingStatus,routing,engagements,exceptions,me}){
  const tasks=[];
  for(const c of clients||[]){
   const mine=(sections||[]).filter(s=>s.client_id===c.client_id);
@@ -49,6 +49,8 @@ export function buildClientTasks({clients,sections,versions,journals,openingStat
   else if(['Draft','Correction Required'].includes(st.opening))add({kind:'opening_prepare',who:'Preparer',title:st.opening==='Correction Required'?'Opening Trial Balance returned for correction':'Opening Trial Balance not yet prepared',count:1,detail:'Needs the client’s opening balances.',items:[openItem],go:'opening',needs_me:true,blocked_mine:0});
   const drafts=(routing||[]).filter(r=>r.client_id===c.client_id&&r.status==='Draft');
   if(drafts.length){const m=drafts.filter(r=>r.created_by===me.staff_id).length;add({kind:'routing_review',who:'Reviewer',title:'Routing mappings waiting for approval',count:drafts.length,detail:`${drafts.length} draft mapping${drafts.length===1?'':'s'} for the routing codes in purchases, sales and payroll files.`,items:[],go:'routing',needs_me:!!me.leader&&drafts.length>m,blocked_mine:m});}
+  const props=(exceptions||[]).filter(x=>x.client_id===c.client_id&&x.status==='Draft');
+  if(props.length){const m=props.filter(x=>x.created_by===me.staff_id).length;add({kind:'exception_review',who:'Reviewer',title:'Tax rule exceptions waiting for approval',count:props.length,detail:`${props.length} proposed exception${props.length===1?'':'s'} to a firm-wide tax rule. A Partner or the Tax Lead who did not propose it decides.`,items:[],go:'exceptions',needs_me:!!me.canApproveExceptions&&props.length>m,blocked_mine:m});}
   const waiting=(engagements||[]).filter(e=>e.client_id===c.client_id&&e.status==='Waiting');
   if(waiting.length)add({kind:'engagement_waiting',who:'Preparer',title:'Service set-ups waiting to be released',count:waiting.length,detail:shortList(waiting.map(e=>`${e.service_code} ${String(e.period_start).slice(0,10)} to ${String(e.period_end).slice(0,10)}`)),items:waiting.map(e=>({code:e.service_code,label:`${e.service_code} ${String(e.period_start).slice(0,10)} to ${String(e.period_end).slice(0,10)}`,status:'Waiting',needs_client:false,mine:false})),go:'engagement',needs_me:true,blocked_mine:0});
  }
@@ -62,4 +64,4 @@ export function clientConfigurationItems(tasks){
  return out;
 }
 
-export const TASK_ORDER=['section_prepare','chart_prepare','opening_prepare','engagement_waiting','section_review','chart_review','opening_review','routing_review'];
+export const TASK_ORDER=['section_prepare','chart_prepare','opening_prepare','engagement_waiting','section_review','chart_review','opening_review','routing_review','exception_review'];

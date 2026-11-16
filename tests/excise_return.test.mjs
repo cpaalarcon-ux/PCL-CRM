@@ -142,5 +142,5 @@ test('wiring: routed, no figures seeded, release label, no forensic words', ()=>
  for(const f of ['supabase/migrations/20261112040000_excise_lead_and_return_task.sql',fx+'excise-schedule-actions.ts',fx+'excise-schedule-rules.mjs','staff-excise-schedule.mjs'])assert.doesNotMatch(rd(f),/forensic|ISRS 4000/i);
  assert.match(rd(fx+'tax-config-actions.ts'),/Only an Engagement Partner or the designated Tax Manager can confirm and approve tax rules/);
  assert.match(rd(fx+'staff-access-control.mjs'),/excise_schedule_/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2840');
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2841');
 });

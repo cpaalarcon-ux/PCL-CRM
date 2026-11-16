@@ -10,6 +10,7 @@ export function linkHtml(t,{esc=e0,leader=false}={}){
  if(t.go==='chart')return `<button type="button" data-v3="chart" data-id="${id}">Open chart of accounts</button>`;
  if(t.go==='opening')return `<button type="button" data-client-open="${id}" data-client-tab="projects">Open client file</button>`;
  if(t.go==='routing')return `<button type="button" data-suite="routing-map-open" data-id="${id}">Open routing map</button>`;
+ if(t.go==='exceptions')return `<button type="button" data-v3="exceptions" data-id="${id}">Open tax rule exceptions</button>`;
  if(t.go==='engagement')return `<button type="button" data-v3="setup" data-id="${id}">Open service set-up</button>`;
  return '';
 }

@@ -55,7 +55,7 @@ test('chart, opening trial balance, routing mappings and service set-ups each gi
  assert.deepEqual(r.map(x=>[x.kind,x.count,x.blocked_mine,x.needs_me]),[['routing_review',2,1,true]],'only this client\'s drafts count; an active mapping is not a task');
  const e=one({...ok,engagements:[{client_id:C1,service_code:'TAX-COMP',period_start:'2026-01-01',period_end:'2026-12-31',status:'Waiting'},{client_id:C1,service_code:'AUD-STAT',period_start:'2026-01-01',period_end:'2026-12-31',status:'Released'}]});
  assert.deepEqual(e.map(x=>[x.kind,x.count]),[['engagement_waiting',1]]);assert.match(e[0].detail,/TAX-COMP 2026-01-01 to 2026-12-31/);
- assert.deepEqual(TASK_ORDER.filter(k=>!['section_prepare','chart_prepare','opening_prepare','engagement_waiting','section_review','chart_review','opening_review','routing_review'].includes(k)),[]);
+ assert.deepEqual(TASK_ORDER.filter(k=>!['section_prepare','chart_prepare','opening_prepare','engagement_waiting','section_review','chart_review','opening_review','routing_review','exception_review'].includes(k)),[]);
 });
 
 test('the client configuration list holds only what needs the client, one specific line each',()=>{
@@ -102,7 +102,7 @@ test('screens: buttons, the routing map leaves Settings, and the Configure link 
  assert.match(rmap,/async function handle\(action,id\)/);assert.match(rmap,/if\(id\)\{if\(\$\('#editor'\)\?\.open\)\$\('#editor'\)\.close\(\);await open\(id\);return true;\}/);
  assert.equal(CONFIGURE_TARGETS.routing_map.view,'clients');assert.equal(CONFIGURE_TARGETS.routing_map.tab,undefined);assert.match(CONFIGURE_TARGETS.routing_map.where,/Client Setup → Routing map/);
  assert.match(rd('staff-settings-frame.mjs'),/if\(target\.view\)\{[^}]*ctx\.navigate\(target\.view\)/);
- for(const f of ['staff-routing-map.mjs','staff-settings-frame.mjs','staff-settings-layout.mjs','staff-suite.mjs','staff-improvements.mjs','staff-my-approvals.mjs','staff-accounting.mjs','staff-workspace-v6.mjs'])assert.match(suite+imp+pilot+rd('staff-accounting.mjs')+rd('staff-workspace-v6.mjs'),new RegExp(f.replace('.','\\.')+'\\?v=20261116-setuptasks-v1'),f+' has a fresh cache token');
+ for(const f of ['staff-routing-map.mjs','staff-settings-frame.mjs','staff-settings-layout.mjs','staff-suite.mjs','staff-improvements.mjs','staff-my-approvals.mjs','staff-accounting.mjs','staff-workspace-v6.mjs'])assert.match(suite+imp+pilot+rd('staff-accounting.mjs')+rd('staff-workspace-v6.mjs'),new RegExp(f.replace('.','\\.')+'\\?v=20261116-(setuptasks|choices)-v1'),f+' has a fresh cache token');
 });
 
 test('renewals: lapsed and ending soon, oldest first, with owner and a link to the record',()=>{

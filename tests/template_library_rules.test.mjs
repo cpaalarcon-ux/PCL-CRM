@@ -38,7 +38,7 @@ test('the screen offers publish and revise by role and state, and escapes upload
 });
 test('wiring: Settings card, server route, access area, rights in both catalogs, imports stamp the version, tokens',()=>{
  const suite=rd('staff-suite.mjs'),srv='supabase/functions/staff-workspace-v12/';
- assert.match(suite,/staff-template-library\.mjs\?v=20261116-library-v1/);assert.match(suite,/templateLibrary\.card\(\)/);assert.match(suite,/templateLibrary\.handle\(action,id\)/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261116-setuptasks-v1/);
+ assert.match(suite,/staff-template-library\.mjs\?v=20261116-library-v1/);assert.match(suite,/templateLibrary\.card\(\)/);assert.match(suite,/templateLibrary\.handle\(action,id\)/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261116-choices-v1/);
  assert.match(rd(srv+'index.ts'),/templateLibraryAction\(tx,a,p\)/);assert.match(rd(srv+'staff-access-control.mjs'),/template_library_/);
  for(const f of ['staff-rights-catalog.mjs',srv+'staff-rights-catalog.mjs'])assert.match(rd(f),/templates\.library_publish.*template_library_publish.*template_library_retire/);
  assert.match(rd(srv+'period-import-actions.ts'),/templateInForce\(tx,x\.kind==='Sales'/);assert.match(rd(srv+'bank-totals-actions.ts'),/templateInForce\(tx,'BANK_ANALYSIS'/);

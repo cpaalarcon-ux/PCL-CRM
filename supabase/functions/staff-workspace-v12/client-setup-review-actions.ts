@@ -42,10 +42,12 @@ export async function clientSetupReviewAction(tx:any,a:any,p:any):Promise<any>{
   const ob=ids.length?await tx`select client_id,opening_balance_status from erp_private.clients where client_id=any(${ids}::uuid[])`:[];
   const routing=ids.length?await tx`select client_id,status,created_by from erp_private.client_routing_map where status='Draft' and client_id=any(${ids}::uuid[])`:[];
   const engagements=ids.length?await tx`select client_id,service_code,period_start::text period_start,period_end::text period_end,status from erp_private.engagement_setups where status='Waiting' and client_id=any(${ids}::uuid[])`:[];
+  const exceptions=ids.length?await tx`select client_id,status,created_by from erp_private.client_tax_exceptions where status='Draft' and client_id=any(${ids}::uuid[])`:[];
+  const taxLead=!!(await tx`select erp_private.tax_rules_approver() as ok`)[0]?.ok;
   const group=(rows:any[])=>{const o:any={};for(const r of rows)(o[r.client_id]=o[r.client_id]||[]).push(r);return o;};
   const openingStatus:any={};for(const r of ob)openingStatus[r.client_id]=r.opening_balance_status;
-  const me={staff_id:a.staff_id,leader:LEADERS.includes(a.category_code)};
-  const tasks=buildClientTasks({clients,sections,versions:group(vrows),journals:group(jrows),openingStatus,routing,engagements,me});
+  const me={staff_id:a.staff_id,leader:LEADERS.includes(a.category_code),canApproveExceptions:a.category_code==='PARTNER'||taxLead};
+  const tasks=buildClientTasks({clients,sections,versions:group(vrows),journals:group(jrows),openingStatus,routing,engagements,exceptions,me});
   tasks.sort((x:any,y:any)=>x.company_name.localeCompare(y.company_name)||TASK_ORDER.indexOf(x.kind)-TASK_ORDER.indexOf(y.kind));
   return {tasks,configuration:clientConfigurationItems(tasks),clients_checked:clients.length,clients_with_tasks:new Set(tasks.map((t:any)=>t.client_id)).size,leader:me.leader};
  }
