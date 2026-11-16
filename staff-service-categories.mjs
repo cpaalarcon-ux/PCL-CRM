@@ -4,6 +4,7 @@
 // its own and the ones that cannot go ahead are listed with the reason. Nothing here edits a template.
 // Build 2844: the same form retires several categories (a Partner, one reason) or proposes a new version of several (the same changes applied wherever the task exists). A new version is a draft
 // that a different person approves.
+// Build 2845: each version shows its effective-from and last-reviewed dates (an insert-only history). Dates can be recorded on their own for the ticked categories, or filled in with an approval or a new version.
 const e0=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const day=v=>String(v||'').slice(0,10);
 
@@ -37,12 +38,17 @@ export function categoriesHtml(res,{esc=e0}={}){
  for(const t of res.templates){
   if(t.service_group!==group){group=t.service_group;rows+=`<tr class="group"><th colspan="4">${esc(group)}</th></tr>`;}
   const hint=t.status==='Draft'?[t.can_submit?'':t.submit_problem,t.can_approve?'':t.approve_problem].filter(Boolean).join(' '):t.can_propose?'':t.propose_problem||'';
-  rows+=`<tr data-template="${esc(t.template_id)}" data-status="${esc(t.status)}"><td><input type="checkbox" data-sc-pick="${esc(t.template_id)}" data-submit="${t.can_submit?'1':'0'}" data-approve="${t.can_approve?'1':'0'}" data-retire="${t.can_retire?'1':'0'}" data-propose="${t.can_propose?'1':'0'}" aria-label="Select ${esc(t.name)}"></td><td><b>${esc(t.name)}</b><small>${esc(t.template_code)} version ${esc(t.version)}${t.source==='Starter'?' · starter':''}</small></td><td>${esc(t.tasks)} tasks<small>${esc(t.services)}</small></td><td>${state(t)}${hint?`<small class="muted">${esc(hint)}</small>`:''}</td></tr>`;
+  rows+=`<tr data-template="${esc(t.template_id)}" data-status="${esc(t.status)}"><td><input type="checkbox" data-sc-pick="${esc(t.template_id)}" data-submit="${t.can_submit?'1':'0'}" data-approve="${t.can_approve?'1':'0'}" data-retire="${t.can_retire?'1':'0'}" data-propose="${t.can_propose?'1':'0'}" aria-label="Select ${esc(t.name)}"></td><td><b>${esc(t.name)}</b><small>${esc(t.template_code)} version ${esc(t.version)}${t.source==='Starter'?' · starter':''}</small></td><td>${esc(t.tasks)} tasks<small>${esc(t.services)}</small></td><td>${state(t)}<small class="dates">${esc(t.dates_line||'No dates recorded')}</small>${hint?`<small class="muted">${esc(hint)}</small>`:''}</td></tr>`;
  }
  const drafts=res.templates.filter(t=>t.status==='Draft').length;
  return `<p class="info">${res.sole?'You are the only practitioner, so you may put forward and approve these yourself (recorded as a sole-Partner approval).':'Put them forward, then a different Partner or Manager approves. You cannot approve what you put forward yourself.'}</p>
   ${drafts?`<div class="actions"><button type="button" data-sc="all-submit">Tick all that can be put forward</button><button type="button" data-sc="all-approve">Tick all that can be approved</button><button type="button" data-sc="none">Clear ticks</button><span id="scCount" class="muted"></span></div>`:''}
   <div class="scroll"><table id="serviceCategories"><thead><tr><th></th><th>Service category</th><th>Tasks and services</th><th>State</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <fieldset id="scDates"><legend>Dates for the ticked categories</legend>
+   <p class="muted">Effective from is when this version applies. Last reviewed is when someone last checked its tasks and due days. Fill in one or both. Press the button below to record them on the ticked categories, or leave them filled in and they are recorded with <b>Approve</b> and with <b>New version</b> as well. The earlier dates stay in the history.</p>
+   <div class="grid"><label>Effective from<input type="date" id="scEffective"></label><label>Last reviewed<input type="date" id="scReviewed"></label>
+   <label class="full">Note (optional)<input id="scDatesNote" maxlength="500" placeholder="for example Reviewed against the 2027 Finance Act changes"></label></div>
+   <div class="actions"><button type="button" data-sc="check-dates">Check: record dates on ticked</button></div></fieldset>
   ${drafts?`<div class="actions"><button type="button" data-sc="check-submit">Check: put ticked forward</button><button type="button" class="primary" data-sc="check-approve">Check: approve ticked</button></div>`:''}
   <div class="actions"><button type="button" data-sc="all-propose">Tick all that can have a new version</button></div>
   <fieldset id="scVersion"><legend>New version of the ticked approved categories</legend>
@@ -61,8 +67,8 @@ export function categoriesHtml(res,{esc=e0}={}){
 }
 
 export function resultsHtml(r,{esc=e0}={}){
- const word={submit:'put forward',approve:'approved',retire:'retired',propose:'proposed as a new version'}[r.kind]||'done',s=r.summary;
- const line=x=>`<tr data-outcome="${esc(x.outcome)}"><td>${esc(x.label)}</td><td>${x.outcome==='Skipped'?esc(x.reason):`<span class="badge ok">${esc(x.outcome)}</span>${x.version?`<small>New version ${esc(x.version)}, a draft waiting for approval</small>`:''}${x.sole_approval?'<small>Sole-Partner approval, recorded</small>':''}${x.note?`<small>${esc(x.note)}</small>`:''}`}</td></tr>`;
+ const word={submit:'put forward',approve:'approved',retire:'retired',propose:'proposed as a new version',dates:'given dates'}[r.kind]||'done',s=r.summary;
+ const line=x=>`<tr data-outcome="${esc(x.outcome)}"><td>${esc(x.label)}</td><td>${x.outcome==='Skipped'?esc(x.reason):`<span class="badge ok">${esc(x.outcome)}</span>${x.version?`<small>${r.dry?'Would be version '+esc(x.version)+', a draft for a different person to approve':'New version '+esc(x.version)+', a draft waiting for approval'}</small>`:''}${x.sole_approval?'<small>Sole-Partner approval, recorded</small>':''}${x.note?`<small>${esc(x.note)}</small>`:''}`}</td></tr>`;
  const good=r.results.filter(x=>x.outcome!=='Skipped'),bad=r.results.filter(x=>x.outcome==='Skipped');
  return `<div class="notice ${s.skipped?'warn':'info'}" id="scSummary" role="status"><b>${esc(s.total)} checked: ${esc(s.done)} ${r.dry?'ready to be '+word:word}, ${esc(s.skipped)} not.</b>${r.dry?' Nothing has changed yet.':''}</div>
   ${good.length?`<h3>${r.dry?'Ready':'Done'} (${good.length})</h3><div class="scroll"><table id="scGood"><tbody>${good.map(line).join('')}</tbody></table></div>`:''}
@@ -82,11 +88,11 @@ export function createServiceCategoriesUI(ctx){
   h.onsubmit=async ev=>{const f=ev.target.closest('[data-practice]');if(!f)return;ev.preventDefault();const d=new FormData(f);
    try{await request({action:'practice_declare',firm_id:f.dataset.practice,practitioners:d.get('practitioners'),reason:d.get('reason')});notice('Declared.');await load();}catch(err){notice(err.message,true);}};
   h.onchange=ev=>{if(ev.target.matches('[data-sc-pick]')){pending=null;count();hints();}};
-  h.oninput=ev=>{if(ev.target.closest('#scVersion,#scRetire'))pending=null;};
+  h.oninput=ev=>{if(ev.target.closest('#scVersion,#scRetire,#scDates'))pending=null;};
   h.onclick=async ev=>{const b=ev.target.closest('[data-sc]');if(!b)return;const k=b.dataset.sc;
    if(k==='none'){for(const x of h.querySelectorAll('[data-sc-pick]'))x.checked=false;pending=null;count();hints();}
    else if(k==='all-submit'||k==='all-approve'||k==='all-propose'){const a=k.slice(4);for(const x of h.querySelectorAll('[data-sc-pick]'))x.checked=x.dataset[a]==='1';pending=null;count();hints();}
-   else if(k.startsWith('check-'))await check({'check-submit':'service_category_submit','check-approve':'service_category_approve','check-retire':'service_category_retire','check-propose':'service_category_propose'}[k]);
+   else if(k.startsWith('check-'))await check({'check-submit':'service_category_submit','check-approve':'service_category_approve','check-retire':'service_category_retire','check-propose':'service_category_propose','check-dates':'service_category_dates'}[k]);
    else if(k==='apply')await apply();
   };
  }
@@ -94,8 +100,11 @@ export function createServiceCategoriesUI(ctx){
  // What is typed in the form for this action, as the server takes it. A problem is returned for a line that cannot be read.
  function extra(action){
   const h=host(),v=id=>h.querySelector(id)?.value||'';
+  const dates={effective_from:v('#scEffective'),last_reviewed:v('#scReviewed'),dates_note:v('#scDatesNote')};
+  if(action==='service_category_dates')return {values:dates};
+  if(action==='service_category_approve')return {values:dates.effective_from||dates.last_reviewed?dates:{}};
   if(action==='service_category_retire')return {values:{reason:v('#scReason')}};
-  if(action==='service_category_propose'){const c=parseChanges({drop:v('#scDrop'),due:v('#scDue'),required:v('#scRequired'),suffix:v('#scSuffix')});return c;}
+  if(action==='service_category_propose'){const c=parseChanges({drop:v('#scDrop'),due:v('#scDue'),required:v('#scRequired'),suffix:v('#scSuffix')});if(c.values&&(dates.effective_from||dates.last_reviewed))Object.assign(c.values,dates);return c;}
   return {values:{}};
  }
  function count(){const c=host().querySelector('#scCount');if(c)c.textContent=ticked().length+' ticked';}
@@ -103,7 +112,7 @@ export function createServiceCategoriesUI(ctx){
   const ids=ticked();if(!ids.length){notice('Tick at least one service category.',true);return;}
   const x=extra(action);if(x.problem){notice(x.problem,true);return;}
   try{const r=await request({action,template_ids:ids,dry:true,...x.values});pending={action,ids,ready:r.summary.done,extra:JSON.stringify(x.values)};
-   host().querySelector('#scResults').innerHTML=resultsHtml(r,{esc})+(r.summary.done?`<div class="actions"><label class="check"><input type="checkbox" id="scConfirm"> I have checked this list</label><button type="button" class="primary" data-sc="apply">${{service_category_submit:'Put forward',service_category_approve:'Approve',service_category_retire:'Retire',service_category_propose:'Propose a new version of'}[action]} ${esc(r.summary.done)} ready</button></div>`:'<p class="muted">Nothing is ready. Fix the reasons above.</p>');}
+   host().querySelector('#scResults').innerHTML=resultsHtml(r,{esc})+(r.summary.done?`<div class="actions"><label class="check"><input type="checkbox" id="scConfirm"> I have checked this list</label><button type="button" class="primary" data-sc="apply">${{service_category_submit:'Put forward',service_category_approve:'Approve',service_category_retire:'Retire',service_category_propose:'Propose a new version of',service_category_dates:'Record dates on'}[action]} ${esc(r.summary.done)} ready</button></div>`:'<p class="muted">Nothing is ready. Fix the reasons above.</p>');}
   catch(err){notice(err.message,true);}
  }
  async function apply(){

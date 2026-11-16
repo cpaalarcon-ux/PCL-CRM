@@ -92,3 +92,43 @@ export function proposeGate(t,me,openDraft){
  if(openDraft)return {ok:false,problem:'A draft of this category is already waiting for approval. Approve or retire it first.'};
  return {ok:true};
 }
+
+// Build 2845: "effective from" and "last reviewed" dates on a service category version. Insert-only history; the latest record is the one in force.
+// Dates are shown and warned about, they never block an engagement. Pure rules: `today` is passed in (Nairobi date), so nothing here reads a clock.
+const ISO=/^\d{4}-\d{2}-\d{2}$/;
+const realDate=s=>{if(!ISO.test(s))return false;const d=new Date(s+'T00:00:00Z');return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===s;};
+export const DATE_MIN='2020-01-01',DATE_MAX='2100-12-31';
+// Reads the optional date fields. {required:true} (the "record dates" action) needs at least one; approving or proposing with no dates records none.
+export function dateFields(p,today,{required=false}={}){
+ const eff=clean(p?.effective_from),rev=clean(p?.last_reviewed),note=clean(p?.dates_note);
+ if(!eff&&!rev)return required?{problem:'Enter an effective-from date, a last-reviewed date, or both.'}:{values:null};
+ if(eff&&(!realDate(eff)||eff<DATE_MIN||eff>DATE_MAX))return {problem:`Effective from must be a real date between ${DATE_MIN} and ${DATE_MAX}, written like 2027-01-01.`};
+ if(rev&&(!realDate(rev)||rev<DATE_MIN))return {problem:'Last reviewed must be a real date, written like 2026-11-16.'};
+ if(rev&&today&&rev>today)return {problem:'Last reviewed cannot be a date in the future.'};
+ if(note.length>500)return {problem:'The note runs to 500 characters.'};
+ return {values:{effective_from:eff||null,last_reviewed:rev||null,note:note||null}};
+}
+// A new record keeps whatever the person left blank from the one in force, so the latest record always shows both dates.
+export function mergeDates(current,given){
+ return {effective_from:given.effective_from??current?.effective_from??null,last_reviewed:given.last_reviewed??current?.last_reviewed??null,note:given.note??null};
+}
+export const sameDates=(current,merged)=>!!current&&(current.effective_from||null)===(merged.effective_from||null)&&(current.last_reviewed||null)===(merged.last_reviewed||null);
+export function datesGate(t,me){
+ if(!['PARTNER','MANAGER'].includes(me.category_code))return {ok:false,problem:'A Partner or a Manager records dates.'};
+ if(t.status==='Retired')return {ok:false,problem:'It is retired and keeps the dates it had.'};
+ return {ok:true};
+}
+const addDays=(s,n)=>{const d=new Date(s+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);};
+// Said on the engagement plan; never a reason to refuse it.
+export function dateWarnings(d,periodStart,today){
+ const out=[];
+ if(!d||(!d.effective_from&&!d.last_reviewed))return out;
+ if(d.effective_from&&periodStart&&d.effective_from>periodStart)out.push(`This template version takes effect on ${d.effective_from}, after this period starts (${periodStart}). Check it is the version you mean.`);
+ if(d.last_reviewed&&today&&d.last_reviewed<addDays(today,-365))out.push(`This template was last reviewed on ${d.last_reviewed}, more than a year ago. Ask a Partner or Manager to review it.`);
+ return out;
+}
+// One line for lists: "From 2027-01-01 · reviewed 2026-11-16", or nothing recorded.
+export function datesLine(d){
+ if(!d||(!d.effective_from&&!d.last_reviewed))return 'No dates recorded';
+ return [d.effective_from?'From '+d.effective_from:null,d.last_reviewed?'reviewed '+d.last_reviewed:null].filter(Boolean).join(' · ');
+}
