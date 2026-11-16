@@ -3,6 +3,7 @@
 // trims what each role receives. Tabs: Overview, Contacts, Projects & Tasks, Documents/KYC, Communication & Activity, Tax Obligations.
 import {docRequestShell} from './staff-doc-requests.mjs?v=20261109-dr-v1';
 import {lifecycleBar,routingCard,lifecycleBadge,commAccessCard,commExternalAllowed} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';
+import {clientSpine,spineHtml} from './staff-setup-spine.mjs?v=20261118-spine-v1';
 export const PROFILE_TABS=[['overview','Overview'],['contacts','Contacts'],['projects','Projects & Tasks'],['documents','Documents / KYC'],['activity','Communication & Activity'],['tax','Tax Obligations']];
 
 export function clientProfile(ctx){
@@ -20,7 +21,7 @@ export function clientProfile(ctx){
  const pane={
   overview:()=>{
    const fields=[['KRA PIN',c.kra_pin],['Sector',c.primary_sector],['Branch',c.branch_location],['Legal structure',structureLabel?structureLabel(c,esc).replace(/<[^>]*>/g,''):c.legal_structure],['Accounting family',c.legal_entity_type],['Financial year-end',c.year_end_month&&c.year_end_day?`${String(c.year_end_day).padStart(2,'0')}/${String(c.year_end_month).padStart(2,'0')}`:''],['Incorporation date',c.incorporation_date],['Entity evidence',c.entity_evidence],['Client owner',c.owner_staff_id?staffName(c.owner_staff_id):'']];
-   const pills=leader&&progress?`<div class="cc-pills"><span class="cc-pill ${progress.kycOk?'ok':'warn'}"><i>${progress.kycOk?'✓':'!'}</i>KYC &amp; contacts</span><span class="cc-pill ${progress.taxOk?'ok':'warn'}"><i>${progress.taxOk?'✓':'!'}</i>Tax profile</span><span class="cc-pill ${progress.activitiesOk===null?'na':progress.activitiesOk?'ok':'warn'}"><i>${progress.activitiesOk===null?'…':progress.activitiesOk?'✓':'!'}</i>Entity &amp; activities</span></div>${step?`<p><b>Next step:</b> ${esc(step.title)}${step.detail?` · ${esc(step.detail)}`:''}</p>`:''}`:'';
+   const pills=leader&&progress?`${spineHtml(clientSpine(progress),{esc})}${step?`<p><b>Next step:</b> ${esc(step.title)}${step.detail?` · ${esc(step.detail)}`:''}</p>`:''}`:'';
    return `${pills}${seen?`<div class="scroll"><table><tbody>${fields.map(([l,v])=>`<tr><th>${esc(l)}</th><td>${esc(v||'Not recorded')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="info">Client details open once work for this client is allocated to you.</p>'}${leader?`<div class="actions section-space">${btn(`data-client="${id}"`,'Edit client details')}${btn(`data-setup-guide="${id}"`,'Open set-up guide','primary')}${btn(`data-client-accounts="${id}"`,'Client accounts')}</div>`:''}`;
   },
   contacts:()=>`${table(['Name','Position','Role','Email','Phone'],contacts.map(x=>`<tr><td>${esc(x.full_name)}</td><td>${esc(x.job_title||'')}</td><td>${esc(x.role_in_decision||'')}</td><td>${esc(x.email_address||'')}</td><td>${esc(x.phone_number||'')}</td></tr>`),'No contacts recorded yet.')}${leader?`<div class="actions section-space">${btn(`data-suite="compliance" data-id="${id}"`,'Add or edit contacts','primary')}</div>`:''}<div class="section-space">${seen?routingCard(c,suite.contacts||[],leader,esc):''}</div>`,
