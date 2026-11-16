@@ -215,7 +215,8 @@ async function applySetup(tx:any,a:any,i:any,extra:{rolled_from:string|null,carr
   if(a.category_code==='PARTNER')await tx`insert into erp_private.staff_firm_access(staff_id,firm_id) values(${a.staff_id},${i.firm_id}) on conflict(staff_id,firm_id) do update set deleted_at=null`;
   const c=(await tx`select company_name from erp_private.clients where client_id=${i.client_id}`)[0];
   const name=defaultProjectName(c.company_name,plan.service.service_name,i.period_start);
-  pid=(await tx`insert into erp_private.projects(client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${i.client_id},${i.firm_id},${name},${i.service_code},${a.staff_id}) returning project_id`)[0].project_id;
+  // The id is made here and the row is not read back: row security cannot show the caller a row inserted by the same statement, so `returning` would be refused (build 2842 found this).
+  pid=crypto.randomUUID();await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${pid},${i.client_id},${i.firm_id},${name},${i.service_code},${a.staff_id})`;
  }
  await assign(tx,pid,i.firm_id,a.staff_id);await assign(tx,pid,i.firm_id,i.responsible);await assign(tx,pid,i.firm_id,i.reviewer);
  const setup=(await tx`insert into erp_private.engagement_setups(client_id,project_id,template_id,service_code,period_start,period_end,scope,responsible_staff,reviewer_staff,client_template_code,exclusions,applied_by,rolled_from,carried)
