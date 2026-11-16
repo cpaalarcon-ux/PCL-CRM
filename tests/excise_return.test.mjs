@@ -112,10 +112,14 @@ test('database and actions: due date, return task, eTIMS sales and the Tax Lead-
  const R=await rule('KE_EXCISE_APPROVAL_CHECK');await tx`update erp_private.tax_rates set legal_review_status='Pending',legal_review_note='Pending the Tax Lead review',legal_citation='Fictional Excise Act s1' where rate_id=${R}`;
  const rev=async()=>(await tx`select revision from erp_private.tax_rates where rate_id=${R}`)[0].revision;
  const approveSql=(role)=>as(role,()=>db.query(`update erp_private.tax_rates set status='Approved',approved_by=$2,approved_at=now(),partner_source_verified_on=current_date where rate_id=$1`,[R,actors[role].staff_id]));
- await assert.rejects(approveSql('PARTNER'),/Excise duty rules can only be confirmed and approved by the designated Tax Manager/,'a Partner without the right cannot approve an excise rule (database)');
- await assert.rejects(cfg('PARTNER',{action:'rate_approve',rate_id:R,revision:await rev(),confirm_legal_basis:true}),/Excise duty rules can only be confirmed and approved by the designated Tax Manager/,'nor through the screen action');
- await assert.rejects(cfg('PARTNER',{action:'rate_legal_confirm',rate_id:R,revision:await rev(),lead_name:'Fictional Lead',reference:'Memo fictional 2035',legal_citation:'Fictional Act s1',confirmed:true}),/designated Tax Manager/);
- await assert.rejects(approveSql('MANAGER2'),/designated Tax Manager/,'a Manager without the right cannot either');
+ await assert.rejects(approveSql('MANAGER2'),/Excise duty rules can only be confirmed and approved by an Engagement Partner or by the designated Tax Manager/,'a Manager without the right cannot approve an excise rule (database)');
+ await assert.rejects(cfg('MANAGER2',{action:'rate_approve',rate_id:R,revision:await rev(),confirm_legal_basis:true}),/Engagement Partner or the designated Tax Manager/,'nor through the screen action');
+ await assert.rejects(cfg('MANAGER2',{action:'rate_legal_confirm',rate_id:R,revision:await rev(),lead_name:'Fictional Lead',reference:'Memo fictional 2035',legal_citation:'Fictional Act s1',confirmed:true}),/Engagement Partner or the designated Tax Manager/);
+ // a Partner holds the authority by rank: a rule prepared by someone else is approved by a Partner
+ const RP=await rule('KE_EXCISE_PARTNER_RANK');await tx`update erp_private.tax_rates set legal_review_status='Pending',legal_review_note='Pending the Tax Lead review',legal_citation='Fictional Excise Act s1' where rate_id=${RP}`;
+ await cfg('PARTNER',{action:'rate_legal_confirm',rate_id:RP,revision:(await tx`select revision from erp_private.tax_rates where rate_id=${RP}`)[0].revision,lead_name:'Fictional Partner',reference:'Memo fictional 2035',legal_citation:'Fictional Act s1',confirmed:true});
+ await cfg('PARTNER',{action:'rate_approve',rate_id:RP,revision:(await tx`select revision from erp_private.tax_rates where rate_id=${RP}`)[0].revision,confirm_legal_basis:true});
+ assert.equal((await tx`select approved_by from erp_private.tax_rates where rate_id=${RP}`)[0].approved_by,PT,'a Partner approves an excise rule by rank');
  // the right is granted to a Manager
  await tx`insert into erp_private.staff_capabilities(staff_id,capability,granted_by,reason,expires_on) values(${M2},'APPROVE_TAX_RULES',${PT},'Fictional Tax Lead',current_date+100)`;
  // the preparer still cannot approve their own rule
@@ -136,7 +140,7 @@ test('wiring: routed, no figures seeded, release label, no forensic words', ()=>
  const sql=rd('supabase/migrations/20261112040000_excise_lead_and_return_task.sql');
  assert.doesNotMatch(sql,/INSERT INTO erp_private\.tax_rates/i);
  for(const f of ['supabase/migrations/20261112040000_excise_lead_and_return_task.sql',fx+'excise-schedule-actions.ts',fx+'excise-schedule-rules.mjs','staff-excise-schedule.mjs'])assert.doesNotMatch(rd(f),/forensic|ISRS 4000/i);
- assert.match(rd(fx+'tax-config-actions.ts'),/leadOnly=\['VAT','Withholding tax','Excise duty'\]/);
+ assert.match(rd(fx+'tax-config-actions.ts'),/Only an Engagement Partner or the designated Tax Manager can confirm and approve tax rules/);
  assert.match(rd(fx+'staff-access-control.mjs'),/excise_schedule_/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2835');
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2836');
 });

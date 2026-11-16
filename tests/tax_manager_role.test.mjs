@@ -32,9 +32,10 @@ test('Tax Manager role gate and annual due_month_offset rules',async t=>{
  const R=await vat('KE_FICT_ROLE1');
  // 1. Out of the box nobody can approve: the permission is OFF and nobody is assigned
  const base=await tm('PARTNER',{action:'tax_manager_read'});
- assert.deepEqual([base.permission.allowed,base.assignments.length,base.i_can_approve_tax_rules],[false,0,false]);
+ assert.deepEqual([base.permission.allowed,base.assignments.length,base.i_can_approve_tax_rules],[false,0,true]);
  assert.equal(base.rules.length,3);assert.equal(base.candidates.length,2,'a Partner can pick from the active Managers');
- for(const role of ['PARTNER','MANAGER','MANAGER2'])assert.equal(await lead(role),false);
+ assert.equal(await lead('PARTNER'),true,'a Partner holds it by rank');
+ for(const role of ['MANAGER','MANAGER2'])assert.equal(await lead(role),false);
  await assert.rejects(approve('MANAGER2',R),/designated Tax Manager/);
  // 2. Only a Partner assigns; only to an active Manager; the same person once per scope; with a reason
  const assign=(role,project,staff,reason='Designated Tax Manager for this engagement')=>tm(role,{action:'tax_manager_assign',project_id:project,staff_id:staff,reason});
@@ -54,9 +55,8 @@ test('Tax Manager role gate and annual due_month_offset rules',async t=>{
  await tm('PARTNER',{action:'tax_role_permission_set',allowed:true,revision:await rev(),source_note:'Partner decision of 10 Nov 2026 20:16'});
  assert.equal(await lead('MANAGER2'),true,'assigned Tax Manager with the permission on');
  assert.equal(await lead('MANAGER'),false,'another Manager, not assigned');
- assert.equal(await lead('PARTNER'),false,'a Partner is not the Tax Manager by being a Partner');
+ assert.equal(await lead('PARTNER'),true,'a Partner holds it by rank, not by assignment');
  assert.equal(await lead('SUPERVISOR'),false);assert.equal(await lead('ASSISTANT'),false);
- await assert.rejects(approve('PARTNER',R),/designated Tax Manager/);
  await approve('MANAGER2',R);
  assert.equal((await tx`select status,approved_by from erp_private.tax_rates where rate_id=${R}`)[0].approved_by,M2,'approved by the assigned Tax Manager');
  // the Tax Manager cannot approve a rule they prepared

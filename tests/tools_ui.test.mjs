@@ -12,7 +12,7 @@ test('search results and calendar days draw what the server returns',async()=>{
 });
 test('the screens are wired to the suite, the page and the server actions',()=>{
  const u=rd('staff-tools.mjs'),s=rd('staff-suite.mjs'),h=rd('staff-pilot.html');
- assert.match(s,/staff-tools\.mjs\?v=20261116-tools-v1/);assert.match(s,/\$\{tools\.card\(\)\}/);assert.match(s,/await tools\.handle\(action,id\)/);
+ assert.match(s,/staff-tools\.mjs\?v=20261116-tools-v1/);assert.match(s,/toolsCard:tools\.card\(\)/);assert.match(s,/await tools\.handle\(action,id\)/);
  assert.match(h,/data-suite="tools-search"/);assert.match(h,/data-suite="tools-calendar"/);
  for(const a of ['search_all','calendar_read','payroll_access_log_read','target_measure_read','target_measure_record','target_measure_void'])assert.match(u,new RegExp(a));
  assert.doesNotMatch(u,/<form/,'the modal already wraps its body in a form');assert.doesNotMatch(u,/Math\.(round|ceil)/,'every figure comes from the server');

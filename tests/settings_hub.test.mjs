@@ -85,8 +85,8 @@ test('UI: hub view, waiting list, search, escaping, roles, wiring and build labe
  const ui=(role,req)=>createSettingsHubUI({request:req,render(){},data:()=>({me:{category_code:role}})});
  assert.equal(ui('SUPERVISOR',async()=>({})).card(),'');assert.equal(ui('ADMIN',async()=>({})).card(),'');
  assert.match(ui('PARTNER',async()=>h).card(),/Loading/);
- const suite=rd('staff-suite.mjs');assert.match(suite,/createSettingsHubUI/);assert.match(suite,/\$\{settingsHub\.card\(\)\}\$\{settingsCard\(\{id:'referenceCard',title:'Reference documents/);
- assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261116-tools-v1/);assert.match(suite,/staff-settings-hub\.mjs\?v=20261112-resources-v1/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2835');assert.match(rd('staff-pilot.html'),/2026-11-14\.2835/);
+ const suite=rd('staff-suite.mjs');assert.match(suite,/createSettingsHubUI/);assert.match(suite,/settingsHub:settingsHub\.card\(\),referenceCard:settingsCard\(\{id:'referenceCard',title:'Reference documents/);
+ assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261116-layout-v1/);assert.match(suite,/staff-settings-hub\.mjs\?v=20261112-resources-v1/);
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-14.2836');assert.match(rd('staff-pilot.html'),/2026-11-14\.2836/);
  const mig=rd('supabase/migrations/20261111050000_settings_hub.sql');assert.doesNotMatch(mig,/forensic/i);assert.match(mig,/REVOKE EXECUTE ON FUNCTION erp_private\.settings_hub\(\) FROM PUBLIC,anon,authenticated,service_role;/);assert.match(mig,/GRANT EXECUTE ON FUNCTION erp_private\.settings_hub\(\) TO erp_api;/);
 });

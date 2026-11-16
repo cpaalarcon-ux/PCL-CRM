@@ -523,3 +523,12 @@ dialog#editor{border-radius:14px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
 #editorBody h4{margin:18px 0 6px;color:var(--green)}
 @media(max-width:1100px){.workspace-topbar .header-tools{flex:1 1 100%;justify-content:flex-end}}
 @media(prefers-reduced-motion:reduce){button,.button{transition:none}}
+
+/* Settings tabs and the rights matrix (build 2836) */
+.settings-panel[hidden]{display:none}
+.settings-tabs{flex-wrap:wrap;margin-bottom:.25rem}
+.settings-tab-about{margin:.25rem 0 1rem}
+#rightsTable th.me,#rightsTable td.me{background:rgba(31,111,235,.08)}
+#rightsTable td{vertical-align:top;font-size:.9rem}
+.rights-notes{margin-top:1rem;padding-left:1.2rem}
+.settings-crumb{margin:0 0 .5rem;font-size:.85rem}

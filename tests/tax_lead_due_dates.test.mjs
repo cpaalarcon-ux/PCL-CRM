@@ -31,10 +31,14 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  const R1=await vat('KE_VAT_STANDARD','2030-01-01','2030-12-31');
  await tx`update erp_private.tax_rates set legal_review_status='Pending',legal_review_note='Pending the Tax Lead review of the provision',legal_citation='VAT Act, section 5' where rate_id=${R1}`;
  const approve=(role,rate)=>as(role,()=>db.query(`update erp_private.tax_rates set status='Approved',approved_by=$2,approved_at=now(),partner_source_verified_on=current_date where rate_id=$1`,[rate,actors[role].staff_id]));
- await assert.rejects(approve('PARTNER',R1),/designated Tax Manager/,'a Partner without the right cannot approve a VAT rule');
- await assert.rejects(approve('MANAGER2',R1),/designated Tax Manager/,'a Manager without the right cannot approve it either');
- await assert.rejects(cfg('PARTNER',{action:'rate_approve',rate_id:R1,revision:1,confirm_legal_basis:true}),/designated Tax Manager/,'the action says the same');
- await assert.rejects(cfg('PARTNER',{action:'rate_legal_confirm',rate_id:R1,revision:1,lead_name:'Fictional Lead',reference:'Memo fictional 2030',legal_citation:'Fictional Act s1',confirmed:true}),/designated Tax Manager/);
+ await assert.rejects(approve('MANAGER2',R1),/Engagement Partner or by the designated Tax Manager/,'a Manager without the right cannot approve a VAT rule');
+ await assert.rejects(cfg('MANAGER2',{action:'rate_approve',rate_id:R1,revision:1,confirm_legal_basis:true}),/Engagement Partner or the designated Tax Manager/,'the action says the same');
+ await assert.rejects(cfg('MANAGER2',{action:'rate_legal_confirm',rate_id:R1,revision:1,lead_name:'Fictional Lead',reference:'Memo fictional 2030',legal_citation:'Fictional Act s1',confirmed:true}),/Engagement Partner or the designated Tax Manager/);
+ // a Partner holds the authority by rank: a rule prepared by someone else is approved by a Partner without any grant
+ const P1=await vat('KE_FICT_VATP','2029-01-01','2029-12-31');await approve('PARTNER',P1);
+ assert.equal((await tx`select status from erp_private.tax_rates where rate_id=${P1}`)[0].status,'Approved','a Partner approves a VAT rule by rank');
+ const P2=await vat('KE_FICT_VATP2','2028-01-01','2028-12-31');await tx`update erp_private.tax_rates set created_by=${actors.PARTNER.staff_id} where rate_id=${P2}`;
+ await assert.rejects(approve('PARTNER',P2),/cannot confirm or approve/,'a Partner cannot approve a rule they prepared');
  // only a Partner grants it, only to a Manager, with a reason and an end date
  const grant=(role,staff,extra={})=>rights(role,{action:'staff_right_grant',staff_id:staff,capability:'APPROVE_TAX_RULES',reason:'Designated Tax Lead for VAT and credit rules',expires_on:new Date(Date.now()+200*86400000).toISOString().slice(0,10),...extra});
  await assert.rejects(grant('MANAGER',M3),/Partner/);
@@ -45,7 +49,7 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  await grant('PARTNER',M3);
  assert.equal((await tx`select count(*)::int n from erp_private.staff_capabilities where capability='APPROVE_TAX_RULES' and staff_id=${M3}`)[0].n,1);
  assert.equal((await q('MANAGER2',`select erp_private.tax_rules_approver() ok`))[0].ok,true);
- assert.equal((await q('PARTNER',`select erp_private.tax_rules_approver() ok`))[0].ok,false,'a Partner does not hold it implicitly');
+ assert.equal((await q('PARTNER',`select erp_private.tax_rules_approver() ok`))[0].ok,true,'a Partner holds it by rank');
  assert.equal((await q('MANAGER',`select erp_private.tax_rules_approver() ok`))[0].ok,false);
  // the Tax Lead acts: confirm the legal basis (action path), then approve (database path)
  await assert.rejects(approve('MANAGER2',await vat('KE_FICT_SELF','2031-01-01','2031-12-31').then(async r=>{await tx`update erp_private.tax_rates set created_by=${M3} where rate_id=${r}`;return r;})),/cannot confirm or approve/,'the Tax Lead cannot approve a rule they prepared');
@@ -55,7 +59,8 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  assert.equal((await tx`select status,approved_by from erp_private.tax_rates where rate_id=${R1}`)[0].approved_by,M3,'approved by the Tax Lead');
  // a credit (withholding tax) rule is gated the same way; other types keep the earlier path
  const W1=await vat('KE_FICT_WHT','2032-01-01','2032-12-31','Withholding tax');
- await assert.rejects(approve('PARTNER',W1),/designated Tax Manager/);
+ await assert.rejects(approve('MANAGER',W1),/Engagement Partner or by the designated Tax Manager/);
+ await approve('PARTNER',W1);
  const L1=await vat('KE_FICT_LEVY','2033-01-01','2033-12-31','Levy');
  await approve('PARTNER',L1);
  assert.equal((await tx`select status from erp_private.tax_rates where rate_id=${L1}`)[0].status,'Approved','a non-VAT, non-credit rule is still approved by a Partner');

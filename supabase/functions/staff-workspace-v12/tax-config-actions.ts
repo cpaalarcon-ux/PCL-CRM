@@ -7,13 +7,11 @@ import {taxTestingEnabled,testingAuthorizationIssue,stagingRates,preferredRates}
 import {turnoverWatch,trailingYear} from './turnover-watch.mjs';
 import {summarySalesRows} from './period-import-actions.ts';
 const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Partner approval is required.');};
-// VAT and credit (withholding tax) rules need the designated Tax Lead's own action (the APPROVE_TAX_RULES right); a Partner without that right cannot confirm or approve them.
-// Every other rule can be confirmed and approved by a Partner or by the Tax Lead. The database enforces the same rule again.
-const leadOnly=['VAT','Withholding tax','Excise duty'];
+// An Engagement Partner outranks the Tax Manager (build 2836), so a Partner may confirm and approve every tax rule, including VAT, credit (withholding tax) and excise rules.
+// A Manager needs the Tax Manager assignment with the permission on. The preparer of a rule never approves it. The database enforces the same again.
 async function rateAuthority(tx:any,a:any,r:any){
  const holder=!!(await tx`select erp_private.tax_rules_approver() as ok`)[0]?.ok;
- if(leadOnly.includes(r.tax_type)){if(!holder&&r.tax_type==='Excise duty')fail(403,'Excise duty rules can only be confirmed and approved by the designated Tax Manager who holds the APPROVE_TAX_RULES permission. An Engagement Partner assigns the Tax Manager to an engagement and switches the permission on.');if(!holder)fail(403,'VAT and credit rules can only be confirmed and approved by the designated Tax Manager who holds the APPROVE_TAX_RULES permission. An Engagement Partner assigns the Tax Manager to an engagement and switches the permission on.');return holder;}
- if(a.category_code!=='PARTNER'&&!holder)fail(403,'Engagement Partner or designated Tax Manager approval is required.');
+ if(!holder)fail(403,'Only an Engagement Partner or the designated Tax Manager can confirm and approve tax rules.');
  return holder;
 }
 const current=(r:any,p:any)=>{if(String(r.revision)!==revision(p.revision))fail(409,'Refresh this record before saving.');};
