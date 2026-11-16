@@ -87,8 +87,8 @@ test('the screen: approve is offered only to a different Manager or Partner; sta
  assert.match(mapRows([active],{me:{staff_id:'z',category_code:'PARTNER'}}),/data-rm="end"/);assert.doesNotMatch(mapRows([active],{me:{staff_id:'z',category_code:'ASSISTANT'}}),/data-rm="(end|withdraw)"/);
  assert.match(ROUTING_NOTE,/Nothing is posted/);
  const ui=createRoutingMapUI({$:()=>null,esc:s=>s,field:()=>'',select:()=>'',form:()=>'',modal:()=>{},request:async()=>({}),notice:()=>{},button:(a,l)=>`<b data-a="${a}">${l}</b>`,data:()=>({me:{category_code:'ASSISTANT'}})});
- assert.equal(ui.card(),'','staff do not see the Settings card');
+ assert.equal(ui.card,undefined,'build 2840: the routing map is no longer a Settings card; it opens from each client\'s Client Setup screen');
  assert.equal(await ui.handle('other'),false);
- const suite=rd('staff-suite.mjs');assert.match(suite,/routingMap\.card\(\)/);assert.match(suite,/routingMap\.handle\(action,id\)/);
+ const suite=rd('staff-suite.mjs');assert.doesNotMatch(suite,/routingMap\.card\(\)/);assert.match(suite,/routingMap\.handle\(action,id\)/);
  const acc=rd('staff-accounting.mjs');assert.match(acc,/btn\('routing-map','Routing map',pid\)/);assert.match(acc,/Auto-mapped — approved routing map/);
 });

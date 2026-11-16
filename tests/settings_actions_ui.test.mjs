@@ -136,7 +136,7 @@ test('hub rows: Open button, owner shown as confirmed or suggested, areas named'
 
 test('wiring: suite handlers and cards, ledger screen, tokens, rights, access control, server wiring',()=>{
  const suite=rd('staff-suite.mjs');
- for(const m of ['staff-statement-review','staff-owner-matrix','staff-my-approvals'])assert.match(suite,new RegExp(m+'\\.mjs\\?v=20261117-actions-v1'));
+ for(const m of ['staff-statement-review','staff-owner-matrix'])assert.match(suite,new RegExp(m+'\\.mjs\\?v=20261117-actions-v1'));assert.match(suite,/staff-my-approvals\.mjs\?v=20261116-setuptasks-v1/);
  assert.match(suite,/myApprovalsCard:myApprovals\.card\(\)/);assert.match(suite,/ownerMatrixCard:ownerMatrix\.card\(\)/);
  assert.match(suite,/settingsHub\.handle\(action,id\)/);assert.match(suite,/myApprovals\.handle\(action,id\)/);assert.match(suite,/ownerMatrix\.handle\(action,id\)/);assert.match(suite,/stmtReview\.handle\(action,id\)/);
  const layout=rd('staff-settings-layout.mjs');assert.match(layout,/myApprovalsCard:'overview'/);assert.match(layout,/ownerMatrixCard:'access'/);
