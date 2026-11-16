@@ -47,7 +47,7 @@ test('the screen shows the state, every version with its answer and evidence, an
 test('screen wiring: the run offers client confirmation, the review summary shows it, the server blocks submission, and tokens changed',()=>{
  const ui=rd('staff-period-imports.mjs'),srv=rd('supabase/functions/staff-workspace-v12/period-import-actions.ts');
  assert.match(ui,/staff-payroll-confirmation\.mjs\?v=20261116-confirm-v1/);assert.match(ui,/button\('payroll-confirm','Client confirmation'/);assert.match(ui,/payrollConfirm\.isAction\(action\)/);
- assert.match(rd('staff-payroll-review.mjs'),/Client confirmation:/);assert.match(rd('staff-workspace-v6.mjs'),/staff-period-imports\.mjs\?v=20261117-frame-v1/);
+ assert.match(rd('staff-payroll-review.mjs'),/Client confirmation:/);assert.match(rd('staff-workspace-v6.mjs'),/staff-period-imports\.mjs\?v=20261117-links-v1/);
  assert.match(srv,/payrollConfirmationGate\(tx,project,r\)/);assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/payrollConfirmationAction\(tx,a,p\)/);
  assert.equal(typeof createPayrollConfirmationUI,'function');
 });
