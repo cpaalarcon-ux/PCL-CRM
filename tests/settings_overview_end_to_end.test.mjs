@@ -12,7 +12,7 @@ test('settings register: one shared reading of state, feeds, record pages and ch
  await tx`insert into erp_private.firms(firm_id,firm_code,legal_name) values(${F},'V3QA','Fictional V3 firm'),(${F2},'V3OTHER','Fictional other firm')`;
  for(const role of ['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN']){const a=actors[role]={staff_id:id(),auth_user_id:id(),session:id(),category_code:role};await tx`insert into auth.users(id) values(${a.auth_user_id})`;await tx`insert into auth.sessions(id,user_id) values(${a.session},${a.auth_user_id})`;await tx`insert into erp_private.staff_members(staff_id,auth_user_id,staff_identifier,login_id,full_name,category_code,employment_type,contract_end_date,access_status,sessions_invalid_before) values(${a.staff_id},${a.auth_user_id},${role},${role.toLowerCase()},${'Fictional '+role},${role},'Permanent','2027-12-31','Active',now()-interval '1 day')`;await tx`insert into erp_private.pilot_sessions(session_id,staff_id,expires_at) values(${a.session},${a.staff_id},now()+interval '1 hour')`;await tx`insert into erp_private.staff_firm_access(staff_id,firm_id,scope) values(${a.staff_id},${F},'Assigned')`;}
  const M=actors.MANAGER.staff_id,PT=actors.PARTNER.staff_id,SUP=actors.SUPERVISOR.staff_id;
- const iso=n=>new Date(Date.now()+n*86400000).toISOString().slice(0,10);
+ const iso=n=>new Date(Date.now()+3*3600000+n*86400000).toISOString().slice(0,10); // the server counts days on the Nairobi calendar (UTC+3), so the test does too
  const rep=on=>db.exec(`set session_replication_role=${on?'replica':'origin'}`);
  const base=await act('MANAGER',{action:'settings_overview_read'});
  await rep(true);
