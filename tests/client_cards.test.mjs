@@ -139,7 +139,7 @@ test('names are escaped',()=>{
 });
 
 test('chips count and mark the current filter',()=>{
- assert.deepEqual(CLIENT_STATES,[['all','All'],['action','Action needed'],['setup','Setup required'],['healthy','Healthy']]);
+ assert.deepEqual(CLIENT_STATES,[['all','All'],['action','Action needed'],['setup','Set-up incomplete'],['healthy','Healthy']]);
  const counts=stateCounts([{status:{key:'healthy'}},{status:{key:'setup'}},{status:{key:'checking'}},{status:{key:'action'}},{status:{key:'all'}}]);
  assert.deepEqual(counts,{all:5,action:1,setup:2,healthy:1});
  const row=chipRow(counts,'action',esc);
@@ -152,8 +152,8 @@ test('the page loads the card facts safely: one request per minute, WIP only for
  assert.match(pilot,/request\(\{action:'client_card_flags',client_ids:list\}\)/);assert.match(pilot,/\['PARTNER','MANAGER'\]\.includes\(data\.me\.category_code\)&&canArea\('billing_wip'\)/);
  assert.match(pilot,/Date\.now\(\)-cardFacts\.at<60000/);assert.match(pilot,/ids\.slice\(0,500\)/);
  assert.match(pilot,/\/\^\(\?:kra_\|incoming_\)\/\.test\(String\(p\?\.action\|\|''\)\)\|\|options\.uploadKind==='incoming'\)cardFacts\.at=0/);
- assert.match(pilot,/cardFlags=new Map\(\);cardWip=new Map\(\);cardFacts\.key='';cardFacts\.at=0;/,'signing out forgets the facts');
- assert.match(pilot,/stateHidden=st!=='all'&&r\.dataset\.state!=='all'&&r\.dataset\.state!==st/);
+ assert.match(pilot,/cardFlags=new Map\(\);cardWip=new Map\(\);workReady=new Map\(\);workReadyLoaded=false;workReadyFailed=false;cardFacts\.key='';cardFacts\.at=0;/,'signing out forgets the facts, including the work-ready answers');
+ assert.match(pilot,/stateHidden=st!=='all'&&r\.dataset\.state!=='all'&&!\(st==='setup'&&r\.dataset\.incomplete!==undefined\?r\.dataset\.incomplete==='1':r\.dataset\.state===st\);/,'Set-up incomplete filters on progress when the server answer is loaded, on the old status when it is not');
  assert.match(pilot,/document\.querySelectorAll\('\.cc-more\[open\]'\)\.forEach\(d=>\{if\(d!==more\|\|e\.target\.closest\('\.cc-menu button'\)\)d\.open=false;\}\)/,'the menu closes on an outside click or a choice');
  assert.match(pilot,/e\.key!=='Escape'\)return;const d=document\.querySelector\('\.cc-more\[open\]'\)/);
  assert.match(act,/client_card_flags/);assert.match(act,/\['PARTNER','MANAGER','SUPERVISOR'\]/);assert.match(act,/\['PARTNER','MANAGER'\]\.includes\(a\.category_code\)\)fail\(403,'Work in progress/);

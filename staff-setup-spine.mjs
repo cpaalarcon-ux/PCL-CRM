@@ -81,6 +81,6 @@ export function spineHtml(spine,{esc=e0}={}){
   const own=spine.steps.filter(s=>s.phase===ph.key);
   return `<div class="spine-phase"><span class="spine-phase-title">${esc(ph.title)}</span><div class="cc-pills">${own.map(s=>{const [cls,mark]=PILL[s.state]||PILL.todo;return `<span class="cc-pill ${cls}"${s.detail?` title="${esc(s.detail)}"`:''} data-spine-step="${esc(s.key)}"><i>${mark}</i>${esc(s.title)}</span>`;}).join('')}</div></div>`;
  }).join('');
- const count=spine.checking?'Checking…':`${spine.done} of ${spine.total} complete`;
- return `<div class="spine" aria-label="Client set-up"><p class="spine-count"><b>Client set-up</b> · ${esc(count)}</p>${phases}</div>`;
+ const count=spine.checking?'Checking…':`${spine.done} of ${spine.total} done`;
+ return `<div class="spine" aria-label="Set-up steps"><p class="spine-count"><b>Set-up steps</b> · ${esc(count)}</p>${phases}</div>`;
 }
