@@ -11,7 +11,7 @@ export const STAFF_RIGHTS=Object.freeze([
  {code:'client.tax_verify',area:'clients',group:'Client records',label:'Verify the client tax profile',roles:['PARTNER','MANAGER'],actions:['tax_profile_verify']},
  {code:'templates.library_publish',area:'projects',group:'Template library',label:'Publish or retire an upload template (not one you uploaded, unless you are the firm\'s only Partner)',roles:['PARTNER','MANAGER'],actions:['template_library_publish','template_library_retire']},
  {code:'records.partner_reopen',area:'projects',group:'Record lifecycle',label:'Reopen a confirmed sales or payroll summary with nothing posted from it (Partner exceptional reopen, with a written reason)',roles:['PARTNER'],actions:['record_reopen_apply']},
- {code:'service.template_approve',area:'projects',group:'Service templates',label:'Approve a master service template (not one you proposed, unless you are the firm\'s only Partner)',roles:['PARTNER','MANAGER'],actions:['service_template_approve']},
+ {code:'service.template_approve',area:'projects',group:'Service templates',label:'Approve a master service template (not one you proposed, unless you are the firm\'s only Partner)',roles:['PARTNER','MANAGER'],actions:['service_template_approve','service_category_approve']},
  {code:'kyc.file',area:'clients',group:'KYC',label:'Edit the KYC file and record evidence',roles:['PARTNER','MANAGER'],actions:['compliance_save','compliance_evidence_save','compliance_evidence_remove']},
  {code:'kyc.verify',area:'clients',group:'KYC',label:'Verify KYC',roles:['PARTNER','MANAGER'],actions:['compliance_verify']},
  {code:'kyc.edd',area:'clients',group:'KYC',label:'Approve enhanced due diligence',roles:['PARTNER'],actions:['edd_approve']},

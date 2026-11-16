@@ -13,7 +13,7 @@ const LEADERS=['PARTNER','MANAGER'];
 class Rollback extends Error{}
 const plain=(e:any,fallback:string)=>e?.status?String(e.message):e?.code==='23505'?'A record already exists for this client and item.':e?.code==='23514'||e?.code==='42501'?String(e.message||fallback):fallback;
 // Runs fn in a savepoint. With keep=false the work is always rolled back, so a preview can use the very same code as the apply and cannot disagree with it.
-async function attempt(tx:any,keep:boolean,fn:(t:any)=>Promise<any>):Promise<{ok:boolean,out?:any,reason?:string}>{
+export async function attempt(tx:any,keep:boolean,fn:(t:any)=>Promise<any>):Promise<{ok:boolean,out?:any,reason?:string}>{
  let out:any;
  try{await tx.savepoint(async(t:any)=>{out=await fn(t);if(!keep)throw new Rollback();});return {ok:true,out};}
  catch(e:any){if(e instanceof Rollback)return {ok:true,out};if(!e?.status)console.error('Bulk set-up row failed',{code:e?.code||'INTERNAL',type:e?.name||'Error'});return {ok:false,reason:plain(e,'This row could not be applied. Check it and try it on its own.')};}

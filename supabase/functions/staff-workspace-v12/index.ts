@@ -66,6 +66,7 @@ import {clientMasterAction} from './client-master-actions.ts';
 import {clientSetupReviewAction} from './client-setup-review-actions.ts';
 import {clientChoicesAction} from './client-choices-actions.ts';
 import {bulkSetupAction} from './bulk-setup-actions.ts';
+import {practiceTemplateAction} from './practice-template-actions.ts';
 import {statutoryFileAction} from './statutory-file-actions.ts';
 import {kraCsvAction} from './kra-csv-actions.ts';
 import {eligibilityAction} from './eligibility-actions.ts';
@@ -488,6 +489,7 @@ async function action(id:any,p:any){
   const setupReview=await clientSetupReviewAction(tx,a,p);if(setupReview!==undefined)return setupReview;
   const clientChoices=await clientChoicesAction(tx,a,p);if(clientChoices!==undefined)return clientChoices;
   const bulkSetup=await bulkSetupAction(tx,a,p);if(bulkSetup!==undefined)return bulkSetup;
+  const practiceTemplates=await practiceTemplateAction(tx,a,p);if(practiceTemplates!==undefined)return practiceTemplates;
   const statutoryFile=await statutoryFileAction(tx,a,p);if(statutoryFile!==undefined)return statutoryFile;
   const kraCsv=await kraCsvAction(tx,a,p);if(kraCsv!==undefined)return kraCsv;
   const eligibility=await eligibilityAction(tx,a,p);if(eligibility!==undefined)return eligibility;
