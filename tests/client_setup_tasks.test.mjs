@@ -55,7 +55,7 @@ test('chart, opening trial balance, routing mappings and service set-ups each gi
  assert.deepEqual(r.map(x=>[x.kind,x.count,x.blocked_mine,x.needs_me]),[['routing_review',2,1,true]],'only this client\'s drafts count; an active mapping is not a task');
  const e=one({...ok,engagements:[{client_id:C1,service_code:'TAX-COMP',period_start:'2026-01-01',period_end:'2026-12-31',status:'Waiting'},{client_id:C1,service_code:'AUD-STAT',period_start:'2026-01-01',period_end:'2026-12-31',status:'Released'}]});
  assert.deepEqual(e.map(x=>[x.kind,x.count]),[['engagement_waiting',1]]);assert.match(e[0].detail,/TAX-COMP 2026-01-01 to 2026-12-31/);
- assert.deepEqual(TASK_ORDER.filter(k=>!['section_prepare','chart_prepare','opening_prepare','engagement_waiting','section_review','chart_review','opening_review','routing_review'].includes(k)),[]);
+ assert.deepEqual(TASK_ORDER.filter(k=>!['section_prepare','chart_prepare','opening_prepare','engagement_waiting','section_review','chart_review','opening_review','routing_review','exception_review'].includes(k)),[]);
 });
 
 test('the client configuration list holds only what needs the client, one specific line each',()=>{

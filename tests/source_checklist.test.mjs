@@ -27,7 +27,7 @@ test('the panel names each state, escapes text, and is empty when there is nothi
 });
 test('the server adds the checklist next to the existing issues and the screen shows it',()=>{
  const t=read('supabase/functions/staff-workspace-v12/tax-review-actions.ts');
- assert.match(t,/import \{sourceChecklist\} from '\.\/source-checklist\.mjs'/);assert.match(t,/source_checklist=sourceChecklist\(/);assert.match(t,/return \{result,source_checklist,/);
+ assert.match(t,/import \{sourceChecklist\} from '\.\/source-checklist\.mjs'/);assert.match(t,/source_checklist=sourceChecklist\(/);assert.match(t,/return \{result,client_exceptions,source_checklist,/);
  assert.match(t,/issues\.push\('Upload the bank control source for this period\.'\)/,'the existing gate is unchanged');
  const ui=read('staff-suite.mjs');assert.match(ui,/staff-source-checklist\.mjs\?v=20261111-srcchk-v1/);assert.match(ui,/sourceChecklistPanel\(r\.source_checklist,\{esc\}\)/);
 });
