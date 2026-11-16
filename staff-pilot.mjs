@@ -2,7 +2,7 @@ let documentKind='Evidence';
 import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261116-setupreview-v1';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261116-setuptasks-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261109-ptm-v1';
 import {clientProfile} from './staff-client-profile.mjs?v=20261109-dr-v1';
@@ -20,9 +20,9 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261117-actions-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261116-setuptasks-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261108-nav-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261117-actions-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261116-setuptasks-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {moduleLinks,GROUP_ENGAGEMENTS,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261112-resources-v1';
@@ -210,7 +210,7 @@ function clients(){
  if(leaderView&&!clientPage&&!clientPageLoading)void fetchClientPage();
  const rows=leaderView?(clientPage?.rows||[]).map(r=>byId.get(r.client_id)).filter(Boolean):filtered().clients.filter(c=>!isArchived(c));
  if(isLeader())void ensureCardFacts(rows.map(c=>c.client_id));
- const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button data-v6="sector">+ Add sector</button><button class="primary" data-new="client">+ Add client</button><button data-suite="import-clients">Import clients from Excel</button></div>':'';
+ const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button data-v6="sector">+ Add sector</button><button class="primary" data-new="client">+ Add client</button><button data-suite="import-clients">Import clients from Excel</button></div>':'';
  const cards=rows.map(c=>{
   const missing=c.details_visible?clientMissing(c):[],stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);
   const progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB});
@@ -221,7 +221,7 @@ function clients(){
  });
  const counts=stateCounts(cards.map(x=>({status:isLeader()?cardStatus(x.progress,{flags:x.flags,meta:x.row}):{key:'all'}})));
  const body=cards.map(x=>x.card).join('');
- return assistantLockBanner(data,esc)+proposalsCard(data,esc,staffName)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions}</div><p class="muted">Use the setup guide to move each client through identity and year-end, opening TB import, period source posting, tax checks and project release. Create a draft project and client year first, then the preparer can upload, map and import the opening TB in one sitting. An independent Manager or Partner reviews the mappings and journal together and posts once. Complete Wholesale first, then repeat for Construction.</p>${isLeader()?'<p class="muted">Draft project setup does not unlock reporting or task release. Reports use posted entries only, and tasks stay locked until the opening balances are posted or confirmed not applicable and engagement checks are complete.</p><div class="actions"><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a></div>':''}<div class="actions">${structureFilter(structureRows(data),esc)}</div>${leaderView?registerBar(clientQuery,{sectors:(data.sectors||[]).map(x=>x.name),owners:data.staff.filter(x=>['MANAGER','PARTNER'].includes(x.category_code)&&x.access_status!=='Inactive')},esc):''}<input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients">${isLeader()?chipRow(counts,clientStateFilter,esc):''}<div class="client-grid">${body}</div>${leaderView&&!clientPage?'<p class="muted" role="status">Loading clients…</p>':''}${leaderView&&clientPage?.error?`<p class="info">${esc(clientPage.error)}</p>`:''}${!rows.length&&(!leaderView||(clientPage&&!clientPage.error))?empty(leaderView?'No clients match these filters.':'No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}${leaderView?registerPager(clientPage,esc):''}</div>`;
+ return assistantLockBanner(data,esc)+proposalsCard(data,esc,staffName)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks">Client Setup Tasks</button></div>'}</div><p class="muted">Use the setup guide to move each client through identity and year-end, opening TB import, period source posting, tax checks and project release. Create a draft project and client year first, then the preparer can upload, map and import the opening TB in one sitting. An independent Manager or Partner reviews the mappings and journal together and posts once. Complete Wholesale first, then repeat for Construction.</p>${isLeader()?'<p class="muted">Draft project setup does not unlock reporting or task release. Reports use posted entries only, and tasks stay locked until the opening balances are posted or confirmed not applicable and engagement checks are complete.</p><div class="actions"><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a></div>':''}<div class="actions">${structureFilter(structureRows(data),esc)}</div>${leaderView?registerBar(clientQuery,{sectors:(data.sectors||[]).map(x=>x.name),owners:data.staff.filter(x=>['MANAGER','PARTNER'].includes(x.category_code)&&x.access_status!=='Inactive')},esc):''}<input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients">${isLeader()?chipRow(counts,clientStateFilter,esc):''}<div class="client-grid">${body}</div>${leaderView&&!clientPage?'<p class="muted" role="status">Loading clients…</p>':''}${leaderView&&clientPage?.error?`<p class="info">${esc(clientPage.error)}</p>`:''}${!rows.length&&(!leaderView||(clientPage&&!clientPage.error))?empty(leaderView?'No clients match these filters.':'No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}${leaderView?registerPager(clientPage,esc):''}</div>`;
 }
 function renderClientProfile(){
  const c=data.clients.find(x=>x.client_id===selectedClient);let progress=null,step=null,status=null;
@@ -440,7 +440,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload,firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}
  if(b.dataset.clientSetup)await improvements.client(b.dataset.clientSetup);
  if(b.dataset.setupGuide)await setupGuide.open(b.dataset.setupGuide);
- if(b.dataset.clientOpen){pendingClientTab=b.dataset.clientTab||'';navigateWorkspace('clientfile',b.dataset.clientOpen);return;}
+ if(b.dataset.clientOpen){if(b.closest('#editor')&&$('#editor').open)$('#editor').close();pendingClientTab=b.dataset.clientTab||'';navigateWorkspace('clientfile',b.dataset.clientOpen);return;}
  if(b.dataset.cprofileTab){clientTab=b.dataset.cprofileTab;render();return;}
  if(b.dataset.cregPage){clientQuery.page=Math.max(0,clientQuery.page+(b.dataset.cregPage==='next'?1:-1));clientPage=null;render();return;}
  if(b.dataset.cregClear!==undefined){clientQuery=DEFAULT_QUERY();clientPage=null;render();return;}

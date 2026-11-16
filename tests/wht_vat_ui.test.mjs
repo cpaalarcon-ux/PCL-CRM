@@ -24,8 +24,8 @@ test('the schedule screen draws the server figures, offers only what is allowed,
 test('the screens are wired, the chain is cache-busted, and no rate or formula lives in the browser code',()=>{
  const ui=rd('staff-whtvat.mjs'),wh=rd('staff-withholding.mjs'),cr=rd('staff-credits.mjs');
  assert.match(wh,/staff-whtvat\.mjs\?v=20261116-whtvat-v1/);assert.match(wh,/data-wht="whtvat"|button\('whtvat'/);assert.match(wh,/whtvat\.open\(/);
- assert.match(rd('staff-workspace-v6.mjs'),/staff-withholding\.mjs\?v=20261116-whtvat-v1/);assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261117-actions-v1/);
- assert.match(rd('staff-suite.mjs'),/staff-credits\.mjs\?v=20261116-whtvat-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261117-actions-v1/);
+ assert.match(rd('staff-workspace-v6.mjs'),/staff-withholding\.mjs\?v=20261116-whtvat-v1/);assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261116-setuptasks-v1/);
+ assert.match(rd('staff-suite.mjs'),/staff-credits\.mjs\?v=20261116-whtvat-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261116-setuptasks-v1/);
  for(const a of ['whtvat_read','whtvat_agent_add','whtvat_agent_void','whtvat_agent_export'])assert.match(ui,new RegExp(a));
  assert.match(cr,/whtvat_certificate_line/);assert.match(cr,/whtvat_read/);
  assert.doesNotMatch(ui,/Math\.ceil|Math\.round|\*\s*rate|rate\s*\*/,'the browser shows server amounts; it never computes one');

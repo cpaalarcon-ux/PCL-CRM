@@ -20,7 +20,7 @@ export const CARD_TAB=Object.freeze({
  staffRatesCard:'firm',handlingFirmsCard:'firm',
  taxRoleCard:'access',
  templateLibraryCard:'services',eligibilityCard:'services',
- chartCard:'accounting',routingMapCard:'accounting',starterConfirmCard:'accounting',taxRatesCard:'accounting',deadlineCard:'accounting',dueBacklogCard:'accounting',
+ chartCard:'accounting',starterConfirmCard:'accounting',taxRatesCard:'accounting',deadlineCard:'accounting',dueBacklogCard:'accounting',
  exportProfilesCard:'templates',
  referenceCard:'records',toolsCard:'records'
 });
