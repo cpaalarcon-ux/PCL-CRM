@@ -33,7 +33,7 @@ export function returnAllowed(selections,returnCode,monthStart,monthEnd){
  const s=day(monthStart),e=day(monthEnd);
  const hit=rows.find(r=>r.return_code===returnCode&&day(r.effective_from)<=e&&(!r.effective_to||day(r.effective_to)>=s));
  if(hit)return {allowed:true,configured:true};
- return {allowed:false,configured:true,problem:`${RETURNS[returnCode]?.label||returnCode} is not chosen for this client's payroll service for ${s.slice(0,7)}. Choose it in Client Setup → Payroll returns.`};
+ return {allowed:false,configured:true,problem:`${RETURNS[returnCode]?.label||returnCode} is not chosen for this client's payroll service for ${s.slice(0,7)}. Choose it in the client file → Tax & returns → Payroll returns.`};
 }
 
 // ---- client-specific tax rule exceptions -------------------------------------------------------------------------------------

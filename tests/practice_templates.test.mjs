@@ -55,7 +55,7 @@ test('wiring: actions routed and gated, database guards, button for leaders, bui
  const m=rd('supabase/migrations/20261118110000_practice_size_and_template_submissions.sql');
  assert.match(m,/GRANT SELECT,INSERT ON erp_private\.firm_practice_declarations TO erp_api/);assert.match(m,/GRANT SELECT,INSERT ON erp_private\.service_template_submissions TO erp_api/);assert.doesNotMatch(m,/GRANT[^;]*UPDATE/);
  assert.match(m,/FORCE ROW LEVEL SECURITY/);assert.match(m,/service_templates_submitter_guard/);assert.match(m,/practitioners>1/);assert.match(m,/cannot declare fewer practitioners/);
- const imp=rd('staff-improvements.mjs'),pilot=rd('staff-pilot.mjs');assert.match(imp,/staff-service-categories\.mjs\?v=20261116-dates-v1/);assert.match(imp,/if\(a==='categories'\)await categories\.open\(\)/);assert.match(pilot,/staff-improvements\.mjs\?v=20261116-dates-v1/);
+ const imp=rd('staff-improvements.mjs'),pilot=rd('staff-pilot.mjs');assert.match(imp,/staff-service-categories\.mjs\?v=20261116-dates-v1/);assert.match(imp,/if\(a==='categories'\)await categories\.open\(\)/);assert.match(pilot,/staff-improvements\.mjs\?v=20261119-tabs-v1/);
  assert.ok(pilot.match(/isLeader\(\)\?'<div class="actions">'[^\n]*data-v3="categories"/),'the button is in the leaders\' row');
- assert.match(rd(fx+'release.json'),/2026-11-14\.2847/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2847"/);
+ assert.match(rd(fx+'release.json'),/2026-11-14\.2850/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2850"/);
 });

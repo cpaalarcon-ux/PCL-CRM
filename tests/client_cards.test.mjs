@@ -51,7 +51,7 @@ test('card (build 2690): status badge, one ring, one main button, a menu; the ol
  assert.equal((html.match(/class="primary cc-main"/g)||[]).length,1,'one main button');
  assert.match(html,/class="primary cc-main" data-setup-guide="c1">Finish activities and mappings<\/button>/);
  assert.match(html,/<details class="cc-more"><summary aria-label="More actions for UAT Fictional Geisha"/);
- for(const t of ['Open client file','View details','Client accounts','Continue set-up','Edit KYC and contacts','Tax profile','Entity and activities'])assert.match(html,new RegExp(`role="menuitem"[^>]*>${t}</button>`),t);
+ for(const t of ['Open client file','View details','Client accounts','Continue set-up','Edit KYC and contacts','Tax profile','Set-up'])assert.match(html,new RegExp(`role="menuitem"[^>]*>${t}</button>`),t);
  assert.match(html,/data-client-accounts="c1">Client accounts/);assert.match(html,/data-setup-guide="c1">Continue set-up/);assert.match(html,/data-client="c1">View details/);
  assert.match(html,/data-search="uat fictional geisha"/);assert.match(html,/data-state="setup"/);
  assert.doesNotMatch(html,/general mappings active|Opening TB setup required|Profile fields complete/,'the old paragraph text is gone');
@@ -181,7 +181,7 @@ test('the Clients screen uses the card grid and keeps search, structure and stat
 test('Review N tasks opens the client file on its Projects & Tasks tab, and the client page shows the same status as the card',()=>{
  const pilot=readFileSync(new URL('../staff-pilot.mjs',import.meta.url),'utf8'),profile=readFileSync(new URL('../staff-client-profile.mjs',import.meta.url),'utf8');
  assert.match(card(done(),{meta:{open_tasks:3}}),/data-client-open="c1" data-client-tab="projects">Review 3 tasks</);
- assert.doesNotMatch(card(done(),{meta:{open_tasks:0}}),/data-client-tab/);
+ assert.doesNotMatch(card(done(),{meta:{open_tasks:0}}),/data-client-tab="projects"/);
  assert.match(pilot,/pendingClientTab=b\.dataset\.clientTab\|\|''/);assert.match(pilot,/clientTab=pendingClientTab\|\|'overview'/);
  assert.match(pilot,/status=cardStatus\(progress,\{flags:cardFlags\.get\(c\.client_id\)/);assert.doesNotMatch(pilot,/status=clientStatus\(/);
  assert.match(pilot,/void ensureCardFacts\(\[c\.client_id\]\)/);

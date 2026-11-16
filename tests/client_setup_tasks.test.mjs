@@ -95,14 +95,14 @@ test('the queue screen: search, filters, links and the separation from firm-wide
 test('screens: buttons, the routing map leaves Settings, and the Configure link goes to Clients',()=>{
  const imp=rd('staff-improvements.mjs'),pilot=rd('staff-pilot.mjs'),suite=rd('staff-suite.mjs'),rmap=rd('staff-routing-map.mjs'),layout=rd('staff-settings-layout.mjs');
  assert.match(imp,/action:'client_setup_tasks_read'/);assert.match(imp,/a==='setup-tasks'\)await setupTasks\(\)/);assert.match(imp,/\$\{configurationHtml\(cfg,\{esc\}\)\}/);
- assert.match(imp,/data-suite="routing-map-open" data-id="\$\{esc\(id\)\}">Routing map/);
+ assert.match(rd('staff-client-profile.mjs'),/data-suite=\"routing-map-open\" data-id=\"\$\{id\}\"`,'Routing map'\)/);
  assert.equal((pilot.match(/data-v3="setup-tasks"/g)||[]).length,2,'on the Clients screen for everyone with client access');
  assert.match(pilot,/if\(b\.dataset\.clientOpen\)\{if\(b\.closest\('#editor'\)&&\$\('#editor'\)\.open\)\$\('#editor'\)\.close\(\)/);
  assert.doesNotMatch(suite,/routingMapCard/);assert.doesNotMatch(layout,/routingMapCard/);assert.doesNotMatch(rmap,/settingsCard|id:'routingMapCard'/);
  assert.match(rmap,/async function handle\(action,id\)/);assert.match(rmap,/if\(id\)\{if\(\$\('#editor'\)\?\.open\)\$\('#editor'\)\.close\(\);await open\(id\);return true;\}/);
- assert.equal(CONFIGURE_TARGETS.routing_map.view,'clients');assert.equal(CONFIGURE_TARGETS.routing_map.tab,undefined);assert.match(CONFIGURE_TARGETS.routing_map.where,/Client Setup → Routing map/);
+ assert.equal(CONFIGURE_TARGETS.routing_map.view,'clients');assert.equal(CONFIGURE_TARGETS.routing_map.tab,undefined);assert.match(CONFIGURE_TARGETS.routing_map.where,/Tax & returns → Routing map/);
  assert.match(rd('staff-settings-frame.mjs'),/if\(target\.view\)\{[^}]*ctx\.navigate\(target\.view\)/);
- for(const f of ['staff-routing-map.mjs','staff-settings-frame.mjs','staff-settings-layout.mjs','staff-suite.mjs','staff-improvements.mjs','staff-my-approvals.mjs','staff-accounting.mjs','staff-workspace-v6.mjs'])assert.match(suite+imp+pilot+rd('staff-accounting.mjs')+rd('staff-workspace-v6.mjs'),new RegExp(f.replace('.','\\.')+'\\?v=20261116-(setuptasks|choices|bulk|practice|versions|dates)-v1'),f+' has a fresh cache token');
+ for(const f of ['staff-routing-map.mjs','staff-settings-frame.mjs','staff-settings-layout.mjs','staff-suite.mjs','staff-improvements.mjs','staff-my-approvals.mjs','staff-accounting.mjs','staff-workspace-v6.mjs'])assert.match(suite+imp+pilot+rd('staff-accounting.mjs')+rd('staff-workspace-v6.mjs'),new RegExp(f.replace('.','\\.')+'\\?v=2026111[69]-(setuptasks|choices|bulk|practice|versions|dates|tabs|settings|tidy)-v1'),f+' has a fresh cache token');
 });
 
 test('renewals: lapsed and ending soon, oldest first, with owner and a link to the record',()=>{

@@ -116,7 +116,7 @@ test('wiring: actions, screens, migration safeguards',()=>{
  assert.match(sf,/returnAllowed\(chosenRows/);assert.match(sf,/allowed_kinds/);
  assert.match(rd('supabase/functions/staff-workspace-v12/tax-review-actions.ts'),/client_exceptions/);
  assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/client_setup_/);
- const imp=rd('staff-improvements.mjs');assert.match(imp,/a==='returns'\)await choices\.returns\(id\)/);assert.match(imp,/a==='exceptions'\)await choices\.exceptions\(id\)/);assert.match(imp,/button\('returns','Payroll returns',id\)/);
+ const imp=rd('staff-improvements.mjs');assert.match(imp,/a==='returns'\)await choices\.returns\(id\)/);assert.match(imp,/a==='exceptions'\)await choices\.exceptions\(id\)/);assert.match(rd('staff-client-profile.mjs'),/data-v3=\"returns\" data-id=\"\$\{id\}\"`,'Payroll returns'\)/);assert.match(rd('staff-client-profile.mjs'),/data-v3=\"exceptions\"/);
  const sql=rd('supabase/migrations/20261117210000_client_returns_and_tax_exceptions.sql');
  for(const t of ['client_payroll_returns','client_tax_exceptions']){assert.match(sql,new RegExp('ALTER TABLE erp_private\\.'+t+' FORCE ROW LEVEL SECURITY'));assert.match(sql,new RegExp('ON erp_private\\.'+t+' FOR EACH ROW EXECUTE FUNCTION erp_private\\.reject_delete'));}
  assert.match(sql,/CHECK\(approved_by IS NULL OR approved_by<>created_by\)/);assert.match(sql,/tax_rules_approver\(\)/);
