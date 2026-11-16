@@ -550,3 +550,10 @@ dialog#editor{border-radius:14px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
 .cc-more-wide summary{width:auto;padding:0 14px;font-weight:700;font-size:13.5px}
 .cc-more-wide .cc-menu{min-width:220px}
 .work-board-summary .link{background:none;border:0;padding:0;color:var(--green,#0b5d3b);text-decoration:underline;cursor:pointer;font:inherit}
+
+.staff-roster,.doc-roster{overflow:visible}
+.staff-roster td .actions{flex-wrap:nowrap;align-items:center}
+.cc-menu button.danger{color:var(--red,#b42318)}
+@media(max-width:720px){.staff-roster,.doc-roster{overflow-x:auto;padding-bottom:180px}}
+.doc-roster td .actions{flex-wrap:nowrap;align-items:center}
+.doc-note{margin:8px 0}.doc-note>summary{cursor:pointer;font-weight:600;color:var(--green)}.doc-note>summary:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
