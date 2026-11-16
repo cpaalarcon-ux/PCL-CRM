@@ -36,7 +36,7 @@ test('the server pieces are wired and the actions belong to the projects area',(
  assert.match(cfg,/Only an Engagement Partner or the designated Tax Manager can confirm and approve tax rules/);assert.match(cfg,/rateAuthority\(tx,a,r\)/);
  const rel=JSON.parse(read('supabase/functions/staff-workspace-v12/release.json'));
  assert.equal(rel.build,'2026-11-14.2840');assert.match(read('staff-pilot.html'),/data-build="2026-11-14\.2840"/);
- assert.match(read('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261117-actions-v1/);assert.match(read('staff-suite.mjs'),/staff-tax-period-defaults\.mjs\?v=20261110-taxrole-v3/);
+ assert.match(read('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261116-setuptasks-v1/);assert.match(read('staff-suite.mjs'),/staff-tax-period-defaults\.mjs\?v=20261110-taxrole-v3/);
 });
 test('wording: nothing here says a Partner confirmed anything, and the banned standard name never appears',()=>{
  for(const f of ['staff-suite.mjs','staff-tax-period-defaults.mjs','staff-deadlines.mjs','supabase/functions/staff-workspace-v12/due-date-actions.ts','supabase/migrations/20261110279000_tax_lead_due_dates_amendments.sql'])assert.doesNotMatch(read(f),/ISRS 4000/);
