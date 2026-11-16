@@ -4,7 +4,7 @@
 import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const day=v=>v?String(v).slice(0,10):'';
-export const ROLE_NOTE='Tax Managers are Managers a Partner assigns once for all clients, or to a single client engagement. A firm may have as many as it needs. VAT, credit and other tax rules can be approved only by a Tax Manager while a Partner has switched the APPROVE_TAX_RULES permission on for the role. A Partner cannot approve a VAT or credit rule without being assigned as it; no other staff member can approve one.';
+export const ROLE_NOTE='Tax Managers are Managers a Partner assigns once for all clients, or to a single client engagement. A firm may have as many as it needs. An Engagement Partner can confirm and approve any tax rule by rank (not the one they prepared themselves). A Manager can do so only as an assigned Tax Manager while a Partner has switched the APPROVE_TAX_RULES permission on for the role. No other staff member can approve one.';
 export const RULES_NOTE='Annual KRA due dates are suggested from these rules: the months after the period end and the day of the month (blank means the last day of the month; a fixed day is capped at the last day if the month is shorter). The Tax Team still confirms each annual period\'s date by hand. A rule shows "Suggested" until a Partner records its confirmation.';
 const KIND_LABEL={Individual:'Individual (resident)',Company:'Company',Partnership:'Partnership'};
 export const permissionStatus=p=>p?.allowed?'On':'Off (default: not yet switched on by a Partner)';
