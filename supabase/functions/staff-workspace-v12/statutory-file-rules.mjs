@@ -114,7 +114,7 @@ export function buildFile(kind,{employees,calculated,people,profile=null}){
  const b=kind==='NSSF'?buildNssf({joined}):kind==='SHIF'?buildShif({joined}):kind==='PAYE_P10'?buildP10({joined,sheetM:profile?.employer_housing_levy==='SEPARATE_SHEET'}):null;
  if(!b)return {issues:['Choose NSSF, SHIF or PAYE (P10).'],rows:[],totals:{},notes:[]};
  const layout=LAYOUTS[kind],issues=[...b.issues],notes=[...(b.notes||[])];
- if(!profile)issues.push('No published export profile is in force for this return and month. A Manager or Partner publishes one in Settings, Templates and Statutory Rules.');
+ if(!profile)issues.push('No published export profile is in force for this return and month. A Manager or Partner publishes one in Settings, Upload & Export Templates.');
  // Accepted identifiers (SHIF): the profile lists the ID types the authority accepts; a person with another type is named, never silently changed.
  if(profile&&kind==='SHIF'){for(const r of b.rows){if(!(profile.accepted_id_types||[]).includes(r[3]))issues.push(`${r[1]} ${r[2]}: ID type ${r[3]} is not accepted by the export profile in force.`);}}
  // Rounding is applied to the file only. The exact amounts stay in the totals so the file reconciles to the ledger through the stored difference.

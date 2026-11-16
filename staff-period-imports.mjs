@@ -6,8 +6,8 @@ import {createSalesAmendUI} from './staff-sales-amend.mjs?v=20261107-annualpack-
 import {createDeleteRedoUI} from './staff-delete-redo.mjs?v=20261115-redo-v1';
 import {createPayrollReviewUI} from './staff-payroll-review.mjs?v=20261116-confirm-v1';
 import {createPayrollConfirmationUI} from './staff-payroll-confirmation.mjs?v=20261116-confirm-v1';
-import {createPayrollRegisterUI} from './staff-payroll-register.mjs?v=20261116-profiles-v1';
-import {createKraCsvUI} from './staff-kra-csv.mjs?v=20261116-kra-v1';
+import {createPayrollRegisterUI} from './staff-payroll-register.mjs?v=20261117-frame-v1';
+import {createKraCsvUI} from './staff-kra-csv.mjs?v=20261117-frame-v1';
 import {createRecordReopenUI} from './staff-record-reopen.mjs?v=20261116-reopen-v1';
 import {lineFieldset,collectLines,syncRelationship} from './staff-payroll-lines.mjs?v=20261107-annualpack-v3';
 export function createPeriodImportUI(ctx){
