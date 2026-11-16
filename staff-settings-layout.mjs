@@ -4,8 +4,8 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 
 export const SETTINGS_TABS=Object.freeze([
  {code:'overview',label:'Overview',about:'Search, what is waiting for approval, and where every setting lives.'},
- {code:'firm',label:'Firm & Users',about:'Handling firms and staff cost and billing rates. Logins and staff records are under Staff.'},
- {code:'access',label:'Access & Approvals',about:'Who may approve what, and the Tax Manager role.'},
+ {code:'firm',label:'Firm & Users',about:'Handling firms, staff cost and billing rates, and public holidays. Logins and staff records are under Staff.'},
+ {code:'access',label:'Access & Approvals',about:'Who may approve what, the Tax Manager role, Partner policies and the go-live date.'},
  {code:'services',label:'Service Catalogue',about:'Service templates, their scope, and eligibility for restricted services.'},
  {code:'accounting',label:'Accounting & Tax Rules',about:'Chart of accounts, routing codes, starter rules, tax rules and KRA due dates.'},
  {code:'templates',label:'Upload & Export Templates',about:'Statutory file layouts (NSSF, SHIF, P10) and the upload templates in Resources.'},
@@ -25,6 +25,16 @@ export const CARD_TAB=Object.freeze({
  referenceCard:'records',toolsCard:'records'
 });
 export const tabForCard=id=>CARD_TAB[id]||'records';
+
+// Build 2849: the Accounting & Tax Rules tab is long (about 240 buttons), so each of its cards sits in a fold and one is open at a time (a shared
+// name makes the browser close the others). The first card starts open. Every card keeps its own id inside the fold; nothing is removed.
+export const FOLD_TABS=Object.freeze(['accounting']);
+export const FOLD_TITLES=Object.freeze({chartCard:'Chart of accounts',starterConfirmCard:'Starter rules',taxRatesCard:'Tax rates and rules',deadlineCard:'KRA due dates',dueBacklogCard:'Due-date backlog'});
+export function fold(id,html,{first=false,tab='accounting'}={}){
+ if(!html)return '';
+ const title=FOLD_TITLES[id]||String(id).replace(/Card$/,'').replace(/([A-Z])/g,' $1').trim();
+ return `<details class="settings-fold" name="settings-fold-${esc(tab)}" data-fold="${esc(id)}"${first?' open':''}><summary>${esc(title)}</summary>${html}</details>`;
+}
 
 // Tabs with nothing to configure yet say so plainly, with where the related work lives. They are not blank pages and they promise nothing.
 export const EMPTY_NOTES=Object.freeze({

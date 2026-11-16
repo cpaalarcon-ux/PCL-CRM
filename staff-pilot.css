@@ -541,3 +541,12 @@ dialog#editor{border-radius:14px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
 #rightsTable td{vertical-align:top;font-size:.9rem}
 .rights-notes{margin-top:1rem;padding-left:1.2rem}
 .settings-crumb{margin:0 0 .5rem;font-size:.85rem}
+.settings-fold{border:1px solid var(--line,#d9dee5);border-radius:10px;margin:0 0 10px;background:var(--card,#fff)}
+.settings-fold>summary{cursor:pointer;font-weight:700;padding:12px 14px;list-style-position:inside}
+.settings-fold>summary:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.settings-fold[open]>summary{border-bottom:1px solid var(--line,#d9dee5)}
+.settings-fold>section,.settings-fold>div{margin:0;padding:0 14px 14px}
+
+.cc-more-wide summary{width:auto;padding:0 14px;font-weight:700;font-size:13.5px}
+.cc-more-wide .cc-menu{min-width:220px}
+.work-board-summary .link{background:none;border:0;padding:0;color:var(--green,#0b5d3b);text-decoration:underline;cursor:pointer;font:inherit}

@@ -7,7 +7,7 @@ test('the payroll register is reachable from the payroll screen and starts a mon
  assert.match(ui,/staff-payroll-register\.mjs\?v=20261116-choices-v1/);assert.match(ui,/button\('register','Payroll register'\)/);assert.match(ui,/register\.isAction\(action\)/);
  assert.match(ui,/Rolled forward from the payroll register/);
  assert.match(rd('staff-workspace-v6.mjs'),/staff-period-imports\.mjs\?v=20261116-choices-v1/);
- assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261116-choices-v1/);
+ assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261119-tidy-v1/);
 });
 test('the register screen sends the server actions and never saves a payroll',()=>{
  const ui=rd('staff-payroll-register.mjs');
@@ -21,7 +21,7 @@ test('server wiring: actions are routed and classified under project access',()=
 test('the balance stylesheet block keeps the header from clipping',()=>{
  const css=rd('staff-pilot.css');
  assert.match(css,/Build 2804: balance and consistency/);assert.match(css,/\.workspace-topbar\{flex-wrap:wrap/);assert.match(css,/\.workspace-topbar \.header-tools\{flex:0 1 auto;flex-wrap:wrap/);
- assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261115-balance-v1/);
+ assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261119-tidy-v1/);
 });
 
 test('build 2819: inactive, return, removal request, decision and carry-forward choice are wired through the server actions',()=>{

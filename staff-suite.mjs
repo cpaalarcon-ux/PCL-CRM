@@ -21,7 +21,7 @@ import {createToolsUI} from './staff-tools.mjs?v=20261116-tools-v1';
 import {createRolloverUI} from './staff-rollover.mjs?v=20261116-roll-v1';
 import {createTaxRolesUI} from './staff-tax-roles.mjs?v=20261112-resources-v1';
 import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
-import {SETTINGS_TABS,tabForCard,layoutView,rightsView} from './staff-settings-layout.mjs?v=20261116-setuptasks-v1';
+import {SETTINGS_TABS,tabForCard,layoutView,rightsView,FOLD_TABS,fold} from './staff-settings-layout.mjs?v=20261119-settings-v1';
 import {createSettingsFrameUI} from './staff-settings-frame.mjs?v=20261116-setuptasks-v1';
 import {createStatementReviewUI} from './staff-statement-review.mjs?v=20261117-actions-v1';
 import {createOwnerMatrixUI} from './staff-owner-matrix.mjs?v=20261117-actions-v1';
@@ -98,13 +98,15 @@ export function createSuiteUI(ctx){
  }
  function support(){return `<div class="section-head"><p>Raise an internal support request and track its first-response deadline. Notifications remain inside the ERP.</p>${button('ticket-new','+ New ticket')}</div>${table(['Ticket','Subject','Assigned to','Priority / response due','Status','Action'],s().tickets.map(t=>[esc('ALC-'+t.ticket_number),esc(t.subject),esc(staffName(t.assigned_to)),`${badge(t.priority)}<small>${new Date(t.sla_due_at).toLocaleString('en-GB',{timeZone:'Africa/Nairobi'})}</small>${!t.first_response_at&&new Date(t.sla_due_at)<new Date()?'<span class="missing">Response overdue</span>':''}`,badge(t.status),button('ticket','Open',t.ticket_id)]))}`;}
  function adminSettings(){return `<section class="card"><div class="section-head"><h2>System settings</h2></div><p class="muted">A System Administrator keeps the application lists and reference material up to date. You do not see or change client records, and you cannot approve anything. Tax rules, chart of accounts changes and release decisions stay with Managers and Partners.</p><div class="actions"><button type="button" data-v6="sector">+ Add sector</button>${button('references','Private reference documents')}${button('release-read','Go-live readiness (read only)')}</div></section><section class="card section-space"><h3>Sectors</h3>${(d().sectors||[]).map(x=>`<span class="badge">${esc(x.name)}</span>`).join(' ')||empty('No sectors yet.')}</section>`;}
- function settings(){if(d().me.category_code==='ADMIN')return adminSettings();
+ // Build 2849: cards that used to sit above and below every tab are passed in by tab (extra.access, extra.firm) so each is shown once.
+ function settings(extra={}){if(d().me.category_code==='ADMIN')return adminSettings()+Object.values(extra).join('');
   if(frame.open())return frame.bar()+frame.page();
   const pieces={overviewFeedsCard:frame.card(),myApprovalsCard:myApprovals.card(),settingsHub:settingsHub.card(),ownerMatrixCard:ownerMatrix.card(),referenceCard:settingsCard({id:'referenceCard',title:'Reference documents & change control',purpose:'Review the consolidated Word specifications and retain each approved version inside the ERP.',audience:'Managers and Partners',actions:button('references','Open')}),chartCard:settingsCard({id:'chartCard',title:'Chart of accounts',purpose:'Attached account master, controlled additions and separate tax rules. Every staff member can search the chart under Documents, Resources.',audience:'Managers and Partners',actions:'<button type="button" data-accounting="catalog">Browse chart of accounts</button>'+button('resources-open','Resources')}),deadlineCard:deadlines.card(),taxRoleCard:taxRoles.card(),dueBacklogCard:dueBacklog.card(),taxRatesCard:taxConfig.rates(),starterConfirmCard:starterConfirm.card(),templateLibraryCard:templateLibrary.card(),exportProfilesCard:exportProfiles.card(),eligibilityCard:eligibility.card(),toolsCard:tools.card(),
    staffRatesCard:partner()?`<section class="card section-space"><div class="section-head"><h2>Staff cost & billing rates</h2>${button('staff-rate','+ Add rate period')}</div>${table(['Staff','Effective dates','Cost / hour','Billable / hour'],s().staff_rates.map(r=>[esc(staffName(r.staff_id)),`${shortDate(r.effective_from)} – ${shortDate(r.effective_to)}`,money(r.cost_rate),money(r.billable_rate)]))}</section>`:'',handlingFirmsCard:partner()?`<section class="card section-space"><div class="section-head"><h2>Handling firms</h2><button data-new="firm">+ Add firm</button></div>${table(['Firm','Registered name','Invoice prefix','Action'],d().firms.map(f=>[esc(f.firm_code),esc(f.legal_name),esc(f.invoice_prefix||'INV/'+f.firm_code),button('firm','Edit details',f.firm_id)]))}</section>`:''};
   const panels={};for(const t of SETTINGS_TABS)panels[t.code]='';
-  for(const [id,html] of Object.entries(pieces))panels[tabForCard(id)]+=html;
+  const seen={};for(const [id,html] of Object.entries(pieces)){const tab=tabForCard(id);if(FOLD_TABS.includes(tab)&&html){panels[tab]+=fold(id,html,{first:!seen[tab],tab});seen[tab]=true;}else panels[tab]+=html;}
   panels.access+=rightsView({me:d().me.category_code});
+  for(const [code,html] of Object.entries(extra))if(code in panels)panels[code]+=html;
   return frame.bar()+layoutView({active:settingsTab,panels,button});}
  function hr(){
   const me=d().me.staff_id,open=s().attendance.find(x=>x.staff_id===me&&date(x.work_date)===today()),mine=s().leave.filter(l=>l.staff_id===me),team=leader();

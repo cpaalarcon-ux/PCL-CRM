@@ -85,7 +85,7 @@ export function recordView(d,tab='overview'){
 // A blocker in a piece of work names the setting that fixes it. The link takes the person to that setting and brings them back to the same place.
 export const CONFIGURE_TARGETS=Object.freeze({
  export_profile:{area:'export_profile',label:'Statutory export profile',tab:'templates',where:'Settings → Upload & Export Templates → Statutory export profiles'},
- routing_map:{area:'routing_map',label:'Routing mapping',view:'clients',where:'Clients → open the client → Client Setup → Routing map'},
+ routing_map:{area:'routing_map',label:'Routing mapping',view:'clients',where:'Clients → open the client → Tax & returns → Routing map'},
  eligibility:{area:'eligibility',label:'Service eligibility',tab:'services',where:'Settings → Service Catalogue → Service eligibility'},
  tax_rate:{area:'tax_rate',label:'Tax rule',tab:'accounting',where:'Settings → Accounting & Tax Rules → Tax rules'}
 });
