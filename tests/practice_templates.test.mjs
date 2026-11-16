@@ -48,7 +48,7 @@ test('the form: practice size and categories, escaped, with the reason beside wh
 
 test('wiring: actions routed and gated, database guards, button for leaders, build label',()=>{
  assert.match(rd(fx+'index.ts'),/const practiceTemplates=await practiceTemplateAction\(tx,a,p\);if\(practiceTemplates!==undefined\)return practiceTemplates;/);
- const ac=rd(fx+'staff-access-control.mjs');assert.match(ac,/practice_\|/);assert.match(ac,/service_\(\?:template\|category\)_/);
+ const ac=rd(fx+'staff-access-control.mjs');assert.match(ac,/practice_\|/);assert.match(ac,/service_template_\|service_category_\|/);
  const cat=rd(fx+'staff-rights-catalog.mjs');assert.match(cat,/actions:\['service_template_approve','service_category_approve'\]/);assert.equal(cat,rd('staff-rights-catalog.mjs'),'both copies of the rights catalogue are identical');
  const act=rd(fx+'practice-template-actions.ts');assert.match(act,/LEADERS=\['PARTNER','MANAGER'\]/);assert.match(act,/A Partner declares the number of practitioners/);assert.match(act,/service_template_approve/,'approval goes through the existing action');
  assert.doesNotMatch(act.replace(/\/\/[^\n]*/g,''),/update erp_private\.|delete from/i);
