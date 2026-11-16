@@ -37,3 +37,58 @@ export function templateGate(kind,t,me,sole){
  return {ok:true,sole_approval:mine&&sole};
 }
 export const GROUP_ORDER=Object.freeze(['Tax Compliance','Accounting and Bookkeeping','Payroll','Audit and Assurance','Advisory and Other']);
+
+// Build 2844: bulk retire and bulk "propose a new version" of service categories.
+// Retire: a Partner, one reason (5 to 500 characters) for every ticked category. Propose: a Manager or Partner, one set of changes applied wherever the task exists.
+export const MAX_BATCH=50;
+const KEY=/^[a-z][a-z0-9_]{1,39}$/;
+export function retireFields(p){
+ const reason=clean(p?.reason);
+ if(reason.length<5||reason.length>500)return {problem:'Say why they are retired, in 5 to 500 characters. The same reason is recorded on each.'};
+ return {values:{reason}};
+}
+// The common changes for a new version. Task keys are the template's own lower-case keys. A key a category does not have is left alone for that category and said so.
+export function versionChanges(p){
+ const drop=Array.isArray(p?.drop_task_keys)?[...new Set(p.drop_task_keys.map(x=>clean(x)).filter(Boolean))]:[];
+ const days=p?.due_days&&typeof p.due_days==='object'&&!Array.isArray(p.due_days)?p.due_days:{};
+ const must=p?.mandatory&&typeof p.mandatory==='object'&&!Array.isArray(p.mandatory)?p.mandatory:{};
+ const due={},mandatory={};
+ for(const k of drop)if(!KEY.test(k))return {problem:`"${k}" is not a task key. Task keys are lower-case words joined by underscores.`};
+ for(const [k,v] of Object.entries(days)){
+  if(!KEY.test(k))return {problem:`"${k}" is not a task key. Task keys are lower-case words joined by underscores.`};
+  const n=Number(v);if(!Number.isInteger(n)||n<0||n>366)return {problem:`Due days for "${k}" run from 0 to 366.`};due[k]=n;
+ }
+ for(const [k,v] of Object.entries(must)){
+  if(!KEY.test(k))return {problem:`"${k}" is not a task key. Task keys are lower-case words joined by underscores.`};
+  if(typeof v!=='boolean')return {problem:`Say whether "${k}" is required or optional.`};mandatory[k]=v;
+ }
+ for(const k of drop)if(k in due||k in mandatory)return {problem:`"${k}" is both removed and changed. Choose one.`};
+ if(drop.length+Object.keys(due).length+Object.keys(mandatory).length>MAX_BATCH)return {problem:`Change up to ${MAX_BATCH} tasks at a time.`};
+ const suffix=clean(p?.name_suffix);if(suffix.length>60)return {problem:'The name addition runs to 60 characters.'};
+ if(!drop.length&&!Object.keys(due).length&&!Object.keys(mandatory).length&&!suffix)return {problem:'Say what changes in the new version: tasks to remove, due days, required or optional, or an addition to the name.'};
+ return {changes:{drop,due,mandatory,suffix}};
+}
+// What one category would get. `keys` are the task keys it has now and `name` its name. Nothing changes where no change applies.
+export function planVersion(keys,name,changes){
+ const has=new Set(keys),drop=changes.drop.filter(k=>has.has(k)),due={},mandatory={},left=[];
+ for(const [k,v] of Object.entries(changes.due))has.has(k)?due[k]=v:left.push(k);
+ for(const [k,v] of Object.entries(changes.mandatory))has.has(k)?mandatory[k]=v:left.push(k);
+ for(const k of changes.drop)if(!has.has(k))left.push(k);
+ const suffix=changes.suffix&&!String(name).endsWith(changes.suffix)?changes.suffix:'';
+ const applies=drop.length+Object.keys(due).length+Object.keys(mandatory).length+(suffix?1:0);
+ if(!applies)return {problem:'None of the changes applies to this category.',left};
+ return {drop,due,mandatory,name:suffix?clean(name+' '+suffix):null,left:[...new Set(left)],applies};
+}
+// Retire needs a Partner; a draft or an approved category may be retired. Propose needs a Manager or Partner and an approved category with no draft already waiting.
+export function retireGate(t,me){
+ if(me.category_code!=='PARTNER')return {ok:false,problem:'A Partner retires a service category.'};
+ if(t.status==='Retired')return {ok:false,problem:'It is already retired.'};
+ return {ok:true};
+}
+export function proposeGate(t,me,openDraft){
+ if(!['PARTNER','MANAGER'].includes(me.category_code))return {ok:false,problem:'A Partner or a Manager proposes a new version.'};
+ if(t.status==='Draft')return {ok:false,problem:'It is a draft already. Approve or retire it; a new version comes from an approved category.'};
+ if(t.status!=='Approved')return {ok:false,problem:'It is retired.'};
+ if(openDraft)return {ok:false,problem:'A draft of this category is already waiting for approval. Approve or retire it first.'};
+ return {ok:true};
+}

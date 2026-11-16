@@ -39,7 +39,7 @@ test('the form: practice size and categories, escaped, with the reason beside wh
  const p=practiceHtml(firms);assert.doesNotMatch(p,/<script>|N <b>|Sole <i>/);assert.match(p,/Firm &lt;script&gt;/);assert.match(p,/data-practice=/);assert.equal((p.match(/data-practice=/g)||[]).length,1,'only a Partner gets the form');assert.match(p,/History \(2\)/);assert.match(p,/A Partner declares/);
  const t=(o)=>({template_id:'t1',template_code:'ACC-MONTHLY',version:1,name:'Accounting <x>',service_group:'Accounting and Bookkeeping',source:'Starter',status:'Draft',tasks:5,services:'ACC-BOOK',waiting:false,can_submit:true,can_approve:true,...o});
  const c=categoriesHtml({sole:true,templates:[t({}),t({template_id:'t2',template_code:'TAX',name:'Tax',status:'Approved',approved_by_name:'P',approved_at:'2026-11-16',can_approve:false}),t({template_id:'t3',name:'Payroll',waiting:true,submitted_by_name:'Mgr',can_submit:false,submit_problem:'It has already been put forward.',can_approve:false,approve_problem:'You put this one forward.'})]});
- assert.doesNotMatch(c,/<x>/);assert.match(c,/only practitioner/);assert.equal((c.match(/data-sc-pick/g)||[]).length,2,'only drafts are ticked');assert.match(c,/Put forward by Mgr/);assert.match(c,/You put this one forward/);assert.match(c,/data-sc="check-approve"/);
+ assert.doesNotMatch(c,/<x>/);assert.match(c,/only practitioner/);assert.equal((c.match(/data-sc-pick/g)||[]).length,3,'every category can be ticked (2844: approved ones for a new version or retiring)');assert.match(c,/Put forward by Mgr/);assert.match(c,/You put this one forward/);assert.match(c,/data-sc="check-approve"/);
  assert.match(categoriesHtml({sole:false,templates:[t({})]}),/You cannot approve what you put forward yourself/);assert.match(categoriesHtml({sole:false,templates:[]}),/no service categories/);
  const r=resultsHtml({dry:true,kind:'approve',summary:{total:2,done:1,skipped:1},results:[{label:'A',outcome:'Ready',sole_approval:true},{label:'B <q>',outcome:'Skipped',reason:'No <z>'}]});
  assert.match(r,/Nothing has changed yet/);assert.match(r,/id="scGood"/);assert.match(r,/id="scBad"/);assert.doesNotMatch(r,/<q>|<z>/);assert.match(r,/Sole-Partner approval, recorded/);
@@ -55,7 +55,7 @@ test('wiring: actions routed and gated, database guards, button for leaders, bui
  const m=rd('supabase/migrations/20261118110000_practice_size_and_template_submissions.sql');
  assert.match(m,/GRANT SELECT,INSERT ON erp_private\.firm_practice_declarations TO erp_api/);assert.match(m,/GRANT SELECT,INSERT ON erp_private\.service_template_submissions TO erp_api/);assert.doesNotMatch(m,/GRANT[^;]*UPDATE/);
  assert.match(m,/FORCE ROW LEVEL SECURITY/);assert.match(m,/service_templates_submitter_guard/);assert.match(m,/practitioners>1/);assert.match(m,/cannot declare fewer practitioners/);
- const imp=rd('staff-improvements.mjs'),pilot=rd('staff-pilot.mjs');assert.match(imp,/staff-service-categories\.mjs\?v=20261116-practice-v1/);assert.match(imp,/if\(a==='categories'\)await categories\.open\(\)/);assert.match(pilot,/staff-improvements\.mjs\?v=20261116-practice-v1/);
+ const imp=rd('staff-improvements.mjs'),pilot=rd('staff-pilot.mjs');assert.match(imp,/staff-service-categories\.mjs\?v=20261116-versions-v1/);assert.match(imp,/if\(a==='categories'\)await categories\.open\(\)/);assert.match(pilot,/staff-improvements\.mjs\?v=20261116-versions-v1/);
  assert.ok(pilot.match(/isLeader\(\)\?'<div class="actions">'[^\n]*data-v3="categories"/),'the button is in the leaders\' row');
- assert.match(rd(fx+'release.json'),/2026-11-14\.2843/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2843"/);
+ assert.match(rd(fx+'release.json'),/2026-11-14\.2844/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2844"/);
 });
