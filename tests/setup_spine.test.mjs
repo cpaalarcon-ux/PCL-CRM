@@ -81,7 +81,7 @@ test('the project steps have their own count and do not change the client count'
 test('the client file shows the same steps and count, grouped by phase, and escapes text',()=>{
  const html=spineHtml(clientSpine(make({taxProfiles:[]})));
  assert.match(html,/Know the client/);assert.match(html,/Build the books/);assert.doesNotMatch(html,/Start the work/,'project steps are not part of the client file count');
- assert.match(html,/Client set-up<\/b> · 4 of 5 complete/);
+ assert.match(html,/Set-up steps<\/b> · 4 of 5 done/);
  assert.match(html,/data-spine-step="tax"/);assert.match(html,/cc-pill warn[^>]*title="No verified tax profile yet"[^>]*data-spine-step="tax"/);
  assert.match(html,/cc-pill ok[^>]*data-spine-step="profile"/);
  assert.match(spineHtml(clientSpine(make({readiness:undefined}))),/Checking…/);
@@ -90,17 +90,17 @@ test('the client file shows the same steps and count, grouped by phase, and esca
 });
 
 test('the card, the client file and the guide all read the one spine module under one cache token',()=>{
- const token='staff-setup-spine\\.mjs\\?v=20261118-spine-v1';
+ const token='staff-setup-spine\\.mjs\\?v=20261118-ready-v1';
  for(const f of ['staff-client-cards.mjs','staff-client-profile.mjs','staff-setup-guide.mjs'])assert.match(read(f),new RegExp(token),f);
  const pilot=read('staff-pilot.mjs');
- for(const m of ['staff-client-cards','staff-client-profile','staff-setup-guide'])assert.match(pilot,new RegExp(m+'\\.mjs\\?v=20261118-spine-v1'),m);
+ for(const m of ['staff-client-cards','staff-client-profile','staff-setup-guide'])assert.match(pilot,new RegExp(m+'\\.mjs\\?v=20261118-ready-v1'),m);
 });
 
 test('the guide uses the spine names, counts the client and the project separately, and groups its cards under the same phases',()=>{
  const g=read('staff-setup-guide.mjs');
  assert.match(g,/T=Object\.fromEntries\(\[\.\.\.CLIENT_STEPS,\.\.\.PROJECT_STEPS\]/);
  for(const k of ['profile','kyc','tax','activities','opening','source','reports','release'])assert.match(g,new RegExp("key:'"+k+"',title:T\\."+k),k);
- assert.match(g,/Client set-up · \$\{clientProgress\.done\} of \$\{clientProgress\.total\}/);assert.match(g,/This project · \$\{projectProgress\.done\} of \$\{projectProgress\.total\}/);
+ assert.match(g,/Set-up steps · \$\{clientProgress\.done\} of \$\{clientProgress\.total\}/);assert.match(g,/This project · \$\{projectProgress\.done\} of \$\{projectProgress\.total\}/);
  for(const h of ['Know the client','Build the books','Start the work'])assert.match(g,new RegExp('setup-phase[^>]*>'+h));
  for(const label of ['1 · Client profile & financial year','2 · KYC & contacts','3 · Tax profile','4a · Chart of accounts','4b · General account mappings','5 · Opening trial balance','6 · Purchases, sales, payroll & assets','7 · VAT, Income Tax & Source and Application','8 · Project release & handover'])assert.ok(g.includes("step('"+label),label);
  assert.match(g,/a==='kyc'\)ctx\.openSuite\('compliance',id\)/);assert.match(g,/a==='tax-profile'\)ctx\.openSuite\('tax-profile',id\)/);

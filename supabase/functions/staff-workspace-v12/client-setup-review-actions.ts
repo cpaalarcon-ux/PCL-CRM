@@ -1,9 +1,11 @@
 import {fail,uuid,text} from './validation.mjs';
 import {mandatoryState,buildClientTasks,clientConfigurationItems,TASK_ORDER} from './client-setup-tasks-rules.mjs';
+import {clientReadiness} from './work-ready-rules.mjs';
+import {today} from './suite-actions.ts';
 import {SECTIONS,SECTION_CODES,SOURCE_KINDS,sourceProblem,submitPlan,decidePlan,sectionState,sectionLabel,milestones} from './setup-review-rules.mjs';
 // Build 2828: deferred review of client set-up sections. The preparer submits and carries on; a Manager or Partner reviews later, all at once.
 // The Chart of Accounts and Opening Trial Balance keep their own blocking approvals; here they are only reported so the whole picture is on one screen.
-const ACTIONS=['client_setup_tasks_read','client_setup_review_read','client_setup_section_submit','client_setup_review_queue','client_setup_section_decide'];
+const ACTIONS=['client_setup_tasks_read','client_setup_review_read','client_setup_section_submit','client_setup_review_queue','client_setup_section_decide','client_work_ready','client_status_policy_read','client_status_policy_set'];
 const LEADERS=['PARTNER','MANAGER'];
 
 async function mandatory(tx:any,cid:string){
@@ -66,6 +68,49 @@ export async function clientSetupReviewAction(tx:any,a:any,p:any):Promise<any>{
   return {clients,total:clients.reduce((n:number,c:any)=>n+c.sections.length,0)};
  }
 
+
+ // Build 2847: the work-ready test and set-up progress for a page of client cards. Worked out from the records on every call and never stored.
+ if(p.action==='client_work_ready'||p.action==='client_status_policy_read'||p.action==='client_status_policy_set'){
+  const current=async()=>(await tx`select p.policy_id,p.require_chart,p.reason,p.set_at,coalesce(s.full_name,'A Partner') set_by_name from erp_private.client_status_policy p left join erp_private.staff_members s on s.staff_id=p.set_by order by p.set_at desc,p.policy_id desc limit 1`)[0]||null;
+  if(p.action==='client_status_policy_read'){
+   const history=await tx`select p.policy_id,p.require_chart,p.reason,p.set_at,coalesce(s.full_name,'A Partner') set_by_name from erp_private.client_status_policy p left join erp_private.staff_members s on s.staff_id=p.set_by order by p.set_at desc,p.policy_id desc limit 20`;
+   return {require_chart:!!history[0]?.require_chart,current:history[0]||null,history,can_set:a.category_code==='PARTNER'};
+  }
+  if(p.action==='client_status_policy_set'){
+   if(a.category_code!=='PARTNER')fail(403,'Only a Partner can change what Healthy means on a client card.');
+   if(typeof p.require_chart!=='boolean')fail(400,'Choose on or off.');
+   const reason=text(p.reason||'',500,false).trim();
+   if(reason.length<10)fail(400,'Give a reason of at least 10 characters.');
+   const now=await current();
+   if(!!now?.require_chart===p.require_chart)fail(409,'That is already the choice in force.');
+   await tx`insert into erp_private.client_status_policy(require_chart,reason,set_by) values(${p.require_chart},${reason},${a.staff_id})`;
+   return {ok:true,require_chart:p.require_chart};
+  }
+  // Managers and Partners only: the answer needs the KYC file, which a Supervisor cannot read, so a Supervisor would be shown a wrong red.
+  if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'Client status is shown to Managers and Partners.');
+  if(!Array.isArray(p.client_ids)||p.client_ids.length>500)fail(400,'Ask for 500 clients or fewer.');
+  const ids=p.client_ids.map((x:any)=>uuid(x));
+  if(!ids.length)return {require_chart:false,rows:[]};
+  const requireChart=!!(await current())?.require_chart,day=today();
+  const clients=await tx`select client_id,kra_pin,opening_balance_status from erp_private.clients where deleted_at is null and client_id=any(${ids}::uuid[])`;
+  const live=clients.map((c:any)=>c.client_id);
+  const k=live.length?await tx`select client_id,verified_by is not null kyc_verified,(review_due is not null and review_due>=${day}::date) kyc_current,(is_pep or risk_rating='High') edd_needed,edd_approved_by is not null edd_ok from erp_private.client_compliance where client_id=any(${live}::uuid[])`:[];
+  const e=live.length?await tx`select p.client_id,count(*)::int engagements,
+   count(*) filter(where exists(select 1 from erp_private.project_assignments pa where pa.project_id=p.project_id and pa.deleted_at is null and pa.role_on_job in ('MANAGER','PARTNER')))::int engagements_with_lead,
+   count(*) filter(where c.signed_letter_id is not null and c.letter_verified_by is not null and (c.letter_expires_on is null or c.letter_expires_on>=${day}::date))::int engagements_with_letter
+   from erp_private.projects p left join erp_private.engagement_controls c on c.project_id=p.project_id and c.deleted_at is null
+   where p.deleted_at is null and p.status in ('Draft','Active') and p.client_id=any(${live}::uuid[]) group by p.client_id`:[];
+  const sec=live.length?await tx`select client_id,section_code from erp_private.client_setup_sections where status='Approved' and client_id=any(${live}::uuid[])`:[];
+  const vrows=live.length?await tx`select client_id,status from erp_private.client_chart_versions where client_id=any(${live}::uuid[]) order by created_at desc`:[];
+  const jrows=live.length?await tx`select lp.client_id,j.status from erp_private.ledger_journals j join erp_private.ledger_periods lp on lp.period_id=j.period_id where j.kind='Opening' and lp.client_id=any(${live}::uuid[]) order by j.created_at desc`:[];
+  const by=(rows:any[])=>{const o:any={};for(const r of rows)(o[r.client_id]=o[r.client_id]||[]).push(r);return o;};
+  const kb=Object.fromEntries(k.map((r:any)=>[r.client_id,r])),eb=Object.fromEntries(e.map((r:any)=>[r.client_id,r])),sb=by(sec),vb=by(vrows),jb=by(jrows);
+  const rows=clients.map((c:any)=>{
+   const m=mandatoryState(vb[c.client_id],jb[c.client_id],c.opening_balance_status),kk=kb[c.client_id]||{},ee=eb[c.client_id]||{};
+   return clientReadiness({client_id:c.client_id,kra_pin:c.kra_pin,kyc_verified:!!kk.kyc_verified,kyc_current:!!kk.kyc_current,edd_needed:!!kk.edd_needed,edd_ok:!!kk.edd_ok,engagements:ee.engagements||0,engagements_with_lead:ee.engagements_with_lead||0,engagements_with_letter:ee.engagements_with_letter||0,chart:m.chart,opening:m.opening,approved_sections:(sb[c.client_id]||[]).map((r:any)=>r.section_code)},{requireChart});
+  });
+  return {require_chart:requireChart,rows};
+ }
  const cid=uuid(p.client_id);
  const client=(await tx`select client_id,company_name from erp_private.clients where client_id=${cid} and deleted_at is null`)[0];
  if(!client)fail(403,'This client is unavailable to your account.');
