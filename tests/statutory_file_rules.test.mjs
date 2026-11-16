@@ -49,6 +49,6 @@ test('CSV is safe for Excel: byte order mark, CRLF, quoting, no formula injectio
 test('screens: statutory buttons, handlers, download and the not-the-KRA-file wording are wired',()=>{
  const reg=rd('staff-payroll-register.mjs'),ui=rd('staff-statutory-files.mjs'),act=rd('supabase/functions/staff-workspace-v12/statutory-file-actions.ts'),idx=rd('supabase/functions/staff-workspace-v12/index.ts');
  for(const a of ['register-ids','statutory-files','statutory-prepare','statutory-release'])assert.match(reg,new RegExp("'"+a+"'"));
- assert.match(reg,/staff-statutory-files\.mjs\?v=20261116-profiles-v1/);assert.match(ui,/It is not the KRA file itself/);assert.match(ui,/Release and download/);
+ assert.match(reg,/staff-statutory-files\.mjs\?v=20261117-frame-v1/);assert.match(ui,/It is not the KRA file itself/);assert.match(ui,/Release and download/);
  assert.match(act,/statutory_file_prepare/);assert.match(act,/not ready to release/);assert.match(idx,/statutoryFileAction/);
 });

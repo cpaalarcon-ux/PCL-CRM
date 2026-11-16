@@ -50,6 +50,7 @@ import {documentReviewAction} from './document-review-actions.ts';
 import {clientSupportAction} from './client-support-actions.ts';
 import {physicalFileAction,setPhysicalPdfLib} from './physical-file-actions.ts';
 import {settingsHubAction} from './settings-hub-actions.ts';
+import {settingsOverviewAction} from './settings-overview-actions.ts';
 import {starterConfirmAction} from './starter-confirm-actions.ts';
 import {exciseScheduleAction} from './excise-schedule-actions.ts';
 import {bankTotalsAction} from './bank-totals-actions.ts';
@@ -468,6 +469,7 @@ async function action(id:any,p:any){
   const clientSupport=await clientSupportAction(tx,a,p);if(clientSupport!==undefined)return clientSupport; // before the client_ prefix handlers
   const physicalFile=await physicalFileAction(tx,a,p);if(physicalFile!==undefined)return physicalFile;
   const settingsHub=await settingsHubAction(tx,a,p);if(settingsHub!==undefined)return settingsHub;
+  const settingsOverview=await settingsOverviewAction(tx,a,p);if(settingsOverview!==undefined)return settingsOverview;
   const starterConfirm=await starterConfirmAction(tx,a,p);if(starterConfirm!==undefined)return starterConfirm;
   const exciseSchedule=await exciseScheduleAction(tx,a,p);if(exciseSchedule!==undefined)return exciseSchedule;
   const bankTotals=await bankTotalsAction(tx,a,p,admin.storage.from(BUCKET));if(bankTotals!==undefined)return bankTotals;
