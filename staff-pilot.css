@@ -625,3 +625,9 @@ dialog#editor{border-radius:14px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
 .am-flags ul{margin:.25rem 0 0;padding-left:1.1rem}
 .am-acts{flex:1 1 100%}
 .am-chk{display:inline-block;margin:.15rem .75rem .15rem 0}
+/* Build 2858: My Work board across every client */
+.mywork-bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:8px 0}
+.mywork-bar label{display:flex;gap:6px;align-items:center;font-size:13px}
+.mywork-board .kanban{grid-template-columns:repeat(auto-fit,minmax(230px,1fr));align-items:start}
+.mywork-board .kanban-cards{grid-template-columns:1fr}
+.mywork-board .kanban-card .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
