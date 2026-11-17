@@ -120,13 +120,8 @@ export function readiness({entityType,facts,master,required:requiredFields,templ
 // Elapsed time between two moments, in whole minutes. This is elapsed time, not effort: it includes waiting for the client and for the verifier.
 export function elapsedMinutes(from,to){const a=Date.parse(from),b=Date.parse(to);return Number.isFinite(a)&&Number.isFinite(b)&&b>=a?Math.round((b-a)/60000):null;}
 // rows: [{client_id,started_at,ready_at}] baseline: minutes the firm used to take (optional). Returns averages and the reduction against the baseline.
-// Build 2861: the Partner's recorded target (default 90% shorter) is judged here. "Met" needs at least one finished set-up; nothing is guessed from none.
-export function setupReport(rows,baseline,targetPercent){
+export function setupReport(rows,baseline){
  const done=(rows||[]).map(r=>({...r,minutes:r.ready_at?elapsedMinutes(r.started_at,r.ready_at):null})).filter(r=>r.minutes!==null);
- const avg=done.length?Math.round(done.reduce((n,r)=>n+r.minutes,0)/done.length):null,b=Number(baseline),t=Number(targetPercent);
- const hasBase=Number.isFinite(b)&&b>0,hasTarget=Number.isFinite(t)&&t>0&&t<100;
- const reduction=avg!==null&&hasBase?Math.round((b-avg)*100/b):null;
- return {clients_started:(rows||[]).length,clients_ready:done.length,average_minutes:avg,baseline_minutes:hasBase?b:null,reduction_percent:reduction,
-  target_percent:hasBase&&hasTarget?t:null,target_minutes:hasBase&&hasTarget?Math.round(b*(100-t)/100):null,target_met:reduction!==null&&hasTarget?reduction>=t:null,
-  note:'Elapsed time from the first recorded fact to the last verification. It includes waiting for the client and the verifier, so compare it with the same measure taken the old way.'};
+ const avg=done.length?Math.round(done.reduce((n,r)=>n+r.minutes,0)/done.length):null,b=Number(baseline);
+ return {clients_started:(rows||[]).length,clients_ready:done.length,average_minutes:avg,baseline_minutes:Number.isFinite(b)&&b>0?b:null,reduction_percent:avg!==null&&Number.isFinite(b)&&b>0?Math.round((b-avg)*100/b):null,note:'Elapsed time from the first recorded fact to the last verification. It includes waiting for the client and the verifier, so compare it with the same measure taken the old way.'};
 }

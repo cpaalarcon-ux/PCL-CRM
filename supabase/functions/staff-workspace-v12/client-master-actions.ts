@@ -3,7 +3,7 @@ import {loadClientTemplate} from './client-template-data.ts';
 import {FIELDS,SOURCE_KINDS,cleanValue,sourceProblem,readiness,canVerify,setupReport,elapsedMinutes,fieldFor} from './client-master-rules.mjs';
 // Client master (build 2807): record each key fact with its source, verify it independently, and measure how long set-up takes.
 // The rules are in client-master-rules.mjs and the table rules in 20261115120000_client_master_facts.sql. Nothing here changes the client record itself.
-const ACTIONS=['client_master_read','client_master_record','client_master_record_many','client_master_verify','client_master_verify_many','client_master_report','setup_baseline_set','client_holder_record','client_holder_verify','client_holder_end'];
+const ACTIONS=['client_master_read','client_master_record','client_master_record_many','client_master_verify','client_master_verify_many','client_master_report','client_holder_record','client_holder_verify','client_holder_end'];
 const KINDS=['Officer','Signatory'],BASES=['Resolution','Governing document','Establishing instrument','Court grant','Registration record'];
 const REVIEWERS=['PARTNER','MANAGER','SUPERVISOR'];
 
@@ -51,30 +51,8 @@ export async function clientMasterAction(tx:any,a:any,p:any):Promise<any>{
    from erp_private.client_setup_milestones s join erp_private.clients c on c.client_id=s.client_id and c.deleted_at is null
    left join erp_private.client_setup_milestones r on r.client_id=s.client_id and r.milestone='Ready'
    where s.milestone='Started' order by s.reached_at desc limit 500`;
-  // Build 2861: the baseline and target are the Partner's recorded ones; a figure typed into the request is used only for a what-if and is labelled so.
-  const stored=await tx`select measure,baseline_minutes,target_reduction_percent,source,effective_from::text from erp_private.setup_baselines where ended_at is null`;
-  const live=(m:string)=>stored.find((x:any)=>x.measure===m)||null;
-  const typed=p.baseline_minutes===undefined||p.baseline_minutes===''?null:Number(p.baseline_minutes);
-  const cb=live('Client set-up'),sb=live('Service set-up');
-  const svc=await tx`select e.setup_id,e.service_code,c.company_name,e.applied_at as started_at,e.released_at as ready_at from erp_private.engagement_setups e join erp_private.clients c on c.client_id=e.client_id and c.deleted_at is null where e.status in('Waiting','Released') order by e.applied_at desc limit 500`;
-  return {rows:rows.map((r:any)=>({client_id:r.client_id,company_name:r.company_name,started_at:r.started_at,ready_at:r.ready_at,minutes:r.ready_at?elapsedMinutes(r.started_at,r.ready_at):null,statement_only:r.statement_only})),
-   summary:setupReport(rows,typed??cb?.baseline_minutes??null,cb?.target_reduction_percent??null),
-   baseline:cb?{measure:'Client set-up',baseline_minutes:cb.baseline_minutes,target_reduction_percent:cb.target_reduction_percent,source:cb.source,effective_from:cb.effective_from}:null,
-   what_if:typed!==null,
-   service_summary:setupReport(svc,sb?.baseline_minutes??null,sb?.target_reduction_percent??null),
-   service_baseline:sb?{measure:'Service set-up',baseline_minutes:sb.baseline_minutes,target_reduction_percent:sb.target_reduction_percent,source:sb.source,effective_from:sb.effective_from}:null,
-   can_set_baseline:a.category_code==='PARTNER'};
- }
- if(p.action==='setup_baseline_set'){
-  if(a.category_code!=='PARTNER')fail(403,'Only a Partner records the baseline the firm measures set-up time against.');
-  const measure=String(p.measure||'');if(!['Client set-up','Service set-up'].includes(measure))fail(400,'Choose Client set-up or Service set-up.');
-  const minutes=Number(p.baseline_minutes);if(!Number.isInteger(minutes)||minutes<1||minutes>100000)fail(400,'Enter the baseline as whole minutes, from 1 to 100000.');
-  const target=p.target_reduction_percent===undefined||p.target_reduction_percent===''?90:Number(p.target_reduction_percent);if(!Number.isInteger(target)||target<1||target>99)fail(400,'The target reduction is a whole percentage from 1 to 99.');
-  const source=text(p.source,500);if(String(source).trim().length<5)fail(400,'Say where the baseline comes from (at least 5 characters), for example timings of the last ten set-ups done the old way.');
-  const live=(await tx`select baseline_id from erp_private.setup_baselines where measure=${measure} and ended_at is null for update`)[0];
-  if(live){const why=String(p.reason||'').trim();if(why.length<5)fail(400,'A baseline is already recorded. Say why it is being replaced (at least 5 characters).');await tx`update erp_private.setup_baselines set ended_by=${a.staff_id},ended_at=now(),ended_reason=${why.slice(0,500)} where baseline_id=${live.baseline_id}`;}
-  const row=(await tx`insert into erp_private.setup_baselines(measure,baseline_minutes,target_reduction_percent,source,set_by) values(${measure},${minutes},${target},${source},${a.staff_id}) returning baseline_id,measure,baseline_minutes,target_reduction_percent,source,effective_from::text`)[0];
-  return {ok:true,baseline:row,replaced:!!live};
+  const baseline=p.baseline_minutes===undefined||p.baseline_minutes===''?null:Number(p.baseline_minutes);
+  return {rows:rows.map((r:any)=>({client_id:r.client_id,company_name:r.company_name,started_at:r.started_at,ready_at:r.ready_at,minutes:r.ready_at?elapsedMinutes(r.started_at,r.ready_at):null,statement_only:r.statement_only})),summary:setupReport(rows,baseline)};
  }
 
  const cid=p.fact_id?uuid((await tx`select client_id from erp_private.client_field_facts where fact_id=${uuid(p.fact_id)}`)[0]?.client_id||fail(403,'This fact is unavailable to your account.')):p.holder_id?uuid((await tx`select client_id from erp_private.client_office_holders where holder_id=${uuid(p.holder_id)}`)[0]?.client_id||fail(403,'This record is unavailable to your account.')):uuid(p.client_id);
