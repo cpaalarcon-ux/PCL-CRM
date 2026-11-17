@@ -2,6 +2,8 @@
 // Nothing here talks to the server or decides an approval. The server (client_master_read, client_master_record_many, client_master_verify_many)
 // stays the authority; this file only says where each fact sits on the page, how a typed cell is read back, and what status the page shows.
 
+import {countyNames,constituencyNames,canonicalCounty,canonicalConstituency,locationProblem} from './staff-kenya-locations.mjs?v=20261122-loc-v1';
+
 // The iTax page, section by section. A row is two label/value pairs. `key` is a client-master fact; `from` marks a cell that only shows a value kept elsewhere.
 // Cells the server does not list for this client type are still shown, as optional, so the page looks the same for every client.
 export const LAYOUT=[
@@ -19,7 +21,7 @@ export const LAYOUT=[
   {title:'Principal Physical Address',rows:[
    [{key:'lr_number',label:'LR Number'},{key:'building',label:'Building'}],
    [{key:'street_road',label:'Street / Road'},{key:'city_town',label:'City / Town'}],
-   [{key:'county',label:'County'},{key:'district',label:'District'}],
+   [{key:'county',label:'County'},{key:'district',label:'Constituency (sub-county)'}],
    [{key:'locality',label:'Tax Area / Locality'},{key:'descriptive_address',label:'Descriptive Address'}]]},
   {title:'Principal Postal Address',rows:[
    [{key:'postal_code',label:'Postal Code'},{key:'postal_town',label:'Town'}],
@@ -38,7 +40,11 @@ export const gridKeys=()=>{const out=[];const walk=rows=>rows.forEach(r=>r.forEa
 export const DATE_KEYS=['commencement_date','incorporation_date','epz_effective_date','sez_effective_date','date_of_death'];
 export const YESNO_KEYS=['has_branches','legal_rep_declared'];
 export const DAYMONTH_KEYS=['year_end'];
-export const kindOf=key=>DATE_KEYS.includes(key)?'date':YESNO_KEYS.includes(key)?'yesno':DAYMONTH_KEYS.includes(key)?'daymonth':'text';
+// County and constituency are chosen from the IEBC list. The constituency list follows the county.
+export const CHOICE_KEYS=['county','district'];
+export const kindOf=key=>DATE_KEYS.includes(key)?'date':YESNO_KEYS.includes(key)?'yesno':DAYMONTH_KEYS.includes(key)?'daymonth':CHOICE_KEYS.includes(key)?'choice':'text';
+// The names a choice cell offers. A constituency cell offers the constituencies of the county typed in the county cell, and nothing until a county is chosen.
+export const choiceOptions=(key,countyText='')=>key==='county'?countyNames():key==='district'?constituencyNames(countyText):[];
 
 const pad=n=>String(n).padStart(2,'0');
 const realDate=(y,m,d)=>{const t=new Date(Date.UTC(y,m-1,d));return t.getUTCFullYear()===y&&t.getUTCMonth()===m-1&&t.getUTCDate()===d&&y>=1900;};
@@ -63,9 +69,10 @@ export const storedToDayMonth=v=>{const m=/^(\d{2})-(\d{2})$/.exec(String(v??'')
 
 // The text a cell shows for a stored value, and the stored value for the text a person typed. null means the typed text is not a valid value.
 export function display(key,stored){const k=kindOf(key);return k==='date'?isoToDate(stored):k==='daymonth'?storedToDayMonth(stored):String(stored??'');}
-export function toStored(key,typed){
+export function toStored(key,typed,{county=''}={}){
  const t=String(typed??'').replace(/\s+/g,' ').trim(),k=kindOf(key);
  if(!t)return '';
+ if(k==='choice')return (key==='county'?canonicalCounty(t):canonicalConstituency(county,t))||t;
  if(k==='date')return dateToIso(t);
  if(k==='daymonth')return dayMonthToStored(t);
  if(key==='kra_pin'||key==='legal_rep_pin')return t.toUpperCase();
@@ -82,14 +89,16 @@ const CHECKS={
  nssf_number:[v=>/^[A-Za-z0-9/-]{3,20}$/.test(v),'Letters, digits, / and - only.'],
  has_branches:[v=>/^(Yes|No)$/.test(v),'Yes or No.'],legal_rep_declared:[v=>/^(Yes|No)$/.test(v),'Yes or No.'],
  website:[v=>/^(https?:\/\/)?[^\s.]+\.[^\s]{2,}$/i.test(v),'For example www.example.co.ke'],
- county:[v=>v.length>=3,'At least 3 letters.']
+ 
 };
-export function cellProblem(key,typed,{mandatory=false,hadValue=false}={}){
+export function cellProblem(key,typed,{mandatory=false,hadValue=false,county=''}={}){
  const t=String(typed??'').replace(/\s+/g,' ').trim();
  if(!t)return hadValue?'A recorded value cannot be cleared. Replace it with the right value instead.':mandatory?'Required.':null;
  const k=kindOf(key);
  if(k==='date')return dateToIso(t)?null:'Use a real date as dd/mm/yyyy.';
  if(k==='daymonth')return dayMonthToStored(t)?null:'Use day/month, for example 31/12.';
+ if(key==='county')return canonicalCounty(t)?null:'Choose one of the 47 counties from the list.';
+ if(key==='district')return locationProblem(county,t);
  const stored=toStored(key,t),c=CHECKS[key];
  if(c&&!c[0](stored))return c[1];
  if(!c&&stored.length<2)return 'Too short.';

@@ -1,5 +1,6 @@
 import {fail,text,uuid,revision,choice} from './validation.mjs';
 import {loadClientTemplate} from './client-template-data.ts';
+import {locationProblem} from './kenya-locations.mjs';
 import {FIELDS,SOURCE_KINDS,cleanValue,sourceProblem,readiness,canVerify,setupReport,elapsedMinutes,fieldFor} from './client-master-rules.mjs';
 // Client master (build 2807): record each key fact with its source, verify it independently, and measure how long set-up takes.
 // The rules are in client-master-rules.mjs and the table rules in 20261115120000_client_master_facts.sql. Nothing here changes the client record itself.
@@ -101,7 +102,10 @@ export async function clientMasterAction(tx:any,a:any,p:any):Promise<any>{
 
  if(p.action==='client_master_record'){
   const key=text(p.field_key||'',60),f=fieldFor(key);if(!f)fail(400,'This is not a field on the client master checklist.');
-  const cleaned=cleanValue(key,p.value);if(!cleaned.ok)fail(400,cleaned.error);
+  const liveOf=(k:string)=>data.facts.find((x:any)=>x.field_key===k&&x.status!=='Superseded');
+  const cleaned=cleanValue(key,p.value,{county:liveOf('county')?.value});if(!cleaned.ok)fail(400,cleaned.error);
+  // Build 2871: a constituency belongs to one county. Changing the county while a constituency of the old county is recorded is done in the set-up grid, where both are saved together.
+  if(key==='county'&&liveOf('district')){const bad=locationProblem(cleaned.value,liveOf('district').value);if(bad)fail(400,'The recorded constituency '+liveOf('district').value+' is not in '+cleaned.value+' County. Change the county and the constituency together in the client set-up grid.');}
   const kind=choice(p.source_kind,SOURCE_KINDS),documentId=p.document_id?uuid(p.document_id):null,ref=p.source_reference?text(p.source_reference,300).trim():null;
   const bad=sourceProblem({source_kind:kind,document_id:documentId,source_reference:ref});if(bad)fail(400,bad);
   if(documentId&&!(await tx`select 1 from erp_private.documents where document_id=${documentId} and client_id=${cid} and deleted_at is null`).length)fail(400,'That document does not belong to this client.');
@@ -128,11 +132,15 @@ export async function clientMasterAction(tx:any,a:any,p:any):Promise<any>{
   const bad=sourceProblem({source_kind:kind,document_id:documentId,source_reference:ref});if(bad)fail(400,bad);
   if(documentId&&!(await tx`select 1 from erp_private.documents where document_id=${documentId} and client_id=${cid} and deleted_at is null`).length)fail(400,'That document does not belong to this client.');
   const errors:any[]=[],plan:any[]=[],seen=new Set<string>();let unchanged=0;
+  // Build 2871: the county decides which constituencies are allowed, so it is read first, whatever order the cells come in.
+  const liveOf=(k:string)=>data.facts.find((x:any)=>x.field_key===k&&x.status!=='Superseded');
+  const countyCell=cells.find((c:any)=>c?.field_key==='county'),countyClean=countyCell?cleanValue('county',countyCell.value):null;
+  const countyNow=countyClean&&countyClean.ok?countyClean.value:liveOf('county')?.value;
   for(const c of cells){
    const key=text(c?.field_key||'',60),f=fieldFor(key);
    if(!f){errors.push({field_key:key,error:'This is not a field on the client master checklist.'});continue;}
    if(seen.has(key)){errors.push({field_key:key,error:f.label+' appears twice.'});continue;}seen.add(key);
-   const cleaned=cleanValue(key,c.value);if(!cleaned.ok){errors.push({field_key:key,error:cleaned.error});continue;}
+   const cleaned=cleanValue(key,c.value,{county:countyNow});if(!cleaned.ok){errors.push({field_key:key,error:cleaned.error});continue;}
    const live=data.facts.find((x:any)=>x.field_key===key&&x.status!=='Superseded');
    let why='';
    if(live){
@@ -142,6 +150,8 @@ export async function clientMasterAction(tx:any,a:any,p:any):Promise<any>{
    }
    plan.push({key,value:cleaned.value,live,why});
   }
+  // A county changed without its constituency leaves the old constituency under the wrong county. Say so on the constituency cell.
+  if(countyClean&&countyClean.ok&&liveOf('district')&&!seen.has('district')){const bad=locationProblem(countyClean.value,liveOf('district').value);if(bad)errors.push({field_key:'district',error:'The recorded constituency '+liveOf('district').value+' is not in '+countyClean.value+' County. Choose the constituency again.'});}
   if(errors.length)return {...view(a,data),saved:false,errors,count:0,unchanged};
   const first=!data.ms.some((m:any)=>m.milestone==='Started');
   for(const x of plan){

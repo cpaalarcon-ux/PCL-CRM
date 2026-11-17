@@ -42,18 +42,18 @@ test('leaving an empty mandatory cell turns it red, typing clears it, and nothin
  await open();
  leave('county');assert.ok(box('county').classList.contains('kg-bad'));assert.equal(cell('county').getAttribute('aria-invalid'),'true');assert.match($('#kgm-county').textContent,/./);
  leave('telephone');assert.ok(!box('telephone').classList.contains('kg-bad'),'optional empty is fine');
- type('county','Nairobi');assert.ok(!box('county').classList.contains('kg-bad'));assert.ok(box('county').classList.contains('kg-dirty'));
+ type('county','Nairobi City');assert.ok(!box('county').classList.contains('kg-bad'));assert.ok(box('county').classList.contains('kg-dirty'));
  assert.match($('#kgDirty').textContent,/1 unsaved/);
  assert.equal($('[data-kg-act="save"]').disabled,false);
 });
 
 test('Enter and the arrow keys move between cells like a spreadsheet',async()=>{
  await open();
- const first=cell('street_road');first.focus();
- key('street_road','Enter');const below=document.activeElement;assert.ok(below&&below!==first&&below.dataset.kg,'moved');
+ const first=cell('lr_number');first.focus();
+ key('lr_number','Enter');const below=document.activeElement;assert.ok(below&&below!==first&&below.dataset.kg,'moved');
  assert.equal(+below.dataset.c,+first.dataset.c);assert.equal(+below.dataset.r,+first.dataset.r+1);
  key(below.dataset.kg,'ArrowUp');assert.equal(document.activeElement,first);
- key('street_road','Enter',{shiftKey:true});assert.equal(+document.activeElement.dataset.r,+first.dataset.r-1);
+ key('street_road','Enter',{shiftKey:true});assert.equal(+document.activeElement.dataset.r,+first.dataset.r);
 });
 
 test('dates are typed as dd/mm/yyyy and saved as one batch with the source, only for changed cells',async()=>{
@@ -81,7 +81,7 @@ test('a bad cell stops the save before it reaches the server and is marked red',
 
 test('the server refusing a cell marks it red and keeps what was typed',async()=>{
  await open();
- type('county','Nairobi');
+ type('county','Nairobi City');
  responses=[{...view(),saved:false,count:0,unchanged:0,errors:[{field_key:'county',error:'County is not valid.'}]}];
  $('[data-kg-act="save"]').click();await pause();
  assert.ok(box('county').classList.contains('kg-bad'));assert.match($('#kgm-county').textContent,/not valid/);
@@ -111,4 +111,27 @@ test('the approval trail and the Partner step come from today\'s rules',async()=
  assert.match($('.kg-side').textContent,/Prepared by/);assert.match($('.kg-side').textContent,/Preparer One/);assert.match($('.kg-side').textContent,/Verifier Two/);
  assert.match($('.kg-side').textContent,/Waiting for a Partner/);
  state.suite.compliance=[];
+});
+
+test('county and constituency are pick-lists from the IEBC list, and the constituency list follows the county',async()=>{
+ await open(view({rows:[...view().rows,row('district','Constituency (sub-county)'),row('county','County',{fact:fact('county','Kiambu')})].filter((r,i,a)=>a.findIndex(x=>x.key===r.key)===i||r.fact)}));
+ assert.equal(cell('county').tagName,'SELECT');assert.equal(cell('county').options.length,47+1,'47 counties and a blank');
+ assert.equal(cell('district').tagName,'SELECT');
+ const names=[...cell('district').options].map(o=>o.textContent);
+ assert.ok(names.includes('Limuru')&&!names.includes('Westlands'),'only the constituencies of the chosen county');
+ assert.equal(names.length,12+1);
+ // choosing another county clears a constituency that is not in it, and asks for it again
+ cell('district').value='Limuru';cell('district').dispatchEvent(new W.Event('change',{bubbles:true}));
+ cell('county').value='Nairobi City';cell('county').dispatchEvent(new W.Event('change',{bubbles:true}));
+ assert.equal(cell('county').value,'Nairobi City');
+ const after=[...cell('district').options].map(o=>o.textContent);
+ assert.ok(after.includes('Westlands')&&!after.includes('Limuru'));
+ assert.equal(cell('district').value,'');
+});
+
+test('a constituency cannot be chosen before the county',async()=>{
+ await open(view({rows:[...view().rows.filter(r=>r.key!=='county'),row('county','County'),row('district','Constituency (sub-county)')]}));
+ assert.equal(cell('district').disabled,true);assert.match(cell('district').options[0].textContent,/county first/i);
+ cell('county').value='Kisumu';cell('county').dispatchEvent(new W.Event('change',{bubbles:true}));
+ assert.equal(cell('district').disabled,false);assert.ok([...cell('district').options].some(o=>o.textContent==='Nyakach'));
 });

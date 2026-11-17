@@ -43,15 +43,22 @@ test('build 2854: the iTax grid saves many cells at once and verifies them as a 
  // A good batch saves every cell with one source, skips identical ones, and audits it once as a grid save.
  const ok=await many('ASSISTANT',[{field_key:'kra_pin',value:'A000000001Z'},{field_key:'street_road',value:'Fictional Road'},{field_key:'city_town',value:'Fictional Town'},{field_key:'county',value:'Nairobi'},{field_key:'postal_code',value:'00100'},{field_key:'po_box',value:'123'},{field_key:'commencement_date',value:'2020-02-29'}]);
  assert.equal(ok.saved,true);assert.equal(ok.count,7);assert.equal(rows(ok).street_road.fact.value,'Fictional Road');assert.equal(rows(ok).commencement_date.fact.value,'2020-02-29');
- const again=await many('ASSISTANT',[{field_key:'county',value:'Nairobi'},{field_key:'district',value:'Westlands'}]);
+ const again=await many('ASSISTANT',[{field_key:'district',value:'westlands'},{field_key:'county',value:'Nairobi'}]);
  assert.equal(again.count,1);assert.equal(again.unchanged,1);
+ // Build 2871: the county is stored under its listed name, the constituency is checked against it and stored under its listed name, whatever order the cells come in.
+ assert.equal(rows(again).county.fact.value,'Nairobi City');assert.equal(rows(again).district.fact.value,'Westlands');
+ const wrong=await many('ASSISTANT',[{field_key:'district',value:'Kisauni'}],{reason:'Wrong list on purpose'});
+ assert.equal(wrong.saved,false);assert.match(wrong.errors[0].error,/not a constituency of Nairobi City County/);
+ const notCounty=await many('ASSISTANT',[{field_key:'county',value:'Atlantis'}],{reason:'Not a county'});
+ assert.equal(notCounty.saved,false);assert.match(notCounty.errors[0].error,/47 counties/);
  assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='CLIENT_FACT_RECORDED' and after_values->>'grid'='true'`)[0].n>=1,true);
 
  // Replacing a saved value needs a reason; the old one is kept as history.
  const noWhy=await many('ASSISTANT',[{field_key:'county',value:'Mombasa'},{field_key:'telephone',value:'+254202000000'}]);
- assert.equal(noWhy.saved,false);assert.equal(noWhy.errors.length,1);assert.match(noWhy.errors[0].error,/Say why/i);
+ assert.equal(noWhy.saved,false);assert.equal(noWhy.errors.length,2);assert.match(noWhy.errors.find(e=>e.field_key==='county').error,/Say why/i);
+ assert.match(noWhy.errors.find(e=>e.field_key==='district').error,/not in Mombasa County/);
  assert.equal(rows(noWhy).telephone?.fact??null,null,'nothing is saved when one cell fails');
- const rep=await many('ASSISTANT',[{field_key:'county',value:'Mombasa'}],{reason:'The register shows the new county'});
+ const rep=await many('ASSISTANT',[{field_key:'county',value:'Mombasa'},{field_key:'district',value:'Changamwe'}],{reason:'The register shows the new county'});
  assert.equal(rows(rep).county.fact.value,'Mombasa');assert.equal(rep.history.filter(h=>h.field_key==='county').length,1);
 
  // Batch verify: reviewer only, never your own, skips are named, the rest are verified in one go.
@@ -67,6 +74,8 @@ test('build 2854: the iTax grid saves many cells at once and verifies them as a 
  // A stale revision is skipped, not forced.
  const stale=await cm('MANAGER',{action:'client_master_verify_many',client_id:C,facts:[{fact_id:rows(v).postal_code.fact.fact_id,revision:'999'}],note:'Checked against the register'});
  assert.equal(stale.verified_count,0);assert.equal(stale.skipped.length,1);assert.match(stale.skipped[0].reason,/changed/i);
+ // The single-fact action keeps the same rule: it will not move the county out from under a recorded constituency.
+ await assert.rejects(()=>cm('ASSISTANT',key('county','Kisumu',{reason:'Premises moved to Kisumu'})),/set-up grid/);
  // Limits.
  await assert.rejects(()=>many('ASSISTANT',Array.from({length:61},(_,i)=>({field_key:'county',value:'N'+i}))),/./);
 });

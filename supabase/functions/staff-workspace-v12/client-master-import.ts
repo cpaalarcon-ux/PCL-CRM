@@ -8,7 +8,9 @@ export async function importFacts(tx:any,a:any,clientId:string,values:any,fileNa
  let recorded=0,kept=0;
  for(const f of FIELDS as any[]){
   const raw=values[f.key];if(raw===undefined||raw===null||String(raw).trim()==='')continue;
-  const clean=cleanValue(f.key,raw);if(!clean.ok)fail(400,clean.error);
+  // Build 2871: a constituency is checked against the county the client has, which is the one recorded just before it (county is listed first).
+  const county=f.key==='district'?(await tx`select value from erp_private.client_field_facts where client_id=${clientId} and field_key='county' and status<>'Superseded'`)[0]?.value:undefined;
+  const clean=cleanValue(f.key,raw,{county});if(!clean.ok)fail(400,clean.error);
   const live=(await tx`select 1 from erp_private.client_field_facts where client_id=${clientId} and field_key=${f.key} and status<>'Superseded'`).length;
   if(live){kept++;continue;}
   await tx`insert into erp_private.client_field_facts(client_id,field_key,value,source_kind,source_reference,recorded_by) values(${clientId},${f.key},${clean.value},'Import',${(fileName+' row '+rowNo).slice(0,300)},${a.staff_id})`;

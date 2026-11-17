@@ -5,7 +5,7 @@ import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from
 import {createClientMasterUI} from './staff-client-master.mjs?v=20261121-scope-v1';
 import {createScopeUI} from './staff-engagement-scope.mjs?v=20261121-scope-v1';
 import {createUnderstandingUI} from './staff-understanding.mjs?v=20261121-und-v1';
-import {createKycGridUI} from './staff-kyc-grid.mjs?v=20261121-aml-v2';
+import {createKycGridUI} from './staff-kyc-grid.mjs?v=20261122-loc-v1';
 import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
 import {createAmlUI} from './staff-aml.mjs?v=20261121-fill-v1';
 import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261121-wiz-v1';
