@@ -27,7 +27,7 @@ test('public sector, chama, estate and other-entity templates: they set the file
  // ---- Public sector / statutory body ----
  const P1=await client('Fictional county department','Public Entity','County Government','Other legal entity');
  const r1=await cm('MANAGER',{action:'client_master_read',client_id:P1});
- assert.equal(r1.template.template_code,'PUBLIC_SECTOR');assert.equal(r1.required,10);
+ assert.equal(r1.template.template_code,'PUBLIC_SECTOR');assert.equal(r1.required,15);
  for(const k of ['establishing_instrument','mandate','subtype_basis'])assert.ok(row(r1,k)&&!row(r1,k).optional,k);assert.equal(row(r1,'registration_number').optional,true);
  assert.deepEqual(r1.template.evidence.filter(e=>e.requirement==='Required').map(e=>e.key).sort(),['ACCOUNTING_OFFICER','ESTABLISHING_INSTRUMENT','KRA_PIN']);
  assert.equal(r1.exceptions.some(e=>e.key==='subtype'),false);

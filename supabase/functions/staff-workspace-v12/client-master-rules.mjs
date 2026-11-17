@@ -4,6 +4,8 @@
 export const SOURCE_KINDS=['Document','Online register','Prior record','Import','Client statement'];
 const COMPANY=['Limited company','Non-profit organisation','Foreign branch','Co-operative society'];
 const REGISTERED=[...COMPANY,'Partnership','Other legal entity'];
+// A real calendar date written as YYYY-MM-DD.
+const isoDate=v=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return false;const d=new Date(v+'T00:00:00Z');return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===v&&v>='1900-01-01';};
 // Which facts the firm's set-up checklist asks for. The list is the firm's choice, kept here in one place; it asserts no legal requirement.
 export const FIELDS=[
  {key:'company_name',label:'Registered name',entities:null,check:v=>v.length>=2,hint:'As on the registration or identity document.',master:'company_name'},
@@ -40,6 +42,32 @@ export const FIELDS=[
  {key:'specific_legal_form',label:'Specific legal form',entities:[],check:v=>v.length>=3&&!/^(unknown|unidentified|not sure|n\/?a|tbc|tbd)$/i.test(v),hint:'The exact legal form as the documents show it. If it cannot be identified, leave this open: a Partner classifies it.'},
  {key:'registration_authority',label:'Registration authority',entities:[],check:v=>v.length>=3,hint:'Who registered the entity, for example a registrar, board or regulator.'},
  {key:'responsible_officers',label:'Responsible officers',entities:[],check:v=>v.length>=5,hint:'The people responsible for the entity, with their roles and ID numbers.'},
+ // Facts on the KRA iTax taxpayer profile (build 2854). The set-up grid follows that page. entities:[] means only a client-type template asks for them.
+ // Dates are stored as YYYY-MM-DD; the grid shows and accepts dd/mm/yyyy, as iTax does. A phone or email here is a fact about the client, never a login.
+ {key:'commencement_date',label:'Business commencement date',entities:[],check:v=>isoDate(v),hint:'The date the business started trading, from the iTax profile or the registration papers.'},
+ {key:'trading_name',label:'Trading or business name, if different from the registered name',entities:[],check:v=>v.length>=2,hint:'Leave empty when the business trades under its registered name.'},
+ {key:'epz_effective_date',label:'EPZ effective date',entities:[],check:v=>isoDate(v),hint:'Only for an Export Processing Zone enterprise.'},
+ {key:'sez_effective_date',label:'SEZ effective date',entities:[],check:v=>isoDate(v),hint:'Only for a Special Economic Zone enterprise.'},
+ {key:'has_branches',label:'Does the business have any branches?',entities:[],check:v=>/^(Yes|No)$/.test(v),hint:'Yes or No, as on the iTax profile.'},
+ {key:'legal_rep_declared',label:'Does the business declare a legal representative?',entities:[],check:v=>/^(Yes|No)$/.test(v),hint:'Yes or No, as on the iTax profile.'},
+ {key:'legal_rep_pin',label:'Legal representative PIN',entities:[],check:v=>/^[A-Z][0-9]{9}[A-Z]$/.test(v),hint:'One letter, nine digits, one letter.',upper:true},
+ {key:'nssf_number',label:'NSSF number',entities:[],check:v=>/^[A-Za-z0-9/-]{3,20}$/.test(v),hint:'Letters, digits, / and - only.'},
+ {key:'lr_number',label:'LR number',entities:[],check:v=>v.length>=2,hint:'Land reference number of the premises, when there is one.'},
+ {key:'building',label:'Building',entities:[],check:v=>v.length>=2,hint:'Building or estate name.'},
+ {key:'street_road',label:'Street or road',entities:[],check:v=>v.length>=2,hint:'For example Mumias Road.'},
+ {key:'city_town',label:'City or town',entities:[],check:v=>v.length>=2,hint:'For example Bungoma.'},
+ {key:'county',label:'County',entities:[],check:v=>v.length>=3,hint:'One of the 47 counties.'},
+ {key:'district',label:'District',entities:[],check:v=>v.length>=2,hint:'As on the iTax profile.'},
+ {key:'locality',label:'Tax area or locality',entities:[],check:v=>v.length>=2,hint:'As on the iTax profile.'},
+ {key:'descriptive_address',label:'Descriptive address',entities:[],check:v=>v.length>=2,hint:'A line that helps someone find the premises.'},
+ {key:'postal_code',label:'Postal code',entities:[],check:v=>/^\d{3,6}$/.test(v),hint:'Digits only, for example 50200.'},
+ {key:'po_box',label:'P.O. Box',entities:[],check:v=>/^[A-Za-z0-9 /.-]{1,30}$/.test(v),hint:'The box number, or None when the client has no box.'},
+ {key:'postal_town',label:'Postal town',entities:[],check:v=>v.length>=2,hint:'Town of the post office.'},
+ {key:'telephone',label:'Telephone number',entities:[],check:v=>/^\+?\d{9,13}$/.test(v.replace(/[\s-]/g,'')),hint:'Digits only, 9 to 13.'},
+ {key:'mobile_2',label:'Mobile number (2)',entities:[],check:v=>/^\+?\d{9,13}$/.test(v.replace(/[\s-]/g,'')),hint:'Digits only, 9 to 13.'},
+ {key:'mobile_3',label:'Mobile number (3)',entities:[],check:v=>/^\+?\d{9,13}$/.test(v.replace(/[\s-]/g,'')),hint:'Digits only, 9 to 13.'},
+ {key:'secondary_email',label:'Secondary email address',entities:[],check:v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),hint:'name@example.com'},
+ {key:'website',label:'Website',entities:[],check:v=>/^(https?:\/\/)?[^\s.]+\.[^\s]{2,}$/i.test(v),hint:'For example www.example.co.ke'},
 ];
 export const fieldFor=key=>FIELDS.find(f=>f.key===key)||null;
 export const requiredFor=entityType=>FIELDS.filter(f=>!f.entities||f.entities.includes(entityType));

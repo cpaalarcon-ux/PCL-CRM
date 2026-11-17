@@ -557,3 +557,42 @@ dialog#editor{border-radius:14px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
 @media(max-width:720px){.staff-roster,.doc-roster{overflow-x:auto;padding-bottom:180px}}
 .doc-roster td .actions{flex-wrap:nowrap;align-items:center}
 .doc-note{margin:8px 0}.doc-note>summary{cursor:pointer;font-weight:600;color:var(--green)}.doc-note>summary:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+
+/* Build 2854: client set-up grid in the KRA iTax profile layout. */
+#editor:has(.kg){width:min(1280px,96vw);max-width:1280px;max-height:94dvh}
+.kg-title{margin:0 0 8px;font-size:15px}
+.kg-top{margin-bottom:10px}.kg-statusbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.kg-chip{display:inline-block;padding:4px 12px;border-radius:4px;font-weight:700;font-size:12px;letter-spacing:.04em;text-transform:uppercase;background:#e5e7eb;color:#111827}
+.kg-chip.kg-s-DRAFT{background:#fef3c7;color:#78350f}.kg-chip.kg-s-PENDING_VERIFICATION{background:#dbeafe;color:#1e3a8a}.kg-chip.kg-s-PENDING_PARTNER{background:#ede9fe;color:#4c1d95}.kg-chip.kg-s-VERIFIED{background:#dcfce7;color:#14532d}
+.kg-count{font-size:13px;color:var(--muted)}
+.kg-src{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0}.kg-src label{display:flex;flex-direction:column;gap:2px;font-size:12px;min-width:220px}
+.kg-layout{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:16px;align-items:start}
+@media(max-width:900px){.kg-layout{grid-template-columns:1fr}}
+.kg-main{border:1px solid #111;border-radius:2px;background:var(--paper)}
+.kg-sec{margin:0}.kg-bar{margin:0;padding:6px 10px;background:#1f2937;color:#fff;font-size:13px;font-weight:700;text-align:left}
+.kg-grp{border:0;margin:0;padding:0;min-width:0}.kg-grp>legend{width:100%;padding:4px 10px;background:#e5e7eb;font-weight:700;font-size:12px;border-top:1px solid #111;border-bottom:1px solid #9ca3af}
+.kg-box{display:block}
+.kg-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(140px,1.4fr) minmax(120px,1fr) minmax(140px,1.4fr);border-bottom:1px solid #9ca3af}
+@media(max-width:700px){.kg-row{grid-template-columns:minmax(110px,1fr) minmax(130px,1.4fr)}.kg-row>*:nth-child(n+3){border-top:1px dotted #d1d5db}}
+.kg-l{padding:6px 8px;background:#f3f4f6;font-weight:600;font-size:12px;border-right:1px solid #9ca3af;display:flex;align-items:center;gap:2px}
+.kg-v{position:relative;padding:0;border-right:1px solid #9ca3af;background:#fff;min-width:0}
+.kg-row>.kg-v:last-child{border-right:0}
+.kg-void{background:#fafafa}
+.kg-v input,.kg-v select{width:100%;height:100%;min-height:32px;border:0;border-radius:0;background:transparent;padding:5px 24px 5px 8px;font:inherit;font-size:13px;box-sizing:border-box}
+.kg-v input:focus,.kg-v select:focus{outline:2px solid var(--navy);outline-offset:-2px;background:#eff6ff}
+.kg-ro{padding:7px 8px;font-size:13px;background:#f3f4f6;color:#374151}
+.kg-star{color:#dc2626;font-weight:700;margin-left:3px}
+.kg-warn,.kg-msg{display:none}
+.kg-req{background:#fff5f5;box-shadow:inset 3px 0 0 #fca5a5}
+.kg-bad{background:#fef2f2;box-shadow:inset 0 0 0 2px #dc2626}
+.kg-bad .kg-warn{display:block;position:absolute;right:6px;top:7px;color:#dc2626;font-size:13px}
+.kg-bad .kg-msg{display:block;position:absolute;left:0;right:0;top:100%;z-index:3;background:#dc2626;color:#fff;font-size:11px;padding:2px 8px}
+.kg-dirty{box-shadow:inset 3px 0 0 #f59e0b}
+.kg-ver{background:#f0fdf4}.kg-differs{background:#fffbeb}
+.kg-side{border:1px solid var(--line);border-radius:6px;padding:10px 12px;background:var(--paper);font-size:13px;position:sticky;top:0}
+.kg-side h4{margin:8px 0 4px;font-size:13px}.kg-side ul{list-style:none;margin:0 0 6px;padding:0}.kg-side li{padding:3px 0}.kg-side li small{display:block;color:var(--muted)}
+.kg-k{margin:6px 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.kg-miss{max-height:180px;overflow:auto}
+.kg-links{display:flex;flex-direction:column;gap:6px;margin-top:10px}.kg-verify{margin-top:10px;display:flex;flex-direction:column;gap:6px}.kg-verify textarea{width:100%}
+.kg-foot{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:flex-end;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.kg-why{display:flex;flex-direction:column;font-size:12px;min-width:260px}.kg-note{font-size:12px;margin-top:6px}

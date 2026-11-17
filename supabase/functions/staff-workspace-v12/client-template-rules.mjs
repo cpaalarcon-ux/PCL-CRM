@@ -35,7 +35,7 @@ export function templateChecklist({template,templateInfo,subtype,fields,facts,ma
   const fact=(facts||[]).find(x=>x.field_key===f.field_key&&x.status!=='Superseded');
   const i=base.rows.findIndex(r=>r.key===f.field_key);
   if(i>=0){base.rows[i].optional=true;base.rows[i].extra=false;if(base.rows[i].issue&&/Not required/.test(base.rows[i].issue))base.rows[i].issue=null;}
-  else base.rows.push({key:f.field_key,label:def.label,hint:def.hint,state:fact?fact.status:'Missing',optional:true,issue:null,fact:fact?{fact_id:fact.fact_id,value:fact.value,source_kind:fact.source_kind,status:fact.status,revision:fact.revision}:null});}
+  else base.rows.push({key:f.field_key,label:def.label,hint:def.hint,state:fact?fact.status:'Missing',optional:true,issue:null,fact:fact?{fact_id:fact.fact_id,value:fact.value,source_kind:fact.source_kind,document_id:fact.document_id,source_reference:fact.source_reference,status:fact.status,recorded_by:fact.recorded_by,recorded_at:fact.recorded_at,verified_by:fact.verified_by,verified_at:fact.verified_at,revision:fact.revision}:null});}
  const exceptions=[...base.exceptions];
  const info=templateInfo||{};
  const liveFact=k=>(facts||[]).find(x=>x.field_key===k&&x.status!=='Superseded')||null;

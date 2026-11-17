@@ -3,12 +3,12 @@ import {loadClientTemplate} from './client-template-data.ts';
 import {FIELDS,SOURCE_KINDS,cleanValue,sourceProblem,readiness,canVerify,setupReport,elapsedMinutes,fieldFor} from './client-master-rules.mjs';
 // Client master (build 2807): record each key fact with its source, verify it independently, and measure how long set-up takes.
 // The rules are in client-master-rules.mjs and the table rules in 20261115120000_client_master_facts.sql. Nothing here changes the client record itself.
-const ACTIONS=['client_master_read','client_master_record','client_master_verify','client_master_report','client_holder_record','client_holder_verify','client_holder_end'];
+const ACTIONS=['client_master_read','client_master_record','client_master_record_many','client_master_verify','client_master_verify_many','client_master_report','client_holder_record','client_holder_verify','client_holder_end'];
 const KINDS=['Officer','Signatory'],BASES=['Resolution','Governing document','Establishing instrument','Court grant','Registration record'];
 const REVIEWERS=['PARTNER','MANAGER','SUPERVISOR'];
 
 async function load(tx:any,a:any,cid:string){
- const client=(await tx`select client_id,company_name,kra_pin,legal_entity_type from erp_private.clients where client_id=${cid} and deleted_at is null`)[0];
+ const client=(await tx`select client_id,company_name,kra_pin,legal_entity_type,legal_structure,legal_subtype from erp_private.clients where client_id=${cid} and deleted_at is null`)[0];
  if(!client)fail(403,'This client is unavailable to your account.');
  const facts=await tx`select f.*,rb.full_name as recorded_by_name,vb.full_name as verified_by_name,d.file_name as document_name from erp_private.client_field_facts f
   left join erp_private.staff_members rb on rb.staff_id=f.recorded_by left join erp_private.staff_members vb on vb.staff_id=f.verified_by left join erp_private.documents d on d.document_id=f.document_id
@@ -23,11 +23,13 @@ function view(a:any,{client,facts,ms,tpl}:any){
  const rd=tpl?.template
   ?{...tpl.checklist,rows:tpl.checklist.facts,required:tpl.checklist.counts.facts.required,verified:tpl.checklist.counts.facts.verified,ready:tpl.checklist.facts_ready,percent:tpl.checklist.counts.facts.required?Math.round(tpl.checklist.counts.facts.verified*100/tpl.checklist.counts.facts.required):0,exceptions:tpl.checklist.exceptions.filter((e:any)=>!/^(evidence|party|licence):/.test(e.key))}
   :readiness({entityType:client.legal_entity_type,facts,master:{company_name:client.company_name,kra_pin:client.kra_pin},...(tpl&&tpl.structure?{templateKnown:false,unknownIssue:'This legal structure has no client-type template yet. A Partner chooses which template applies.'}:{})});
+ // Without a template the older list only names its own facts. A fact the grid saved outside that list is still shown, as optional, so a saved cell never looks lost.
+ if(!tpl?.template){const have=new Set(rd.rows.map((r:any)=>r.key));for(const f of facts){if(f.status==='Superseded'||have.has(f.field_key))continue;const def:any=fieldFor(f.field_key);if(!def)continue;have.add(f.field_key);rd.rows.push({key:f.field_key,label:def.label,hint:def.hint,state:f.status,optional:true,issue:null,fact:{fact_id:f.fact_id,value:f.value,source_kind:f.source_kind,document_id:f.document_id,source_reference:f.source_reference,status:f.status,recorded_by:f.recorded_by,recorded_at:f.recorded_at,verified_by:f.verified_by,verified_at:f.verified_at,revision:f.revision}});}}
  const started=ms.find((m:any)=>m.milestone==='Started')?.reached_at||null,ready=ms.find((m:any)=>m.milestone==='Ready')?.reached_at||null;
  const names=new Map(facts.map((f:any)=>[f.fact_id,f]));
  for(const r of rd.rows){if(r.fact){const f:any=names.get(r.fact.fact_id);r.fact.recorded_by_name=f.recorded_by_name;r.fact.verified_by_name=f.verified_by_name;r.fact.document_name=f.document_name;r.can_verify=canVerify({status:r.fact.status,recorded_by:r.fact.recorded_by,source_kind:r.fact.source_kind},a)&&!((tpl?.fields||[]).some((x:any)=>x.field_key===r.key&&x.partner_verified)&&a.category_code!=='PARTNER');}}
  const history=facts.filter((f:any)=>f.status==='Superseded').map((f:any)=>({field_key:f.field_key,value:f.value,source_kind:f.source_kind,recorded_by_name:f.recorded_by_name,recorded_at:f.recorded_at,superseded_at:f.superseded_at,superseded_reason:f.superseded_reason}));
- return {client:{client_id:client.client_id,company_name:client.company_name,legal_entity_type:client.legal_entity_type||null},...rd,history,started_at:started,ready_at:ready,minutes_to_ready:ready?elapsedMinutes(started,ready):null,
+ return {client:{client_id:client.client_id,company_name:client.company_name,kra_pin:client.kra_pin||null,legal_entity_type:client.legal_entity_type||null,legal_structure:client.legal_structure||null,legal_subtype:client.legal_subtype||null},...rd,history,started_at:started,ready_at:ready,minutes_to_ready:ready?elapsedMinutes(started,ready):null,
   template:tpl?.template?{template_code:tpl.template.template_code,name:tpl.template.name,controls:tpl.template.controls,structure:tpl.structure,subtype:tpl.subtype,evidence:tpl.checklist.evidence,parties:tpl.checklist.parties,licences:tpl.checklist.licences,restricted:!!tpl.checklist.restricted,file_ready:tpl.checklist.ready}:null,
   holders:(tpl?.holders||[]).map((h:any)=>({holder_id:h.holder_id,kind:h.kind,holder_name:h.holder_name,holder_position:h.holder_position,authority:h.authority,basis_kind:h.basis_kind,document_name:h.document_name||null,source_reference:h.source_reference||null,status:h.status,recorded_by_name:h.recorded_by_name,recorded_at:h.recorded_at,verified_by_name:h.verified_by_name||null,verified_at:h.verified_at||null,verification_note:h.verification_note||null,revision:h.revision,can_verify:h.status==='Recorded'&&REVIEWERS.includes(a.category_code)&&h.recorded_by!==a.staff_id,can_end:REVIEWERS.includes(a.category_code)})),
   holder_rules:tpl?.checklist?.holders||[],kinds:KINDS,basis_kinds:BASES,
@@ -114,6 +116,71 @@ export async function clientMasterAction(tx:any,a:any,p:any):Promise<any>{
   if(first)await milestone(tx,a,cid,'Started',{first_field:key});
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_field_facts','CLIENT_FACT_RECORDED',${made.fact_id},${tx.json({client_id:cid,field_key:key,source_kind:kind,replaced:!!live})})`;
   return view(a,await load(tx,a,cid));
+ }
+
+ // Build 2854: the set-up grid saves every changed cell in one step, all or nothing. Each cell is the same fact record the single action makes, with the
+ // same checks, the same source rule and the same reason for a replacement; the grid never writes anything the single action would refuse.
+ if(p.action==='client_master_record_many'){
+  const cells=Array.isArray(p.cells)?p.cells:[];
+  if(!cells.length)fail(400,'There is nothing to save.');
+  if(cells.length>60)fail(400,'Save at most 60 cells at a time.');
+  const kind=choice(p.source_kind,SOURCE_KINDS),documentId=p.document_id?uuid(p.document_id):null,ref=p.source_reference?text(p.source_reference,300).trim():null;
+  const bad=sourceProblem({source_kind:kind,document_id:documentId,source_reference:ref});if(bad)fail(400,bad);
+  if(documentId&&!(await tx`select 1 from erp_private.documents where document_id=${documentId} and client_id=${cid} and deleted_at is null`).length)fail(400,'That document does not belong to this client.');
+  const errors:any[]=[],plan:any[]=[],seen=new Set<string>();let unchanged=0;
+  for(const c of cells){
+   const key=text(c?.field_key||'',60),f=fieldFor(key);
+   if(!f){errors.push({field_key:key,error:'This is not a field on the client master checklist.'});continue;}
+   if(seen.has(key)){errors.push({field_key:key,error:f.label+' appears twice.'});continue;}seen.add(key);
+   const cleaned=cleanValue(key,c.value);if(!cleaned.ok){errors.push({field_key:key,error:cleaned.error});continue;}
+   const live=data.facts.find((x:any)=>x.field_key===key&&x.status!=='Superseded');
+   let why='';
+   if(live){
+    if(live.value===cleaned.value&&live.source_kind===kind&&String(live.document_id||'')===String(documentId||'')&&String(live.source_reference||'')===String(ref||'')){unchanged++;continue;}
+    why=text(c.reason||p.reason||'',500,false).trim();
+    if(why.length<5){errors.push({field_key:key,error:'A fact is already recorded for '+f.label.toLowerCase()+'. Say why it is being replaced (at least 5 characters).'});continue;}
+   }
+   plan.push({key,value:cleaned.value,live,why});
+  }
+  if(errors.length)return {...view(a,data),saved:false,errors,count:0,unchanged};
+  const first=!data.ms.some((m:any)=>m.milestone==='Started');
+  for(const x of plan){
+   if(x.live)await tx`update erp_private.client_field_facts set status='Superseded',superseded_at=now(),superseded_by=${a.staff_id},superseded_reason=${x.why} where fact_id=${x.live.fact_id}`;
+   const made=(await tx`insert into erp_private.client_field_facts(client_id,field_key,value,source_kind,document_id,source_reference,recorded_by) values(${cid},${x.key},${x.value},${kind},${documentId},${ref},${a.staff_id}) returning fact_id`)[0];
+   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_field_facts','CLIENT_FACT_RECORDED',${made.fact_id},${tx.json({client_id:cid,field_key:x.key,source_kind:kind,replaced:!!x.live,grid:true})})`;
+  }
+  if(first&&plan.length)await milestone(tx,a,cid,'Started',{first_field:plan[0].key});
+  return {...view(a,await load(tx,a,cid)),saved:true,errors:[],count:plan.length,unchanged};
+ }
+
+ // Build 2854: a reviewer checks the cells shown against the source in one step. Each fact is verified exactly as the single action would verify it:
+ // by a different Supervisor, Manager or Partner, never on the client's own statement alone, and a Partner-only fact stays Partner-only.
+ // A fact that cannot be verified by this person is skipped and named; the rest go through. The page sends the revision it showed, so a changed fact is skipped too.
+ if(p.action==='client_master_verify_many'){
+  if(!REVIEWERS.includes(a.category_code))fail(403,'A Supervisor, Manager or Partner verifies a fact.');
+  const note=text(p.note||'',500,false).trim();if(note.length<3)fail(400,'Say what you checked the facts against (at least 3 characters).');
+  const asked=Array.isArray(p.facts)?p.facts:[];
+  if(!asked.length)fail(400,'There is nothing to verify.');
+  if(asked.length>80)fail(400,'Verify at most 80 facts at a time.');
+  const skipped:any[]=[],ok:any[]=[];
+  for(const x of asked){
+   const fact=data.facts.find((f:any)=>f.fact_id===x?.fact_id);
+   if(!fact){skipped.push({fact_id:x?.fact_id||null,reason:'This fact is unavailable to your account.'});continue;}
+   const label=fieldFor(fact.field_key)?.label||fact.field_key;
+   if(String(fact.revision)!==revision(x.revision)){skipped.push({field_key:fact.field_key,reason:label+' changed since it was shown. Refresh and check it again.'});continue;}
+   if(fact.status!=='Recorded'){skipped.push({field_key:fact.field_key,reason:label+(fact.status==='Verified'?' is already verified.':' was replaced by a newer value.')});continue;}
+   if(fact.recorded_by===a.staff_id){skipped.push({field_key:fact.field_key,reason:label+': a different person must verify a fact you recorded.'});continue;}
+   if(fact.source_kind==='Client statement'){skipped.push({field_key:fact.field_key,reason:label+': the client\'s own statement cannot be verified. Record it again with a document or register check.'});continue;}
+   if((data.tpl?.fields||[]).some((f:any)=>f.field_key===fact.field_key&&f.partner_verified)&&a.category_code!=='PARTNER'){skipped.push({field_key:fact.field_key,reason:label+': only a Partner verifies this fact.'});continue;}
+   ok.push(fact);
+  }
+  for(const fact of ok){
+   await tx`update erp_private.client_field_facts set status='Verified',verified_by=${a.staff_id},verified_at=now(),verification_note=${note} where fact_id=${fact.fact_id}`;
+   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_field_facts','CLIENT_FACT_VERIFIED',${fact.fact_id},${tx.json({client_id:cid,field_key:fact.field_key,note,grid:true})})`;
+  }
+  const after=await load(tx,a,cid),v=view(a,after);
+  if(ok.length&&v.ready&&!after.ms.some((m:any)=>m.milestone==='Ready'))await milestone(tx,a,cid,'Ready',{required:v.required,verified:v.verified});
+  return {...view(a,await load(tx,a,cid)),verified_count:ok.length,skipped};
  }
 
  // client_master_verify
