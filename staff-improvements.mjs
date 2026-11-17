@@ -2,10 +2,11 @@
 import {familyOf} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
 import {stockMethodChoices,stockCountChoices,stockPolicyStartDate} from './staff-stock-policy.mjs?v=20261028-stock-settings-date';
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261121-coa-v1';
-import {createClientMasterUI} from './staff-client-master.mjs?v=20261121-nobase-v1';
+import {createClientMasterUI} from './staff-client-master.mjs?v=20261121-scope-v1';
+import {createScopeUI} from './staff-engagement-scope.mjs?v=20261121-scope-v1';
 import {createKycGridUI} from './staff-kyc-grid.mjs?v=20261121-aml-v2';
 import {createAmlUI} from './staff-aml.mjs?v=20261121-aml-v2';
-import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261121-evid-v1';
+import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261121-scope-v1';
 import {panelHtml,queueHtml,collectSubmit,collectDecisions} from './staff-setup-review.mjs?v=20261116-setupreview-v1';
 import {queueHtml as tasksQueueHtml,queueBody as tasksQueueBody,configurationHtml} from './staff-setup-tasks.mjs?v=20261116-choices-v1';
 import {createClientChoicesUI} from './staff-client-choices.mjs?v=20261116-choices-v1';
@@ -21,7 +22,8 @@ export function createImprovementUI(ctx){
  const choices=createClientChoicesUI({...ctx,show:(...a)=>show(...a)});
  const bulk=createBulkSetupUI({...ctx,show:(...a)=>show(...a)});
  const categories=createServiceCategoriesUI({...ctx,show:(...a)=>show(...a)});
- const master=createClientMasterUI(ctx,{show:(...a)=>show(...a),button,templateBlock:t=>setup.clientTypeBlock(t)});
+ const scope=createScopeUI(ctx);
+ const master=createClientMasterUI(ctx,{show:(...a)=>show(...a),button,templateBlock:t=>setup.clientTypeBlock(t),scopeButton:id=>scope.button(id)});
  const grid=createKycGridUI(ctx,{show:(...a)=>show(...a),openList:id=>master.open(id)});
  const aml=createAmlUI(ctx,{show:(...a)=>show(...a)});
 

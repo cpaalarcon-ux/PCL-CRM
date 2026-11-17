@@ -91,6 +91,7 @@ import { createClient } from 'supabase';
 import postgres from 'postgres';
 import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
 import {clientFilingPrefix} from './engagement-setup-rules.mjs';
+import {clientScopeAction} from './client-scope-actions.ts';
 import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,scopeWorkspaceRecords,staffAreaCanUse} from './staff-access-control.mjs';
 import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode,isProposableAction} from './staff-rights-catalog.mjs';
 import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts';
@@ -494,6 +495,7 @@ async function action(id:any,p:any){
   const deleteRedo=await deleteRedoAction(tx,a,p);if(deleteRedo!==undefined)return deleteRedo;
   const clientMaster=await clientMasterAction(tx,a,p);if(clientMaster!==undefined)return clientMaster;
   const aml=await amlAction(tx,a,p);if(aml!==undefined)return aml;
+  const clientScope=await clientScopeAction(tx,a,p);if(clientScope!==undefined)return clientScope;
   const setupReview=await clientSetupReviewAction(tx,a,p);if(setupReview!==undefined)return setupReview;
   const clientChoices=await clientChoicesAction(tx,a,p);if(clientChoices!==undefined)return clientChoices;
   const bulkSetup=await bulkSetupAction(tx,a,p);if(bulkSetup!==undefined)return bulkSetup;

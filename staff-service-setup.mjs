@@ -19,11 +19,13 @@ export function createServiceSetupUI(ctx){
    ${t.licences&&t.licences.length?`<h4>Regulator licences</h4>${list(t.licences,'')}`:''}
    <p class="muted">Nothing here selects a service. A service is set up on purpose, from the client's page.</p></details>`;
  }
+ // Build 2864: a period outside the engagement scope offers the override request, which goes to a Partner.
+ const scopeButton=sc=>`<button type="button" data-scope="override-request" data-client="${esc(sc.client_id)}" data-firm="${esc(sc.firm_id)}" data-from="${esc(String(sc.from_date).slice(0,10))}" data-to="${esc(String(sc.to_date).slice(0,10))}" data-reason="${esc(sc.reason)}">Request scope override</button>`;
  // Plan preview.
  function planView(plan){
   const created=plan.create.length?`<ul>${plan.create.map(c=>`<li><b>${esc(c.task_name)}</b>${c.recurrence==='Once'?'':' · '+esc(c.period_start)} · due ${esc(c.due_on)} · ${c.owner_role==='REVIEWER'?'reviewer':'responsible'}${c.mandatory?'':' <small>(optional)</small>'}</li>`).join('')}</ul>`:'<p class="muted">No tasks would be created.</p>';
   const skipped=plan.skipped.length?`<ul>${plan.skipped.map(s=>`<li>${badge(s.kind)} <b>${esc(s.task_name)}</b>: ${esc(s.reason)}</li>`).join('')}</ul>`:'';
-  const probs=plan.problems.length?`<div class="notice bad"><b>Fix before continuing</b><ul>${plan.problems.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:'';
+  const probs=plan.problems.length?`<div class="notice bad"><b>Fix before continuing</b><ul>${plan.problems.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>${plan.scope&&plan.scope.needs_override?`<p>${scopeButton(plan.scope)}</p>`:''}</div>`:'';
   // Build 2856: the MLRO's rule for this service is always stated. A flagged, not-yet-approved case is already in the warnings below.
   const amlLine=plan.aml&&!(plan.aml.needs_flag&&!plan.aml.cleared)?`<p class="muted">POCAMLA: ${esc(plan.aml.line)}</p>`:'';
   const warn=amlLine+(plan.warnings.length?`<ul>${plan.warnings.map(x=>`<li class="muted">${esc(x)}</li>`).join('')}</ul>`:'');

@@ -53,6 +53,13 @@ test('templates: client type decides the file, never the service; services are c
  await assert.rejects(()=>st('SUPERVISOR',{action:'service_template_approve',template_id:tax.template_id,revision:tax.revision}),/Partner or a Manager who holds the approval right/);
  await st('PARTNER',{action:'service_template_approve',template_id:tax.template_id,revision:tax.revision});
  const opts1=await st('MANAGER',{action:'engagement_setup_options',client_id:C});assert.deepEqual(opts1.templates.map(x=>x.template_code),['TAX-MONTHLY']);
+ // Build 2864: a period before the engagement scope is refused in plain words and offers the override; an approved override lets it through.
+ await tx`insert into erp_private.client_engagement_scopes(client_id,firm_id,engagement_date,scope_start_date,recorded_by) values(${C},${F},'2026-04-01','2026-04-01',${actors.PARTNER.staff_id})`;
+ const ps=await st('MANAGER',base);assert.equal(ps.ok,false);assert.match(ps.plan.problems.join(' '),/before the engagement scope, which starts on 1 Apr 2026/);assert.equal(ps.plan.scope.needs_override,true);assert.equal(ps.plan.scope.from_date.slice(0,10),'2026-01-01');
+ await tx`insert into erp_private.scope_overrides(client_id,firm_id,from_date,to_date,reason,requested_by) values(${C},${F},'2026-01-01','2026-03-31','Fictional late filing',${actors.MANAGER.staff_id})`;
+ await tx`update erp_private.scope_overrides set status='Approved',decided_by=${actors.PARTNER.staff_id},decided_at=now() where client_id=${C}`;
+ assert.ok(!(await st('MANAGER',base)).plan.scope?.needs_override,'an approved override lets the period through the scope check');
+ await tx`update erp_private.client_engagement_scopes set ended_by=${actors.PARTNER.staff_id},ended_at=now(),ended_reason='Fictional test cleanup' where client_id=${C}`;
  // A changed version: a Manager proposes, a different Partner approves; the old version is retired, never edited.
  const v1=(await st('MANAGER',{action:'service_template_list'})).templates.find(x=>x.template_id===tax.template_id);
  const prop=await st('MANAGER',{action:'service_template_propose',from_template_id:tax.template_id,drop_task_keys:['tot_working'],due_days:{vat_working:10},mandatory:{purchases:false}});assert.equal(prop.version,2);

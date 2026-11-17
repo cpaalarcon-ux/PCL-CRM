@@ -51,6 +51,6 @@ test('wiring: insert-only table, shown on set-up, build label, tokens',()=>{
  const act=rd(fx+'practice-template-actions.ts');assert.match(act,/'service_category_dates'/);assert.match(act,/recordDates/);assert.doesNotMatch(act.replace(/\/\/[^\n]*/g,''),/update erp_private\.|delete from/i);
  const st=rd(fx+'service-template-actions.ts');assert.match(st,/dateWarnings\(tpl,i\.period_start,today\)/);assert.match(st,/effective_from:x\.effective_from/);assert.match(st,/template_effective_from/);
  assert.match(rd('staff-service-setup.mjs'),/no dates recorded/);assert.match(rd('staff-bulk-setup.mjs'),/reviewed /);
- const imp=rd('staff-improvements.mjs');assert.match(imp,/staff-service-setup\.mjs\?v=20261121-evid-v1/);for(const f of ['staff-bulk-setup','staff-service-categories'])assert.match(imp,new RegExp(f+'\\.mjs\\?v=20261116-dates-v1'));
- assert.match(rd(fx+'release.json'),/2026-11-14\.2863/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2863"/);
+ const imp=rd('staff-improvements.mjs');assert.match(imp,/staff-service-setup\.mjs\?v=20261121-scope-v1/);for(const f of ['staff-bulk-setup','staff-service-categories'])assert.match(imp,new RegExp(f+'\\.mjs\\?v=20261116-dates-v1'));
+ assert.match(rd(fx+'release.json'),/2026-11-14\.2864/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2864"/);
 });
