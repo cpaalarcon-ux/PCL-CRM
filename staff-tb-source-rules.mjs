@@ -57,3 +57,30 @@ export function mappingConflict(sourceName,erpCode){
  }
  return '';
 }
+
+// Build 2859: the side an ERP account normally carries. This is a prompt to look again, never a block: a bank account can be overdrawn, a receivable can be
+// overpaid, and retained earnings can be a deficit. Contra accounts, overdrafts, drawings and the groups that can sit on either side are named here.
+// Returns 'Debit', 'Credit' or 'Either' (no note is given for Either).
+export function expectedSide(account){
+ const name=String(account?.name||'').toLowerCase(),group=String(account?.account_group||'');
+ if(/overdraft/.test(name))return 'Credit';
+ if(/drawings/.test(name))return 'Debit';
+ if(/accumulated (depreciation|amortisation|amortization|impairment)|\ballowance\b|provision for (bad|doubtful|impairment|depreciation)/.test(name)&&/assets/i.test(group))return 'Credit';
+ switch(group){
+  case 'Current assets':case 'Non-current assets':return 'Debit';
+  case 'Contra assets':return 'Credit';
+  case 'Liabilities':return 'Credit';
+  case 'Tax / statutory liabilities':return /net vat|clearing|control|legacy|alias/.test(name)?'Either':'Credit';
+  case 'Equity':return /retained|accumulated|deficit|loss|reserve|current year|profit|result/.test(name)?'Either':'Credit';
+  case 'Revenue':return /return|discount|allowed|refund|rebate|credit note/.test(name)?'Either':'Credit';
+  case 'Cost of sales':case 'Expenditure':return 'Debit';
+  default:return 'Either';
+ }
+}
+// A sentence when the line sits on the other side from what the ERP account normally carries, otherwise ''.
+export function sideNote(account,debit,credit,fmt=v=>String(v)){
+ const d=Number(debit)||0,c=Number(credit)||0,net=d-c;if(!account||!net)return '';
+ const want=expectedSide(account),have=net>0?'debit':'credit';
+ if(want==='Either'||want.toLowerCase()===have)return '';
+ return `${account.name} normally carries a ${want.toLowerCase()} balance, but this line is a ${have} of ${fmt(Math.abs(net))}. Check for an overpayment, an overdrawn account, a reversed sign or the wrong ERP account.`;
+}

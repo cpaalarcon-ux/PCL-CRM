@@ -8,6 +8,7 @@ const activities = [
   ['ict', 'Information and communications technology', 'Technology'],
   ['manufacturing', 'Manufacturing and processing', 'Manufacturing'],
   ['msme', 'Informal trading and small enterprises (MSME)', 'MSME'],
+  ['fuel_gas', 'Fuel, gas (LPG) and cylinder retail', 'Fuel and gas'],
   ['mining', 'Mining and quarrying', 'Other'],
   ['nonprofit', 'Non-profit and donor-funded operations', 'Other'],
   ['professional', 'Professional and consultancy services', 'Consultancy'],

@@ -38,5 +38,5 @@ test('Home: Practice metrics sit in a closed fold for Managers and Partners only
  assert.match(dash,/\['PARTNER','MANAGER'\]\.includes\(role\)\?'<details class="settings-fold home-fold" id="homeMetricsFold"><summary>Practice figures<\/summary><section id="homeMetrics" aria-live="polite">/);
  assert.doesNotMatch(dash.match(/id="homeMetricsFold"[^]*?<\/details>/)[0],/ open/,'closed by default');
  for(const id of ['homePool','homeHandovers','homeMyReviews','homeQueue','homePartnerEscalations'])assert.ok(dash.includes(`id="${id}"`),id+' is still drawn open');
- assert.match(rd('staff-pilot.mjs'),/staff-dashboard\.mjs\?v=20261121-mywork-v1/);
+ assert.match(rd('staff-pilot.mjs'),/staff-dashboard\.mjs\?v=20261121-coa-v1/);
 });
