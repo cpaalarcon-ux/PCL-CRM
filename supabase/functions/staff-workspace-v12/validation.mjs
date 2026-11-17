@@ -37,9 +37,11 @@ export function fileType(name,bytes){
 export const DEFAULT_ORIGINS=['https://backend-staging-foundation.pcl-crm.pages.dev','https://pcl-crm.pages.dev','https://pcl.phamalarcon.com'];
 // configured: null uses the built-in list (staging); an array is the only list allowed (empty = no browser origin is allowed).
 export function allowedOrigin(origin,configured=null){return (configured??DEFAULT_ORIGINS).includes(origin);}
-export function documentObjectKey(clientId,firmId,documentId,mime){
+export function documentObjectKey(clientId,firmId,documentId,mime,prefix=null){
  const extensions={'application/pdf':'pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'xlsx','image/png':'png','image/jpeg':'jpg','text/csv':'csv','application/zip':'zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document':'docx'};
  const extension=extensions[choice(mime,Object.keys(extensions))];
+ // Build 2862: a file filed in an evidence or client folder is stored under that folder's path. The prefix is checked, never trusted.
+ if(prefix!==null){if(!/^Clients(\/[A-Za-z0-9_-]{1,120}){2,6}\/$/.test(String(prefix)))fail(400,'The folder path is not valid.');return `${prefix}${uuid(documentId)}.${extension}`;}
  return `clients/${uuid(clientId)}/firms/${uuid(firmId)}/${uuid(documentId)}.${extension}`;
 }
 export function assertDocumentLinks(selection,project,task){

@@ -90,6 +90,7 @@ import {applyLegalStructure,requireRightChart,classifyClientsAction} from './leg
 import { createClient } from 'supabase';
 import postgres from 'postgres';
 import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
+import {clientFilingPrefix} from './engagement-setup-rules.mjs';
 import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,scopeWorkspaceRecords,staffAreaCanUse} from './staff-access-control.mjs';
 import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode,isProposableAction} from './staff-rights-catalog.mjs';
 import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts';
@@ -354,7 +355,7 @@ async function upload(req:Request,id:any){
  const importPurpose=cat==='Import Sources'?choice(f.get('import_purpose')||'General',['General','Opening TB']):'General';
  if(cat==='Import Sources'&&(!['text/csv','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mime)||!pid&&importPurpose!=='Opening TB'))fail(400,'Import sources require a project and a CSV, XLSX or ZIP file. Only an Opening TB workbook may be staged at client level.');
  if(importPurpose==='Opening TB'&&(pid||tid||mime!=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))fail(400,'Stage an opening TB as a client-level XLSX with no project or task link.');
- const doc=crypto.randomUUID(),key=documentObjectKey(cid,firm,doc,mime),digest=await sha(bytes);
+ const doc=crypto.randomUUID(),digest=await sha(bytes);let key=documentObjectKey(cid,firm,doc,mime);
  await bucket();let uploaded=false;
  try{return await scoped(id,async(tx,a)=>{
   if(cat==='KYC Pending'){
@@ -377,6 +378,11 @@ async function upload(req:Request,id:any){
   const [allow]=await tx`select erp_private.document_allowed(${cid}::uuid,${firm}::uuid,${pid}::uuid,${tid}::uuid,${cat},true) as allowed`;
   if(!allow.allowed)deny();
   if(tid&&(await tx`select stage from erp_private.task_procedures where task_id=${tid}`)[0]?.stage==='Closed')fail(400,'This task is closed. Use a separate correction task for additional evidence.');
+  // Build 2862: file it in the task's evidence folder, or the client's KYC / Permanent File folder. Other uploads keep their usual path.
+  {let prefix:string|null=null;
+   if(tid){prefix=(await tx`select path_prefix from erp_private.evidence_folders where task_id=${tid}`)[0]?.path_prefix||null;}
+   else if(!pid){const nm=(await tx`select company_name from erp_private.clients where client_id=${cid}`)[0]?.company_name||'';prefix=clientFilingPrefix(cat,nm,cid);}
+   if(prefix)key=documentObjectKey(cid,firm,doc,mime,prefix);}
   // Metadata is inserted before storage. Failed storage rolls back metadata.
   await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,import_purpose,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by)
   values(${doc},${cid},${firm},${pid},${tid},${cat},${importPurpose},${name},${key},${bytes.length},${digest},${mime},${a.staff_id})`;

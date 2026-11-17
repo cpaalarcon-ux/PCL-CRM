@@ -65,5 +65,5 @@ test('wiring: new actions in the server file, existing single actions reused, no
  assert.match(act,/A Partner retires service categories/);assert.doesNotMatch(act.replace(/\/\/[^\n]*/g,''),/update erp_private\.|delete from|insert into erp_private\.service_templates/i,'only the existing single actions write');
  assert.match(rd(fx+'staff-access-control.mjs'),/service_template_\|service_category_\|/,'routed by the existing prefix');
  assert.match(rd('staff-service-categories.mjs'),/service_category_retire/);
- assert.match(rd(fx+'release.json'),/2026-11-14\.2861/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2861"/);
+ assert.match(rd(fx+'release.json'),/2026-11-14\.2862/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2862"/);
 });

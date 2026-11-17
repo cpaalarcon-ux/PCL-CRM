@@ -59,8 +59,15 @@ export const lateCount=(create,onDate)=>create.filter(c=>c.due_on<onDate).length
 // Build 2857: evidence folders. Each task a set-up makes gets one folder, made in the same step as the task, so the two cannot drift apart.
 // The path is fixed by the client, the service, the period and the task, so the same set-up always gives the same folders.
 const slug=(s,max)=>String(s||'').normalize('NFKD').replace(/[^\x00-\x7F]/g,'').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,max);
+export const clientFolderName=(clientName,clientId)=>(slug(clientName,40)||'Client')+'-'+String(clientId||'').replace(/-/g,'').slice(0,8);
+// Build 2862: where a file is filed. A task's file goes in the task's evidence folder; a client-level KYC or Permanent File upload goes in a fixed client folder.
+// Anything else keeps the storage path it has always had, so nothing already stored is moved.
+export function clientFilingPrefix(category,clientName,clientId){
+ const sub={'KYC Pending':'KYC','Permanent File':'Permanent_File'}[category];
+ return sub?['Clients',clientFolderName(clientName,clientId),sub].join('/')+'/':null;
+}
 export function evidencePath({clientName,clientId,serviceCode,periodStart,taskKey}){
- const client=(slug(clientName,40)||'Client')+'-'+String(clientId||'').replace(/-/g,'').slice(0,8);
+ const client=clientFolderName(clientName,clientId);
  const service=(slug(serviceCode,30)||'Service')+'_'+String(periodStart||'').slice(0,4);
  const period='Period_'+String(periodStart||'').slice(0,7);
  const task=String(taskKey||'').replace(/^tpl:[^:]*:v\d+:/,'');
