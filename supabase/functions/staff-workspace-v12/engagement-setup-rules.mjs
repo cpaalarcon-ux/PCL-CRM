@@ -55,3 +55,24 @@ export function planTasks({tasks,period,facts,exclusions,actorCategory}){
 }
 // A task that is made for a month already past is still made; its due date is simply earlier. Nothing is skipped silently for being late.
 export const lateCount=(create,onDate)=>create.filter(c=>c.due_on<onDate).length;
+
+// Build 2857: evidence folders. Each task a set-up makes gets one folder, made in the same step as the task, so the two cannot drift apart.
+// The path is fixed by the client, the service, the period and the task, so the same set-up always gives the same folders.
+const slug=(s,max)=>String(s||'').normalize('NFKD').replace(/[^\x00-\x7F]/g,'').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,max);
+export function evidencePath({clientName,clientId,serviceCode,periodStart,taskKey}){
+ const client=(slug(clientName,40)||'Client')+'-'+String(clientId||'').replace(/-/g,'').slice(0,8);
+ const service=(slug(serviceCode,30)||'Service')+'_'+String(periodStart||'').slice(0,4);
+ const period='Period_'+String(periodStart||'').slice(0,7);
+ const task=String(taskKey||'').replace(/^tpl:[^:]*:v\d+:/,'');
+ return ['Clients',client,service,period,slug(task,60)||'Task'].join('/')+'/';
+}
+// What the preview says before anything is made: the periods, tasks and folders are counted from the plan itself.
+export function folderSummary(create){
+ const rows=Array.isArray(create)?create:[];
+ const periods=new Set(rows.map(c=>c.period_start+'|'+c.period_end)).size;
+ return {periods,tasks:rows.length,folders:rows.length};
+}
+export function folderSentence(s){
+ const n=(v,w)=>v+' '+w+(v===1?'':'s');
+ return 'This will generate '+n(s.periods,'period')+', '+n(s.tasks,'task')+' and '+n(s.folders,'evidence folder')+'.';
+}

@@ -27,7 +27,9 @@ export function createServiceSetupUI(ctx){
   // Build 2856: the MLRO's rule for this service is always stated. A flagged, not-yet-approved case is already in the warnings below.
   const amlLine=plan.aml&&!(plan.aml.needs_flag&&!plan.aml.cleared)?`<p class="muted">POCAMLA: ${esc(plan.aml.line)}</p>`:'';
   const warn=amlLine+(plan.warnings.length?`<ul>${plan.warnings.map(x=>`<li class="muted">${esc(x)}</li>`).join('')}</ul>`:'');
-  return `${probs}<p><b>${plan.create.length}</b> task${plan.create.length===1?'':'s'} would be created from <b>${esc(plan.template.name)}</b> (version ${esc(plan.template.version)})${plan.late?`, ${plan.late} already past due`:''}. ${plan.project?'Project: '+esc(plan.project.project_name)+' ('+esc(plan.project.status)+').':'A new draft project would be created, through the usual checks.'}</p>${warn}<h4>Would be created</h4>${created}${skipped?`<h4>Not created, and why</h4>${skipped}`:''}`;
+  const sum=plan.summary||{periods:0,tasks:plan.create.length,folders:plan.create.length};
+  const folderLine=plan.create.length?`<p data-evidence-summary>This will generate <b>${sum.periods}</b> period${sum.periods===1?'':'s'}, <b>${sum.tasks}</b> task${sum.tasks===1?'':'s'} and <b>${sum.folders}</b> evidence folder${sum.folders===1?'':'s'}.</p>`:'';
+  return `${probs}${folderLine}<p><b>${plan.create.length}</b> task${plan.create.length===1?'':'s'} would be created from <b>${esc(plan.template.name)}</b> (version ${esc(plan.template.version)})${plan.late?`, ${plan.late} already past due`:''}. ${plan.project?'Project: '+esc(plan.project.project_name)+' ('+esc(plan.project.status)+').':'A new draft project would be created, through the usual checks.'}</p>${warn}<h4>Would be created</h4>${created}${skipped?`<h4>Not created, and why</h4>${skipped}`:''}`;
  }
  async function open(cid){
   const o=await request({action:'engagement_setup_options',client_id:cid});
