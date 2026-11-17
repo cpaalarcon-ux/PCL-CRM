@@ -3,8 +3,8 @@ import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
 import {createImprovementUI} from './staff-improvements.mjs?v=20261121-base-v1';
-import {createProcedureUI} from './staff-procedures.mjs?v=20261027-aligned';
-import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261109-ptm-v1';
+import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
+import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261121-folder-v1';
 import {clientProfile} from './staff-client-profile.mjs?v=20261119-tabs-v1';
 import {paintDocRequests,bindDocRequests} from './staff-doc-requests.mjs?v=20261109-dr-v1';
 import {LIFECYCLE_WORDS,lifecycleForm,isArchived} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';

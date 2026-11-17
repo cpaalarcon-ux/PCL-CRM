@@ -12,7 +12,7 @@ import {amlServiceScope,raiseAmlServiceFlag} from './aml-actions.ts';
 // Service templates and engagement set-up (build 2810). The client type never selects a service: a Manager or Partner chooses the service, period,
 // scope, responsible person and reviewer, and only then are tasks made, only those whose conditions the client's confirmed profile meets.
 // The table rules are repeated in 20261115130000_client_and_service_templates.sql.
-const ACTIONS=['client_template_read','client_template_list','service_template_list','service_template_propose','service_template_approve','service_template_retire','engagement_setup_options','engagement_setup_plan','engagement_setup_apply','engagement_setup_release','engagement_setup_list','engagement_rollover_due','engagement_rollover_plan','engagement_rollover_apply'];
+const ACTIONS=['client_template_read','client_template_list','service_template_list','service_template_propose','service_template_approve','service_template_retire','engagement_setup_options','engagement_setup_plan','engagement_setup_apply','engagement_setup_release','engagement_setup_list','engagement_rollover_due','engagement_rollover_plan','engagement_rollover_apply','engagement_folder_read'];
 const day=(v:any)=>v?String(v instanceof Date?v.toISOString():v).slice(0,10):'';
 const GROUPS=['Tax Compliance','Accounting and Bookkeeping','Payroll','Audit and Assurance','Advisory and Other'];
 const LEADERS=['PARTNER','MANAGER'];
@@ -171,6 +171,16 @@ export async function serviceTemplateAction(tx:any,a:any,p:any):Promise<any>{
   return {client,firms,templates:templates.map((x:any)=>({template_id:x.template_id,template_code:x.template_code,version:x.version,name:x.name,service_group:x.service_group,effective_from:x.effective_from,last_reviewed:x.last_reviewed,services:x.services,tasks:x.tasks.map((k:any)=>({task_key:k.task_key,task_name:k.task_name,stage:k.stage,recurrence:k.recurrence,mandatory:k.mandatory,requires_obligation:k.requires_obligation,requires_licence:k.requires_licence}))})),
    staff,projects,client_template:t?.template?{template_code:t.template.template_code,name:t.template.name}:null,
    note:'Choose the service yourself. The type of client does not select one.'};
+ }
+ // Build 2862: a task's evidence folder and which of its files are filed there. Files stored before folders existed keep their old path and are counted separately.
+ if(p.action==='engagement_folder_read'){
+  const tid=uuid(p.task_id);
+  const task=(await tx`select task_id,project_id from erp_private.tasks where task_id=${tid} and deleted_at is null`)[0];
+  if(!task)fail(403,'This task is unavailable to your account.');
+  const folder=(await tx`select folder_id,path_prefix,service_code,period_start::text,period_end::text,created_at from erp_private.evidence_folders where task_id=${tid}`)[0]||null;
+  const docs=await tx`select object_key from erp_private.documents where task_id=${tid} and deleted_at is null`;
+  const inside=folder?docs.filter((d:any)=>String(d.object_key).startsWith(folder.path_prefix)).length:0;
+  return {folder,files_in_folder:inside,files_elsewhere:docs.length-inside,note:folder?'Files added to this task from now on are stored under this path. Files added earlier keep the path they were stored under.':'This task was not made by a service set-up, so it has no evidence folder. Its files are stored as before.'};
  }
  if(p.action==='engagement_setup_list'){
   const cid=uuid(p.client_id);

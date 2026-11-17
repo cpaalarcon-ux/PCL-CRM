@@ -130,6 +130,12 @@ test('templates: client type decides the file, never the service; services are c
  await assert.rejects(()=>tx`update erp_private.evidence_folders set path_prefix=path_prefix||'x' where project_id=${P}`,/not changed or removed|path_prefix/i);
  await assert.rejects(()=>tx`delete from erp_private.evidence_folders where project_id=${P}`,/not changed or removed/);
  assert.ok((await tx`select 1 from erp_private.audit_events where table_name='evidence_folders' limit 1`).length>=0);
+ // Build 2862: the task screen reads the folder and counts files filed in it against files stored under an earlier path.
+ {const f0=folders[0],sha='a'.repeat(64);
+  const rd=await st('ASSISTANT',{action:'engagement_folder_read',task_id:f0.task_id});assert.equal(rd.folder.path_prefix,f0.path_prefix);assert.equal(rd.files_in_folder,0);assert.equal(rd.files_elsewhere,0);
+  await tx`insert into erp_private.documents(client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${C},${F},${P},${f0.task_id},'Working Papers','new.pdf',${f0.path_prefix+id()+'.pdf'},10,${sha},'application/pdf',${actors.ASSISTANT.staff_id}),(${C},${F},${P},${f0.task_id},'Working Papers','old.pdf',${'clients/'+C+'/firms/'+F+'/'+id()+'.pdf'},10,${'b'.repeat(64)},'application/pdf',${actors.ASSISTANT.staff_id})`;
+  const rd2=await st('ASSISTANT',{action:'engagement_folder_read',task_id:f0.task_id});assert.equal(rd2.files_in_folder,1);assert.equal(rd2.files_elsewhere,1);
+  await assert.rejects(()=>st('ASSISTANT',{action:'engagement_folder_read',task_id:id()}),/unavailable/);}
  await assert.rejects(()=>tx`update erp_private.engagement_setups set scope='A different scope entirely' where setup_id=${ap1.setup_id}`,/not edited/);
  // The next quarter is a separate set-up; the earlier tasks are not touched and nothing from last quarter's completion is copied.
  const q2={period_start:'2026-04-01',period_end:'2026-06-30'};
