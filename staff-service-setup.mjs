@@ -24,7 +24,9 @@ export function createServiceSetupUI(ctx){
   const created=plan.create.length?`<ul>${plan.create.map(c=>`<li><b>${esc(c.task_name)}</b>${c.recurrence==='Once'?'':' · '+esc(c.period_start)} · due ${esc(c.due_on)} · ${c.owner_role==='REVIEWER'?'reviewer':'responsible'}${c.mandatory?'':' <small>(optional)</small>'}</li>`).join('')}</ul>`:'<p class="muted">No tasks would be created.</p>';
   const skipped=plan.skipped.length?`<ul>${plan.skipped.map(s=>`<li>${badge(s.kind)} <b>${esc(s.task_name)}</b>: ${esc(s.reason)}</li>`).join('')}</ul>`:'';
   const probs=plan.problems.length?`<div class="notice bad"><b>Fix before continuing</b><ul>${plan.problems.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:'';
-  const warn=plan.warnings.length?`<ul>${plan.warnings.map(x=>`<li class="muted">${esc(x)}</li>`).join('')}</ul>`:'';
+  // Build 2856: the MLRO's rule for this service is always stated. A flagged, not-yet-approved case is already in the warnings below.
+  const amlLine=plan.aml&&!(plan.aml.needs_flag&&!plan.aml.cleared)?`<p class="muted">POCAMLA: ${esc(plan.aml.line)}</p>`:'';
+  const warn=amlLine+(plan.warnings.length?`<ul>${plan.warnings.map(x=>`<li class="muted">${esc(x)}</li>`).join('')}</ul>`:'');
   return `${probs}<p><b>${plan.create.length}</b> task${plan.create.length===1?'':'s'} would be created from <b>${esc(plan.template.name)}</b> (version ${esc(plan.template.version)})${plan.late?`, ${plan.late} already past due`:''}. ${plan.project?'Project: '+esc(plan.project.project_name)+' ('+esc(plan.project.status)+').':'A new draft project would be created, through the usual checks.'}</p>${warn}<h4>Would be created</h4>${created}${skipped?`<h4>Not created, and why</h4>${skipped}`:''}`;
  }
  async function open(cid){
@@ -59,7 +61,7 @@ export function createServiceSetupUI(ctx){
     const payload={...input,exclusions:ex};
     if(ex.length){const re=await request({action:'engagement_setup_plan',...payload});if(!re.ok){throw new Error(re.plan.problems[0]);}}
     return request({action:'engagement_setup_apply',...payload,confirm:true});},
-   r=>{notice(r.released?`Set-up created: ${r.tasks_created} task${r.tasks_created===1?'':'s'} made.`:'Set-up saved. The tasks are made as soon as the project can take them: '+(r.waiting_reason||''));},
+   r=>{notice((r.aml_flag_raised?'The MLRO has been flagged for this service. ':'')+(r.released?`Set-up created: ${r.tasks_created} task${r.tasks_created===1?'':'s'} made.`:'Set-up saved. The tasks are made as soon as the project can take them: '+(r.waiting_reason||'')));},
    {refreshWorkspace:true,pendingLabel:'Creating…',pendingMessage:'Creating the set-up.',successMessage:null});
  }
  async function templates(){

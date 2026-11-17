@@ -115,3 +115,27 @@ export function cleanDecision(input,{needsEdd=false,now=today()}={}){
 export function queueOrder(item){
  const rank={EDD_REQUIRED:0,MLRO_REVIEW:1,REVIEW_DUE:2};return (rank[item.status_code]??9)*10+(item.attention&&item.attention.length?0:5);
 }
+
+// Build 2856: the MLRO's rule for one service. The MLRO chooses whether AML questions or an MLRO referral apply and which AML-relevant activities
+// (from the MLRO's own activity list) the service usually involves. Nothing is assumed for a service the MLRO has not decided.
+export const APPLICABILITY=['Not relevant','Ask AML questions','Refer to the MLRO'];
+export function cleanServiceRule(input,{activityValues=[]}={}){
+ const errors=[],v={};
+ if(!APPLICABILITY.includes(input?.applicability))errors.push({key:'applicability',error:'Choose whether AML applies to this service.'});else v.applicability=input.applicability;
+ const reason=clip(input?.reason,500);if(!reason||reason.length<5)errors.push({key:'reason',error:'Record the reason (at least 5 characters).'});else v.reason=reason;
+ const source=clip(input?.source,300);if(!source||source.length<3)errors.push({key:'source',error:'Say where this comes from (a source or reference).'});else v.source=source;
+ const eff=isoDate(input?.effective_from);if(eff===null)errors.push({key:'effective_from',error:'The effective date is not a valid date.'});else v.effective_from=eff||null;
+ const want=Array.isArray(input?.activities)?input.activities:[];const have=new Map(activityValues.map(x=>[String(x).toLowerCase(),x]));const acts=[];
+ for(const a of want){const hit=have.get(String(a||'').trim().toLowerCase());if(!hit){errors.push({key:'activities',error:`${String(a||'').slice(0,60)||'This value'} is not on the MLRO's current services and activity list.`});continue;}if(!acts.includes(hit))acts.push(hit);}
+ v.activities=acts;
+ if(v.applicability==='Not relevant'&&acts.length)errors.push({key:'activities',error:'A service marked Not relevant cannot list AML-relevant activities.'});
+ return {ok:!errors.length,value:v,errors};
+}
+// What staff see when they set a service up. A service with no rule says the MLRO has not decided; it is never read as "not relevant".
+export function serviceScope(rule,{profileCode=null}={}){
+ if(!rule)return {code:'UNDECIDED',needs_flag:false,line:'The MLRO has not decided whether POCAMLA applies to this service. It is not treated as exempt.'};
+ if(rule.applicability==='Not relevant')return {code:'NOT_RELEVANT',needs_flag:false,line:'The MLRO has marked this service as not relevant to POCAMLA.'};
+ const cleared=['APPROVED','APPROVED_COND'].includes(profileCode);
+ const base=rule.applicability==='Refer to the MLRO'?'The MLRO has asked to be told when this service is set up.':'The MLRO asks the AML questions for this service.';
+ return {code:rule.applicability==='Refer to the MLRO'?'REFER':'ASK',needs_flag:true,cleared,line:base+(cleared?' The client’s AML profile is already approved.':' The client’s AML profile is not approved yet, so this set-up goes to the MLRO queue.')};
+}

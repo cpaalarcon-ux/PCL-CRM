@@ -8,6 +8,7 @@ import {planTasks,periodProblem,taskKey,lateCount,OWNER_ROLES} from './engagemen
 import {nextPeriod,carriedItems,dueForRollover} from './engagement-rollover-rules.mjs';
 import {dateWarnings} from './practice-rules.mjs';
 import {currentDates,noDates} from './template-dates.ts';
+import {amlServiceScope,raiseAmlServiceFlag} from './aml-actions.ts';
 // Service templates and engagement set-up (build 2810). The client type never selects a service: a Manager or Partner chooses the service, period,
 // scope, responsible person and reviewer, and only then are tasks made, only those whose conditions the client's confirmed profile meets.
 // The table rules are repeated in 20261115130000_client_and_service_templates.sql.
@@ -82,8 +83,12 @@ async function buildPlan(tx:any,a:any,i:any){
  problems.push(...tasks.problems);
  const today=nairobiDate();
  warnings.push(...dateWarnings(tpl,i.period_start,today));
+ // Build 2856: the MLRO's rule for this service. It informs and flags; the gate stays the MLRO policy switch, not this plan.
+ const aml=(await amlServiceScope(tx,i.client_id,i.service_code)).scope;
+ if(aml.needs_flag&&!aml.cleared)warnings.push('POCAMLA: '+aml.line);
  return {template:{template_id:tpl.template_id,template_code:tpl.template_code,version:tpl.version,name:tpl.name,service_group:tpl.service_group,effective_from:tpl.effective_from,last_reviewed:tpl.last_reviewed},service:svc||null,client:{client_id:i.client_id,company_name:client.client.company_name,template_code:clientTemplate},
   project:project?{project_id:project.project_id,project_name:project.project_name,status:project.status}:null,
+  aml,
   create:tasks.create,skipped:tasks.skipped,problems,warnings,late:lateCount(tasks.create,today),tpl,staff:{resp,rev}};
 }
 const strip=(plan:any)=>{const {tpl,staff,...rest}=plan;return rest;};
@@ -227,8 +232,10 @@ async function applySetup(tx:any,a:any,i:any,extra:{rolled_from:string|null,carr
  const setup=(await tx`insert into erp_private.engagement_setups(client_id,project_id,template_id,service_code,period_start,period_end,scope,responsible_staff,reviewer_staff,client_template_code,exclusions,applied_by,rolled_from,carried)
   values(${i.client_id},${pid},${i.template_id},${i.service_code},${i.period_start},${i.period_end},${i.scope},${i.responsible},${i.reviewer},${plan.client.template_code},${tx.json(i.exclusions)},${a.staff_id},${extra.rolled_from},${tx.json(extra.carried)}) returning setup_id`)[0];
  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'engagement_setups',${extra.rolled_from?'ENGAGEMENT_SETUP_ROLLED_FORWARD':'ENGAGEMENT_SETUP_APPLIED'},${setup.setup_id},${tx.json({client_id:i.client_id,project_id:pid,template:plan.template.template_code,version:plan.template.version,service_code:i.service_code,period_start:i.period_start,period_end:i.period_end,planned:plan.create.length,skipped:plan.skipped.length,rolled_from:extra.rolled_from,carried:extra.carried.length})})`;
+ // Build 2856: one flag per client, service and MLRO rule, so setting up the next period does not raise it again.
+ const flag=await raiseAmlServiceFlag(tx,a,i.client_id,i.service_code,setup.setup_id);
  const released=await release(tx,a,setup.setup_id);
- return {ok:true,setup_id:setup.setup_id,project_id:pid,...released};
+ return {ok:true,setup_id:setup.setup_id,project_id:pid,aml:flag.scope,aml_flag_raised:flag.raised,...released};
 }
 
 // What a roll-forward starts from. The template is the current approved version of the same template, not the old one; the dates are the next period; everything else
