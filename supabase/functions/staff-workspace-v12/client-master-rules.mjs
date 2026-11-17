@@ -1,6 +1,7 @@
 // Client master (build 2807). Pure rules. Each key fact about a client is recorded with its source and then verified by a different person.
 // Only exceptions need a person's attention: a missing fact, a fact waiting for verification, a fact backed only by the client's own statement,
 // or a verified fact that no longer matches the client record. Nothing is guessed or copied in silently.
+import {canonicalCounty,canonicalConstituency,locationProblem} from './kenya-locations.mjs';
 export const SOURCE_KINDS=['Document','Online register','Prior record','Import','Client statement'];
 const COMPANY=['Limited company','Non-profit organisation','Foreign branch','Co-operative society'];
 const REGISTERED=[...COMPANY,'Partnership','Other legal entity'];
@@ -56,8 +57,8 @@ export const FIELDS=[
  {key:'building',label:'Building',entities:[],check:v=>v.length>=2,hint:'Building or estate name.'},
  {key:'street_road',label:'Street or road',entities:[],check:v=>v.length>=2,hint:'For example Mumias Road.'},
  {key:'city_town',label:'City or town',entities:[],check:v=>v.length>=2,hint:'For example Bungoma.'},
- {key:'county',label:'County',entities:[],check:v=>v.length>=3,hint:'One of the 47 counties.'},
- {key:'district',label:'District',entities:[],check:v=>v.length>=2,hint:'As on the iTax profile.'},
+ {key:'county',label:'County',entities:[],check:v=>!!canonicalCounty(v),hint:'One of the 47 counties on the IEBC list.'},
+ {key:'district',label:'Constituency (sub-county)',entities:[],check:v=>v.length>=2,hint:'A constituency of the county, from the IEBC list. The iTax profile calls it the district.'},
  {key:'locality',label:'Tax area or locality',entities:[],check:v=>v.length>=2,hint:'As on the iTax profile.'},
  {key:'descriptive_address',label:'Descriptive address',entities:[],check:v=>v.length>=2,hint:'A line that helps someone find the premises.'},
  {key:'postal_code',label:'Postal code',entities:[],check:v=>/^\d{3,6}$/.test(v),hint:'Digits only, for example 50200.'},
@@ -73,12 +74,16 @@ export const fieldFor=key=>FIELDS.find(f=>f.key===key)||null;
 export const requiredFor=entityType=>FIELDS.filter(f=>!f.entities||f.entities.includes(entityType));
 
 // Clean a typed value and say what is wrong with it. Never "fixes" a value into something the person did not type, except trimming and upper-casing a PIN.
-export function cleanValue(key,raw){
+// ctx.county: the county this client has (recorded or in the same save). A constituency is accepted only when it belongs to that county; both are stored under
+// their listed names, so the same place is never written two ways.
+export function cleanValue(key,raw,ctx={}){
  const f=fieldFor(key);if(!f)return {ok:false,error:'This is not a field on the client master checklist.'};
  let v=String(raw??'').replace(/\s+/g,' ').trim();if(f.upper)v=v.toUpperCase();
  if(!v)return {ok:false,error:f.label+' is empty.'};
  if(v.length>500)return {ok:false,error:f.label+' is too long.'};
  if(!f.check(v))return {ok:false,error:'Check '+f.label.toLowerCase()+'. '+f.hint};
+ if(key==='county')return {ok:true,value:canonicalCounty(v)};
+ if(key==='district'){const bad=locationProblem(ctx?.county,v);if(bad)return {ok:false,error:bad};return {ok:true,value:canonicalConstituency(ctx.county,v)};}
  return {ok:true,value:v};
 }
 // A source is complete when it names something a reviewer can open or look up.

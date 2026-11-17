@@ -2,7 +2,7 @@
 // Editable cells, Tab and Enter move through them like a spreadsheet, a mandatory cell has a red asterisk and turns red when left empty, and a person can
 // leave any section at any time. Set-up is not done until every mandatory cell is filled and verified. The page decides no rule: it saves facts through
 // client_master_record_many and verifies them through client_master_verify_many, and the server checks every one again.
-import {LAYOUT,OTHER_TITLE,kindOf,display,toStored,cellProblem,isMandatory,indexRows,otherRows,gridStatus,approvalTrail} from './staff-kyc-grid-rules.mjs?v=20261120-grid-v1';
+import {LAYOUT,OTHER_TITLE,kindOf,display,toStored,cellProblem,choiceOptions,isMandatory,indexRows,otherRows,gridStatus,approvalTrail} from './staff-kyc-grid-rules.mjs?v=20261122-loc-v1';
 
 export function createKycGridUI(ctx,{show,openList}){
  const {esc,request,notice,shortDate}=ctx,d=()=>ctx.data(),doc=()=>globalThis.document;
@@ -13,6 +13,10 @@ export function createKycGridUI(ctx,{show,openList}){
  const must=k=>isMandatory(rowOf(k));
  const savedText=k=>{const r=rowOf(k);return r&&r.fact?display(k,r.fact.value):'';};
  const typedText=k=>st.dirty.has(k)?st.dirty.get(k):savedText(k);
+ // The county decides which constituencies are allowed, so a constituency is always read and checked with the county typed in its row.
+ const countyCtx=()=>({county:toStored('county',typedText('county'))||''});
+ const stored=(k,v)=>toStored(k,v,countyCtx());
+ const prob=(k,typed)=>cellProblem(k,typed,{mandatory:must(k),hadValue:!!rowOf(k)?.fact,...countyCtx()});
  const stateOf=k=>{const r=rowOf(k);return r&&r.fact?(r.state==='Differs'?'differs':r.fact.status==='Verified'?'ver':'rec'):'empty';};
  const nameOf=r=>r&&r.fact?`${r.fact.status==='Verified'?'Verified':'Recorded'}${r.fact.recorded_by_name?' by '+r.fact.recorded_by_name:''}${r.fact.recorded_at?' on '+shortDate(r.fact.recorded_at):''}${r.fact.status==='Verified'&&r.fact.verified_by_name?'; verified by '+r.fact.verified_by_name+' on '+shortDate(r.fact.verified_at):''}. Source: ${r.fact.source_kind}${r.fact.source_reference?' · '+r.fact.source_reference:''}`:'';
 
@@ -24,7 +28,7 @@ export function createKycGridUI(ctx,{show,openList}){
  // The count that matters while typing: a mandatory cell counts as filled when it has a saved value or a valid typed one.
  function liveCounts(){
   const req=st.x.rows.filter(isMandatory);
-  const filled=req.filter(r=>{const t=typedText(r.key);return t&&!cellProblem(r.key,t,{mandatory:true});}).length;
+  const filled=req.filter(r=>{const t=typedText(r.key);return t&&!cellProblem(r.key,t,{mandatory:true,...countyCtx()});}).length;
   return {mandatory:req.length,filled};
  }
 
@@ -41,6 +45,12 @@ export function createKycGridUI(ctx,{show,openList}){
   const common=`id="kg-${esc(k)}" data-kg="${esc(k)}" data-r="${r}" data-c="${c}" aria-labelledby="${lid}" ${req?'aria-required="true"':''} ${bad?`aria-invalid="true" aria-describedby="kgm-${esc(k)}"`:''}`;
   let input;
   if(kind==='yesno')input=`<select ${common}><option value=""></option><option${typed==='Yes'?' selected':''}>Yes</option><option${typed==='No'?' selected':''}>No</option></select>`;
+  else if(kind==='choice'){
+   const list=choiceOptions(k,k==='district'?countyCtx().county:''),inList=list.includes(typed),waiting=k==='district'&&!countyCtx().county&&!typed;
+   // A value that is not on the list (an older entry) stays visible and is flagged; it is never dropped silently.
+   const odd=typed&&!inList?`<option value="${esc(typed)}" selected>${esc(typed)} (not on the list)</option>`:'';
+   input=`<select ${common}${waiting?' disabled title="Choose the county first"':''}><option value=""${typed?'':' selected'}>${waiting?'Choose the county first':'Choose…'}</option>${odd}${list.map(n=>`<option${n===typed?' selected':''}>${esc(n)}</option>`).join('')}</select>`;
+  }
   else input=`<input type="text" ${common} value="${esc(typed)}" autocomplete="off" spellcheck="false" ${kind==='date'?'inputmode="numeric" placeholder="dd/mm/yyyy"':kind==='daymonth'?'inputmode="numeric" placeholder="dd/mm"':k==='contact_email'||k==='secondary_email'?'inputmode="email"':/phone|mobile|telephone/.test(k)?'inputmode="tel"':''} maxlength="500">`;
   const tip=nameOf(row)||(row?.hint||'');
   return `<div class="kg-l" id="${lid}">${esc(spec.label)}${star(k)}</div><div class="${cls}" data-kg-cell="${esc(k)}" title="${esc(tip)}">${input}<span class="kg-warn" aria-hidden="true">⚠</span><span class="kg-msg" id="kgm-${esc(k)}" role="alert">${bad?esc(bad):''}</span></div>`;
@@ -110,10 +120,10 @@ export function createKycGridUI(ctx,{show,openList}){
  }
  function touch(k,typed){
   st.touched.add(k);
-  const r=rowOf(k),saved=savedText(k),norm=v=>{const s=toStored(k,v);return s===null?String(v).trim():s;};
+  const r=rowOf(k),saved=savedText(k),norm=v=>{const s=stored(k,v);return s===null?String(v).trim():s;};
   if(norm(typed)===norm(saved))st.dirty.delete(k);else st.dirty.set(k,typed);
-  const prob=cellProblem(k,typed,{mandatory:must(k),hadValue:!!r?.fact});
-  if(prob&&(st.touched.has(k)))st.errors.set(k,prob);else st.errors.delete(k);
+  const bad=prob(k,typed);
+  if(bad&&(st.touched.has(k)))st.errors.set(k,bad);else st.errors.delete(k);
   paintCell(k);paintSummary();
  }
  const cells=()=>[...doc().querySelectorAll('[data-kg]')];
@@ -131,9 +141,9 @@ export function createKycGridUI(ctx,{show,openList}){
  async function save(){
   const cellsOut=[];let first=null;
   for(const [k,typed] of st.dirty){
-   const r=rowOf(k),prob=cellProblem(k,typed,{mandatory:must(k),hadValue:!!r?.fact});
-   if(prob){st.errors.set(k,prob);st.touched.add(k);first=first||k;continue;}
-   const v=toStored(k,typed);if(!v)continue;cellsOut.push({field_key:k,value:v});
+   const bad=prob(k,typed);
+   if(bad){st.errors.set(k,bad);st.touched.add(k);first=first||k;continue;}
+   const v=stored(k,typed);if(!v)continue;cellsOut.push({field_key:k,value:v});
   }
   if(first){for(const k of st.errors.keys())paintCell(k);paintSummary();const f=field(first);if(f)f.focus();notice('Some cells need attention. They are red.');return;}
   const reasonEl=doc().querySelector('#kgReason');st.reason=reasonEl?reasonEl.value:st.reason;
@@ -168,14 +178,24 @@ export function createKycGridUI(ctx,{show,openList}){
  const inGrid=e=>st&&e.target&&e.target.closest&&e.target.closest('[data-kg-root]');
  doc()?.addEventListener('input',e=>{if(!inGrid(e))return;const k=e.target.dataset?.kg;if(!k)return;
   const r=rowOf(k),saved=savedText(k);if(e.target.value===saved)st.dirty.delete(k);else st.dirty.set(k,e.target.value);
-  if(st.errors.has(k)&&!cellProblem(k,e.target.value,{mandatory:must(k),hadValue:!!r?.fact}))st.errors.delete(k);
+  if(st.errors.has(k)&&!prob(k,e.target.value))st.errors.delete(k);
   paintCell(k);paintSummary();});
  doc()?.addEventListener('change',e=>{if(!inGrid(e))return;const s=e.target.dataset?.kgSource;if(s){st.source[s]=e.target.value;if(s==='kind'){const keep=st.source.kind;render();const sel=doc().querySelector('[data-kg-source="kind"]');if(sel)sel.value=keep;}return;}
-  const k=e.target.dataset?.kg;if(k&&e.target.tagName==='SELECT')touch(k,e.target.value);});
+  const k=e.target.dataset?.kg;if(!k||e.target.tagName!=='SELECT')return;
+  touch(k,e.target.value);
+  if(k==='county'){
+   // A different county means a different constituency list. A constituency that is not in the new county is cleared and has to be chosen again.
+   const dtyped=typedText('district');
+   if(dtyped&&prob('district',dtyped)){
+    if(rowOf('district')?.fact){st.dirty.set('district','');st.touched.add('district');st.errors.set('district','Choose the constituency again for the new county.');}
+    else{st.dirty.delete('district');st.errors.delete('district');}
+   }
+   render();const again=field('county');if(again)again.focus();
+  }});
  doc()?.addEventListener('focusout',e=>{if(!inGrid(e))return;const k=e.target.dataset?.kg;if(!k)return;
-  let v=e.target.value;const kind=kindOf(k),stored=toStored(k,v);
+  let v=e.target.value;const kind=kindOf(k),keep=stored(k,v);
   // A valid date or year end is shown in the one normal way as soon as the person leaves the cell.
-  if(stored&&(kind==='date'||kind==='daymonth')){const norm=display(k,stored);if(norm!==v){e.target.value=norm;v=norm;}}
+  if(keep&&(kind==='date'||kind==='daymonth')){const norm=display(k,keep);if(norm!==v){e.target.value=norm;v=norm;}}
   touch(k,v);});
  doc()?.addEventListener('focusin',e=>{if(!inGrid(e))return;if(e.target.dataset?.kg&&e.target.select&&e.target.tagName==='INPUT')e.target.select();});
  doc()?.addEventListener('keydown',e=>{if(!inGrid(e))return;const el=e.target;if(!el.dataset||!el.dataset.kg||e.isComposing)return;

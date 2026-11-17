@@ -16,7 +16,7 @@ test('dates and year end are read the way staff type them and stored the one way
  assert.equal(dayMonthToStored('31/12'),'12-31');assert.equal(dayMonthToStored('31/04'),null);assert.equal(storedToDayMonth('12-31'),'31/12');
  assert.equal(toStored('commencement_date','5/3/2020'),'2020-03-05');assert.equal(display('commencement_date','2020-03-05'),'05/03/2020');
  assert.equal(toStored('year_end','31/12'),'12-31');assert.equal(display('year_end','12-31'),'31/12');
- assert.equal(kindOf('has_branches'),'yesno');assert.equal(kindOf('county'),'text');
+ assert.equal(kindOf('has_branches'),'yesno');assert.equal(kindOf('county'),'choice');assert.equal(kindOf('city_town'),'text');
  // What the page stores must pass the server's own check.
  for(const [k,t] of [['commencement_date','5/3/2020'],['year_end','31/12'],['postal_code','00100'],['legal_rep_pin','a000000001z']])assert.ok(cleanValue(k,toStored(k,t)).ok,k);
 });
@@ -44,7 +44,7 @@ test('the approval trail only names people the server recorded',()=>{
 });
 test('the grid is wired in, keeps the old list, and the migration asks for the iTax identity cells',()=>{
  const imp=rd('staff-improvements.mjs'),mig=rd('supabase/migrations/20261120100000_itax_profile_fields.sql'),css=rd('staff-pilot.css'),act=rd('supabase/functions/staff-workspace-v12/client-master-actions.ts');
- assert.match(imp,/staff-kyc-grid\.mjs\?v=20261121-aml-v2/);assert.match(imp,/if\(a==='master'\)await grid\.open\(id\)/);assert.match(imp,/if\(a==='master-list'\)await master\.open\(id\)/);
+ assert.match(imp,/staff-kyc-grid\.mjs\?v=20261122-loc-v1/);assert.match(imp,/if\(a==='master'\)await grid\.open\(id\)/);assert.match(imp,/if\(a==='master-list'\)await master\.open\(id\)/);
  assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261121-wiz-v1/);assert.match(css,/#editor:has\(\.kg\)/);assert.match(css,/\.kg-bad/);assert.match(css,/\.kg-star/);
  for(const k of ['street_road','city_town','county','postal_code','po_box'])assert.match(mig,new RegExp("'"+k+"','Required'"),k);
  assert.match(mig,/commencement_date/);assert.match(mig,/registered_address/);
