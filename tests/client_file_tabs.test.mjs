@@ -8,7 +8,7 @@ const data={me:{category_code:'MANAGER'},clients:[{client_id:'c1',company_name:'
 const ctx=(over={})=>({data,clientId:'c1',esc,shortDate:x=>String(x).slice(0,10),badge:s=>esc(s),staffName:id=>id,structureLabel:()=>'',leader:true,...over});
 
 test('seven tabs; Set-up sits after Projects & Tasks and Tax Obligations is now Tax & returns',()=>{
- assert.deepEqual(PROFILE_TABS.map(x=>x[0]),['overview','contacts','projects','setup','documents','activity','tax']);
+ assert.deepEqual(PROFILE_TABS.map(x=>x[0]),['overview','contacts','projects','setup','documents','activity','tax','aml']);
  assert.equal(PROFILE_TABS.find(x=>x[0]==='setup')[1],'Set-up');assert.equal(PROFILE_TABS.find(x=>x[0]==='tax')[1],'Tax & returns');
 });
 
@@ -49,7 +49,7 @@ test('the old long window is split in two and every entry point lands in the fil
 test('the page paints the host after every render of the tab, for Managers and Partners only, and shows a failure in place',()=>{
  const p=rd('staff-pilot.mjs');
  assert.match(p,/if\(view==='clientfile'&&isLeader\(\)&&\['setup','tax'\]\.includes\(clientTab\)\)void improvements\.paintClientTab\(clientTab,selectedClient\)\.catch\(/);
- assert.match(p,/staff-improvements\.mjs\?v=20261121-scope-v1/);
+ assert.match(p,/staff-improvements\.mjs\?v=20261121-comply-v1/);
 });
 
 test('names: the card menu says Set-up and opens the tab; the old seven-name window title is gone',()=>{

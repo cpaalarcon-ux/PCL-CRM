@@ -9,6 +9,7 @@ import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=
 import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-taxrole-v3';
 import {createKraUI} from './staff-kra.mjs?v=20261111-kraprog-v1';
 import {createIncomingUI} from './staff-incoming.mjs?v=20261110-taxrole-v3';
+import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
 import {createForensicUI} from './staff-forensic.mjs?v=20261110-taxrole-v3';
 import {createDeadlineUI} from './staff-deadlines.mjs?v=20261112-resources-v1';
 import {createSettingsHubUI} from './staff-settings-hub.mjs?v=20261117-actions-v1';
@@ -47,6 +48,7 @@ export function createSuiteUI(ctx){
  const kra=createKraUI({...ctx,button,area,check});
  const incoming=createIncomingUI({...ctx,button,area,check});
  const forensic=createForensicUI({...ctx,button,area,check});
+ const complianceUi=createComplianceUI({...ctx,button,area,check});
  const deadlines=createDeadlineUI({...ctx,button,area,check});
  const hubCtx={...ctx,openSection:(o,s)=>openSection(o,s)};
  const settingsHub=createSettingsHubUI(hubCtx);
@@ -233,6 +235,7 @@ export function createSuiteUI(ctx){
   if(await clientSupport.handle(action,id))return;
   if(await incoming.handle(action,id))return;
   if(await forensic.handle(action,id))return;
+  if(await complianceUi.handle(action,id))return;
   if(await deadlines.handle(action,id))return;
   if(await starterConfirm.handle(action,id))return;
   if(await routingMap.handle(action,id))return;

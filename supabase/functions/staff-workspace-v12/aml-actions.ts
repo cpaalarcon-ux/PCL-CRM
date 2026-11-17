@@ -3,7 +3,7 @@ import {APPLICABILITY,cleanServiceRule,serviceScope,CATEGORIES,CATEGORY_LABELS,C
 // Build 2855: the MLRO-owned POCAMLA block. Staff collect the client's AML facts and refer the profile; the MLRO (an additional right, held by an
 // Engagement Partner by rank) maintains the lists, rates the risk, decides, and asks for enhanced due diligence; an Engagement Partner records the
 // formal approval of the lists and switches the engagement gate on. The table rules in 20261121100000_mlro_aml_profile.sql enforce the same again.
-const ACTIONS=['aml_profile_read','aml_profile_save','aml_profile_submit','aml_decide','aml_edd_request','aml_return','aml_overview','aml_lookup_add','aml_lookup_confirm','aml_lookup_end','aml_policy_approve','aml_gate_set','aml_service_rules_read','aml_service_rule_set','aml_service_rule_end'];
+const ACTIONS=['aml_scope_read','aml_profile_read','aml_profile_save','aml_profile_submit','aml_decide','aml_edd_request','aml_return','aml_overview','aml_lookup_add','aml_lookup_confirm','aml_lookup_end','aml_policy_approve','aml_gate_set','aml_service_rules_read','aml_service_rule_set','aml_service_rule_end'];
 const day=(v:any)=>v?(v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10)):null;
 const nairobi=()=>new Date(Date.now()+3*3600000).toISOString().slice(0,10);
 const PROFILE_TEXT=['purpose_of_relationship','expected_activity','expected_size_frequency','pep_type','pep_role','pep_jurisdiction','pep_from','pep_relationship','screening_status','screening_list_source','screening_list_date','screening_note'];
@@ -168,6 +168,17 @@ export async function amlAction(tx:any,a:any,p:any):Promise<any>{
  // ---------- Client profile ----------
  if(['INTERN','ADMIN'].includes(a.category_code))fail(403,'The AML profile is kept by staff with client access.');
  const cid=uuid(p.client_id);
+ // Build 2865: the client file's AML scope tab. A summary only: the profile stage, the gate, and the MLRO's rule for each service this client has work for.
+ if(p.action==='aml_scope_read'){
+  const client=(await tx`select client_id,company_name from erp_private.clients where client_id=${cid} and deleted_at is null`)[0];if(!client)fail(403,'This client is unavailable to your account.');
+  const prof=(await tx`select p.stage,p.decision,p.risk_rating,p.next_review,p.edd_required,p.decided_at,erp_private.aml_staff_name(p.decided_by) as decided_by_name from erp_private.client_aml_profiles p where p.client_id=${cid}`)[0]||null;
+  const gate=(await tx`select gate_enforced from erp_private.aml_policy`)[0];
+  const codes=await tx`select distinct pr.service_code,v.service_name from erp_private.projects pr join erp_private.services v on v.service_code=pr.service_code where pr.client_id=${cid} and pr.status<>'Archived' and pr.deleted_at is null order by v.service_name`;
+  const services:any[]=[];for(const c of codes)services.push({service_code:c.service_code,service_name:c.service_name,...(await amlServiceScope(tx,cid,c.service_code)).scope});
+  const flags=await openFlags(tx,cid);
+  return {client,profile:prof&&{...prof,next_review:day(prof.next_review)},gate_enforced:!!gate?.gate_enforced,services,flags,mlro:await isMlro(tx),
+   note:'This is a summary. The MLRO decides which services need POCAMLA questions. An undecided service is not treated as exempt.'};
+ }
  if(p.action==='aml_profile_read')return await build(tx,a,cid);
  const view=await build(tx,a,cid),old=(await tx`select * from erp_private.client_aml_profiles where client_id=${cid} for update`)[0]||null;
  if(old&&p.revision!==undefined&&String(old.revision)!==revision(p.revision))fail(409,'The profile changed. Refresh it first.');
