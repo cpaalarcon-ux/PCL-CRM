@@ -13,6 +13,10 @@ export async function noteStateFor(tx:any,periodId:string,digestNow:string){
  const s=await loadNoteSets(tx,periodId);
  return {...notesState({approved:s.approved,draft:s.draft,digestNow}),sets:s};
 }
+// While the pack is locked by an audit (build 2875) the notes are frozen. The database enforces the same rule.
+async function refuseIfLocked(tx:any,periodId:string){
+ if((await tx`select 1 from erp_private.period_audit_locks where period_id=${periodId} and ended_at is null`).length)fail(409,'The pack is locked by an audit, so its notes cannot change. A Partner ends the lock first.');
+}
 // getStatements(asOf) builds the statements (and so the notes) from the ledger as they are now.
 export async function notesAction(tx:any,a:any,l:any,p:any,getStatements:(asOf:string)=>Promise<any>,asOf:string){
  if(p.action==='ledger_notes_read'){
@@ -31,6 +35,7 @@ export async function notesAction(tx:any,a:any,l:any,p:any,getStatements:(asOf:s
   if(!n.items.length)fail(400,'There are no notes to prepare: no statement line with a balance has a note.');
   if(n.problems.length)fail(400,'A note does not agree with its caption: '+n.problems[0]);
   await tx`select pg_advisory_xact_lock(hashtextextended(${l.period_id+':notes'},0))`;
+  await refuseIfLocked(tx,l.period_id);
   const sets=await loadNoteSets(tx,l.period_id);
   if(sets.approved&&sets.approved.digest===n.digest&&!sets.draft)fail(409,'These notes are already approved and the figures have not changed.');
   await tx`update erp_private.period_note_sets set status='Superseded' where period_id=${l.period_id} and status='Draft'`;
@@ -44,6 +49,7 @@ export async function notesAction(tx:any,a:any,l:any,p:any,getStatements:(asOf:s
   if(l.status!=='Open')fail(409,'This ledger year is closed.');
   const decision=choice(p.decision,['Approved','Returned']),note=text(p.review_note??'',500,false);
   await tx`select pg_advisory_xact_lock(hashtextextended(${l.period_id+':notes'},0))`;
+  await refuseIfLocked(tx,l.period_id);
   const sets=await loadNoteSets(tx,l.period_id),draft=sets.draft;
   if(!draft||draft.set_id!==uuid(p.set_id))fail(409,'These notes have changed. Refresh and review the latest draft.');
   if(decision==='Returned'){

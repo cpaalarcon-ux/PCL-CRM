@@ -10,6 +10,7 @@ import {shareStateFor} from './partner-shares-actions.ts';
 import {allocateProfit,bpToPercent} from './partner-shares-rules.mjs';
 import {buildNotes,applyFaceRefs} from './annual-pack-notes.mjs';
 import {notesDigest,noteStateFor} from './notes-actions.ts';
+import {auditStateFor,figuresDigest} from './audit-lock-actions.ts';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 const addDays=(d:string,n:number)=>{const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10);};
@@ -212,7 +213,7 @@ export async function packReadinessFrom(tx:any,l:any,data:any,extra:any={}){
  const sets=await loadSets(tx,l.period_id),inp=await reconInputs(tx,l,data),recon=sets.approved?reconcileComparatives({lines:sets.approved.lines,lineDefs:inp.lineDefs,opening:inp.opening}):null;
  const legalEntityType=(await tx`select legal_entity_type from erp_private.clients where client_id=${l.client_id}`)[0]?.legal_entity_type||null;
  const shareState=await shareStateFor(tx,l.period_id);
- const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:shareState.status,lines:shareState.lines}},notes:extra.notes||null});
+ const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:shareState.status,lines:shareState.lines}},notes:extra.notes||null,audit:extra.audit||null});
  return {...readiness,as_of:data.as_of,reporting:reporting||{...defaultReporting(day(l.starts_on)),saved:false}};
 }
 
@@ -260,7 +261,10 @@ export async function statementsFrom(tx:any,l:any,data:any){
  statements.notes={title:'Notes to the financial statements',items:nb.notes,unit_label:nb.unit_label,digest:nDigest,problems:nb.problems};
  statements.problems.push(...nb.problems);statements.complete=statements.problems.length===0;
  const nState=await noteStateFor(tx,l.period_id,nDigest);
- const readiness=await packReadinessFrom(tx,l,data,{notes:{state:{status:nState.status},count:nb.notes.length,problems:nb.problems}});
+ // Audit lock (build 2875): the statements stay DRAFT until the audit is complete and the pack is locked against these figures and the approved notes.
+ const aState=await auditStateFor(tx,l,await figuresDigest(statements),nDigest);
+ statements.audit={status:aState.status,label:aState.label,required:aState.required,locked:aState.locked,stale:aState.stale,mode:aState.mode};
+ const readiness=await packReadinessFrom(tx,l,data,{notes:{state:{status:nState.status},count:nb.notes.length,problems:nb.problems},audit:{state:aState}});
  return {client:{name:client.company_name||'',kra_pin:client.kra_pin||'',legal_entity_type:client.legal_entity_type||null,legal_form:form},reporting:{framework:reporting.framework,edition:reporting.edition,presentation_currency:reporting.presentation_currency,rounding:reporting.rounding,early_application_note:reporting.early_application_note||'',saved:reporting.saved!==false},
   statements,readiness:{ready:readiness.ready,status:readiness.status,summary:readiness.summary,blocked:readiness.blocked,checks:readiness.checks},
   status:readiness.ready&&statements.complete?'Ready for review':'Draft - not ready',as_of:data.as_of};
