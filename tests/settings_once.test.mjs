@@ -37,5 +37,5 @@ test('Accounting & Tax Rules is folded: one card open at a time, the first open,
 test('every card that was on the tab is still on it, and other tabs are not folded',()=>{
  for(const [id,tab] of Object.entries(CARD_TAB))assert.equal(tabForCard(id),tab);
  assert.ok(!FOLD_TABS.includes('overview')&&!FOLD_TABS.includes('access'));
- assert.match(rd('staff-suite.mjs'),/staff-settings-layout\.mjs\?v=20261119-settings-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261119-settings-v1/);
+ assert.match(rd('staff-suite.mjs'),/staff-settings-layout\.mjs\?v=20261119-settings-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261121-comply-v1/);
 });

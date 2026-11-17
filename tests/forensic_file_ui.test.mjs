@@ -128,7 +128,7 @@ test('menu link, wiring and cache busters',()=>{
  const su=rd('staff-suite.mjs');
  assert.match(su,/import \{createForensicUI\} from '\.\/staff-forensic\.mjs\?v=20261110-taxrole-v3'/);assert.match(su,/const forensic=createForensicUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await forensic\.handle\(action,id\)\)return;/);assert.match(su,/incoming,forensic,deadlines\}/);
  assert.match(rd('staff-forensic.mjs'),/request\(f,\{file:true,uploadKind:'forensic'\}\)/);
- const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-14\.2864$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
+ const rel=JSON.parse(rd(fx+'release.json')).build;assert.match(rel,/^2026-11-14\.2865$/);assert.match(rd('staff-pilot.html'),new RegExp('data-build="'+rel.replace(/\./g,'\\.')+'"'));
  assert.doesNotMatch(rd('staff-forensic.mjs')+rd(fx+'forensic-actions.ts')+rd('supabase/migrations/20261110266000_forensic_file.sql'),/ISRS\s*4000/,'the unverified standard number appears nowhere in the code');
 });
 
@@ -147,7 +147,7 @@ test('visibility decision (10 Nov 2026): no forensic hint on ordinary screens, t
  assert.deepEqual(moduleLinks(me('PARTNER'),'engagements').map(x=>x.key),['kra'],'hidden until the database answers yes');
  assert.match(pilot,/modLinks=v=>moduleLinks\(data\.me,v,canArea,navFlags\)/);
  assert.match(pilot,/request\(\{action:'forensic_menu'\}\),show=r\.show===true/);
- assert.match(pilot,/navFlags=\{forensic:false\};forensicMenuAt=0;/,'signing out clears it');
+ assert.match(pilot,/navFlags=\{forensic:false,mlro:false\};forensicMenuAt=0;/,'signing out clears it');
  assert.match(pilot,/catch\{forensicMenuAt=Date\.now\(\);\}/,'if the check fails the entry simply stays hidden');
  assert.match(ts,/if\(p\.action==='forensic_menu'\)\{if\(!\['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'\]\.includes\(a\.category_code\)\)return \{show:false\}/);
  assert.equal(areaForStaffAction('forensic_menu'),'audit');

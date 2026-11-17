@@ -7,6 +7,8 @@
 // its own. "Projects & Tasks" keeps the project and task manager. A link that gets a count carries badge:'<key>'.
 const LEADERS=['PARTNER','MANAGER','SUPERVISOR'];
 export const GROUP_ENGAGEMENTS={key:'engagements',title:'Engagements & Delivery',icon:'◈'};
+export const GROUP_COMPLIANCE={key:'compliance',title:'Compliance & Risk',icon:'⚖'};
+const EVERYONE=[...LEADERS,'ASSISTANT','INTERN','ADMIN'];
 export const MODULE_LINKS=[
  {key:'kra',parent:'engagements',area:'projects',title:'KRA notices',action:'kra-open',built:true,roles:[...LEADERS,'ASSISTANT'],note:'KRA notice log, its verification task and flags (Step 7)'},
  {key:'incoming',parent:'documents',area:'documents',title:'Incoming review',action:'incoming-open',built:true,roles:LEADERS,badge:'incoming',note:'Received files waiting for a client and a filing (Step 8)'},
@@ -15,6 +17,11 @@ export const MODULE_LINKS=[
  {key:'timeline',parent:'communications',area:'communications',title:'Client timeline',action:'incoming-timeline-pick',built:true,roles:LEADERS,note:'Messages and documents for one client (Step 8)'},
  // The link shows for every role that can be put on a file's list; it only opens the person's own list, which is empty unless they were added.
  {key:'forensic',parent:'engagements',area:'audit',title:'Forensic files',action:'forensic-open',built:true,gate:'forensic',roles:[...LEADERS,'ASSISTANT'],note:'Forensic restricted file: visible only to its access list (built)'}
+,
+ // Build 2865: Compliance & Risk. Everyone can read the overview and raise a concern to the MLRO. Restricted reports show only to the MLRO (the server asks the database).
+ {key:'compliance',parent:'compliance',area:'communications',title:'Compliance overview',action:'compliance-open',built:true,roles:EVERYONE,note:'Annual compliance report and the way to raise a concern (build 2865)'},
+ {key:'concern',parent:'compliance',area:'communications',title:'Raise a concern',action:'concern-new',built:true,roles:EVERYONE,note:'Tell the MLRO in confidence; you get a reference only (build 2865)'},
+ {key:'sar',parent:'compliance',area:'communications',title:'Restricted reports',action:'sar-list',built:true,gate:'mlro',roles:EVERYONE,note:'MLRO only: every look is recorded (build 2865)'}
 ];
 // The agreed-upon-procedures engine has no list screen of its own: it is reached from a project (Review & activate), so it has no sidebar link.
 export const NO_LINK_MODULES=['aup'];
