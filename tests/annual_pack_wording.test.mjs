@@ -9,6 +9,10 @@ const lib=(over={})=>Object.fromEntries(WORDING_DEFAULTS.map((d,i)=>[d.code,Obje
 const decl=(over={})=>{const o={};for(const d of DISCLOSURES)o[d.code]={disclosure_id:'d_'+d.code,version:1,status:'Approved',state:d.allow_nothing?'Nothing to report':'Text',body:d.allow_nothing?null:'Fictional text for '+d.title+'.',...(over[d.code]||{})};return o;};
 const base={form:FORMS.COMPANY,noteRefs:refs,entity:'Fictional Co Limited',asOf:'2026-12-31',reporting};
 
+test('the legal-form names used by the wording match the legal-form module',async()=>{
+ const src=(await import('node:fs')).readFileSync(new URL('../supabase/functions/staff-workspace-v12/annual-pack-wording.mjs',import.meta.url),'utf8');
+ for(const v of Object.values(FORMS))assert.ok(src.includes("'"+v+"'"),v);
+});
 test('every built-in entry is valid, uses only known placeholders and covers every legal form it applies to',()=>{
  for(const d of WORDING_DEFAULTS){
   for(const f of Object.values(FORMS)){const t=builtInText(d.code,f);if(!t){assert.ok(d.forms&&!d.forms.includes(f),d.code+' has no text for '+f);continue;}assert.equal(validateWordingBody(d.code,t),null,d.code+' '+f);}

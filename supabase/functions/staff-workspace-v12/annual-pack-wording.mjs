@@ -6,7 +6,9 @@
 //     policy facts). Staff declare each one for the year as text or as "Nothing to report", and a Manager or Partner who did not declare it approves it. An empty disclosure is never read as
 //     "nothing to report".
 // Nothing is guessed. A missing approval, a missing fact or a placeholder with no value is reported by name and blocks the pack; the text is never filled in for the client.
-import {FORMS} from './annual-pack-legal-form.mjs';
+// The legal-form names are written here, not imported: annual-pack-rules imports this module and the legal-form module imports annual-pack-rules, so FORMS cannot be read while this file loads.
+// They must match FORMS in annual-pack-legal-form.mjs (a test checks it).
+const FORMS={COMPANY:'Company',PARTNERSHIP:'Partnership',PROPRIETOR:'Sole proprietor',OTHER:'Other'};
 
 export const WORDING_VERSION='standard-wording-v1';
 export const DISCLOSURE_STATES=['Text','Nothing to report'];
