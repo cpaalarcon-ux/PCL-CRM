@@ -1,4 +1,4 @@
-import {renderMyWork,myWorkState} from './staff-my-work.mjs?v=20261121-mywork-v1';
+import {renderMyWork,myWorkState} from './staff-my-work.mjs?v=20261121-coa-v1';
 export function dashboardData(data,firm,today){
  const projects=data.projects.filter(p=>!firm||p.handling_firm_id===firm),pids=new Set(projects.map(p=>p.project_id)),open=t=>!['Completed','Cancelled'].includes(t.status),tasks=data.tasks.filter(t=>pids.has(t.project_id)&&open(t)),day=v=>v?new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(v)):'',mine=tasks.filter(t=>t.assigned_to===data.me.staff_id),end=new Date(Date.parse(today+'T00:00:00Z')+7*86400000).toISOString().slice(0,10),start=new Date(today+'T00:00:00Z');start.setUTCDate(start.getUTCDate()-((start.getUTCDay()+6)%7));
  const tax=t=>/^monthly-(vat|paye|tot)|weekly-|annual-/.test(t.template_key||'')||/VAT|PAYE|KRA|tax filing/i.test(t.task_name),team=['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code),docs=new Set(data.documents.filter(x=>x.task_id).map(x=>x.task_id));

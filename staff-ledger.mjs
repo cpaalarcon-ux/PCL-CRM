@@ -2,7 +2,7 @@ import {createBankTotalsUI} from './staff-bank-totals.mjs?v=20261114-banktotals-
 import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261107-annualpack-v3';
 import {newState,splitView,filterItems,similarLines} from './staff-fixit-screen.mjs?v=20261111-fixit-v1';
 import {tbListHtml,deriveHtml} from './staff-year-tbs.mjs?v=20261116-yeartb-v1';
-import {sourceAmount,amountProblem,isControlRow,mappingConflict} from './staff-tb-source-rules.mjs?v=20261116-tbimport-v1';
+import {sourceAmount,amountProblem,isControlRow,mappingConflict,sideNote} from './staff-tb-source-rules.mjs?v=20261121-sides-v1';
 import {createStatementVersionsUI} from './staff-statement-versions.mjs?v=20261116-fsver-v1';
 import {gateHtml,finalAvailable,declarationsHtml} from './staff-report-gate.mjs?v=20261115-declare-v1';
 // Client working papers. All reads and mutations are authorised again by the API.
@@ -428,10 +428,12 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
     if(debit<0||credit<0){const net=debit-credit;report.converted.push({row:rowNo,name,original:(rawD==null||rawD===''?'':'Dr '+rawD)+(rawC==null||rawC===''?'':' Cr '+rawC),as:net>=0?'Debit '+kes(net):'Credit '+kes(-net)});}
     report.accounts++;
     const key=code.toLowerCase()+'|'+normName(name),prior=groups.get(key);
-    if(prior){prior.rows.push(Number(row.source_row));prior.duplicate=true;continue;}
-    groups.set(key,{key,source_code:code,source_name:name,rows:[Number(row.source_row)],duplicate:false,workbook_code:String(cell(row,'tb_item_code')||'').trim()});
+    if(prior){prior.rows.push(Number(row.source_row));prior.duplicate=true;prior.debit+=debit;prior.credit+=credit;continue;}
+    groups.set(key,{key,source_code:code,source_name:name,debit,credit,rows:[Number(row.source_row)],duplicate:false,workbook_code:String(cell(row,'tb_item_code')||'').trim()});
    }
    const accounts=(base.accounts||[]).filter(a=>a.status==='Active'&&!a.is_legacy&&a.in_client_chart!==false);
+   // Build 2859: a warning, never a block, when a line is on the other side from what its ERP account normally carries.
+   const sideOf=g=>g.account_code?sideNote(accounts.find(a=>a.code===g.account_code),g.debit,g.credit,kes):'';
    const mappings=x.opening_mappings||[];
    openingGroups=[...groups.values()].map(g=>{
     const sourceCode=g.source_code.toLowerCase(),sourceName=normName(g.source_name);
@@ -461,7 +463,7 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
     +(report.skipped.length?'<details><summary>'+report.skipped.length+' skipped row'+(report.skipped.length===1?'':'s')+'</summary><ul>'+li(report.skipped,k=>'<li>Row '+k.row+' · '+esc(k.name)+' — '+esc(k.why)+'</li>')+'</ul></details>':'')
     +(report.converted.length?'<details open><summary>'+report.converted.length+' converted row'+(report.converted.length===1?'':'s')+' (check against the source)</summary><ul>'+li(report.converted,k=>'<li>Row '+k.row+' · '+esc(k.name)+' — source '+esc(k.original)+' → '+esc(k.as)+'</li>')+'</ul></details>':'')+'</div>';
    hasProblems=report.problems.length>0;
-   host.innerHTML=rowReport+acceptBar+(openingGroups.length?'<div class="scroll"><table><thead><tr><th>Source TB account</th><th>ERP account</th><th>Mapping check</th></tr></thead><tbody>'+openingGroups.map((g,i)=>'<tr><td>'+esc(g.source_code||'—')+' · '+esc(g.source_name)+'<small>Source rows '+g.rows.join(', ')+'</small></td><td><select data-opening-target="'+i+'">'+opt(accounts.map(a=>[a.code,a.code+' · '+a.name+' · '+a.category_code]),g.account_code)+'</select></td><td><small>'+esc(g.method)+'</small><label><input type="checkbox" data-opening-confirm="'+i+'"'+(g.confirmed?' checked':'')+'> I confirmed this account meaning</label>'+(g.duplicate?'<small class="error">Duplicate source rows must be corrected in the workbook.</small>':'')+(mappingConflict(g.source_name,g.account_code)?'<small class="error" data-opening-conflict="'+i+'">'+esc(mappingConflict(g.source_name,g.account_code))+'</small>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="info">No nonzero detail account rows were found. Check the source columns.</p>');
+   host.innerHTML=rowReport+acceptBar+(openingGroups.length?'<div class="scroll"><table><thead><tr><th>Source TB account</th><th>ERP account</th><th>Mapping check</th></tr></thead><tbody>'+openingGroups.map((g,i)=>'<tr><td>'+esc(g.source_code||'—')+' · '+esc(g.source_name)+'<small>Source rows '+g.rows.join(', ')+'</small></td><td><select data-opening-target="'+i+'">'+opt(accounts.map(a=>[a.code,a.code+' · '+a.name+' · '+a.category_code]),g.account_code)+'</select></td><td><small>'+esc(g.method)+'</small><label><input type="checkbox" data-opening-confirm="'+i+'"'+(g.confirmed?' checked':'')+'> I confirmed this account meaning</label>'+(g.duplicate?'<small class="error">Duplicate source rows must be corrected in the workbook.</small>':'')+(mappingConflict(g.source_name,g.account_code)?'<small class="error" data-opening-conflict="'+i+'">'+esc(mappingConflict(g.source_name,g.account_code))+'</small>':'')+(sideOf(g)?'<small class="warn" data-opening-side="'+i+'">'+esc(sideOf(g))+'</small>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="info">No nonzero detail account rows were found. Check the source columns.</p>');
    const acceptBtn=host.querySelector('#acceptSuggested');if(acceptBtn)acceptBtn.onclick=()=>{openingGroups.forEach((g,i)=>{if(g.suggested&&!g.confirmed&&!g.low&&!g.duplicate)openingValues.set(g.key,{account_code:g.account_code,confirmed:true});});renderOpeningAccountMappings();};
    host.querySelectorAll('[data-opening-target]').forEach(el=>el.onchange=()=>{const i=Number(el.dataset.openingTarget),g=openingGroups[i];openingValues.set(g.key,{account_code:el.value,confirmed:false});const check=host.querySelector('[data-opening-confirm="'+i+'"]');if(check)check.checked=false;saveOpeningValues();renderOpeningAccountMappings();});
    host.querySelectorAll('[data-opening-confirm]').forEach(el=>el.onchange=()=>{const i=Number(el.dataset.openingConfirm),g=openingGroups[i],target=host.querySelector('[data-opening-target="'+i+'"]');openingValues.set(g.key,{account_code:target?.value||'',confirmed:el.checked});updateImportSubmit();});

@@ -631,3 +631,5 @@ dialog#editor{border-radius:14px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
 .mywork-board .kanban{grid-template-columns:repeat(auto-fit,minmax(230px,1fr));align-items:start}
 .mywork-board .kanban-cards{grid-template-columns:1fr}
 .mywork-board .kanban-card .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+/* Build 2859 */
+small.warn{color:#8a5a00;display:block}
