@@ -147,7 +147,7 @@ test('visibility decision (10 Nov 2026): no forensic hint on ordinary screens, t
  assert.deepEqual(moduleLinks(me('PARTNER'),'engagements').map(x=>x.key),['kra'],'hidden until the database answers yes');
  assert.match(pilot,/modLinks=v=>moduleLinks\(data\.me,v,canArea,navFlags\)/);
  assert.match(pilot,/request\(\{action:'forensic_menu'\}\),show=r\.show===true/);
- assert.match(pilot,/navFlags=\{forensic:false\};forensicMenuAt=0;/,'signing out clears it');
+ assert.match(pilot,/navFlags=\{forensic:false,mlro:false\};forensicMenuAt=0;/,'signing out clears it');
  assert.match(pilot,/catch\{forensicMenuAt=Date\.now\(\);\}/,'if the check fails the entry simply stays hidden');
  assert.match(ts,/if\(p\.action==='forensic_menu'\)\{if\(!\['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'\]\.includes\(a\.category_code\)\)return \{show:false\}/);
  assert.equal(areaForStaffAction('forensic_menu'),'audit');

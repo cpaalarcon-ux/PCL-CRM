@@ -41,11 +41,11 @@ test('AUP has no list screen so no link; a module that is not built lists no rol
   assert.ok(!MODULE_LINKS.some(m=>!m.built&&m.roles.length),'an unbuilt module must not list roles');
 });
 test('every link points at an action its screen really handles',()=>{
-  const kra=rd('staff-kra.mjs'),inc=rd('staff-incoming.mjs'),fo=rd('staff-forensic.mjs'),res=rd('staff-resources.mjs');
+  const kra=rd('staff-kra.mjs'),inc=rd('staff-incoming.mjs'),fo=rd('staff-forensic.mjs'),res=rd('staff-resources.mjs'),cmp=rd('staff-compliance.mjs');
   assert.match(kra,/action==='kra-open'/);
   assert.match(inc,/action==='incoming-open'/);
   assert.match(inc,/action==='incoming-timeline-pick'/);
-  for(const m of MODULE_LINKS.filter(x=>x.built))assert.ok(kra.includes(`'${m.action}'`)||inc.includes(`'${m.action}'`)||fo.includes(`'${m.action}'`)||res.includes(`'${m.action}'`),m.key);
+  for(const m of MODULE_LINKS.filter(x=>x.built))assert.ok(kra.includes(`'${m.action}'`)||inc.includes(`'${m.action}'`)||fo.includes(`'${m.action}'`)||res.includes(`'${m.action}'`)||cmp.includes(`'${m.action}'`),m.key);
 });
 test('the sidebar draws the links as sub-items that open the module, never as a page or a current page',()=>{
   const app=rd('staff-pilot.mjs');
@@ -57,9 +57,9 @@ test('the sidebar draws the links as sub-items that open the module, never as a 
   assert.match(app,/item\.suite\?`<button class="side-item side-sub side-module" type="button" data-suite="\$\{item\.suite\}"/);
   assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2865"/);
 });
-test('the order matches the agreed list: Engagements & Delivery follows Communications and precedes Finance & Reports',()=>{
+test('the order matches the agreed list: Engagements & Delivery follows Communications, then Compliance & Risk, and precedes Finance & Reports',()=>{
   const app=rd('staff-pilot.mjs');
-  assert.match(app,/parent\('communications','Communications Hub','◉',modLinks\('communications'\)\),engagements,leaf\('finance','Finance & Reports','£'\),admin\]/);
+  assert.match(app,/parent\('communications','Communications Hub','◉',modLinks\('communications'\)\),engagements,compliance,leaf\('finance','Finance & Reports','£'\),admin\]/);
 });
 test('the menu keeps the same top-level items',()=>{
   const app=rd('staff-pilot.mjs');

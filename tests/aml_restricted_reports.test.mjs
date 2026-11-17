@@ -80,7 +80,7 @@ test('build 2865: restricted concerns, every look logged, annual compliance repo
  const sc=await as('ASSISTANT',a=>amlAction(tx,a,{action:'aml_scope_read',client_id:C}));assert.equal(sc.profile,null);assert.equal(sc.gate_enforced,false);assert.equal(sc.services.length,0,'a person sees only the services on projects they can open');const sm=await as('MANAGER',a=>amlAction(tx,a,{action:'aml_scope_read',client_id:C}));assert.equal(sm.services[0].service_code,'TAX-COMP');assert.equal(sm.services[0].code,'UNDECIDED');assert.match(sc.note,/not treated as exempt/);
  await assert.rejects(()=>as('INTERN',a=>amlAction(tx,a,{action:'aml_scope_read',client_id:C})),/client access/);
 });
-test('the compliance screens, menu and tab are wired in',()=>{
+test('the compliance screens, menu and tab are wired in',async()=>{
  const rd=f=>fs.readFileSync(path.resolve(import.meta.dirname,'..',f),'utf8');
  assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/amlReportAction\(tx,a,p\)/);
  const nav=rd('staff-nav.mjs');assert.match(nav,/GROUP_COMPLIANCE/);assert.match(nav,/action:'sar-list'[^}]*gate:'mlro'/);assert.match(nav,/action:'concern-new'/);
@@ -89,5 +89,5 @@ test('the compliance screens, menu and tab are wired in',()=>{
  const ui=rd('staff-compliance.mjs');for(const a of ['concern_raise','sar_list','sar_read','sar_event','sar_log','sar_annual_move','aml_scope_read'])assert.match(ui,new RegExp(a));assert.match(ui,/denied/);
  assert.match(rd('staff-client-profile.mjs'),/\['aml','AML scope'\]/);assert.match(rd('staff-improvements.mjs'),/compliance\.paintScope\(host,id\)/);
  const mig=rd('supabase/migrations/20261121170000_aml_restricted_reports.sql');assert.doesNotMatch(mig,/change_audit[^\n]*aml_report/);assert.match(mig,/cron\.schedule\('aml-annual-report'/);
- assert.doesNotMatch(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/\^\(\?:[^\n]*(concern_|sar_)/,'the concern and restricted actions are open to every signed-in staff member; the database decides');
+ const {areaForStaffAction}=await import('../supabase/functions/staff-workspace-v12/staff-access-control.mjs');for(const a of ['concern_raise','sar_menu','sar_list','sar_read','sar_event','sar_log','sar_annual_read','sar_annual_add','sar_annual_move'])assert.equal(areaForStaffAction(a),'communications',a+' is open to every role that has the Communications area; the database decides who may read');
 });
