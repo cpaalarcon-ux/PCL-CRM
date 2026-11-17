@@ -4,7 +4,7 @@ import {assign,projectTaskGate,requireProjectSetup} from './workspace-actions.ts
 import {requireRightChart} from './legal-structure-actions.ts';
 import {loadClientTemplate} from './client-template-data.ts';
 import {allowedObligations} from './obligation-check-actions.ts';
-import {planTasks,periodProblem,taskKey,lateCount,OWNER_ROLES} from './engagement-setup-rules.mjs';
+import {planTasks,periodProblem,taskKey,lateCount,OWNER_ROLES,evidencePath,folderSummary} from './engagement-setup-rules.mjs';
 import {nextPeriod,carriedItems,dueForRollover} from './engagement-rollover-rules.mjs';
 import {dateWarnings} from './practice-rules.mjs';
 import {currentDates,noDates} from './template-dates.ts';
@@ -89,7 +89,7 @@ async function buildPlan(tx:any,a:any,i:any){
  return {template:{template_id:tpl.template_id,template_code:tpl.template_code,version:tpl.version,name:tpl.name,service_group:tpl.service_group,effective_from:tpl.effective_from,last_reviewed:tpl.last_reviewed},service:svc||null,client:{client_id:i.client_id,company_name:client.client.company_name,template_code:clientTemplate},
   project:project?{project_id:project.project_id,project_name:project.project_name,status:project.status}:null,
   aml,
-  create:tasks.create,skipped:tasks.skipped,problems,warnings,late:lateCount(tasks.create,today),tpl,staff:{resp,rev}};
+  create:tasks.create,summary:folderSummary(tasks.create),skipped:tasks.skipped,problems,warnings,late:lateCount(tasks.create,today),tpl,staff:{resp,rev}};
 }
 const strip=(plan:any)=>{const {tpl,staff,...rest}=plan;return rest;};
 
@@ -270,6 +270,7 @@ async function release(tx:any,a:any,setupId:string){
  const ct=await loadClientTemplate(tx,a,e.client_id,await tx`select * from erp_private.client_field_facts where client_id=${e.client_id}`,null);
  const facts=await profileFacts(tx,a,e.client_id,day(e.period_start),day(e.period_end),ct?.template?.template_code||null);
  const plan=planTasks({tasks:tpl.tasks,period:{start:day(e.period_start),end:day(e.period_end)},facts,exclusions:e.exclusions,actorCategory:'MANAGER'});
+ const clientName=(await tx`select company_name from erp_private.clients where client_id=${e.client_id}`)[0]?.company_name||'';
  let made=0;
  for(const t of plan.create){
   const assignee=t.owner_role==='REVIEWER'?e.reviewer_staff:e.responsible_staff;
@@ -277,6 +278,9 @@ async function release(tx:any,a:any,setupId:string){
    values(${e.project_id},${assignee},${t.task_name+(t.recurrence==='Once'?'':' · '+t.period_start)},${(t.description?t.description+' ':'')+'Created from the approved template '+tpl.name+' (version '+tpl.version+'). Internal work target; confirm statutory dates before filing.'},${t.due_on+'T17:00:00+03:00'},${taskKey(tpl.template_code,tpl.version,t.task_key,t.period_start)},${t.requires_document},${t.period_start},${t.period_end},${'tpl:'+t.task_key})
    on conflict(project_id,recurring_key) do nothing returning task_id`;
   made+=rows.length;
+  // Build 2857: the task's evidence folder is made in the same step. Doing the set-up again makes no second folder.
+  if(rows.length)await tx`insert into erp_private.evidence_folders(task_id,client_id,project_id,setup_id,service_code,period_start,period_end,path_prefix,created_by)
+   values(${rows[0].task_id},${e.client_id},${e.project_id},${setupId},${e.service_code},${t.period_start},${t.period_end},${evidencePath({clientName,clientId:e.client_id,serviceCode:e.service_code,periodStart:t.period_start,taskKey:t.task_key})},${a.staff_id}) on conflict(task_id) do nothing`;
  }
  // Items still open from the period before come across as new Pending tasks with a fresh date; nothing about their old status, evidence or approval is copied.
  let carriedMade=0;

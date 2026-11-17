@@ -102,7 +102,7 @@ test('screens: buttons, the routing map leaves Settings, and the Configure link 
  assert.match(rmap,/async function handle\(action,id\)/);assert.match(rmap,/if\(id\)\{if\(\$\('#editor'\)\?\.open\)\$\('#editor'\)\.close\(\);await open\(id\);return true;\}/);
  assert.equal(CONFIGURE_TARGETS.routing_map.view,'clients');assert.equal(CONFIGURE_TARGETS.routing_map.tab,undefined);assert.match(CONFIGURE_TARGETS.routing_map.where,/Tax & returns → Routing map/);
  assert.match(rd('staff-settings-frame.mjs'),/if\(target\.view\)\{[^}]*ctx\.navigate\(target\.view\)/);
- for(const f of ['staff-routing-map.mjs','staff-settings-frame.mjs','staff-settings-layout.mjs','staff-suite.mjs','staff-improvements.mjs','staff-my-approvals.mjs','staff-accounting.mjs','staff-workspace-v6.mjs'])assert.match(suite+imp+pilot+rd('staff-accounting.mjs')+rd('staff-workspace-v6.mjs'),new RegExp(f.replace('.','\\.')+'\\?v=(?:2026111[69]-(setuptasks|choices|bulk|practice|versions|dates|tabs|settings|tidy)-v1|20261121-aml-v2|20261121-coa-v1)'),f+' has a fresh cache token');
+ for(const f of ['staff-routing-map.mjs','staff-settings-frame.mjs','staff-settings-layout.mjs','staff-suite.mjs','staff-improvements.mjs','staff-my-approvals.mjs','staff-accounting.mjs','staff-workspace-v6.mjs'])assert.match(suite+imp+pilot+rd('staff-accounting.mjs')+rd('staff-workspace-v6.mjs'),new RegExp(f.replace('.','\\.')+'\\?v=(?:2026111[69]-(setuptasks|choices|bulk|practice|versions|dates|tabs|settings|tidy)-v1|20261121-aml-v2|20261121-coa-v1|20261121-evid-v1)'),f+' has a fresh cache token');
 });
 
 test('renewals: lapsed and ending soon, oldest first, with owner and a link to the record',()=>{

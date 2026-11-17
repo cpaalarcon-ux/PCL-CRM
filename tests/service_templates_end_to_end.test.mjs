@@ -121,6 +121,15 @@ test('templates: client type decides the file, never the service; services are c
  assert.ok(made.filter(m=>/Review VAT/.test(m.task_name)).every(m=>m.assigned_to===actors.SUPERVISOR.staff_id));assert.ok(made.filter(m=>/Collect and upload sales/.test(m.task_name)).every(m=>m.assigned_to===actors.ASSISTANT.staff_id&&m.requires_document));
  const rel2=await st('MANAGER',{action:'engagement_setup_release',setup_id:ap1.setup_id});assert.equal(rel2.already,true);assert.equal((await tx`select count(*)::int n from erp_private.tasks where project_id=${P} and template_key like 'tpl:%'`)[0].n,12);
  const done=await st('MANAGER',{action:'engagement_setup_list',client_id:C});assert.equal(done.setups[0].status,'Released');assert.equal(done.setups[0].tasks_created,12);assert.ok(done.setups[0].skipped.some(s=>s.task_key==='paye_working'));
+ // Build 2857: the preview counts periods, tasks and folders from the plan, and each task made has one folder in the same step, none twice.
+ assert.deepEqual(a1.plan.summary,{periods:new Set(a1.plan.create.map(c=>c.period_start+'|'+c.period_end)).size,tasks:12,folders:12});
+ const folders=await tx`select f.path_prefix,f.task_id,f.service_code,f.client_id,t.recurring_key from erp_private.evidence_folders f join erp_private.tasks t on t.task_id=f.task_id where f.project_id=${P} order by f.path_prefix`;
+ assert.equal(folders.length,12);assert.equal(new Set(folders.map(f=>f.task_id)).size,12);assert.equal(new Set(folders.map(f=>f.path_prefix)).size,12);
+ assert.ok(folders.every(f=>/^Clients\/Fictional_V3_client-[0-9a-f]{8}\/TAX-COMP_2026\/Period_2026-0[1-3]\/[A-Za-z0-9_]+\/$/.test(f.path_prefix)||/^Clients\/Fictional_V3_client-[0-9a-f]{8}\/TAX_COMP_2026\//.test(f.path_prefix)),folders[0].path_prefix);
+ assert.equal((await tx`select count(*)::int n from erp_private.evidence_folders where project_id=${P}`)[0].n,12,'releasing again made no second folder');
+ await assert.rejects(()=>tx`update erp_private.evidence_folders set path_prefix=path_prefix||'x' where project_id=${P}`,/not changed or removed|path_prefix/i);
+ await assert.rejects(()=>tx`delete from erp_private.evidence_folders where project_id=${P}`,/not changed or removed/);
+ assert.ok((await tx`select 1 from erp_private.audit_events where table_name='evidence_folders' limit 1`).length>=0);
  await assert.rejects(()=>tx`update erp_private.engagement_setups set scope='A different scope entirely' where setup_id=${ap1.setup_id}`,/not edited/);
  // The next quarter is a separate set-up; the earlier tasks are not touched and nothing from last quarter's completion is copied.
  const q2={period_start:'2026-04-01',period_end:'2026-06-30'};

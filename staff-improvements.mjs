@@ -5,7 +5,7 @@ import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from
 import {createClientMasterUI} from './staff-client-master.mjs?v=20261121-aml-v2';
 import {createKycGridUI} from './staff-kyc-grid.mjs?v=20261121-aml-v2';
 import {createAmlUI} from './staff-aml.mjs?v=20261121-aml-v2';
-import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261121-aml-v2';
+import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261121-evid-v1';
 import {panelHtml,queueHtml,collectSubmit,collectDecisions} from './staff-setup-review.mjs?v=20261116-setupreview-v1';
 import {queueHtml as tasksQueueHtml,queueBody as tasksQueueBody,configurationHtml} from './staff-setup-tasks.mjs?v=20261116-choices-v1';
 import {createClientChoicesUI} from './staff-client-choices.mjs?v=20261116-choices-v1';
