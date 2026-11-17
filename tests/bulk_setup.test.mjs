@@ -63,10 +63,10 @@ test('wiring: action routed, leaders only, one audit record per row, insert-only
  assert.match(m,/GRANT SELECT,INSERT ON erp_private\.bulk_setup_runs TO erp_api/);assert.match(m,/GRANT SELECT,INSERT ON erp_private\.bulk_setup_rows TO erp_api/);assert.doesNotMatch(m,/GRANT[^;]*UPDATE/);
  assert.match(m,/FORCE ROW LEVEL SECURITY/);assert.equal((m.match(/EXECUTE FUNCTION erp_private\.bulk_setup_immutable\(\)/g)||[]).length,2);assert.equal((m.match(/EXECUTE FUNCTION erp_private\.log_change/g)||[]).length,2);
  const imp=rd('staff-improvements.mjs'),pilot=rd('staff-pilot.mjs');
- assert.match(imp,/staff-bulk-setup\.mjs\?v=20261116-dates-v1/);assert.match(imp,/if\(a==='bulk-setup'\)await bulk\.open\(\)/);assert.match(pilot,/staff-improvements\.mjs\?v=20261121-evid-v1/);
+ assert.match(imp,/staff-bulk-setup\.mjs\?v=20261116-dates-v1/);assert.match(imp,/if\(a==='bulk-setup'\)await bulk\.open\(\)/);assert.match(pilot,/staff-improvements\.mjs\?v=20261121-base-v1/);
  const btn=pilot.match(/isLeader\(\)\?'<div class="actions">'[^\n]*data-v3="bulk-setup"/);assert.ok(btn,'the button is in the leaders\' action row');
  const ui=rd('staff-bulk-setup.mjs');assert.match(ui,/bulk_setup_preview/);assert.match(ui,/bulk_setup_apply/);assert.match(ui,/confirm:true/);assert.match(ui,/I have checked this list/);
- assert.match(rd(fx+'release.json'),/2026-11-14\.2860/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2860"/);
+ assert.match(rd(fx+'release.json'),/2026-11-14\.2861/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2861"/);
  // The latent project-creation defect found by this build stays fixed: no `returning` on the project insert.
  assert.doesNotMatch(rd(fx+'service-template-actions.ts'),/insert into erp_private\.projects[^`]*returning project_id/);
 });

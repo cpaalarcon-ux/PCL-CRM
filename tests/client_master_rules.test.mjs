@@ -44,8 +44,8 @@ test('set-up report averages elapsed minutes and compares with a baseline',()=>{
  assert.equal(setupReport([],'').average_minutes,null);assert.equal(setupReport([],'').reduction_percent,null);
 });
 test('screens and server are wired',()=>{
- assert.match(rd('staff-improvements.mjs'),/staff-client-master\.mjs\?v=20261121-aml-v2/);assert.match(rd('staff-improvements.mjs'),/Client master facts/);
- assert.match(rd('staff-pilot.mjs'),/staff-improvements\.mjs\?v=20261121-evid-v1/);
+ assert.match(rd('staff-improvements.mjs'),/staff-client-master\.mjs\?v=20261121-base-v1/);assert.match(rd('staff-improvements.mjs'),/Client master facts/);
+ assert.match(rd('staff-pilot.mjs'),/staff-improvements\.mjs\?v=20261121-base-v1/);
  assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/clientMasterAction/);assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/client_master_/);
  const ui=rd('staff-client-master.mjs');assert.match(ui,/client_master_verify/);assert.match(ui,/Set-up time report/);
 });

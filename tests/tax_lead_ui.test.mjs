@@ -35,7 +35,7 @@ test('the server pieces are wired and the actions belong to the projects area',(
  const cfg=read('supabase/functions/staff-workspace-v12/tax-config-actions.ts');
  assert.match(cfg,/Only an Engagement Partner or the designated Tax Manager can confirm and approve tax rules/);assert.match(cfg,/rateAuthority\(tx,a,r\)/);
  const rel=JSON.parse(read('supabase/functions/staff-workspace-v12/release.json'));
- assert.equal(rel.build,'2026-11-14.2860');assert.match(read('staff-pilot.html'),/data-build="2026-11-14\.2860"/);
+ assert.equal(rel.build,'2026-11-14.2861');assert.match(read('staff-pilot.html'),/data-build="2026-11-14\.2861"/);
  assert.match(read('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261119-settings-v1/);assert.match(read('staff-suite.mjs'),/staff-tax-period-defaults\.mjs\?v=20261110-taxrole-v3/);
 });
 test('wording: nothing here says a Partner confirmed anything, and the banned standard name never appears',()=>{
