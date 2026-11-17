@@ -163,7 +163,7 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
    const pl=st.profit_or_loss,fp=st.financial_position,ce=st.changes_in_equity,cf=st.cash_flow,pos=['Ready for review','Final'].includes(d.status);
    const bold=(strong,v)=>strong?`<b>${v}</b>`:v,eqTable=(blk,title)=>`<h5>${esc(title)}</h5><div class="stmt">${table(['',...blk.columns.map(c=>esc(c.label)),'Total'],blk.rows.map(r=>{const strong=['OPENING','CLOSING'].includes(r.move);return [bold(strong,esc(r.label)),...blk.columns.map(c=>bold(strong,num(r.cells[c.code]||0))),bold(strong,num(r.total))];}))}</div>`;
    show('Annual financial statements (draft)',`<p class="${pos?'info':'error'}" role="status"><b>${esc(d.status)}.</b> ${pos?'The readiness checks pass. A Partner’s pack approval is a later step.':esc(d.readiness.summary||'')}</p>${warn(st.problems)}
-    <h4>${esc(d.client.name)}</h4><p class="muted">${esc(d.reporting.framework)} · ${esc(d.reporting.edition)} · amounts in ${esc(unit)}</p>
+    <h4>${esc(d.client.name)}</h4><p class="muted">${d.client.legal_form?esc(d.client.legal_form)+' statements (from the client record)'+' · ':''}${esc(d.reporting.framework)} · ${esc(d.reporting.edition)} · amounts in ${esc(unit)}</p>
     <h4>${esc(pl.title)} for the year ended ${esc(shortDate(st.period.ends_on))}</h4><div class="stmt">${table(cols(pl.has_prior),body(pl))}</div>
     <h4>${esc(fp.title)} at ${esc(shortDate(st.period.ends_on))}</h4><div class="stmt">${table(cols(fp.has_prior),body(fp))}</div>
     ${ce?`<h4>${esc(ce.title)} for the year ended ${esc(shortDate(st.period.ends_on))}</h4>${eqTable(ce.current,'Year ended '+shortDate(st.period.ends_on))}${ce.prior?eqTable(ce.prior,'Prior year'):''}`:''}
