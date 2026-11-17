@@ -74,7 +74,7 @@ export function createKycGridUI(ctx,{show,openList}){
  function top(){
   const s=statusNow(),lc=liveCounts(),x=st.x;
   const kinds=x.source_kinds.map(k=>`<option${k===st.source.kind?' selected':''}>${esc(k)}</option>`).join('');
-  const docs=(d().documents||[]).filter(z=>!z.client_id||z.client_id===st.cid).map(z=>`<option value="${esc(z.document_id)}"${z.document_id===st.source.docId?' selected':''}>${esc(z.file_name)}</option>`).join('');
+  const docs=(d().documents||[]).filter(z=>!z.client_id||z.client_id===st.cid).map(z=>`<option value="${esc(z.document_id)}"${z.document_id===st.source.docId?' selected':''}>${z.doc_ref?esc(z.doc_ref)+' · ':''}${esc(z.file_name)}</option>`).join('');
   return `<div class="kg-top"><div class="kg-statusbar"><span class="kg-chip kg-s-${esc(s.code)}" id="kgChip">Status: ${esc(s.label)}</span><span id="kgCount" class="kg-count">${lc.filled} of ${lc.mandatory} mandatory cells filled · ${s.verified} verified</span></div><p class="muted" id="kgNext">${esc(s.next)}</p>
   <div class="kg-src"><label>Source of what you type <select data-kg-source="kind">${kinds}</select></label><label>${'Document'===st.source.kind?'Uploaded document':'Register, record or file'} ${st.source.kind==='Document'?`<select data-kg-source="docId"><option value="">Choose…</option>${docs}</select>`:`<input type="text" data-kg-source="ref" value="${esc(st.source.ref)}" maxlength="300" placeholder="KRA iTax taxpayer profile, viewed today">`}</label></div></div>`;
  }
