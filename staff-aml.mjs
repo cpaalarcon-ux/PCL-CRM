@@ -21,7 +21,7 @@ export function createAmlUI(ctx,{show}){
  }
  const selFromView=v=>v.selections.map(s=>({category:s.category,context:s.context||'',value:s.lookup_value,note:s.note||'',doc_ref:s.doc_ref||''}));
  const err=k=>st.errors.get(k);
- const docOpts=cur=>`<option value=""></option>${st.view.documents.map(d=>`<option value="${esc(d.doc_ref)}"${d.doc_ref===cur?' selected':''}>${esc(d.doc_ref)} · ${esc(d.file_name)}</option>`).join('')}`;
+ const docOpts=cur=>`<option value="">${st.view.documents.length?'Evidence (DOC-…), optional':'No document on file yet'}</option>${st.view.documents.map(d=>`<option value="${esc(d.doc_ref)}"${d.doc_ref===cur?' selected':''}>${esc(d.doc_ref)} · ${esc(d.file_name)}${d.category?' · '+esc(d.category):''}</option>`).join('')}`;
  const miss=k=>st.view.missing.some(m=>m.key===k)&&!fieldVal(k);
  function cell(label,key,input,{must=false}={}){
   const bad=err(key),req=must&&miss(key);
@@ -38,6 +38,28 @@ export function createAmlUI(ctx,{show}){
   const rows=items.map(s=>{const flag=attentionOf(cat,s.value);return `<li class="am-chip${flag?' am-flag':''}"><span>${flag?'<span title="The MLRO looks at this first" aria-hidden="true">⚑ </span>':''}${esc(s.value)}</span><input data-am-note="${s.i}" value="${esc(s.note)}" placeholder="Note (optional)" maxlength="500" aria-label="Note for ${esc(s.value)}"><select data-am-doc="${s.i}" aria-label="Evidence for ${esc(s.value)}">${docOpts(s.doc_ref)}</select><button type="button" data-am-remove="${s.i}" aria-label="Remove ${esc(s.value)}">✕</button></li>`;}).join('');
   const bad=err(key)||'',req=st.view.missing.some(m=>m.key===key)&&!items.length;
   return `<div class="am-row${req?' am-req':''}"><span class="am-l">${esc(label)}${st.view.missing.some(m=>m.key===key)?'<span class="kg-star" aria-hidden="true">*</span>':''}</span><div class="am-v"><ul class="am-chips">${rows||'<li class="muted">Nothing chosen</li>'}</ul><div class="am-add"><select data-am-pick="${cat}|${esc(context)}" aria-label="Add to ${esc(label)}"><option value="">Add…</option>${opts.map(l=>`<option>${esc(l.value)}</option>`).join('')}</select></div>${bad?`<small class="am-msg">${esc(bad)}</small>`:''}</div></div>`;
+ }
+ // Build 2866: suggestions from facts already held. Nothing is saved until the person accepts it and saves the draft.
+ function pendingSuggestions(){
+  const sg=st.view.suggestions||{text:[],picks:[]};
+  const text=sg.text.filter(t=>!String(fieldVal(t.key)||'').trim());
+  const picks=sg.picks.filter(p=>!st.sel.some(x=>x.category===p.category&&(x.context||'')===(p.context||'')&&String(x.value).toLowerCase()===String(p.value).toLowerCase()));
+  return {text,picks};
+ }
+ function suggestPanel(){
+  if(!st.view.can.edit||(st.view.profile&&st.view.profile.stage!=='Staff review'))return '';
+  const {text,picks}=pendingSuggestions();if(!text.length&&!picks.length)return '';
+  const label=p=>p.category==='SERVICE_ACTIVITY'?'Services and AML-relevant activity':'Country · '+p.context;
+  return `<section class="am-suggest" data-am-suggest><h3 class="kg-bar">Suggested from what we already hold (${text.length+picks.length})</h3><p class="info">Nothing here is saved until you accept it and press Save draft. Check each one against the evidence. The basis says where it came from.</p><ul class="am-sug">${text.map(t=>`<li><b>Purpose of the relationship</b>: ${esc(t.value)}<small>${esc(t.basis)}</small><button type="button" data-am-use="text:${esc(t.key)}">Use this</button></li>`).join('')}${picks.map((p,i)=>`<li><b>${esc(label(p))}</b>: ${esc(p.value)}${p.doc_ref?' · evidence '+esc(p.doc_ref):''}<small>${esc(p.basis)}</small><button type="button" data-am-use="pick:${i}">Use this</button></li>`).join('')}</ul><button type="button" data-am-use="all">Use all suggestions</button></section>`;
+ }
+ function useSuggestion(which){
+  sync();const {text,picks}=pendingSuggestions();
+  const addText=t=>{if(!String(st.fields[t.key]||'').trim())st.fields[t.key]=t.value;};
+  const addPick=p=>{if(!st.sel.some(x=>x.category===p.category&&(x.context||'')===(p.context||'')&&String(x.value).toLowerCase()===String(p.value).toLowerCase()))st.sel.push({category:p.category,context:p.context||'',value:p.value,note:('Suggested: '+p.basis).slice(0,500),doc_ref:p.doc_ref||''});};
+  if(which==='all'){text.forEach(addText);picks.forEach(addPick);}
+  else if(which.startsWith('text:')){const t=text.find(x=>x.key===which.slice(5));if(t)addText(t);}
+  else if(which.startsWith('pick:')){const p=picks[+which.slice(5)];if(p)addPick(p);}
+  st.dirty=true;render();
  }
  function profileBody(){
   const v=st.view,pepFlag=fieldVal('pep_type')&&fieldVal('pep_type')!==v.options.pep_none&&attentionOf('PEP_TYPE',fieldVal('pep_type'));
@@ -81,7 +103,7 @@ export function createAmlUI(ctx,{show}){
   return `<div class="am" data-am-root><p class="kg-title"><b>POCAMLA client profile</b> · ${esc(v.client.company_name)}${v.client.kra_pin?' · '+esc(v.client.kra_pin):''}</p>
    <div class="kg-statusbar"><span class="kg-chip ${CHIP[s.code]||''}" id="amChip">Status: ${esc(s.label)}</span>${v.gate_enforced?'<span class="kg-count">The firm requires an MLRO decision before an engagement starts.</span>':'<span class="kg-count">The engagement gate is not switched on yet.</span>'}</div>
    <p class="muted">${esc(s.next)}</p>${[...st.errors].filter(([k])=>k.startsWith('selection:')).map(([,m])=>`<p class="am-msg" role="alert">${esc(m)}</p>`).join('')}${p&&p.return_note&&p.stage==='Staff review'?`<p class="info"><b>From the MLRO:</b> ${esc(p.return_note)}</p>`:''}${v.attention.length?`<p class="am-attn"><b>For the MLRO’s attention:</b> ${v.attention.map(x=>`<span class="am-tag">${esc(x)}</span>`).join(' ')}</p>`:''}${kycWarn}
-   ${flagsBlock()}<div class="kg-layout"><div class="kg-main">${profileBody()}${decisionPanel()}</div><aside class="kg-side">${trail()}${missLis?`<h4>Still needed (${v.missing.length})</h4><ul class="kg-miss">${missLis}</ul>`:''}${p&&p.decision?`<h4>Current decision</h4><p><b>${esc(p.decision)}</b> · ${esc(p.risk_rating||'')} risk${p.next_review?'<br>Review by '+esc(shortDate(p.next_review)):''}${p.decision_conditions?'<br>'+esc(p.decision_conditions):''}</p>`:''}<div class="kg-links"><button type="button" data-am-act="kyc">Open KYC file and evidence</button><button type="button" data-am-act="facts">Client details grid</button></div></aside></div>
+   ${flagsBlock()}<div class="kg-layout"><div class="kg-main">${suggestPanel()}${profileBody()}${decisionPanel()}</div><aside class="kg-side">${trail()}${missLis?`<h4>Still needed (${v.missing.length})</h4><ul class="kg-miss">${missLis}</ul>`:''}${p&&p.decision?`<h4>Current decision</h4><p><b>${esc(p.decision)}</b> · ${esc(p.risk_rating||'')} risk${p.next_review?'<br>Review by '+esc(shortDate(p.next_review)):''}${p.decision_conditions?'<br>'+esc(p.decision_conditions):''}</p>`:''}<div class="kg-links"><button type="button" data-am-act="kyc">Open KYC file and evidence</button><button type="button" data-am-act="facts">Client details grid</button></div></aside></div>
    <div class="kg-foot"><span class="muted" id="amDirty">${st.dirty?'Unsaved changes':'No unsaved changes'}</span><button type="button" data-am-act="save"${st.view.can.edit?'':' disabled'}>Save draft</button><button type="button" class="primary" data-am-act="submit"${v.can.edit&&p&&p.stage==='Staff review'?'':' disabled'} title="${p&&p.stage==='Staff review'?'Refer the profile to the MLRO':'Save the profile first, then refer it'}">Refer to the MLRO</button></div><p class="muted kg-note">${esc(v.note)} Staff cannot rate risk or decide; the person who prepared a profile cannot decide it.</p></div>`;
  }
  function render(){show('POCAMLA profile · '+st.view.client.company_name,profileHtml());const e=doc().querySelector('#editor');if(e)e.classList.add('ledger-dialog');}
@@ -168,13 +190,14 @@ export function createAmlUI(ctx,{show}){
   if(t.dataset.amDoc!==undefined||t.dataset.am){sync();st.dirty=true;}
  });
  doc()?.addEventListener('click',async e=>{
-  const b=e.target.closest&&e.target.closest('[data-am-act],[data-am-remove],[data-am-jump],[data-am-open],[data-am-confirm],[data-am-end],[data-am-rule-end]');if(!b)return;
+  const b=e.target.closest&&e.target.closest('[data-am-act],[data-am-use],[data-am-remove],[data-am-jump],[data-am-open],[data-am-confirm],[data-am-end],[data-am-rule-end]');if(!b)return;
   try{
    if(b.dataset.amOpen){await open(b.dataset.amOpen);return;}
    if(b.dataset.amRuleEnd){const why=globalThis.prompt?globalThis.prompt('Why does this rule end? (at least 5 characters)'):'';if(!why)return;await overviewDo({action:'aml_service_rule_end',service_code:b.dataset.amRuleEnd,reason:why},'Rule ended. It stays in the history.');return;}
    if(b.dataset.amConfirm){const ids=ov.lookups.filter(l=>l.category===b.dataset.amConfirm&&l.status==='Starter').map(l=>l.lookup_id);await overviewDo({action:'aml_lookup_confirm',lookup_ids:ids},`Confirmed ${ids.length} value${ids.length===1?'':'s'}.`);return;}
    if(b.dataset.amEnd){const why=globalThis.prompt?globalThis.prompt('Why does this value end? (at least 5 characters)'):'';if(!why)return;await overviewDo({action:'aml_lookup_end',lookup_id:b.dataset.amEnd,reason:why},'Value ended. It stays in the history.');return;}
    if(!st||!root(e))return;
+   if(b.dataset.amUse!==undefined){useSuggestion(b.dataset.amUse);return;}
    if(b.dataset.amRemove!==undefined){sync();st.sel.splice(+b.dataset.amRemove,1);st.dirty=true;render();return;}
    if(b.dataset.amJump){const k=b.dataset.amJump,el=doc().querySelector('#am-'+k)||doc().querySelector(`[data-am-pick^="${k.split(':')[0]}|${(k.split(':')[1]||'')}"]`);if(el){el.focus();el.scrollIntoView?.({block:'center'});}return;}
    const a=b.dataset.amAct;

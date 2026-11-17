@@ -45,7 +45,7 @@ test('the approval trail only names people the server recorded',()=>{
 test('the grid is wired in, keeps the old list, and the migration asks for the iTax identity cells',()=>{
  const imp=rd('staff-improvements.mjs'),mig=rd('supabase/migrations/20261120100000_itax_profile_fields.sql'),css=rd('staff-pilot.css'),act=rd('supabase/functions/staff-workspace-v12/client-master-actions.ts');
  assert.match(imp,/staff-kyc-grid\.mjs\?v=20261121-aml-v2/);assert.match(imp,/if\(a==='master'\)await grid\.open\(id\)/);assert.match(imp,/if\(a==='master-list'\)await master\.open\(id\)/);
- assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261121-coa-v1/);assert.match(css,/#editor:has\(\.kg\)/);assert.match(css,/\.kg-bad/);assert.match(css,/\.kg-star/);
+ assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261121-fill-v1/);assert.match(css,/#editor:has\(\.kg\)/);assert.match(css,/\.kg-bad/);assert.match(css,/\.kg-star/);
  for(const k of ['street_road','city_town','county','postal_code','po_box'])assert.match(mig,new RegExp("'"+k+"','Required'"),k);
  assert.match(mig,/commencement_date/);assert.match(mig,/registered_address/);
  assert.match(act,/client_master_record_many/);assert.match(act,/client_master_verify_many/);

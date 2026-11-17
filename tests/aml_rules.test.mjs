@@ -50,7 +50,7 @@ test('the screens are wired and the rules contain no hard-coded lists or weights
  const rules=rd('supabase/functions/staff-workspace-v12/aml-rules.mjs');
  assert.ok(!/FATF|sanction list|weight|threshold\s*=/i.test(rules.replace(/\/\/.*$/gm,'')),'no screening list, weight or threshold in code');
  const imp=rd('staff-improvements.mjs');
- assert.match(imp,/staff-aml\.mjs\?v=20261121-aml-v2/);assert.match(imp,/if\(a==='aml'\)await aml\.open\(id\)/);assert.match(imp,/if\(a==='aml-queue'\)await aml\.openOverview\(\)/);
+ assert.match(imp,/staff-aml\.mjs\?v=20261121-fill-v1/);assert.match(imp,/if\(a==='aml'\)await aml\.open\(id\)/);assert.match(imp,/if\(a==='aml-queue'\)await aml\.openOverview\(\)/);
  assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/amlAction\(tx,a,p\)/);assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/\|aml_\|/);
  assert.match(rd('supabase/functions/staff-workspace-v12/engagement-actions.ts'),/POCAMLA: MLRO decision/);
  assert.match(rd('supabase/functions/staff-workspace-v12/engagement-actions.ts'),/is_mlro\(\) as ok.{0,40}fail\(403,'Only the Engagement Partner or the appointed MLRO may approve enhanced due diligence/s);
