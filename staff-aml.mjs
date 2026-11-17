@@ -7,6 +7,7 @@ export function createAmlUI(ctx,{show}){
  const {esc,request,notice,shortDate}=ctx,doc=()=>globalThis.document;
  let st=null; // profile screen: {cid,view,fields,sel,errors:Map,dirty}
  let ov=null; // MLRO overview
+ let rules=null; // MLRO service rules (build 2856)
 
  // ---------- the client's profile ----------
  const lk=(cat)=>st.view.lookups.filter(l=>l.category===cat);
@@ -69,6 +70,10 @@ export function createAmlUI(ctx,{show}){
    <div class="am-actions"><button type="button" class="primary" data-am-act="decide">Record decision</button><button type="button" data-am-act="edd">Ask for enhanced due diligence</button><button type="button" data-am-act="return">Return for information</button></div>
    <label class="am-l am-askl" for="amd-ask">Note for “ask” or “return”</label><textarea id="amd-ask" data-amd="ask" rows="2" placeholder="What staff must add or explain">${esc(r('ask'))}</textarea>${e('ask')}</div></section>`;
  }
+ function flagsBlock(){
+  const f=(st.view.service_flags||[]);if(!f.length)return '';
+  return `<div class="am-flags"><b>Services set up for this client that the MLRO flagged</b><ul>${f.map(x=>`<li>${esc(x.service_name)} · ${esc(x.applicability)} · ${esc(shortDate(x.raised_at))} ${x.answered?'<span class="badge good">Answered by an MLRO decision</span>':'<span class="badge warn">Waiting for the MLRO\'s decision</span>'}</li>`).join('')}</ul></div>`;
+ }
  function profileHtml(){
   const v=st.view,s=v.status,p=v.profile;
   const kycWarn=v.kyc&&p&&v.kyc.is_pep!==!!(p.pep_type&&attentionOf('PEP_TYPE',p.pep_type))?'<p class="info">The KYC file’s PEP flag differs from this profile. The Manager or Partner reconciles it when verifying the KYC file.</p>':'';
@@ -76,7 +81,7 @@ export function createAmlUI(ctx,{show}){
   return `<div class="am" data-am-root><p class="kg-title"><b>POCAMLA client profile</b> · ${esc(v.client.company_name)}${v.client.kra_pin?' · '+esc(v.client.kra_pin):''}</p>
    <div class="kg-statusbar"><span class="kg-chip ${CHIP[s.code]||''}" id="amChip">Status: ${esc(s.label)}</span>${v.gate_enforced?'<span class="kg-count">The firm requires an MLRO decision before an engagement starts.</span>':'<span class="kg-count">The engagement gate is not switched on yet.</span>'}</div>
    <p class="muted">${esc(s.next)}</p>${[...st.errors].filter(([k])=>k.startsWith('selection:')).map(([,m])=>`<p class="am-msg" role="alert">${esc(m)}</p>`).join('')}${p&&p.return_note&&p.stage==='Staff review'?`<p class="info"><b>From the MLRO:</b> ${esc(p.return_note)}</p>`:''}${v.attention.length?`<p class="am-attn"><b>For the MLRO’s attention:</b> ${v.attention.map(x=>`<span class="am-tag">${esc(x)}</span>`).join(' ')}</p>`:''}${kycWarn}
-   <div class="kg-layout"><div class="kg-main">${profileBody()}${decisionPanel()}</div><aside class="kg-side">${trail()}${missLis?`<h4>Still needed (${v.missing.length})</h4><ul class="kg-miss">${missLis}</ul>`:''}${p&&p.decision?`<h4>Current decision</h4><p><b>${esc(p.decision)}</b> · ${esc(p.risk_rating||'')} risk${p.next_review?'<br>Review by '+esc(shortDate(p.next_review)):''}${p.decision_conditions?'<br>'+esc(p.decision_conditions):''}</p>`:''}<div class="kg-links"><button type="button" data-am-act="kyc">Open KYC file and evidence</button><button type="button" data-am-act="facts">Client details grid</button></div></aside></div>
+   ${flagsBlock()}<div class="kg-layout"><div class="kg-main">${profileBody()}${decisionPanel()}</div><aside class="kg-side">${trail()}${missLis?`<h4>Still needed (${v.missing.length})</h4><ul class="kg-miss">${missLis}</ul>`:''}${p&&p.decision?`<h4>Current decision</h4><p><b>${esc(p.decision)}</b> · ${esc(p.risk_rating||'')} risk${p.next_review?'<br>Review by '+esc(shortDate(p.next_review)):''}${p.decision_conditions?'<br>'+esc(p.decision_conditions):''}</p>`:''}<div class="kg-links"><button type="button" data-am-act="kyc">Open KYC file and evidence</button><button type="button" data-am-act="facts">Client details grid</button></div></aside></div>
    <div class="kg-foot"><span class="muted" id="amDirty">${st.dirty?'Unsaved changes':'No unsaved changes'}</span><button type="button" data-am-act="save"${st.view.can.edit?'':' disabled'}>Save draft</button><button type="button" class="primary" data-am-act="submit"${v.can.edit&&p&&p.stage==='Staff review'?'':' disabled'} title="${p&&p.stage==='Staff review'?'Refer the profile to the MLRO':'Save the profile first, then refer it'}">Refer to the MLRO</button></div><p class="muted kg-note">${esc(v.note)} Staff cannot rate risk or decide; the person who prepared a profile cannot decide it.</p></div>`;
  }
  function render(){show('POCAMLA profile · '+st.view.client.company_name,profileHtml());const e=doc().querySelector('#editor');if(e)e.classList.add('ledger-dialog');}
@@ -115,6 +120,16 @@ export function createAmlUI(ctx,{show}){
  // ---------- the MLRO's queue, lists and policy ----------
  const tbl=(heads,rows)=>`<div class="scroll"><table><thead><tr>${heads.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')||`<tr><td colspan="${heads.length}" class="muted">Nothing here.</td></tr>`}</tbody></table></div>`;
  const qrow=i=>`<tr><td><b>${esc(i.company_name)}</b>${i.attention.length?`<small>${i.attention.slice(0,3).map(esc).join(' · ')}</small>`:''}</td><td>${esc(i.status)}</td><td>${esc(i.risk_rating||'Not rated')}</td><td>${i.next_review?esc(shortDate(i.next_review)):''}</td><td><button type="button" data-am-open="${esc(i.client_id)}">Open</button></td></tr>`;
+ const frow=f=>`<tr><td><b>${esc(f.company_name)}</b></td><td>${esc(f.service_name)}</td><td>${esc(f.applicability)}</td><td>${esc(shortDate(f.raised_at))} · ${esc(f.raised_by_name)}</td><td><button type="button" data-am-open="${esc(f.client_id)}">Open profile</button></td></tr>`;
+ function rulesHtml(){
+  if(!rules)return '';
+  const rows=rules.services.map(r=>`<tr><td>${esc(r.service_name)}<small>${esc(r.service_group)}</small></td><td>${r.rule_id?`<span class="badge ${r.applicability==='Not relevant'?'':'warn'}">${esc(r.applicability)}</span>`:'<span class="badge">MLRO has not decided</span>'}</td><td>${r.activities&&r.activities.length?esc(r.activities.join(', ')):'<span class="muted">none listed</span>'}${r.reason?`<small>${esc(r.reason)}</small>`:''}</td><td>${r.rule_id&&rules.can_set?`<button type="button" data-am-rule-end="${esc(r.service_code)}">End rule</button>`:''}</td></tr>`);
+  const opts=rules.services.map(r=>`<option value="${esc(r.service_code)}">${esc(r.service_name)}</option>`).join('');
+  const acts=rules.activity_values.map(v=>`<label class="am-chk"><input type="checkbox" name="act" value="${esc(v)}"> ${esc(v)}</label>`).join('');
+  return `<section class="am-sec"><h3 class="kg-bar">Services and AML scope (${ov.counts.services_undecided||0} not decided)</h3><div class="am-box am-pad"><p class="muted">Say, for each service, whether POCAMLA questions or a referral to you apply. A service you have not decided is not treated as exempt. A rule is never edited: setting a new one ends the old one.</p>
+   ${tbl(['Service','Rule','Activities and reason',''],rows)}
+   ${rules.can_set?`<form data-am-rule class="am-addform"><select name="service_code" required aria-label="Service">${opts}</select><select name="applicability" required aria-label="Applicability">${rules.applicability.map(a=>`<option>${esc(a)}</option>`).join('')}</select><input name="reason" placeholder="Reason" required maxlength="500" aria-label="Reason"><input name="source" placeholder="Source or reference" required maxlength="300" aria-label="Source"><details class="am-acts"><summary>AML-relevant activities this service usually involves</summary>${acts||'<span class="muted">No activities on your list yet.</span>'}</details><button type="submit">Set rule</button></form>`:'<p class="muted">Only the MLRO sets these rules.</p>'}</div></section>`;
+ }
  function overviewHtml(){
   const q=ov.queue,c=ov.counts;
   const lists=Object.keys(ov.categories).map(cat=>{
@@ -131,6 +146,8 @@ export function createAmlUI(ctx,{show}){
    <section class="am-sec"><h3 class="kg-bar">Screening matches (${q.matches.length})</h3>${tbl(['Client','Status','Risk','Review by',''],q.matches.map(qrow))}</section>
    <section class="am-sec"><h3 class="kg-bar">Reviews due within 30 days (${q.review_due.length})</h3>${tbl(['Client','Status','Risk','Review by',''],q.review_due.map(qrow))}</section>
    <section class="am-sec"><h3 class="kg-bar">High-risk clients accepted (${q.high_risk.length})</h3>${tbl(['Client','Status','Risk','Review by',''],q.high_risk.map(qrow))}</section>
+   <section class="am-sec"><h3 class="kg-bar">Services set up that need AML scope (${(q.services||[]).length})</h3>${tbl(['Client','Service','Rule','Raised',''],(q.services||[]).map(frow))}</section>
+   ${rulesHtml()}
    <section class="am-sec"><h3 class="kg-bar">Lists you maintain</h3><div class="am-box am-pad">${lists}</div></section>
    <section class="am-sec"><h3 class="kg-bar">Policy approval and the engagement gate</h3><div class="am-box am-pad">
     <p>${pol.gate_enforced?'<span class="badge good">Gate on</span> An engagement cannot start until the MLRO has decided.':'<span class="badge warn">Gate off</span> Engagements are not yet blocked by the MLRO decision.'}</p>
@@ -138,7 +155,7 @@ export function createAmlUI(ctx,{show}){
     ${ov.can_approve_policy?`<form data-am-policy class="am-addform"><input name="reference" placeholder="Approval reference (minute or resolution)" required maxlength="300" aria-label="Approval reference"><input name="note" placeholder="Note (optional)" maxlength="1000" aria-label="Note"><button type="submit">Record Partner / Board approval</button></form>
     <form data-am-gate class="am-addform"><input name="reason" placeholder="Reason" required maxlength="500" aria-label="Reason"><button type="submit" data-enforce="${pol.gate_enforced?'0':'1'}">${pol.gate_enforced?'Switch the gate off':'Switch the gate on'}</button></form><p class="muted">The gate can be switched on only after the lists are approved and every starter value is confirmed.</p>`:'<p class="muted">An Engagement Partner records the approval of the lists and switches the gate.</p>'}</div></section></div>`;
  }
- async function openOverview(){ov=await request({action:'aml_overview'});show('POCAMLA · MLRO workspace',overviewHtml());const e=doc().querySelector('#editor');if(e)e.classList.add('ledger-dialog');}
+ async function openOverview(){ov=await request({action:'aml_overview'});rules=await request({action:'aml_service_rules_read'});show('POCAMLA · MLRO workspace',overviewHtml());const e=doc().querySelector('#editor');if(e)e.classList.add('ledger-dialog');}
  async function overviewDo(body,msg){try{await request(body);notice(msg);}catch(e){notice(e.message||'That could not be done.');}await openOverview();}
 
  // ---------- events, registered once ----------
@@ -151,9 +168,10 @@ export function createAmlUI(ctx,{show}){
   if(t.dataset.amDoc!==undefined||t.dataset.am){sync();st.dirty=true;}
  });
  doc()?.addEventListener('click',async e=>{
-  const b=e.target.closest&&e.target.closest('[data-am-act],[data-am-remove],[data-am-jump],[data-am-open],[data-am-confirm],[data-am-end]');if(!b)return;
+  const b=e.target.closest&&e.target.closest('[data-am-act],[data-am-remove],[data-am-jump],[data-am-open],[data-am-confirm],[data-am-end],[data-am-rule-end]');if(!b)return;
   try{
    if(b.dataset.amOpen){await open(b.dataset.amOpen);return;}
+   if(b.dataset.amRuleEnd){const why=globalThis.prompt?globalThis.prompt('Why does this rule end? (at least 5 characters)'):'';if(!why)return;await overviewDo({action:'aml_service_rule_end',service_code:b.dataset.amRuleEnd,reason:why},'Rule ended. It stays in the history.');return;}
    if(b.dataset.amConfirm){const ids=ov.lookups.filter(l=>l.category===b.dataset.amConfirm&&l.status==='Starter').map(l=>l.lookup_id);await overviewDo({action:'aml_lookup_confirm',lookup_ids:ids},`Confirmed ${ids.length} value${ids.length===1?'':'s'}.`);return;}
    if(b.dataset.amEnd){const why=globalThis.prompt?globalThis.prompt('Why does this value end? (at least 5 characters)'):'';if(!why)return;await overviewDo({action:'aml_lookup_end',lookup_id:b.dataset.amEnd,reason:why},'Value ended. It stays in the history.');return;}
    if(!st||!root(e))return;
@@ -169,7 +187,8 @@ export function createAmlUI(ctx,{show}){
  });
  doc()?.addEventListener('submit',async e=>{
   const f=e.target;if(!f.closest||!f.closest('[data-am-ov]'))return;e.preventDefault();const d=Object.fromEntries(new FormData(f));
-  if(f.dataset.amAdd)await overviewDo({action:'aml_lookup_add',category:f.dataset.amAdd,value:d.value,source:d.source,attention:!!d.attention},'Value added.');
+  if('amRule' in f.dataset){const acts=[...f.querySelectorAll('input[name=act]:checked')].map(x=>x.value);await overviewDo({action:'aml_service_rule_set',service_code:d.service_code,applicability:d.applicability,reason:d.reason,source:d.source,activities:acts},'Rule recorded.');}
+  else if(f.dataset.amAdd)await overviewDo({action:'aml_lookup_add',category:f.dataset.amAdd,value:d.value,source:d.source,attention:!!d.attention},'Value added.');
   else if('amPolicy' in f.dataset)await overviewDo({action:'aml_policy_approve',reference:d.reference,note:d.note||undefined},'Approval recorded.');
   else if('amGate' in f.dataset)await overviewDo({action:'aml_gate_set',enforced:f.querySelector('button').dataset.enforce==='1',reason:d.reason},'The gate was updated.');
  });

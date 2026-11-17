@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
-const {serviceTemplateAction}=await import('../supabase/functions/staff-workspace-v12/service-template-actions.ts');const {clientMasterAction}=await import('../supabase/functions/staff-workspace-v12/client-master-actions.ts');
+const {amlAction}=await import('../supabase/functions/staff-workspace-v12/aml-actions.ts');const {serviceTemplateAction}=await import('../supabase/functions/staff-workspace-v12/service-template-actions.ts');const {clientMasterAction}=await import('../supabase/functions/staff-workspace-v12/client-master-actions.ts');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),C=id(),P=id(),D=id(),T=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
 async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}
@@ -102,6 +102,9 @@ test('templates: client type decides the file, never the service; services are c
  await assert.rejects(()=>st('MANAGER',{...base,template_id:T2,action:'engagement_setup_apply'}),/Confirm the plan/);
  const ap1=await st('MANAGER',{...base,template_id:T2,action:'engagement_setup_apply',confirm:true});
  assert.equal(ap1.released,false);assert.match(ap1.waiting_reason,/Draft/);assert.equal(ap1.tasks_created,0);
+ // Build 2856: the MLRO has not decided for this service, so staff are told so; it is not treated as exempt and nothing is flagged.
+ assert.equal(a1.plan.aml.code,'UNDECIDED');assert.match(a1.plan.aml.line,/has not decided/);assert.equal(ap1.aml.code,'UNDECIDED');assert.equal(ap1.aml_flag_raised,false);
+ assert.equal((await tx`select count(*)::int n from erp_private.aml_service_flags`)[0].n,0);
  assert.equal((await tx`select count(*)::int n from erp_private.tasks where project_id=${P} and template_key like 'tpl:%'`)[0].n,0);
  const lst=await st('MANAGER',{action:'engagement_setup_list',client_id:C});assert.equal(lst.setups.length,1);assert.equal(lst.setups[0].status,'Waiting');
  // The same client, service and period cannot be set up twice.
@@ -121,9 +124,17 @@ test('templates: client type decides the file, never the service; services are c
  await assert.rejects(()=>tx`update erp_private.engagement_setups set scope='A different scope entirely' where setup_id=${ap1.setup_id}`,/not edited/);
  // The next quarter is a separate set-up; the earlier tasks are not touched and nothing from last quarter's completion is copied.
  const q2={period_start:'2026-04-01',period_end:'2026-06-30'};
- const a2=await plan('MANAGER',q2);assert.equal(a2.ok,true);assert.equal(a2.plan.create.length,12);
+ // Build 2856: an Engagement Partner appoints the MLRO, who marks this service as one to refer; the next set-up raises one flag.
+ await as('PARTNER',()=>tx`select erp_private.staff_right_grant(${actors.MANAGER.staff_id}::uuid,'MLRO','Appointed as the firm MLRO',current_date+30)`);
+ const axm=(role,p)=>as(role,a=>amlAction(tx,a,p));
+ await assert.rejects(()=>axm('SUPERVISOR',{action:'aml_service_rule_set',service_code:'TAX-COMP',applicability:'Refer to the MLRO',reason:'Handles client money',source:'Fictional MLRO memo'}),/MLRO/);
+ await axm('MANAGER',{action:'aml_service_rule_set',service_code:'TAX-COMP',applicability:'Refer to the MLRO',reason:'Tax work can involve handling client money',source:'Fictional MLRO memo 1'});
+ const a2=await plan('MANAGER',q2);assert.equal(a2.ok,true);assert.equal(a2.plan.create.length,12);assert.equal(a2.plan.aml.code,'REFER');assert.ok(a2.plan.warnings.some(w=>/POCAMLA: .*told when this service is set up/.test(w)));
  const ap2=await st('MANAGER',{...base,...q2,template_id:T2,action:'engagement_setup_apply',confirm:true});assert.equal(ap2.released,true);assert.equal(ap2.tasks_created,12);
  assert.equal((await tx`select count(*)::int n from erp_private.tasks where project_id=${P} and template_key like 'tpl:%'`)[0].n,24);
+ assert.equal(ap2.aml_flag_raised,true);
+ {const fl=await tx`select service_code,applicability,setup_id from erp_private.aml_service_flags`;assert.equal(fl.length,1);assert.equal(fl[0].service_code,'TAX-COMP');assert.equal(fl[0].setup_id,ap2.setup_id);}
+ {const ov=await axm('MANAGER',{action:'aml_overview'});assert.equal(ov.queue.services.length,1);assert.equal(ov.counts.services_flagged,1);}
  assert.equal((await tx`select count(*)::int n from erp_private.tasks where project_id=${P} and template_key like 'tpl:%' and status<>'Pending'`)[0].n,0);
  // ---- Roll forward: the next period starts from the approved template, not from last period's work ----
  {
@@ -143,6 +154,7 @@ test('templates: client type decides the file, never the service; services are c
   // The earlier set-up is not the latest one, so it cannot be rolled again.
   assert.match((await st('MANAGER',{action:'engagement_rollover_plan',from_setup_id:ap1.setup_id})).plan.problems.join(' '),/Roll forward from the latest one/);
   const rf=await st('MANAGER',{action:'engagement_rollover_apply',from_setup_id:ap2.setup_id,confirm:true});
+  assert.equal(rf.aml_flag_raised,false,'the same rule does not raise a second flag for the next period');assert.equal((await tx`select count(*)::int n from erp_private.aml_service_flags`)[0].n,1);
   assert.equal(rf.released,true);assert.equal(rf.tasks_created,23);assert.equal(rf.carried_created,11);
   const q3=await tx`select task_name,status,assigned_to,due_at,template_key,recurring_key,period_start,blocked_reason from erp_private.tasks where project_id=${P} and period_start>='2026-07-01'`;
   assert.equal(q3.length,23);assert.ok(q3.every(t=>t.status==='Pending'&&t.blocked_reason===null));assert.equal(new Set(q3.map(t=>t.recurring_key)).size,23);

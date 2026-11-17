@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';
-import {cleanProfile,cleanSelections,missingInfo,attentionReasons,profileStatus,cleanDecision,PEP_NONE} from '../supabase/functions/staff-workspace-v12/aml-rules.mjs';
+import {cleanServiceRule,serviceScope,APPLICABILITY,cleanProfile,cleanSelections,missingInfo,attentionReasons,profileStatus,cleanDecision,PEP_NONE} from '../supabase/functions/staff-workspace-v12/aml-rules.mjs';
 const rd=f=>fs.readFileSync(new URL('../'+f,import.meta.url),'utf8');
 const L=(category,value,attention=false,status='Confirmed')=>({category,value,attention,status});
 const lookups=[L('COUNTRY','Kenya'),L('COUNTRY','Uganda'),L('PEP_TYPE',PEP_NONE),L('PEP_TYPE','Domestic PEP',true),L('SOURCE_OF_FUNDS','Business income'),L('SERVICE_ACTIVITY','Audit'),L('SERVICE_ACTIVITY','Managing client money or assets',true),L('COUNTRY','Old',false,'Ended')];
@@ -50,9 +50,30 @@ test('the screens are wired and the rules contain no hard-coded lists or weights
  const rules=rd('supabase/functions/staff-workspace-v12/aml-rules.mjs');
  assert.ok(!/FATF|sanction list|weight|threshold\s*=/i.test(rules.replace(/\/\/.*$/gm,'')),'no screening list, weight or threshold in code');
  const imp=rd('staff-improvements.mjs');
- assert.match(imp,/staff-aml\.mjs\?v=20261121-aml-v1/);assert.match(imp,/if\(a==='aml'\)await aml\.open\(id\)/);assert.match(imp,/if\(a==='aml-queue'\)await aml\.openOverview\(\)/);
+ assert.match(imp,/staff-aml\.mjs\?v=20261121-aml-v2/);assert.match(imp,/if\(a==='aml'\)await aml\.open\(id\)/);assert.match(imp,/if\(a==='aml-queue'\)await aml\.openOverview\(\)/);
  assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/amlAction\(tx,a,p\)/);assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/\|aml_\|/);
  assert.match(rd('supabase/functions/staff-workspace-v12/engagement-actions.ts'),/POCAMLA: MLRO decision/);
  assert.match(rd('supabase/functions/staff-workspace-v12/engagement-actions.ts'),/is_mlro\(\) as ok.{0,40}fail\(403,'Only the Engagement Partner or the appointed MLRO may approve enhanced due diligence/s);
  assert.match(rd('staff-pilot.css'),/#editor:has\(\.am\)/);
+});
+
+test('build 2856: a service rule needs a choice, a reason and a source; activities must be on the MLRO list; Not relevant lists none',()=>{
+ const acts=['Managing client money or assets','Audit'];
+ const ok=cleanServiceRule({applicability:'Refer to the MLRO',reason:'Handles client money',source:'MLRO memo 1',activities:['audit']},{activityValues:acts});
+ assert.equal(ok.ok,true);assert.deepEqual(ok.value.activities,['Audit'],'the MLRO\'s own spelling is kept');
+ assert.deepEqual(APPLICABILITY,['Not relevant','Ask AML questions','Refer to the MLRO']);
+ const bad=cleanServiceRule({applicability:'Sometimes',reason:'no',source:'',activities:['Made up'],effective_from:'2026-13-45'},{activityValues:acts});
+ assert.equal(bad.ok,false);assert.deepEqual(bad.errors.map(e=>e.key).sort(),['activities','applicability','effective_from','reason','source']);
+ assert.equal(cleanServiceRule({applicability:'Not relevant',reason:'Pure internal training',source:'MLRO memo',activities:['Audit']},{activityValues:acts}).ok,false);
+ assert.equal(cleanServiceRule({applicability:'Not relevant',reason:'Pure internal training',source:'MLRO memo'},{activityValues:acts}).ok,true);
+ // duplicate activities collapse
+ assert.deepEqual(cleanServiceRule({applicability:'Ask AML questions',reason:'Because',source:'Memo',activities:['Audit','audit']},{activityValues:acts}).value.activities,['Audit']);
+});
+test('build 2856: no rule is "not decided" and is never read as exempt; a flagged service says whether the profile is approved',()=>{
+ const u=serviceScope(null);assert.equal(u.code,'UNDECIDED');assert.equal(u.needs_flag,false);assert.match(u.line,/not treated as exempt/);
+ assert.equal(serviceScope({applicability:'Not relevant'}).needs_flag,false);
+ const a=serviceScope({applicability:'Ask AML questions'},{profileCode:'INFO_NEEDED'});assert.equal(a.code,'ASK');assert.equal(a.needs_flag,true);assert.equal(a.cleared,false);assert.match(a.line,/MLRO queue/);
+ const r=serviceScope({applicability:'Refer to the MLRO'},{profileCode:'APPROVED'});assert.equal(r.code,'REFER');assert.equal(r.cleared,true);assert.match(r.line,/already approved/);
+ assert.equal(serviceScope({applicability:'Refer to the MLRO'},{profileCode:'APPROVED_COND'}).cleared,true);
+ assert.equal(serviceScope({applicability:'Refer to the MLRO'},{profileCode:'REVIEW_DUE'}).cleared,false);
 });

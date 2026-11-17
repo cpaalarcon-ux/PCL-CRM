@@ -12,7 +12,8 @@ const base=(over={})=>({client:{client_id:C,company_name:'Fictional Trading Limi
  status:{code:'INFO_NEEDED',label:'Information needed',next:'7 items still needed before the profile can go to the MLRO.'},can:{edit:true,submit:false,decide:false,is_mlro:false},gate_enforced:false,
  documents:[{doc_ref:'DOC-2026-00001',file_name:'CR12.pdf',category:'Permanent File'}],options:{countries_contexts:['Incorporation or residence','Business operations','Counterparties','Source of funds'],screening:['Not screened','No match','Potential match','Confirmed match'],ratings:['Low','Medium','High'],decisions:['Accept','Accept with conditions','Restrict','Decline'],categories:{COUNTRY:'Countries'},pep_none:'No known PEP'},note:'Test note.',...over});
 const calls=[];let responses=[];const notices=[];
-const request=async p=>{calls.push(p);const r=responses.shift();if(r instanceof Error)throw r;return typeof r==='function'?r(p):r;};
+let rulesResp;
+const request=async p=>{calls.push(p);if(p.action==='aml_service_rules_read'&&rulesResp!==undefined)return rulesResp;const r=responses.shift();if(r instanceof Error)throw r;return typeof r==='function'?r(p):r;};
 const {createAmlUI}=await import('../staff-aml.mjs');
 const ui=createAmlUI({esc,request,notice:m=>notices.push(m),shortDate:v=>String(v||'').slice(0,10),data:()=>({})},{show:(t,h)=>{$('#editorBody').innerHTML=h;}});
 const pause=()=>new Promise(r=>setTimeout(r,10));
@@ -87,4 +88,29 @@ test('the MLRO workspace shows the queue, the lists and the policy forms, and po
  const gt=$('form[data-am-gate]');gt.querySelector('[name=reason]').value='Lists approved';responses=[{ok:true},ov];calls.length=0;gt.dispatchEvent(new W.Event('submit',{bubbles:true,cancelable:true}));await pause();
  assert.equal(calls[0].action,'aml_gate_set');assert.equal(calls[0].enforced,true);
  responses=[new Error('Only the appointed MLRO or an Engagement Partner does this.')];await ui.openOverview().catch(e=>notices.push(e.message));assert.match(notices.at(-1),/MLRO/);
+});
+
+test('build 2856: the MLRO sees services without a rule, sets a rule with activities from the list, ends it with a reason, and the flagged-services queue opens the profile',async()=>{
+ const flag={flag_id:'f1',client_id:C,company_name:'Flagged Ltd',service_name:'Tax Compliance',applicability:'Refer to the MLRO',raised_at:'2026-11-17T08:00:00Z',raised_by_name:'Fictional Assistant',answered:false};
+ const ov={queue:{waiting:[],edd:[],matches:[],review_due:[],high_risk:[],services:[flag]},counts:{profiles:0,without_profile:1,services_undecided:2,services_flagged:1,starter_values:0},lookups:[],policy:{gate_enforced:false},approvals:[],mlro_holders:[],can_approve_policy:false,categories:{COUNTRY:'Countries'},note:'x'};
+ rulesResp={services:[{service_code:'TAX-COMP',service_group:'Tax',service_name:'Tax Compliance',rule_id:'r1',applicability:'Refer to the MLRO',activities:['Managing client money or assets'],reason:'Handles client money',status:'Refer to the MLRO'},{service_code:'AUD-STAT',service_group:'Audit',service_name:'Statutory Audit',rule_id:null,applicability:null,activities:[],reason:null,status:'MLRO has not decided'}],history:[],activity_values:['Managing client money or assets','Audit'],applicability:['Not relevant','Ask AML questions','Refer to the MLRO'],can_set:true};
+ calls.length=0;responses=[ov];await ui.openOverview();
+ const t=$('[data-am-ov]').textContent;
+ assert.match(t,/Services set up that need AML scope \(1\)/);assert.match(t,/Flagged Ltd/);assert.match(t,/Services and AML scope \(2 not decided\)/);assert.match(t,/MLRO has not decided/);assert.match(t,/Handles client money/);
+ // Opening a flagged client's profile uses the existing profile screen.
+ responses=[base()];calls.length=0;await click('[data-am-open="'+C+'"]');assert.equal(calls[0].action,'aml_profile_read');
+ // Setting a rule posts the chosen activities.
+ responses=[ov];await ui.openOverview();
+ const f=$('form[data-am-rule]');f.querySelector('[name=service_code]').value='AUD-STAT';f.querySelector('[name=applicability]').value='Ask AML questions';f.querySelector('[name=reason]').value='Audit clients are screened';f.querySelector('[name=source]').value='MLRO memo 3';
+ f.querySelector('input[name=act][value="Audit"]').checked=true;
+ responses=[{ok:true},ov];calls.length=0;f.dispatchEvent(new W.Event('submit',{bubbles:true,cancelable:true}));await pause();
+ assert.equal(calls[0].action,'aml_service_rule_set');assert.equal(calls[0].service_code,'AUD-STAT');assert.equal(calls[0].applicability,'Ask AML questions');assert.deepEqual(calls[0].activities,['Audit']);assert.equal(calls[0].source,'MLRO memo 3');
+ // Ending a rule asks for a reason and nothing is posted without one.
+ responses=[ov];await ui.openOverview();W.prompt=()=>'';calls.length=0;globalThis.prompt=()=>'';await click('[data-am-rule-end="TAX-COMP"]');assert.equal(calls.length,0);
+ globalThis.prompt=()=>'Replaced by the firm-wide policy';responses=[{ok:true},ov];calls.length=0;await click('[data-am-rule-end="TAX-COMP"]');assert.equal(calls[0].action,'aml_service_rule_end');assert.equal(calls[0].service_code,'TAX-COMP');assert.match(calls[0].reason,/firm-wide/);
+ // Someone who is not the MLRO sees the rules but no form.
+ rulesResp={...rulesResp,can_set:false};responses=[ov];await ui.openOverview();assert.equal($('form[data-am-rule]'),null);assert.equal($('[data-am-rule-end]'),null);
+ // A profile lists the services the MLRO flagged for the client.
+ await open(base({service_flags:[{...flag,answered:true},{...flag,flag_id:'f2',service_name:'Payroll',answered:false}]}));
+ assert.match($('.am-flags').textContent,/Tax Compliance/);assert.match($('.am-flags').textContent,/Answered by an MLRO decision/);assert.match($('.am-flags').textContent,/Waiting for the MLRO/);
 });

@@ -620,3 +620,8 @@ dialog#editor{border-radius:14px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
 .kg-chip.am-s-info{background:#fef3c7;color:#78350f}.kg-chip.am-s-staff{background:#dbeafe;color:#1e3a8a}.kg-chip.am-s-mlro{background:#ede9fe;color:#4c1d95}.kg-chip.am-s-edd{background:#fee2e2;color:#7f1d1d}.kg-chip.am-s-ok{background:#dcfce7;color:#14532d}.kg-chip.am-s-due{background:#ffedd5;color:#7c2d12}
 .am-list{border:1px solid var(--line);border-radius:6px;margin:6px 0;padding:6px 10px}.am-list summary{cursor:pointer}.am-listbox{max-height:260px;overflow:auto}
 .am-addform{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}.am-addform input[type=text],.am-addform input:not([type]){flex:1;min-width:180px}
+/* Build 2856: AML scope per service */
+.am-flags{margin:.5rem 0;padding:.5rem .75rem;border:1px solid var(--line,#d8d8d8);border-radius:8px}
+.am-flags ul{margin:.25rem 0 0;padding-left:1.1rem}
+.am-acts{flex:1 1 100%}
+.am-chk{display:inline-block;margin:.15rem .75rem .15rem 0}
