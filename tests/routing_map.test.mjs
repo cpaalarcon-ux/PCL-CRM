@@ -91,4 +91,12 @@ test('the screen: approve is offered only to a different Manager or Partner; sta
  assert.equal(await ui.handle('other'),false);
  const suite=rd('staff-suite.mjs');assert.doesNotMatch(suite,/routingMap\.card\(\)/);assert.match(suite,/routingMap\.handle\(action,id\)/);
  const acc=rd('staff-accounting.mjs');assert.match(acc,/btn\('routing-map','Routing map',pid\)/);assert.match(acc,/Auto-mapped — approved routing map/);
+ // The Manager's queue (17 Nov 2026): valid pairs with no approved mapping wait as "Suggested - Awaiting Approval" and are proposed, never mapped, from this screen.
+ const {queueRows}=await import('../staff-routing-map.mjs');
+ const q={can_propose:true,can_approve:false,exception_rows:2,pairs:[{routing_code:'EXP08',tb_code:'62500',account_name:'Bank charges',rows:3,first_date:'2026-09-01',last_date:'2026-09-20',state:'Suggested - Awaiting Approval',draft_id:null},{routing_code:'STOCK',tb_code:'50000',account_name:'Stock',rows:1,first_date:'2026-09-02',last_date:'2026-09-02',state:'Draft: waiting for a Partner',draft_id:'d1',drafted_by_name:'Maker'}]};
+ const qh=queueRows(q);
+ assert.match(qh,/Suggested - Awaiting Approval/);assert.match(qh,/data-rm="suggest" data-rc="EXP08" data-tb="62500"/);assert.doesNotMatch(qh,/data-rc="STOCK"/,'a pair that already has a draft is not proposed again');assert.match(qh,/Proposed by Maker/);assert.match(qh,/2026-09-01 to 2026-09-20/);
+ assert.doesNotMatch(queueRows({...q,can_propose:false}),/data-rm="suggest"/,'staff below Manager cannot propose');
+ const src=rd('staff-routing-map.mjs');assert.match(src,/routing_map_suggestions/);assert.match(src,/routing_map_suggest_propose/);assert.match(src,/a Partner who did not propose it approves it/);
+ assert.match(rd('staff-accounting.mjs'),/n\.code==='SUGGESTED_AWAITING_APPROVAL'/);
 });

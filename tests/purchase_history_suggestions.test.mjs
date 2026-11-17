@@ -71,17 +71,15 @@ test('purchase mapping suggestions come from the client\'s own supplier history'
   const g=groups.find(x=>x.account_code===A&&x.route===2);assert.equal(g.rows,3,'A, A (Non-eTIMS) and B are one group for the screen');assert.ok(g.strong>=1);
  });
 
- await t.test('automatic mapping: only a perfectly consistent expense supplier with 3 or more eTIMS invoices',async()=>{
+ await t.test('supplier history never maps a row automatically: a row with no codes goes to the exception queue (the firm approval rule, 17 Nov 2026)',async()=>{
   const out=await as('ASSISTANT',a=>autoMapAction(tx,a,{project_id:P,action:'workbook_auto_map'}));
-  assert.equal(out.mapped,1);
-  const done=await get('NA');assert.equal(done.account_code,A);assert.equal(done.route,2);assert.equal(done.review_details.mapping_confirmation.method,HISTORY_METHOD);
-  for(const k of ['NAN','NB','NC','ND','NE','NX'])assert.equal((await get(k)).account_code,null,k+' stays with staff');
-  const ev=(await tx`select after_values from erp_private.audit_events where action='AUTO_MAPPING' order by occurred_at desc limit 1`)[0];assert.equal(ev.after_values.via_supplier_history,1);
-  // Automatic mappings do not feed further suggestions: the supplier still has exactly 3 earlier invoices.
-  const again=await sug();const nan=again.get((await get('NAN')).row_id);assert.equal(nan.count,3);
-  // A Manager can remove it, and it is not mapped again.
-  assert.equal((await as('MANAGER',a=>autoMapAction(tx,a,{project_id:P,action:'workbook_mapping_remove',row_ids:[done.row_id],reason:'Guarding was really a stock purchase'}))).removed,1);
-  assert.equal((await as('MANAGER',a=>autoMapAction(tx,a,{project_id:P,action:'workbook_auto_map'}))).mapped,0);
+  assert.equal(out.mapped,0,'even a perfectly consistent supplier with 3 or more eTIMS invoices is only a suggestion on screen');
+  for(const k of ['NA','NAN','NB','NC','ND','NE','NX']){const r=await get(k);assert.equal(r.account_code,null,k+' stays with staff');}
+  assert.equal((await get('NA')).review_details.auto_map_note.code,'NO_CODES');assert.match((await get('NA')).review_details.auto_map_note.reason,/Exception queue/);
+  assert.equal(out.exception_queue>=1,true);
+  assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='AUTO_MAPPING'`)[0].n,0,'nothing was mapped, so nothing is logged as an automatic mapping');
+  // The on-screen suggestion is still there for staff, who confirm it themselves.
+  const again=await sug();const a=again.get((await get('NA')).row_id);assert.equal(a.account_code,A);assert.equal(a.count,3);
  });
 
  await t.test('a suggestion needs the account in the client account mappings for the invoice date',async()=>{

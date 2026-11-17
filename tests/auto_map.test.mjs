@@ -4,7 +4,8 @@ import {approveChart} from './helpers/chart-and-posting.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {improvementAction}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
 const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
-const {autoMapAction,AUTO_METHOD}=await import('../supabase/functions/staff-workspace-v12/auto-map.ts');
+const {autoMapAction,AUTO_METHOD,ROUTING_METHOD}=await import('../supabase/functions/staff-workspace-v12/auto-map.ts');
+const {routingMapAction}=await import('../supabase/functions/staff-workspace-v12/routing-map-actions.ts');
 const {assertSupportedPeriod}=await import('../supabase/functions/staff-workspace-v12/supported-period.ts');
 const {loadCrosswalk,revenueAccount}=await import('../supabase/functions/staff-workspace-v12/sales-crosswalk.ts');
 const {firstSupportedStart}=await import('../supabase/functions/staff-workspace-v12/ledger-rules.mjs');
@@ -13,7 +14,7 @@ const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'
 async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}
 const call=(role,p)=>as(role,a=>improvementAction(tx,a,p)),map=(role,p)=>as(role,a=>accountingAction(tx,a,p)),auto=(role,p)=>as(role,a=>autoMapAction(tx,a,{project_id:P,...p}));
 
-test('exact routing + TB code pairs are mapped automatically; a Manager can remove them; periods start at the first supported year; sales use the crosswalk',async t=>{
+test('only exact routing + TB code pairs that a Partner approved are mapped automatically; a Manager can remove them; periods start at the first supported year; sales use the crosswalk',async t=>{
  t.after(()=>db.close());
  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create table auth.sessions(id uuid primary key,user_id uuid references auth.users);create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb) $$;create function auth.uid() returns uuid language sql stable as $$ select (auth.jwt()->>'sub')::uuid $$;`);
  for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.readFileSync(root+'/supabase/migrations/'+f,'utf8').replace('CREATE EXTENSION IF NOT EXISTS pg_cron;','').replace(/SELECT cron.schedule[^\n]+/g,'');await db.exec(q);}
@@ -38,13 +39,30 @@ test('exact routing + TB code pairs are mapped automatically; a Manager can remo
   ['PPE',{route:3,category_code:ppe.category_code,account_code:ppe.code,confirmed:false}],
   ['PLAIN',null],
   ['MANUAL',{route:2,category_code:'EXP08',account_code:'62500',confirmed:false}]];
- for(const [n,[key,hint]] of rows.entries())await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B},${P},${C},'Purchases',${n+2},${'AM-'+key},'{}',${tx.json({date:'2026-09-10',amount:1000,vat:160,invoice:'AM-'+key,party:'Fictional supplier',party_pin:'P000000001A',description:'Fictional goods',vat_category:'16%',...(hint?{mapping_suggestion:hint}:{})})})`;
+ for(const [n,[key,hint]] of rows.entries())await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B},${P},${C},'Purchases',${n+2},${'AM-'+key},'{}',${tx.json({date:'2026-09-10',amount:1000,vat:160,invoice:'AM-'+key,party:'Fictional supplier',party_pin:'P000000001A',description:'Fictional goods',vat_category:'16%',...(hint?{mapping_suggestion:hint,routing_code:hint.category_code,tb_code:hint.account_code}:{})})})`;
  const get=key=>tx`select * from erp_private.workbook_rows where row_key=${'AM-'+key}`.then(r=>r[0]);
 
+ // The firm's approval rule: with no approved mapping nothing is mapped. Valid pairs are only suggestions; a row with no codes is an exception.
+ const none=await auto('ASSISTANT',{action:'workbook_auto_map'});
+ assert.equal(none.mapped,0,'a valid TB code in a file is never approval');
+ assert.equal(none.suggested_awaiting_approval,4);assert.equal(none.exception_queue,1);
+ assert.deepEqual(none.suggested_pairs.map(x=>x.routing_code+'/'+x.tb_code).sort(),['EXP08/62500','STOCK/50000',ppe.category_code+'/'+ppe.code].sort());
+ assert.equal(none.suggested_pairs.find(x=>x.routing_code==='EXP08').rows,2);
+ assert.equal(none.reasons.SUGGESTED_AWAITING_APPROVAL,4);assert.equal(none.reasons.NO_CODES,1,'a row with no codes goes to the exception queue; supplier history never maps it');
+ assert.equal((await tx`select count(*)::int n from erp_private.workbook_rows where account_code is not null`)[0].n,0);
+ assert.equal((await get('EXPENSE')).review_details.auto_map_note.code,'SUGGESTED_AWAITING_APPROVAL');
+ assert.match((await get('EXPENSE')).review_details.auto_map_note.reason,/Suggested - Awaiting Approval/);
+ // A row with only one of the two codes is an exception too, even when the other code is approved.
+ const rm=(role,q)=>as(role,a=>routingMapAction(tx,a,{client_id:C,...q}));
+ const approve=async(code,account)=>{const pr=await rm('MANAGER',{action:'routing_map_propose',module:'Purchases',routing_code:code,item_code:account,erp_account_code:account,effective_from:'2026-01-01'});assert.equal(pr.saved,1);
+  const m=(await tx`select routing_id,revision from erp_private.client_routing_map where client_id=${C} and routing_code=${code} and status='Draft'`)[0];await rm('PARTNER',{action:'routing_map_approve',routing_id:m.routing_id,revision:String(m.revision)});};
+ await approve('EXP08','62500');await approve('STOCK','50000');
+ await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B},${P},${C},'Purchases',20,'AM-NOTB','{}',${tx.json({date:'2026-09-10',amount:1000,vat:160,invoice:'AM-NOTB',party:'Fictional supplier',party_pin:'P000000001A',description:'Fictional goods',vat_category:'16%',routing_code:'EXP08',tb_code:''})}),(${B},${P},${C},'Purchases',21,'AM-NOROUTE','{}',${tx.json({date:'2026-09-10',amount:1000,vat:160,invoice:'AM-NOROUTE',party:'Fictional supplier',party_pin:'P000000001A',description:'Fictional goods',vat_category:'16%',routing_code:'',tb_code:'62500'})})`;
  const first=await auto('ASSISTANT',{action:'workbook_auto_map'});
- assert.equal(first.mapped,3,'expenditure, stock and manual-test rows map; PPE needs first-use details');
- assert.equal(first.left_for_staff,2,'PPE and the row without codes or history stay with staff');
- const exp=await get('EXPENSE');assert.equal(exp.account_code,'62500');assert.equal(exp.route,2);assert.equal(exp.review_details.mapping_confirmation.method,AUTO_METHOD);assert.equal(exp.review_details.mapping_confirmation.routing_code,'EXP08');
+ assert.equal(first.mapped,3,'the rows whose routing code and TB code match an approved mapping map; PPE has no approved mapping');
+ assert.equal(first.reasons.TB_BLANK,1);assert.equal(first.reasons.ROUTING_BLANK,1);assert.equal(first.reasons.NO_CODES,1);assert.equal(first.suggested_awaiting_approval,1,'only PPE is still a suggestion');
+ assert.equal((await get('NOTB')).account_code,null);assert.equal((await get('NOROUTE')).account_code,null);
+ const exp=await get('EXPENSE');assert.equal(exp.account_code,'62500');assert.equal(exp.route,2);assert.equal(exp.review_details.mapping_confirmation.method,ROUTING_METHOD);assert.equal(exp.review_details.mapping_confirmation.routing_code,'EXP08');
  const stock=await get('STOCK');assert.equal(stock.account_code,'50000');assert.equal(stock.review_details.activity_id,W);
  assert.equal((await get('PPE')).account_code,null,'PPE stays with staff');assert.equal((await get('PLAIN')).account_code,null);
  assert.deepEqual(exp.normalized.mapping_suggestion,{route:2,category_code:'EXP08',account_code:'62500',confirmed:false},'the uploaded codes are kept');
