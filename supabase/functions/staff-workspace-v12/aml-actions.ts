@@ -1,5 +1,5 @@
 import {fail,text,uuid,revision,date} from './validation.mjs';
-import {APPLICABILITY,cleanServiceRule,serviceScope,CATEGORIES,CATEGORY_LABELS,COUNTRY_CONTEXTS,SCREENING,RATINGS,DECISIONS,PEP_NONE,cleanProfile,cleanSelections,missingInfo,attentionReasons,profileStatus,cleanDecision,queueOrder} from './aml-rules.mjs';
+import {APPLICABILITY,cleanServiceRule,serviceScope,CATEGORIES,CATEGORY_LABELS,COUNTRY_CONTEXTS,SCREENING,RATINGS,DECISIONS,PEP_NONE,cleanProfile,cleanSelections,missingInfo,attentionReasons,profileStatus,cleanDecision,queueOrder,amlSuggestions} from './aml-rules.mjs';
 // Build 2855: the MLRO-owned POCAMLA block. Staff collect the client's AML facts and refer the profile; the MLRO (an additional right, held by an
 // Engagement Partner by rank) maintains the lists, rates the risk, decides, and asks for enhanced due diligence; an Engagement Partner records the
 // formal approval of the lists and switches the engagement gate on. The table rules in 20261121100000_mlro_aml_profile.sql enforce the same again.
@@ -57,7 +57,12 @@ async function build(tx:any,a:any,cid:string){
  const gate=(await tx`select gate_enforced from erp_private.aml_policy`)[0];
  const service_flags=await openFlags(tx,cid);
  const docs=await tx`select doc_ref,file_name,category from erp_private.documents where client_id=${cid} and deleted_at is null order by uploaded_at desc limit 200`;
- return {client,profile:profile&&{...profile,next_review:day(profile.next_review),pep_from:day(profile.pep_from),screening_list_date:day(profile.screening_list_date)},selections,lookups,kyc:kyc&&{...kyc,review_due:day(kyc.review_due)},decisions,missing,attention,status,
+ // Build 2866: suggestions from facts already held (never saved by themselves). Services come from the projects this person can open and from the flags raised at set-up.
+ const sFacts=await tx`select f.field_key,f.value,f.status,d.doc_ref from erp_private.client_field_facts f left join erp_private.documents d on d.document_id=f.document_id where f.client_id=${cid} and f.status<>'Superseded' and f.field_key in('registration_number','county')`;
+ const sServices=await tx`select s.service_code,v.service_name,r.applicability,coalesce(r.activities,'{}') as activities from (select service_code from erp_private.projects where client_id=${cid} and status<>'Archived' and deleted_at is null union select service_code from erp_private.aml_service_flags where client_id=${cid}) s join erp_private.services v on v.service_code=s.service_code left join erp_private.aml_service_rules r on r.service_code=s.service_code and r.ended_at is null order by v.service_name`;
+ const sScope=(await tx`select min(engagement_date)::text as d from erp_private.client_engagement_scopes where client_id=${cid} and ended_at is null`)[0];
+ const suggestions=edit?amlSuggestions({clientName:client.company_name,facts:sFacts,services:sServices,lookups,profile,selections,engagementDate:sScope?.d||null}):{text:[],picks:[]};
+ return {suggestions,client,profile:profile&&{...profile,next_review:day(profile.next_review),pep_from:day(profile.pep_from),screening_list_date:day(profile.screening_list_date)},selections,lookups,kyc:kyc&&{...kyc,review_due:day(kyc.review_due)},decisions,missing,attention,status,
   can:{edit,submit:edit&&profile?.stage==='Staff review'&&!missing.length,decide:mlro&&profile?.stage==='MLRO review',is_mlro:mlro},gate_enforced:!!gate?.gate_enforced,service_flags,documents:docs,
   options:{countries_contexts:COUNTRY_CONTEXTS,screening:SCREENING,ratings:RATINGS,decisions:DECISIONS,categories:CATEGORY_LABELS,pep_none:PEP_NONE},
   note:'Staff collect and update the facts and attach evidence by reference (DOC-…). The MLRO rates the risk and decides. A risk rating is separate from the decision to accept, restrict or decline.'};

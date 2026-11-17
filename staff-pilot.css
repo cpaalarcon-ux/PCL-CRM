@@ -612,6 +612,7 @@ dialog#editor{border-radius:14px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
 .am-chips{list-style:none;margin:0 0 4px;padding:0}
 .am-chip{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(100px,1.4fr) minmax(100px,1.2fr) 28px;gap:6px;align-items:center;padding:3px 0;border-bottom:1px dotted #d1d5db}
 .am-chip.am-flag>span{font-weight:600}
+.am-suggest{border:1px solid #c9d8cf;background:#f4f9f6;border-radius:8px;margin:0 0 14px;padding:0 0 10px}.am-suggest>p,.am-suggest>button{margin:8px 12px}.am-sug{list-style:none;margin:0;padding:0 12px}.am-sug li{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center;padding:8px 0;border-top:1px solid #dbe6df}.am-sug li small{grid-column:1;color:#5b6b63}.am-sug li button{grid-column:2;grid-row:1 / span 2}
 @media(max-width:700px){.am-chip{grid-template-columns:1fr 28px}}
 .am-attn{margin:6px 0}.am-tag{display:inline-block;background:#fef3c7;color:#78350f;border-radius:4px;padding:1px 8px;font-size:12px;margin:2px 4px 2px 0}
 .am-decide{margin-top:12px;border-top:3px solid var(--navy)}

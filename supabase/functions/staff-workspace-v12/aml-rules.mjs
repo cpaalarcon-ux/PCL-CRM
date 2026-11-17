@@ -139,3 +139,40 @@ export function serviceScope(rule,{profileCode=null}={}){
  const base=rule.applicability==='Refer to the MLRO'?'The MLRO has asked to be told when this service is set up.':'The MLRO asks the AML questions for this service.';
  return {code:rule.applicability==='Refer to the MLRO'?'REFER':'ASK',needs_flag:true,cleared,line:base+(cleared?' The client’s AML profile is already approved.':' The client’s AML profile is not approved yet, so this set-up goes to the MLRO queue.')};
 }
+
+// Build 2866: suggestions for the client's AML profile, drawn only from facts the firm already holds. A suggestion is never saved by itself: staff read the basis,
+// accept it, and save the draft, so the profile stays a record staff attest to. Nothing is suggested for source of funds, source of wealth, risk indicators,
+// PEP status, screening or counterparties: nothing we hold answers those.
+const sameText=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
+const longDate=iso=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso||''));return m?`${Number(m[3])} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(m[2])-1]} ${m[1]}`:'';};
+const joinNames=n=>n.length<=1?n.join(''):n.slice(0,-1).join(', ')+' and '+n[n.length-1];
+export function amlSuggestions({clientName='',facts=[],services=[],lookups=[],profile=null,selections=[],engagementDate=null}={}){
+ const out={text:[],picks:[]};
+ const live=facts.filter(f=>f&&f.status!=='Superseded');
+ const fact=k=>live.find(f=>f.field_key===k&&String(f.value||'').trim());
+ const lookup=(cat,v)=>lookups.find(l=>l.category===cat&&l.status!=='Ended'&&sameText(l.value,v));
+ const have=(cat,ctx,v)=>selections.some(s=>s.category===cat&&String(s.context||'')===String(ctx||'')&&sameText(s.lookup_value??s.value,v));
+ // Purpose of the relationship: the services set up, and the engagement date when a scope is recorded.
+ const names=[...new Set(services.map(s=>String(s.service_name||'').trim()).filter(Boolean))];
+ if(!String(profile?.purpose_of_relationship||'').trim()&&names.length){
+  const since=engagementDate?` from ${longDate(engagementDate)}`:'';
+  out.text.push({key:'purpose_of_relationship',value:`To provide ${joinNames(names)} to ${String(clientName).trim()||'the client'}${since}.`,
+   basis:`Built from the services set up for this client${engagementDate?' and the engagement date on record':''}. Edit it so it says why the client is with the firm.`});
+ }
+ // Services and AML-relevant activity: the activities the MLRO attached to the rule of each service this client has.
+ for(const s of services){
+  if(!['Ask AML questions','Refer to the MLRO'].includes(s.applicability))continue;
+  for(const act of s.activities||[]){
+   const hit=lookup('SERVICE_ACTIVITY',act);if(!hit||have('SERVICE_ACTIVITY','',hit.value)||out.picks.some(p=>p.category==='SERVICE_ACTIVITY'&&sameText(p.value,hit.value)))continue;
+   out.picks.push({category:'SERVICE_ACTIVITY',context:'',value:hit.value,doc_ref:'',basis:`The MLRO’s rule for ${s.service_name} lists this activity.`});
+  }
+ }
+ // Geography. A registration number or a county is not proof of the country, so each is offered as a suggestion with its basis and its document.
+ const kenya=lookup('COUNTRY','Kenya');
+ if(kenya){
+  const reg=fact('registration_number'),county=fact('county');
+  if(reg&&!have('COUNTRY','Incorporation or residence',kenya.value))out.picks.push({category:'COUNTRY',context:'Incorporation or residence',value:kenya.value,doc_ref:reg.doc_ref||'',basis:`A registration number is recorded (${reg.value}). Confirm the country of registration on the certificate.`});
+  if(county&&!have('COUNTRY','Business operations',kenya.value))out.picks.push({category:'COUNTRY',context:'Business operations',value:kenya.value,doc_ref:county.doc_ref||'',basis:`A Kenyan county is recorded for the client’s premises (${county.value}).`});
+ }
+ return out;
+}

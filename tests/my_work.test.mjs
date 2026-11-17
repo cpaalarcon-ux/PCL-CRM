@@ -63,7 +63,7 @@ test('Home carries the switch, shows the board only when chosen, and the old lis
 test('the controls are wired in the page, the cache tokens moved, and nothing here writes to the server',()=>{
  const pilot=rd('staff-pilot.mjs'),dash=rd('staff-dashboard.mjs'),mod=rd('staff-my-work.mjs'),css=rd('staff-pilot.css');
  assert.match(pilot,/b\?\.dataset\.myWork\)\{setMyWork\(b\.dataset\.myWork,b\.dataset\.value,globalThis\.localStorage\);render\(\)/);assert.match(pilot,/dataset\?\.myWorkSelect/);assert.match(pilot,/loadMyWorkMode\(globalThis\.localStorage\)/);
- assert.match(pilot,/staff-dashboard\.mjs\?v=20261121-coa-v1/);assert.match(dash,/staff-my-work\.mjs\?v=20261121-coa-v1/);assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261121-coa-v1/);
+ assert.match(pilot,/staff-dashboard\.mjs\?v=20261121-coa-v1/);assert.match(dash,/staff-my-work\.mjs\?v=20261121-coa-v1/);assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261121-fill-v1/);
  assert.doesNotMatch(mod,/request\(|fetch\(|action:/,'My Work reads the tasks already held and writes nothing');
  assert.match(css,/\.mywork-board \.kanban/);
 });
