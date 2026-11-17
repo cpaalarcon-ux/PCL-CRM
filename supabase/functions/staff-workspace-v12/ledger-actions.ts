@@ -25,6 +25,7 @@ import {yearTbAction} from './year-tb-actions.ts';
 import {statementVersionAction,isFsverAction} from './statement-version-actions.ts';
 import {statementMapAction,reportingRead,reportingSave,packReadinessFrom,statementsFrom,comparativesRead,comparativesSave,comparativesReview} from './annual-pack.ts';
 import {partnerSharesAction} from './partner-shares-actions.ts';
+import {notesAction} from './notes-actions.ts';
 import {stockRollsRead,stockJournalPlan} from './stock-journal.ts';
 import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
@@ -287,6 +288,14 @@ async function annualWorkbook({client,st,mark,banner,signedOff,asOf}:any){
  lines(sheet('Profit or loss',S.profit_or_loss.title),S.profit_or_loss);lines(sheet('Financial position',S.financial_position.title),S.financial_position);
  if(S.changes_in_equity){const w=sheet('Changes in equity',S.changes_in_equity.title);for(const [label,blk] of [[`Year ended ${S.period.ends_on}`,S.changes_in_equity.current],['Prior year',S.changes_in_equity.prior]] as any[]){if(!blk)continue;w.addRow([label]).font={name:'Arial',size:9,bold:true};w.addRow(['',...blk.columns.map((c:any)=>c.label),'Total']).font={name:'Arial',size:9,bold:true};for(const r of blk.rows){const row=w.addRow([r.label,...blk.columns.map((c:any)=>r.cells[c.code]||0),r.total]);row.font={name:'Arial',size:9};row.eachCell((c:any)=>{if(typeof c.value==='number')c.numFmt=fmt;});}w.addRow([]);}w.columns.forEach((c:any,i:number)=>{c.width=i?18:46;});}
  if(S.cash_flow)lines(sheet('Cash flows',S.cash_flow.title),S.cash_flow);
+ if(S.notes&&S.notes.items.length){const w=sheet('Notes',S.notes.title);
+  for(const n of S.notes.items){w.addRow([`${n.number}. ${n.title}`]).font={name:'Arial',size:10,bold:true};
+   for(const sec of n.sections){w.addRow([sec.label,'Year ended '+S.period.ends_on,...(S.profit_or_loss.has_prior||S.financial_position.has_prior?['Prior year']:[])]).font={name:'Arial',size:9,bold:true};
+    for(const ac of sec.accounts)w.addRow([`  ${ac.code} ${ac.name}`,ac.amount]).font={name:'Arial',size:9};
+    if(sec.rounding)w.addRow(['  Rounding',sec.rounding]).font={name:'Arial',size:9,italic:true};
+    w.addRow(['Total '+sec.label.toLowerCase(),sec.total,sec.prior??'Not available']).font={name:'Arial',size:9,bold:true};}
+   w.addRow([]);}
+  w.getColumn(2).numFmt=fmt;w.getColumn(3).numFmt=fmt;w.columns.forEach((c:any,i:number)=>{c.width=i?20:60;});}
  if(S.partner_allocation){const A=S.partner_allocation,w=sheet('Profit allocation',A.title);w.addRow(['Partner','Share of profit and loss',`Amount (${A.unit_label})`]).font={name:'Arial',size:9,bold:true};
   for(const r of A.rows)w.addRow([r.partner_name,r.percent,r.amount]).font={name:'Arial',size:9};
   w.addRow(['Profit for the year','100%',A.total]).font={name:'Arial',size:9,bold:true};w.getColumn(3).numFmt=fmt;w.columns.forEach((c:any,i:number)=>{c.width=i?22:56;});}
@@ -375,6 +384,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(p.action==='ledger_reporting_save')return await reportingSave(tx,a,l,p);
  {const yt=await yearTbAction(tx,a,l,p);if(yt!==undefined)return yt;}
  {const ps=await partnerSharesAction(tx,a,l,p);if(ps!==undefined)return ps;}
+ {const na=await notesAction(tx,a,l,p,async(asOf:string)=>await statementsFrom(tx,l,(await reportSnapshot(tx,l,'Year end',asOf)).full),p.as_of?date(p.as_of):day(l.ends_on));if(na!==undefined)return na;}
  if(p.action==='ledger_comparatives_save')return await comparativesSave(tx,a,l,p);
  if(p.action==='ledger_comparatives_read')return await comparativesRead(tx,a,l,await report(tx,l,day(l.ends_on)));
  if(p.action==='ledger_comparatives_review')return await comparativesReview(tx,a,l,p,await report(tx,l,day(l.ends_on)));

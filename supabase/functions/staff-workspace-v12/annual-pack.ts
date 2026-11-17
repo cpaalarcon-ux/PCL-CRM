@@ -8,6 +8,8 @@ import {buildReview,checkGroupIds,checkException} from './statement-review-rules
 import {formOf,usedLineCodes,misfits,applyCaptions,FORMS} from './annual-pack-legal-form.mjs';
 import {shareStateFor} from './partner-shares-actions.ts';
 import {allocateProfit,bpToPercent} from './partner-shares-rules.mjs';
+import {buildNotes,applyFaceRefs} from './annual-pack-notes.mjs';
+import {notesDigest,noteStateFor} from './notes-actions.ts';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 const addDays=(d:string,n:number)=>{const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10);};
@@ -202,7 +204,7 @@ export async function comparativesReview(tx:any,a:any,l:any,p:any,data:any){
 }
 
 // Readiness for the annual pack, from the same report the ledger screens use (data = report(...)).
-export async function packReadinessFrom(tx:any,l:any,data:any){
+export async function packReadinessFrom(tx:any,l:any,data:any,extra:any={}){
  const reporting=(await tx`select * from erp_private.ledger_period_reporting where period_id=${l.period_id}`)[0]||null;
  const lines=await tx`select line_code,statement from erp_private.statement_lines`;
  const maps=await tx`select account_code,line_code,effective_from,effective_to,status from erp_private.account_statement_map where status in ('Draft','Approved')`;
@@ -210,7 +212,7 @@ export async function packReadinessFrom(tx:any,l:any,data:any){
  const sets=await loadSets(tx,l.period_id),inp=await reconInputs(tx,l,data),recon=sets.approved?reconcileComparatives({lines:sets.approved.lines,lineDefs:inp.lineDefs,opening:inp.opening}):null;
  const legalEntityType=(await tx`select legal_entity_type from erp_private.clients where client_id=${l.client_id}`)[0]?.legal_entity_type||null;
  const shareState=await shareStateFor(tx,l.period_id);
- const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:shareState.status,lines:shareState.lines}}});
+ const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:shareState.status,lines:shareState.lines}},notes:extra.notes||null});
  return {...readiness,as_of:data.as_of,reporting:reporting||{...defaultReporting(day(l.starts_on)),saved:false}};
 }
 
@@ -218,7 +220,7 @@ export async function packReadinessFrom(tx:any,l:any,data:any){
 export async function statementsFrom(tx:any,l:any,data:any){
  const client=(await tx`select company_name,kra_pin,legal_entity_type from erp_private.clients where client_id=${l.client_id}`)[0]||{};
  const reporting=(await tx`select * from erp_private.ledger_period_reporting where period_id=${l.period_id}`)[0]||{...defaultReporting(day(l.starts_on)),saved:false};
- const lineDefs=await tx`select line_code,statement,section,label,sort_order,normal_side,cash_flow_class from erp_private.statement_lines`;
+ const lineDefs=await tx`select line_code,statement,section,label,sort_order,normal_side,cash_flow_class,note_ref from erp_private.statement_lines`;
  const maps=await tx`select account_code,line_code,effective_from,effective_to,status from erp_private.account_statement_map where status='Approved'`;
  const sets=await loadSets(tx,l.period_id),approved=sets.approved,inp=approved?await reconInputs(tx,l,data):null;
  const priorPl=approved?approved.lines.filter((x:any)=>x.statement==='Profit or loss').map((x:any)=>({line_code:x.line_code,amount:x.amount})):null;
@@ -251,7 +253,14 @@ export async function statementsFrom(tx:any,l:any,data:any){
    statements.partner_allocation={title:'Allocation of profit for the year to the partners',unit_label:unit,profit:last.current,rows:alloc.rows.map((r:any)=>({partner_name:r.partner_name,percent:bpToPercent(r.share_bp),amount:r.amount})),total:alloc.total,version:sh.set.version};
   }else{statements.problems.push(sh.status==='draft'?'The partners\u2019 profit shares are recorded but not approved by a Partner, so profit is not allocated to the partners.':'The partners\u2019 profit shares are not recorded for this year, so profit is not allocated to the partners.');statements.complete=false;}
  }
- const readiness=await packReadinessFrom(tx,l,data);
+ // System notes (build 2873): built from the same trial balance and map, numbered in statement order, with the number written on the face. The Partner's approval is tied to a digest of every figure.
+ const nb=buildNotes({statements,lineDefs,tb:data.tb,maps,asOf:data.as_of,form,rounding:reporting.rounding});
+ applyFaceRefs(statements,nb.face_refs);
+ const nDigest=await notesDigest(nb.notes);
+ statements.notes={title:'Notes to the financial statements',items:nb.notes,unit_label:nb.unit_label,digest:nDigest,problems:nb.problems};
+ statements.problems.push(...nb.problems);statements.complete=statements.problems.length===0;
+ const nState=await noteStateFor(tx,l.period_id,nDigest);
+ const readiness=await packReadinessFrom(tx,l,data,{notes:{state:{status:nState.status},count:nb.notes.length,problems:nb.problems}});
  return {client:{name:client.company_name||'',kra_pin:client.kra_pin||'',legal_entity_type:client.legal_entity_type||null,legal_form:form},reporting:{framework:reporting.framework,edition:reporting.edition,presentation_currency:reporting.presentation_currency,rounding:reporting.rounding,early_application_note:reporting.early_application_note||'',saved:reporting.saved!==false},
   statements,readiness:{ready:readiness.ready,status:readiness.status,summary:readiness.summary,blocked:readiness.blocked,checks:readiness.checks},
   status:readiness.ready&&statements.complete?'Ready for review':'Draft - not ready',as_of:data.as_of};
