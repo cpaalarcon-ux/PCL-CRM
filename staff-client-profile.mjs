@@ -5,7 +5,7 @@ import {docRequestShell} from './staff-doc-requests.mjs?v=20261109-dr-v1';
 import {lifecycleBar,routingCard,lifecycleBadge,commAccessCard,commExternalAllowed} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';
 import {clientSpine,spineHtml} from './staff-setup-spine.mjs?v=20261118-ready-v1';
 import {gatesHtml} from './staff-work-ready.mjs?v=20261118-ready-v1';
-export const PROFILE_TABS=[['overview','Overview'],['contacts','Contacts'],['projects','Projects & Tasks'],['setup','Set-up'],['documents','Documents / KYC'],['activity','Communication & Activity'],['tax','Tax & returns'],['aml','AML scope']];
+export const PROFILE_TABS=[['overview','Overview'],['contacts','Contacts'],['projects','Projects & Tasks'],['setup','Set-up'],['documents','Documents / KYC'],['activity','Communication & Activity'],['tax','Tax & returns'],['aml','AML scope'],['understanding','Understanding the client']];
 
 export function clientProfile(ctx){
  const {data:d,clientId,tab='overview',esc,shortDate,badge,staffName,structureLabel,progress,status,step,leader,wr,requireChart}=ctx;
@@ -14,7 +14,7 @@ export function clientProfile(ctx){
  if(!c)return `<section class="card"><h2>Client unavailable</h2><p>This client is not available in your current workspace. Refresh, or ask your Manager to check your assignment.</p>${back}</section>`;
  const id=esc(c.client_id),suite=d.suite||{},seen=!!c.details_visible;
  // Build 2848: the Set-up tab is for Managers and Partners (it holds the set-up screens that used to sit behind a card menu item).
- const shown=PROFILE_TABS.filter(([k])=>(k!=='setup'||leader)&&(k!=='aml'||!['INTERN','ADMIN'].includes(ctx.category||''))),cur=shown.some(([k])=>k===tab)?tab:'overview';
+ const shown=PROFILE_TABS.filter(([k])=>(k!=='setup'||leader)&&(!['aml','understanding'].includes(k)||!['INTERN','ADMIN'].includes(ctx.category||''))),cur=shown.some(([k])=>k===tab)?tab:'overview';
  const host=name=>`<div id="clientTabHost" class="section-space" data-tab="${name}" data-id="${id}"><p class="muted">Loading…</p></div>`;
  const btn=(attrs,label,cls='')=>`<button type="button" class="${cls}" ${attrs}>${esc(label)}</button>`;
  const projects=d.projects.filter(p=>p.client_id===c.client_id),pids=new Set(projects.map(p=>p.project_id));
@@ -40,6 +40,7 @@ export function clientProfile(ctx){
    return `<div class="section-space">${commAccessCard(c,role,esc)}</div>`+(items.length?items.map(i=>`<div class="task"><div><b>${esc(i.kind)}</b> · ${esc(i.text)}<small>${esc(shortDate(i.at))} · ${esc(i.note)}</small></div></div>`).join(''):'<p class="empty">No communication or changes recorded for this client yet.</p>');
   },
   aml:()=>host('aml'),
+  understanding:()=>host('understanding'),
   setup:()=>`<p class="muted">Everything that sets this client up for work, in one place: legal identity, activities, chart of accounts, VAT categories, reporting periods and stock. The steps and the Healthy checks are on the Overview.</p>${leader?host('setup'):''}`,
   tax:()=>{
    const tps=(suite.tax_profiles||[]).filter(x=>x.client_id===c.client_id);
