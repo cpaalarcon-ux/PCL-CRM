@@ -201,7 +201,7 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='compliance_verify'||p.action==='edd_approve'){
   const c=one(await tx`select x.*,c.missing_fields,c.legal_structure,c.legal_subtype from erp_private.client_compliance x join erp_private.clients c using(client_id) where client_id=${uuid(p.client_id)} for update of x`);
   if(String(c.revision)!==revision(p.revision))fail(409,'Compliance details changed. Refresh first.');
-  if(p.action==='edd_approve'){if(a.category_code!=='PARTNER')fail(403,'Only the Engagement Partner may approve enhanced due diligence.');if(!c.verified_by)fail(400,'Verify the KYC file first.');await tx`update erp_private.client_compliance set edd_approved_by=${a.staff_id},edd_approved_at=now(),notes=notes||E'\nEDD: '||${text(p.reason,2000)} where client_id=${c.client_id}`;return {ok:true};}
+  if(p.action==='edd_approve'){if(!(await tx`select erp_private.is_mlro() as ok`)[0].ok)fail(403,'Only the Engagement Partner or the appointed MLRO may approve enhanced due diligence.');if(!c.verified_by)fail(400,'Verify the KYC file first.');await tx`update erp_private.client_compliance set edd_approved_by=${a.staff_id},edd_approved_at=now(),notes=notes||E'\nEDD: '||${text(p.reason,2000)} where client_id=${c.client_id}`;return {ok:true};}
   if(c.last_edited_by===a.staff_id)fail(403,'You made the latest KYC change. A different Manager or Partner must verify this file.');
   const pending=await tx`select version_id,recorded_by from erp_private.client_kyc_change_versions where client_id=${c.client_id} and status='Pending review' for update`;
   if(pending.some((v:any)=>v.recorded_by===a.staff_id))fail(403,'You recorded a pending KYC change. A different Manager or Partner must verify this file.');
@@ -218,6 +218,7 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   const k=(await tx`select * from erp_private.client_compliance where client_id=${project.client_id}`)[0];
   const iso=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
   const checks=[{label:'Current client KYC verified',ok:!!k?.verified_by&&!!k.review_due&&iso(k.review_due)>=today()},{label:'Enhanced due diligence (if required)',ok:!k?.is_pep&&k?.risk_rating!=='High'||!!k?.edd_approved_by},{label:'Signed engagement letter uploaded and verified',ok:!!e?.signed_letter_id&&!!e.letter_verified_by&&(!e.letter_expires_on||iso(e.letter_expires_on)>=today())}];
+  {const gate=(await tx`select erp_private.aml_gate_enforced() as on,erp_private.aml_cleared(${project.client_id}) as ok`)[0];checks.push({label:'POCAMLA: MLRO decision'+(gate.on?'':' (not yet required by the firm)'),ok:!gate.on||!!gate.ok});}
   if(project.service_code.startsWith('AUD-')&&project.sme_audit_exempt)checks.push({label:'Optional audit requested by client',ok:project.audit_requested});
   return {checks,is_audit:project.service_code.startsWith('AUD-'),controls:e||null};
  }

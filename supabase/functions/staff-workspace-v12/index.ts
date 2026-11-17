@@ -63,6 +63,7 @@ import {templateLibraryAction} from './template-library-actions.ts';
 import {recordReopenAction} from './record-reopen-actions.ts';
 import {deleteRedoAction} from './delete-redo-actions.ts';
 import {clientMasterAction} from './client-master-actions.ts';
+import {amlAction} from './aml-actions.ts';
 import {clientSetupReviewAction} from './client-setup-review-actions.ts';
 import {clientChoicesAction} from './client-choices-actions.ts';
 import {bulkSetupAction} from './bulk-setup-actions.ts';
@@ -486,6 +487,7 @@ async function action(id:any,p:any){
   const recordReopen=await recordReopenAction(tx,a,p);if(recordReopen!==undefined)return recordReopen;
   const deleteRedo=await deleteRedoAction(tx,a,p);if(deleteRedo!==undefined)return deleteRedo;
   const clientMaster=await clientMasterAction(tx,a,p);if(clientMaster!==undefined)return clientMaster;
+  const aml=await amlAction(tx,a,p);if(aml!==undefined)return aml;
   const setupReview=await clientSetupReviewAction(tx,a,p);if(setupReview!==undefined)return setupReview;
   const clientChoices=await clientChoicesAction(tx,a,p);if(clientChoices!==undefined)return clientChoices;
   const bulkSetup=await bulkSetupAction(tx,a,p);if(bulkSetup!==undefined)return bulkSetup;
