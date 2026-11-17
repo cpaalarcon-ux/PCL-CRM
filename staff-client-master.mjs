@@ -1,6 +1,6 @@
 // Client master (build 2807). Each key fact about a client carries its source and is verified by a different person.
 // The screen lists every required fact with its state, so a reviewer only has to look at the exceptions. Every step is authorised again on the server.
-export function createClientMasterUI(ctx,{show,button,templateBlock}){
+export function createClientMasterUI(ctx,{show,button,templateBlock,scopeButton}){
  const {esc,field,select,form,request,notice,shortDate}=ctx,d=()=>ctx.data();
  let last=null;
  const tone={Verified:'good',Recorded:'warn',Differs:'bad',Missing:'bad'};
@@ -27,7 +27,7 @@ export function createClientMasterUI(ctx,{show,button,templateBlock}){
   last=x;
   const timing=x.ready_at?`<p class="badge good">Ready ${esc(shortDate(x.ready_at))}${x.minutes_to_ready!=null?' · '+esc(String(x.minutes_to_ready))+' minutes from the first fact':''}</p>`:x.started_at?`<p class="muted">Started ${esc(shortDate(x.started_at))}.</p>`:'';
   const hist=x.history.length?`<details><summary>Replaced facts (${x.history.length})</summary><ul>${x.history.map(h=>`<li>${esc(h.field_key)}: ${esc(h.value)} (${esc(h.source_kind)}) · replaced ${esc(shortDate(h.superseded_at))}: ${esc(h.superseded_reason)}</li>`).join('')}</ul></details>`:'';
-  show('Client master · '+x.client.company_name,`<p><b>${esc(x.client.legal_entity_type||'Legal entity not set')}</b> · ${x.verified} of ${x.required} facts verified (${x.percent}%)</p>${timing}<p class="info full">${esc(x.note)}</p>${x.exceptions.length?`<p><b>${x.exceptions.length} to look at.</b> Everything else is verified.</p>`:'<p class="badge good">Every required fact is verified.</p>'}${table(x)}${holders(x)}${x.template&&templateBlock?templateBlock(x.template):''}${hist}<div class="actions">${reviewer()?button('cm-report','Set-up time report',x.client.client_id):''}</div>`);
+  show('Client master · '+x.client.company_name,`<p><b>${esc(x.client.legal_entity_type||'Legal entity not set')}</b> · ${x.verified} of ${x.required} facts verified (${x.percent}%)</p>${timing}<p class="info full">${esc(x.note)}</p>${x.exceptions.length?`<p><b>${x.exceptions.length} to look at.</b> Everything else is verified.</p>`:'<p class="badge good">Every required fact is verified.</p>'}${table(x)}${holders(x)}${x.template&&templateBlock?templateBlock(x.template):''}${hist}<div class="actions">${scopeButton?scopeButton(x.client.client_id):''}${reviewer()?button('cm-report','Set-up time report',x.client.client_id):''}</div>`);
  }
  async function open(cid){view(await request({action:'client_master_read',client_id:cid}));}
  async function handle(a,cid,key){

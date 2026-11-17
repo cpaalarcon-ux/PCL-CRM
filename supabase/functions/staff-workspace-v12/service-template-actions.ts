@@ -81,6 +81,10 @@ async function buildPlan(tx:any,a:any,i:any){
  const facts=await profileFacts(tx,a,i.client_id,i.period_start,i.period_end,clientTemplate);
  const tasks=planTasks({tasks:tpl.tasks,period:{start:i.period_start,end:i.period_end},facts,exclusions:i.exclusions,actorCategory:a.category_code});
  problems.push(...tasks.problems);
+ // Build 2864: the engagement scope. A period before the scope start (or after its end) needs a Partner's approved override. No scope recorded means no gate.
+ let scope:any=null;
+ if(link){const why=(await tx`select erp_private.scope_block(${i.client_id},${i.firm_id},${i.period_start},${i.period_end}) as b`)[0]?.b;
+  if(why){problems.push(why);scope={needs_override:true,client_id:i.client_id,firm_id:i.firm_id,from_date:i.period_start,to_date:i.period_end,reason:why};}}
  const today=nairobiDate();
  warnings.push(...dateWarnings(tpl,i.period_start,today));
  // Build 2856: the MLRO's rule for this service. It informs and flags; the gate stays the MLRO policy switch, not this plan.
@@ -88,7 +92,7 @@ async function buildPlan(tx:any,a:any,i:any){
  if(aml.needs_flag&&!aml.cleared)warnings.push('POCAMLA: '+aml.line);
  return {template:{template_id:tpl.template_id,template_code:tpl.template_code,version:tpl.version,name:tpl.name,service_group:tpl.service_group,effective_from:tpl.effective_from,last_reviewed:tpl.last_reviewed},service:svc||null,client:{client_id:i.client_id,company_name:client.client.company_name,template_code:clientTemplate},
   project:project?{project_id:project.project_id,project_name:project.project_name,status:project.status}:null,
-  aml,
+  aml,scope,
   create:tasks.create,summary:folderSummary(tasks.create),skipped:tasks.skipped,problems,warnings,late:lateCount(tasks.create,today),tpl,staff:{resp,rev}};
 }
 const strip=(plan:any)=>{const {tpl,staff,...rest}=plan;return rest;};
@@ -276,6 +280,8 @@ async function release(tx:any,a:any,setupId:string){
  const project=(await tx`select project_id,handling_firm_id from erp_private.projects where project_id=${e.project_id}`)[0];
  const gate=await projectTaskGate(tx,e.project_id,e.client_id,e.period_start);
  if(!gate.ready)return {released:false,waiting_reason:gate.reason,tasks_created:0};
+ // Build 2864: the scope is checked again now, so a scope recorded after the set-up was saved still holds it back until a Partner approves the period.
+ {const why=(await tx`select erp_private.scope_block(${e.client_id},${project.handling_firm_id},${day(e.period_start)},${day(e.period_end)}) as b`)[0]?.b;if(why)return {released:false,waiting_reason:why,tasks_created:0};}
  const tpl=await templateWithItems(tx,e.template_id);
  const ct=await loadClientTemplate(tx,a,e.client_id,await tx`select * from erp_private.client_field_facts where client_id=${e.client_id}`,null);
  const facts=await profileFacts(tx,a,e.client_id,day(e.period_start),day(e.period_end),ct?.template?.template_code||null);
