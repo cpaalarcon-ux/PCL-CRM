@@ -5,6 +5,7 @@ import {buildStatements} from './annual-pack-statements.mjs';
 import {buildEquityStatement,buildCashFlow} from './annual-pack-flows.mjs';
 import {DATA_CUTOFF} from './ledger-rules.mjs';
 import {buildReview,checkGroupIds,checkException} from './statement-review-rules.mjs';
+import {formOf,usedLineCodes,misfits,applyCaptions} from './annual-pack-legal-form.mjs';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 const addDays=(d:string,n:number)=>{const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10);};
@@ -205,13 +206,14 @@ export async function packReadinessFrom(tx:any,l:any,data:any){
  const maps=await tx`select account_code,line_code,effective_from,effective_to,status from erp_private.account_statement_map where status in ('Draft','Approved')`;
  const priorPeriodExists=(await tx`select 1 from erp_private.ledger_periods where client_id=${l.client_id} and ends_on=${day(l.starts_on)}::date-1`).length>0;
  const sets=await loadSets(tx,l.period_id),inp=await reconInputs(tx,l,data),recon=sets.approved?reconcileComparatives({lines:sets.approved.lines,lineDefs:inp.lineDefs,opening:inp.opening}):null;
- const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon});
+ const legalEntityType=(await tx`select legal_entity_type from erp_private.clients where client_id=${l.client_id}`)[0]?.legal_entity_type||null;
+ const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:'none'}}});
  return {...readiness,as_of:data.as_of,reporting:reporting||{...defaultReporting(day(l.starts_on)),saved:false}};
 }
 
 // Formatted statements for one client year, read-only. They are always a draft until the readiness checks pass; a Partner's pack approval is a later step.
 export async function statementsFrom(tx:any,l:any,data:any){
- const client=(await tx`select company_name,kra_pin from erp_private.clients where client_id=${l.client_id}`)[0]||{};
+ const client=(await tx`select company_name,kra_pin,legal_entity_type from erp_private.clients where client_id=${l.client_id}`)[0]||{};
  const reporting=(await tx`select * from erp_private.ledger_period_reporting where period_id=${l.period_id}`)[0]||{...defaultReporting(day(l.starts_on)),saved:false};
  const lineDefs=await tx`select line_code,statement,section,label,sort_order,normal_side,cash_flow_class from erp_private.statement_lines`;
  const maps=await tx`select account_code,line_code,effective_from,effective_to,status from erp_private.account_statement_map where status='Approved'`;
@@ -230,8 +232,16 @@ export async function statementsFrom(tx:any,l:any,data:any){
  statements.changes_in_equity=equity;statements.cash_flow=cashFlow;statements.problems.push(...flowProblems);statements.complete=statements.problems.length===0;
  const priorInErp=(await tx`select 1 from erp_private.ledger_periods where client_id=${l.client_id} and ends_on=${day(l.starts_on)}::date-1`).length>0;
  if(!approved&&priorInErp)statements.problems.push('The prior year is held in the ERP. Comparatives taken from that ledger year are not shown yet.');
+ // Legal form (build 2870): captions follow the client's legal structure, and a balance that belongs to another form is a problem, never moved.
+ const form=formOf(client.legal_entity_type);
+ applyCaptions(statements,form);
+ {
+  const labelOf=(c:string)=>lineDefs.find((d:any)=>d.line_code===c)?.label||null;
+  for(const m of misfits(form,usedLineCodes({tb:data.tb,maps,asOf:data.as_of}),labelOf))statements.problems.push(`${m.label} ${m.reason}.`);
+  statements.complete=statements.problems.length===0;
+ }
  const readiness=await packReadinessFrom(tx,l,data);
- return {client:{name:client.company_name||'',kra_pin:client.kra_pin||''},reporting:{framework:reporting.framework,edition:reporting.edition,presentation_currency:reporting.presentation_currency,rounding:reporting.rounding,early_application_note:reporting.early_application_note||'',saved:reporting.saved!==false},
+ return {client:{name:client.company_name||'',kra_pin:client.kra_pin||'',legal_entity_type:client.legal_entity_type||null,legal_form:form},reporting:{framework:reporting.framework,edition:reporting.edition,presentation_currency:reporting.presentation_currency,rounding:reporting.rounding,early_application_note:reporting.early_application_note||'',saved:reporting.saved!==false},
   statements,readiness:{ready:readiness.ready,status:readiness.status,summary:readiness.summary,blocked:readiness.blocked,checks:readiness.checks},
   status:readiness.ready&&statements.complete?'Ready for review':'Draft - not ready',as_of:data.as_of};
 }

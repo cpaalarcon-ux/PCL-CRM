@@ -1,4 +1,5 @@
 import {comparativesStatus} from './annual-pack-comparatives.mjs';
+import {formOf,usedLineCodes,legalFormCheck,partnerSharesCheck} from './annual-pack-legal-form.mjs';
 // Annual financial statements: what must be true before a pack can be relied on. Pure rules, no database and no tax rates.
 // IFRS for SMEs Accounting Standard, Third Edition (2025) is effective for annual periods beginning on or after 1 January 2027; earlier use is early application and must be disclosed.
 export const THIRD_EDITION_EFFECTIVE='2027-01-01';
@@ -38,7 +39,7 @@ const sample=(items,n=6)=>items.slice(0,n).join(', ')+(items.length>n?` and ${it
 // Readiness for one client year. Each check is Pass, Blocked or Info. The pack is ready only when nothing is Blocked.
 // Input: {period:{starts_on,ends_on,status}, reporting, tb:[{code,name,opening,net,movement_debit,movement_credit}], maps:[...rows], lines:[{line_code,statement}],
 //         issues:[string], prior:{source}, priorPeriodExists:boolean, asOf}
-export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,priorPeriodExists=false,asOf,approvedSet=null,draftSet=null,recon=null}){
+export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,priorPeriodExists=false,asOf,approvedSet=null,draftSet=null,recon=null,legal=null}){
  const at=asOf||day(period.ends_on),checks=[],add=(code,label,status,detail='')=>checks.push({code,label,status,detail});
  const problems=validateReporting(reporting,period.starts_on);
  add('REPORTING_BASIS','Reporting framework and edition recorded',problems.length?'Blocked':'Pass',problems.join(' ')||`${reporting.framework}, ${reporting.edition}, ${reporting.presentation_currency}, ${reporting.rounding.toLowerCase()}, indirect cash flow.`);
@@ -56,6 +57,14 @@ export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,pr
   [missing.length?`No statement line for: ${sample(missing)}.`:'',draftOnly.length?`Waiting for Partner approval: ${sample(draftOnly)}.`:''].filter(Boolean).join(' ')||`${active.length} account(s) with balances are mapped.`);
  add('NO_LEGACY','No balance on legacy accounts',legacy.length?'Blocked':'Pass',legacy.length?`Move the balance off: ${sample(legacy)}.`:'');
  add('NO_UNRESOLVED','No unresolved review items in profit',unresolved.length?'Blocked':'Pass',unresolved.length?`Resolve: ${sample(unresolved)}.`:'');
+ // Legal form (build 2870): the client's legal structure decides the captions, and balances that belong to another form block the pack.
+ // Left out when the caller gives no client information, so older callers are unchanged.
+ if(legal){
+  const form=formOf(legal.legalEntityType),labelOf=c=>lineOf.get(c)?.label||null,lf=legalFormCheck({form,legalEntityType:legal.legalEntityType,used:usedLineCodes({tb,maps,asOf:at}),labelOf});
+  add('LEGAL_FORM','Statements use the captions of the client\u2019s legal form',lf.status,lf.detail);
+  const ps=partnerSharesCheck({form,shares:legal.shares});
+  if(ps)add('PARTNER_SHARES','Partners\u2019 profit shares recorded',ps.status,ps.detail);
+ }
  const total=tb.reduce((s,r)=>s+cents(r.net),0);
  add('TB_BALANCED','Trial balance balances',total===0?'Pass':'Blocked',total===0?'':`Out by KES ${kes(total)}.`);
  add('LEDGER_REVIEW','Ledger review items cleared',issues.length?'Blocked':'Pass',issues.length?`${issues.length} item(s): ${issues.slice(0,3).join(' | ')}${issues.length>3?' | …':''}`:'');
