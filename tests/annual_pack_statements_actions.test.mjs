@@ -52,7 +52,41 @@ test('formatted statements through the action: draft until comparatives are appr
  const p=s.statements.profit_or_loss,f=s.statements.financial_position;
  assert.equal(p.has_prior,true);assert.equal(line(p,'Revenue').prior,1000000);assert.equal(line(p,'Profit for the year').prior,210000);assert.equal(line(p,'Profit for the year').current,300000);
  assert.equal(f.has_prior,true);assert.equal(line(f,'Total assets').prior,300000);assert.equal(line(f,'Total equity and liabilities').prior,300000);
- assert.deepEqual(s.statements.problems,[]);assert.equal(s.readiness.ready,true);assert.equal(s.status,'Ready for review');
+ assert.deepEqual(s.statements.problems,[]);
+ // Build 2873: everything else is in order, but the statements are not ready until a Partner has approved the notes
+ assert.deepEqual(s.readiness.checks.filter(c=>c.status==='Blocked').map(c=>c.code),['NOTES_APPROVED']);assert.equal(s.readiness.ready,false);assert.equal(s.statements.notes.items.length>0,true);assert.deepEqual(s.statements.notes.problems,[]);
+ assert.equal(line(s.statements.profit_or_loss,'Revenue').note,1,'the note number is written on the face');
+ const NA=await import('../supabase/functions/staff-workspace-v12/notes-actions.ts');
+ const nget=(asOf)=>A.statementsFrom(tx,per,data);
+ const nact=(role,body)=>as(role,a=>NA.notesAction(tx,a,per,{action:'ledger_notes_read',...body},nget,'2026-12-31'));
+ let nr=await nact('MANAGER',{});assert.equal(nr.state,'none');assert.equal(nr.can_prepare,true);assert.equal(nr.can_review,false);assert.ok(nr.notes.length>0);assert.ok(nr.notes.every(n=>n.ties));
+ await assert.rejects(()=>nact('ASSISTANT',{action:'ledger_notes_prepare'}),/Manager or Partner/);
+ await assert.rejects(()=>nact('MANAGER',{action:'ledger_notes_review',set_id:id(),decision:'Approved'}),/Only a Partner/);
+ await assert.rejects(()=>nact('PARTNER2',{action:'ledger_notes_review',set_id:id(),decision:'Approved'}),/have changed/);
+ const n1=await nact('MANAGER',{action:'ledger_notes_prepare'});assert.equal(n1.version,1);
+ nr=await nact('PARTNER2',{});assert.equal(nr.state,'draft');assert.equal(nr.can_review,true);assert.equal(nr.drafted_by_me,false);
+ s=await get('MANAGER');assert.match(s.readiness.checks.find(c=>c.code==='NOTES_APPROVED').detail,/wait for a Partner/);assert.equal(s.status,'Draft - not ready');
+ // returned needs a reason; a prepared set is then superseded by a fresh draft
+ await assert.rejects(()=>nact('PARTNER2',{action:'ledger_notes_review',set_id:n1.set_id,decision:'Returned',review_note:'no'}),/at least 10/);
+ assert.equal((await nact('PARTNER2',{action:'ledger_notes_review',set_id:n1.set_id,decision:'Returned',review_note:'Fictional wrong figure in the receivables note'})).status,'Returned');
+ nr=await nact('MANAGER',{});assert.equal(nr.state,'none');
+ const n2=await nact('MANAGER',{action:'ledger_notes_prepare'});assert.equal(n2.version,2);
+ // a Partner who prepared them cannot approve without being the only Partner
+ const n3=await nact('PARTNER',{action:'ledger_notes_prepare'});assert.equal(n3.version,3);
+ await assert.rejects(()=>nact('PARTNER',{action:'ledger_notes_review',set_id:n3.set_id,decision:'Approved'}),/different Partner approves/);
+ await assert.rejects(()=>nact('PARTNER2',{action:'ledger_notes_review',set_id:n2.set_id,decision:'Approved'}),/have changed/,'the earlier draft was replaced');
+ const ap=await nact('PARTNER2',{action:'ledger_notes_review',set_id:n3.set_id,decision:'Approved'});assert.equal(ap.status,'Approved');assert.equal(ap.sole_partner_approval,false);
+ s=await get('MANAGER');assert.equal(s.readiness.checks.find(c=>c.code==='NOTES_APPROVED').status,'Pass');assert.equal(s.readiness.ready,true);assert.equal(s.status,'Ready for review');
+ await assert.rejects(()=>nact('MANAGER',{action:'ledger_notes_prepare'}),/already approved/);
+ // any change to a figure makes the approval stale: the pack is blocked again until the notes are prepared and approved again
+ const changed={...data,tb:data.tb.map(r=>r.code==='10020'?{...r,movement_debit:r.movement_debit+1000,net:r.net+1000}:r)};
+ const ngetChanged=()=>A.statementsFrom(tx,per,changed);
+ nr=await as('PARTNER2',a=>NA.notesAction(tx,a,per,{action:'ledger_notes_read'},ngetChanged,'2026-12-31'));assert.equal(nr.state,'stale');assert.equal(nr.can_review,false);
+ await assert.rejects(()=>as('PARTNER2',a=>NA.notesAction(tx,a,per,{action:'ledger_notes_review',set_id:n3.set_id,decision:'Approved'},ngetChanged,'2026-12-31')),/have changed/);
+ // the database itself: an approved set cannot be edited or deleted, and only a Partner other than the preparer approves
+ await assert.rejects(()=>as('MANAGER',a=>tx`update erp_private.period_note_sets set digest='x' where set_id=${n3.set_id}`),/./);
+ await assert.rejects(()=>as('MANAGER',a=>tx`delete from erp_private.period_note_sets where set_id=${n3.set_id}`),/./);
+ await assert.rejects(()=>as('MANAGER',a=>tx`update erp_private.period_note_sets set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now() where set_id=${n3.set_id}`),/./);
  const eq1=s.statements.changes_in_equity,cf1=s.statements.cash_flow;
  assert.equal(eq1.has_prior,true);assert.equal(eq1.prior.rows.find(r=>r.move==='DIVIDENDS_DRAWINGS').total,-60000);assert.equal(eq1.prior.rows.find(r=>r.move==='CLOSING').total,300000,'prior closing equals this year opening');assert.equal(eqRow(eq1,'OPENING').total,eq1.prior.rows.find(r=>r.move==='CLOSING').total);
  assert.equal(cf1.has_prior,true);assert.equal(cf1.reconciles,true);assert.equal(cf1.rows.find(r=>r.code==='CF.CASH_CLOSE').prior,120000);assert.equal(cf1.rows.find(r=>r.code==='CF.CASH_OPEN').current,cf1.rows.find(r=>r.code==='CF.CASH_CLOSE').prior,'prior closing cash is this year opening cash');

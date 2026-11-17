@@ -5,10 +5,10 @@
 import {mapInForce} from './annual-pack-rules.mjs';
 
 const cents=v=>Math.round(Number(v||0)*100);
-const UNITS={'Whole shillings':100,'Thousands':100000};
-const ASSET_SECTIONS=new Set(['Non-current assets','Current assets']);
+export const UNITS={'Whole shillings':100,'Thousands':100000};
+export const ASSET_SECTIONS=new Set(['Non-current assets','Current assets']);
 // Round half away from zero to the presentation unit.
-const roundTo=(c,unit)=>{const r=Math.floor(Math.abs(c)/unit+0.5+1e-9);return c<0?-r:r;};
+export const roundTo=(c,unit)=>{const r=Math.floor(Math.abs(c)/unit+0.5+1e-9);return c<0?-r:r;};
 
 // Convention for every per-line figure ("natural" cents): a credit-normal line counts credits as positive, a debit-normal line counts debits as positive.
 // Profit or loss lines use the year's movement, balance sheet lines the closing balance.
@@ -28,8 +28,8 @@ export function currentByLine({tb,maps,lineDefs,asOf}){
 
 // Display sign: in profit or loss income is positive and costs negative; in the statement of financial position assets are positive, and equity and
 // liabilities are positive with a drawing or a debit liability negative.
-const plSign=d=>d.normal_side==='Credit'?1:-1;
-const sfpSign=d=>ASSET_SECTIONS.has(d.section)?(d.normal_side==='Debit'?1:-1):(d.normal_side==='Credit'?1:-1);
+export const plSign=d=>d.normal_side==='Credit'?1:-1;
+export const sfpSign=d=>ASSET_SECTIONS.has(d.section)?(d.normal_side==='Debit'?1:-1):(d.normal_side==='Credit'?1:-1);
 
 function plStatement({lineDefs,cur,pri,unit}){
  const lines=lineDefs.filter(d=>d.statement==='Profit or loss'&&d.line_code!=='PL.UNRESOLVED').sort((a,b)=>a.sort_order-b.sort_order);
