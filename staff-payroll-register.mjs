@@ -1,4 +1,5 @@
 import {monthsPanel,resultPanel,idsForm,downloadCsv} from './staff-statutory-files.mjs?v=20261116-choices-v1';
+import {p9Panel,p9Result,p9CardView,p9PrintHtml,downloadZip} from './staff-p9.mjs?v=20261124-p9-v1';
 // Payroll register screens (build 2804): who is on a client's payroll and what they are paid, then "Start month from register".
 // The server (payroll-register-actions.ts, payroll-register-rules.mjs) owns every rule. A month started here opens the typed payroll screen pre-filled;
 // nothing is saved, submitted or posted from this screen.
@@ -57,6 +58,7 @@ export function createPayrollRegisterUI(ctx,{show,button,startManual}){
   select('relationship','Relationship to the client *',['Employee','Casual worker','Director','Shareholder','Family member'].map(x=>[x,x]),'Employee')+select('employment_type','Employment type',[['Permanent','Permanent'],['Contract','Contract'],['Casual','Casual']],'Permanent')+
   select('resident','Residence',[['Resident','Resident'],['Non-resident','Non-resident']],'','Decide in the preview')+field('phone','Phone (casual)','','text','maxlength="20"')+field('approval_reference','Board resolution, contract or agreement (director, shareholder, family)','','text','maxlength="300"')+field('related_basis','Duties and basis of pay (family member)','','text','maxlength="500"');
  const payFields=()=>field('gross','Gross cash pay per month *','','number','required min="0.01" step="0.01"')+field('taxable_benefits','Taxable benefits','','number','min="0" step="0.01"')+field('other_pension','Other pension contribution','','number','min="0" step="0.01"')+field('mortgage_interest','Mortgage interest','','number','min="0" step="0.01"')+field('postretirement_medical','Post-retirement medical','','number','min="0" step="0.01"');
+ let p9Last=null;
  async function list(){
   const r=await request({action:'payroll_register_read',project_id:pid});
   show('Payroll register',`<p><b>${esc(projectName(pid))}</b></p><p class="info full">${esc(REGISTER_NOTE)}</p><div class="actions">${button('register-add','Add person')}${button('register-start','Start a month from the register')}${button('statutory-files','Statutory files')}${button('back','Back')}</div>${registerTable(r,esc,shortDate)}${changesPanel(r,esc,shortDate)}`);
@@ -98,9 +100,29 @@ export function createPayrollRegisterUI(ctx,{show,button,startManual}){
    show('Statutory details: '+person.name,form(idsForm(person,field,select,esc),'Save details'),
     async f=>request({action:'payroll_register_identifiers',project_id:pid,person_id:id,revision:String(person.revision),...Object.fromEntries(f),disability:f.get('disability')==='yes'}),()=>{notice('Statutory details saved.');return list();});
   },
+  async 'p9-files'(){
+   const r=await request({action:'statutory_file_p9_read',project_id:pid});
+   show('P9 cards',p9Panel(r,esc)+`<div class="actions">${button('statutory-files','Back to statutory files')}</div>`);
+  },
+  async 'p9-prepare'(id,el){
+   const year=Number(el?.dataset.year||p9Last?.year);
+   p9Last=await request({action:'statutory_file_p9_prepare',project_id:pid,year,empty_months:[...new Set([...(p9Last?.year===year?(p9Last.coverage||[]).filter(c=>c.status==='Confirmed as no payroll').map(c=>c.month):[]),...[...document.querySelectorAll('.p9Empty:checked')].map(c=>c.value)])]});
+   show('P9 cards',p9Result(p9Last,esc));
+  },
+  async 'p9-show'(id,el){show('P9 card',p9CardView(p9Last,el?.dataset.pin,esc));},
+  async 'p9-release'(id,el){
+   const year=Number(el?.dataset.year||p9Last?.year);
+   const x=await request({action:'statutory_file_p9_prepare',project_id:pid,year,release:true,empty_months:(p9Last?.coverage||[]).filter(c=>c.status==='Confirmed as no payroll').map(c=>c.month)});
+   if(x.files?.length){downloadZip(`P9_${year}.zip`,x.files.map(f=>({name:f.file_name,text:f.csv})));notice(`Released and downloaded ${x.files.length} P9 card${x.files.length===1?'':'s'} for ${year}. Each release is recorded.`);}
+   p9Last={...x,files:undefined};show('P9 cards',p9Result(p9Last,esc));
+  },
+  async 'p9-print'(){
+   if(!p9Last)return;const w=window.open('','_blank');if(!w){notice('Allow pop-ups to print the cards.',true);return;}
+   w.document.write(`<!doctype html><title>P9 ${esc(p9Last.year)}</title><style>body{font:11px Arial,sans-serif}table{border-collapse:collapse;width:100%}td,th{border:1px solid #444;padding:2px 4px}.num{text-align:right}</style>${p9PrintHtml(p9Last,esc)}`);w.document.close();w.focus();w.print();
+  },
   async 'statutory-files'(){
    const r=await request({action:'statutory_file_read',project_id:pid});
-   show('Statutory files',monthsPanel(r,esc)+`<div class="actions">${button('register','Back to register')}</div>`);
+   show('Statutory files',monthsPanel(r,esc)+`<div class="actions">${button('p9-files','P9 cards (year end)')}${button('register','Back to register')}</div>`);
   },
   async 'statutory-prepare'(id,el){
    const x=await request({action:'statutory_file_prepare',project_id:pid,import_id:id,kind:el?.dataset.kind});

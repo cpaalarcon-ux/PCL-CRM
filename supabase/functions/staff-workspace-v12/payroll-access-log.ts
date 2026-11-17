@@ -1,7 +1,7 @@
 import {fail,uuid} from './validation.mjs';
 // Build 2835: a record of who opened payroll identity or salary data. `logPayrollRead` is called by the payroll reads in the same transaction, so a read that succeeds
 // always leaves a row, and a row cannot exist for a read that did not happen. Table rules are in 20261116230000_payroll_access_log_and_target_register.sql.
-export const SURFACES=['Payroll register','Payroll run','Payroll review','Client confirmation','Confirmation PDF','Payroll file'];
+export const SURFACES=['Payroll register','Payroll run','Payroll review','Client confirmation','Confirmation PDF','Payroll file','P9 cards'];
 export async function logPayrollRead(tx:any,a:any,w:{client_id:string,project_id:string,import_id?:string|null,surface:string,detail?:string}){
  if(!SURFACES.includes(w.surface))throw new Error('Unknown payroll access surface.');
  await tx`insert into erp_private.payroll_access_log(client_id,project_id,import_id,surface,detail,read_by) values(${w.client_id},${w.project_id},${w.import_id??null},${w.surface},${w.detail?String(w.detail).slice(0,300):null},${a.staff_id})`;
