@@ -46,6 +46,10 @@ test('formatted statements through the action: draft until comparatives are appr
 
  // reporting basis, then comparatives entered by a Manager and approved by a second Partner
  await as('MANAGER',a=>A.reportingSave(tx,a,per,{framework:'IFRS for SMEs Accounting Standard',edition:'Third Edition (2025)',presentation_currency:'KES',rounding:'Whole shillings',comparatives_basis:'Approved opening balances',early_application_note:'Fictional early application note for the year'}));
+ const setNoCf=await as('MANAGER',a=>A.comparativesSave(tx,a,per,{source_kind:'Signed prior-year financial statements',source_reference:'Fictional signed accounts for 2025, dated 14 March 2026',pl:PL,eq:EQ,cf:''}));
+ // Build 2876: comparatives with no prior-year cash flow cannot be approved, so the statements stay a draft until it is derived from the two trial balances or entered from the signed statements
+ await assert.rejects(()=>as('PARTNER2',a=>A.comparativesReview(tx,a,per,{set_id:setNoCf.set_id,decision:'Approved',review_note:'Fictional approved without a cash flow'},data)),/primary statement is missing/);
+ s=await get('MANAGER');assert.equal(s.readiness.checks.find(c=>c.code==='COMPARATIVES').status,'Blocked');assert.equal(s.readiness.ready,false);assert.equal(s.status,'Draft - not ready');
  const set=await as('MANAGER',a=>A.comparativesSave(tx,a,per,{source_kind:'Signed prior-year financial statements',source_reference:'Fictional signed accounts for 2025, dated 14 March 2026',pl:PL,eq:EQ,cf:CF}));
  await as('PARTNER2',a=>A.comparativesReview(tx,a,per,{set_id:set.set_id,decision:'Approved',review_note:'Fictional agreed to signed accounts'},data));
  s=await get('MANAGER');

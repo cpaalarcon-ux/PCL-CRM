@@ -2,12 +2,13 @@
 // Three different things are kept apart: an opening trial balance (balances at the start of a year), a year-end trial balance (balances at its end) and the
 // year's activity, which is only ever the difference between the two. Where something is missing the statement is "Not available" with the reason. Nothing is
 // zero-filled, estimated or carried over from another year.
-import {parseAmount,formatComparativeText} from './annual-pack-comparatives.mjs';
-import {linesByNature,classify} from './annual-pack-flows.mjs';
+import {parseAmount,formatComparativeText,CASH_FLOW_LINES} from './annual-pack-comparatives.mjs';
+import {linesByNature,classify,buildCashFlow} from './annual-pack-flows.mjs';
 
 export const TB_KINDS=['Year-end','Opening'];
 export const CLOSING_STATES=['Before year-end close','After year-end close'];
 const cents=v=>Math.round(Number(v||0)*100);
+const CF_CODES=new Set(CASH_FLOW_LINES.map(([c])=>c));
 const kes=c=>(c/100).toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
 const day=v=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const addDays=(d,n)=>{const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10);};
@@ -59,8 +60,8 @@ export function expectedDates(startsOn){const end=addDays(day(startsOn),-1);retu
 // Returns per-statement states: Derived | Needs review | Not available, the lines for profit or loss and changes in equity, and the points to confirm.
 export function deriveComparatives({yearEnd,opening,maps,lineDefs,priorEnd}){
  const warnings=[],net=r=>cents(r.debit)-cents(r.credit);
- const cash={state:'Not available',reason:'A cash flow cannot be worked out from two trial balances without classifying every movement. Enter it from the signed statements.',lines:[]};
- if(!yearEnd)return {pl:NA(`No year-end trial balance is recorded for ${priorEnd}.`),eq:NA(`No year-end trial balance is recorded for ${priorEnd}.`),cf:cash,warnings,texts:{pl:'',eq:''}};
+ const cash={state:'Not available',reason:'The prior-year cash flow is worked out from two consecutive year-end trial balances. Record both, or enter it from the signed statements.',lines:[]};
+ if(!yearEnd)return {pl:NA(`No year-end trial balance is recorded for ${priorEnd}.`),eq:NA(`No year-end trial balance is recorded for ${priorEnd}.`),cf:{...cash,reason:`No year-end trial balance is recorded for ${priorEnd}, so the prior-year cash flow is not available. The statements cannot be final until it is entered from the signed statements or both trial balances are recorded.`},warnings,texts:{pl:'',eq:'',cf:''}};
  const openMap=new Map((opening?.rows||[]).map(r=>[r.code,net(r)])),endMap=new Map(yearEnd.rows.map(r=>[r.code,net(r)]));
  const codes=[...new Set([...openMap.keys(),...endMap.keys()])];
  const names=new Map([...(opening?.rows||[]),...yearEnd.rows].map(r=>[r.code,r.name||'']));
@@ -68,7 +69,7 @@ export function deriveComparatives({yearEnd,opening,maps,lineDefs,priorEnd}){
  const {by,unmapped}=linesByNature({tb,maps,lineDefs,asOf:priorEnd});
  const defs=new Map(lineDefs.map(l=>[l.line_code,l]));
  const bad=unmapped.length?`${unmapped.length} account(s) with a balance have no approved statement line: ${unmapped.slice(0,6).map(u=>u.code).join(', ')}${unmapped.length>6?' and more':''}. Approve the statement-line map first.`:'';
- if(bad)return {pl:{state:'Needs review',reason:bad,lines:[]},eq:{state:'Needs review',reason:bad,lines:[]},cf:cash,warnings,texts:{pl:'',eq:''}};
+ if(bad)return {pl:{state:'Needs review',reason:bad,lines:[]},eq:{state:'Needs review',reason:bad,lines:[]},cf:{...cash,reason:bad},warnings,texts:{pl:'',eq:'',cf:''}};
  // Profit or loss: only a trial balance taken before the year-end close still carries the year's activity.
  let pl;
  if(yearEnd.closing_state!=='Before year-end close')pl=NA('The year-end trial balance was taken after the year-end close, so the year’s income and expenses are no longer in it. Use one taken before the close, or the signed statements.');
@@ -96,7 +97,25 @@ export function deriveComparatives({yearEnd,opening,maps,lineDefs,priorEnd}){
   }
   eq=lines.length?{state:'Needs review',reason:'Derived from the two trial balances. A Partner confirms the movements before approving.',lines}:NA('Neither trial balance carries equity balances.');
  }
- const texts={pl:formatComparativeText('Profit or loss',pl.lines),eq:formatComparativeText('Changes in equity',eq.lines)};
+ // Cash flow (build 2876, decision E option A): worked out by the same engine as the current year, from the two consecutive year-end trial balances and the approved statement-line map.
+ // It needs the opening trial balance, a year-end trial balance taken before the close (so the year's profit is in it) and a result that reconciles to the change in cash. Otherwise it is Not available.
+ let cf=cash;
+ if(!opening)cf={...cash,reason:`No opening trial balance is recorded for ${openingDateFor(priorEnd)}, so the prior-year cash flow is not available. Record it, or enter the cash flow from the signed statements.`};
+ else if(pl.state!=='Derived')cf={...cash,reason:'The prior-year cash flow needs the year-end trial balance taken before the year-end close, so the profit is in it. '+(pl.reason||'')};
+ else{
+  const flow=buildCashFlow({lineDefs,maps,tb,asOf:priorEnd,rounding:'Whole shillings'});
+  if(!flow.reconciles)cf={...cash,reason:`The two trial balances do not reconcile to the change in cash (out by KES ${kes(Math.round(flow.residual*100))}), so no cash flow is derived. Enter it from the signed statements.`};
+  else if(flow.exact['CF.OTHER_FIN'])cf={...cash,reason:`Other equity movements of KES ${kes(Math.round(flow.exact['CF.OTHER_FIN']*100))} cannot be placed in a financing line from the trial balances. Enter the cash flow from the signed statements.`};
+  else if(flow.problems.some(x=>/no cash-flow class/.test(x)))cf={...cash,reason:flow.problems.find(x=>/no cash-flow class/.test(x))};
+  else{
+   const lines=Object.entries(flow.exact).map(([line_code,amount])=>({statement:'Cash flow',line_code,amount})).filter(l=>CF_CODES.has(l.line_code));
+   cf=lines.length?{state:'Needs review',reason:'Derived from the two year-end trial balances. A Partner confirms the movements before approving.',lines}:{...cash,reason:'The trial balances carry no cash movements.'};
+   if(cf.lines.length){
+    warnings.push('Cash flow: purchases of property, plant and equipment are the change in the balance plus the depreciation charge. No property, plant and equipment register is held in the ERP, so disposals are not separated. Confirm against the signed statements.');
+   }
+  }
+ }
+ const texts={pl:formatComparativeText('Profit or loss',pl.lines),eq:formatComparativeText('Changes in equity',eq.lines),cf:formatComparativeText('Cash flow',cf.lines)};
  void defs;
- return {pl,eq,cf:cash,warnings,texts};
+ return {pl,eq,cf,warnings,texts};
 }

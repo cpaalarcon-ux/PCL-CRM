@@ -25,7 +25,7 @@ test('derivation: only what the trial balances support; nothing zero-filled',()=
  const ye={closing_state:'Before year-end close',rows:rows(['10000',600,0],['60000',600,0],['40000',0,1000],['30000',0,100],['37000',0,100])},op={rows:rows(['10000',200,0],['30000',0,100],['37000',0,100])};
  const d=deriveComparatives({yearEnd:ye,opening:op,maps,lineDefs:defs,priorEnd:'2025-12-31'});
  assert.equal(d.pl.state,'Derived');assert.equal(d.pl.profit,400);assert.match(d.texts.pl,/PL\.REVENUE\t1000\.00/);assert.match(d.texts.pl,/PL\.OPEX\t600\.00/);
- assert.equal(d.eq.state,'Needs review');assert.match(d.texts.eq,/SFP\.RETAINED\tPROFIT\t400\.00/);assert.equal(d.cf.state,'Not available');assert.deepEqual(d.warnings,[]);
+ assert.equal(d.eq.state,'Needs review');assert.match(d.texts.eq,/SFP\.RETAINED\tPROFIT\t400\.00/);assert.equal(d.cf.state,'Needs review');assert.deepEqual(d.warnings.filter(w=>!/^Cash flow:/.test(w)),[]);
  // a drawing taken in the year is shown as dividends or drawings, with a point to confirm
  const ye2={closing_state:'Before year-end close',rows:rows(['10000',540,0],['34000',60,0],['60000',600,0],['40000',0,1000],['30000',0,100],['37000',0,100])};
  const d2=deriveComparatives({yearEnd:ye2,opening:op,maps,lineDefs:defs,priorEnd:'2025-12-31'});
@@ -42,5 +42,32 @@ test('screens escape what they show and the ledger screen uses them',()=>{
  const h=tbListHtml({expected:{year_end:'2025-12-31',opening:'2024-12-31'},trial_balances:[{tb_kind:'Year-end',as_of:'2025-12-31',closing_state:'Before year-end close',version:1,row_count:5,total_debit:1200,entered_by_name:'A <b>',source_reference:'Signed accounts'}]},{esc,table,btn,canEdit:true});
  assert.match(h,/A &lt;b>/);assert.match(h,/\[tb-add\]/);assert.match(h,/never as zero/);assert.doesNotMatch(tbListHtml({expected:{year_end:'a',opening:'b'},trial_balances:[]},{esc,table,btn,canEdit:false}),/tb-add/);
  assert.match(deriveHtml({statements:{'Cash flow':{state:'Not available',reason:'Enter it <now>'}},warnings:['Check this']},{esc,warn}),/Not available[\s\S]*&lt;now>/);
- const ui=rd('staff-ledger.mjs');assert.match(ui,/ledger_tb_list/);assert.match(ui,/ledger_tb_save/);assert.match(ui,/ledger_comparatives_from_tbs/);assert.match(ui,/staff-year-tbs\.mjs\?v=20261116-yeartb-v1/);assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261124-audit-v1/);
+ const ui=rd('staff-ledger.mjs');assert.match(ui,/ledger_tb_list/);assert.match(ui,/ledger_tb_save/);assert.match(ui,/ledger_comparatives_from_tbs/);assert.match(ui,/staff-year-tbs\.mjs\?v=20261116-yeartb-v1/);assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261125-cfprior-v1/);
+});
+
+test('build 2876: the prior-year cash flow is worked out from the two year-end trial balances, and is Not available when it cannot be',()=>{
+ const D=[...defs,{line_code:'SFP.TRADE_REC',statement:'Financial position',section:'Current assets',normal_side:'Debit',sort_order:260,label:'Trade receivables',cash_flow_class:'Operating'},{line_code:'SFP.MYSTERY',statement:'Financial position',section:'Non-current assets',normal_side:'Debit',sort_order:100,label:'Mystery asset',cash_flow_class:null}];
+ const M=[...maps,{account_code:'11000',line_code:'SFP.TRADE_REC',status:'Approved',effective_from:'2000-01-01',effective_to:null},{account_code:'15999',line_code:'SFP.MYSTERY',status:'Approved',effective_from:'2000-01-01',effective_to:null}];
+ const op={rows:rows(['10000',200,0],['11000',50,0],['30000',0,100],['37000',0,150])};
+ // profit 400; receivables grew by 100 (cash down 100); cash rose from 200 to 500 (profit 400 less 100)
+ const ye={closing_state:'Before year-end close',rows:rows(['10000',500,0],['11000',150,0],['60000',600,0],['40000',0,1000],['30000',0,100],['37000',0,150])};
+ const d=deriveComparatives({yearEnd:ye,opening:op,maps:M,lineDefs:D,priorEnd:'2025-12-31'});
+ assert.equal(d.cf.state,'Needs review');
+ const by=Object.fromEntries(d.cf.lines.map(l=>[l.line_code,l.amount]));
+ assert.equal(by['CF.PBT'],400);assert.equal(by['CF.WC_REC'],-100);assert.equal(by['CF.CASH_OPEN'],200);assert.equal(by['CF.CASH_CLOSE'],500);
+ const net=d.cf.lines.filter(l=>!['CF.CASH_OPEN','CF.CASH_CLOSE'].includes(l.line_code)).reduce((a,l)=>a+l.amount,0);assert.equal(by['CF.CASH_OPEN']+net,by['CF.CASH_CLOSE'],'the lines add up to the closing cash exactly');
+ assert.match(d.texts.cf,/CF\.PBT\t400\.00/);assert.match(d.texts.cf,/CF\.WC_REC\t-100\.00/);assert.ok(d.warnings.some(w=>/register/.test(w)),'no PPE register: disposals are not separated, and it says so');
+ // no opening trial balance, a year-end taken after the close, or no year-end at all: Not available with the reason, never zero
+ const noOp=deriveComparatives({yearEnd:ye,opening:null,maps:M,lineDefs:D,priorEnd:'2025-12-31'});assert.equal(noOp.cf.state,'Not available');assert.match(noOp.cf.reason,/No opening trial balance/);assert.deepEqual(noOp.cf.lines,[]);assert.equal(noOp.texts.cf,'');
+ const after=deriveComparatives({yearEnd:{closing_state:'After year-end close',rows:ye.rows},opening:op,maps:M,lineDefs:D,priorEnd:'2025-12-31'});assert.equal(after.cf.state,'Not available');assert.match(after.cf.reason,/before the year-end close/);
+ const none=deriveComparatives({yearEnd:null,opening:op,maps:M,lineDefs:D,priorEnd:'2025-12-31'});assert.equal(none.cf.state,'Not available');assert.match(none.cf.reason,/cannot be final/);
+ // an equity movement that is not profit, capital or drawings cannot be placed in a financing line: Not available
+ const odd=deriveComparatives({yearEnd:{closing_state:'Before year-end close',rows:rows(['10000',560,0],['11000',150,0],['60000',600,0],['40000',0,1000],['30000',0,100],['37000',0,210])},opening:op,maps:M,lineDefs:D,priorEnd:'2025-12-31'});
+ assert.equal(odd.cf.state,'Not available');assert.match(odd.cf.reason,/Other equity movements/);
+ // a balance with no cash-flow class is never guessed into a line
+ const myst=deriveComparatives({yearEnd:{closing_state:'Before year-end close',rows:rows(['10000',400,0],['15999',100,0],['11000',150,0],['60000',600,0],['40000',0,1000],['30000',0,100],['37000',0,150])},opening:op,maps:M,lineDefs:D,priorEnd:'2025-12-31'});
+ assert.equal(myst.cf.state,'Not available');
+ // an unmapped account stops every statement, the cash flow included
+ const unm=deriveComparatives({yearEnd:{closing_state:'Before year-end close',rows:rows(['10000',500,0],['99999',150,0],['60000',600,0],['40000',0,1000],['30000',0,100],['37000',0,150])},opening:op,maps:M,lineDefs:D,priorEnd:'2025-12-31'});
+ assert.equal(unm.cf.state,'Not available');assert.match(unm.cf.reason,/no approved statement line/);
 });
