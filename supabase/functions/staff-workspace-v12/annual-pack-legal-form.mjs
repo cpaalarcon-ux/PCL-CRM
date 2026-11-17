@@ -74,7 +74,9 @@ export function legalFormCheck({form,legalEntityType,used,labelOf}){
 export function partnerSharesCheck({form,shares}){
  if(form!==FORMS.PARTNERSHIP)return null;
  if(!shares||shares.status==='none')return {status:'Blocked',detail:"The partners' profit shares from the partnership deed are not recorded for this year, so profit cannot be allocated to each partner."};
- return {status:'Pass',detail:''};
+ if(shares.status==='draft')return {status:'Blocked',detail:"The partners' profit shares are recorded and wait for a Partner to approve them, so profit cannot be allocated yet."};
+ const n=(shares.lines||[]).length;
+ return {status:'Pass',detail:`Profit shares approved for ${n} partner${n===1?'':'s'}.`};
 }
 
 // Rewrite the captions of built statements for the form. Statements are an object from buildStatements plus changes_in_equity and cash_flow.
