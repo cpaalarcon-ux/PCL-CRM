@@ -46,7 +46,7 @@ test('standard opening template auto-maps six columns and asks for evidence once
  $('#editForm').elements.evidence.value='Approved 2025 closing trial balance and sign-off';confirm.checked=true;
  $('#editForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
  const commit=calls.find(x=>x.action==='ledger_import_commit');assert.ok(commit);
- assert.deepEqual(commit.column_map,{legacy_code:'1',source_name:'2',routing_code:'3',tb_item_code:'4',debit:'5',credit:'6'});
+ assert.deepEqual(commit.column_map,{legacy_code:'1',source_name:'2',routing_code:'3',tb_item_code:'4',debit:'5',credit:'6',source_category:null});
  assert.equal(commit.confirm_opening_source,true);assert.equal(commit.journal_date,'2026-01-01');
 });
 
