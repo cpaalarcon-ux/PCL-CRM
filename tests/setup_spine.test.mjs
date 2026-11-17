@@ -93,7 +93,7 @@ test('the card, the client file and the guide all read the one spine module unde
  const token='staff-setup-spine\\.mjs\\?v=20261118-ready-v1';
  for(const f of ['staff-client-cards.mjs','staff-client-profile.mjs','staff-setup-guide.mjs'])assert.match(read(f),new RegExp(token),f);
  const pilot=read('staff-pilot.mjs');
- for(const m of ['staff-setup-guide'])assert.match(pilot,new RegExp(m+'\\.mjs\\?v=20261118-ready-v1'),m);assert.match(pilot,/staff-client-cards\.mjs\?v=20261119-tabs-v1/);assert.match(pilot,/staff-client-profile\.mjs\?v=20261121-comply-v1/);
+ for(const m of ['staff-setup-guide'])assert.match(pilot,new RegExp(m+'\\.mjs\\?v=20261118-ready-v1'),m);assert.match(pilot,/staff-client-cards\.mjs\?v=20261119-tabs-v1/);assert.match(pilot,/staff-client-profile\.mjs\?v=20261121-und-v1/);
 });
 
 test('the guide uses the spine names, counts the client and the project separately, and groups its cards under the same phases',()=>{

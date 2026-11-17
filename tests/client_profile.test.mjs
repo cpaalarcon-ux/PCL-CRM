@@ -11,7 +11,7 @@ const base={me:{category_code:'MANAGER'},clients:[{client_id:'c1',company_name:'
   kyc_changes:[{client_id:'c1',recorded_at:'2026-11-04T00:00:00Z',change_reason:'Updated director list'}],tax_profiles:[{client_id:'c1',status:'Verified',effective_from:'2026-01-01',effective_to:null,entity_type:'Company',regime:'Standard'}]}};
 const ctx=(over={})=>({data:base,clientId:'c1',esc,shortDate:x=>String(x).slice(0,10),badge:s=>`<span class="badge">${esc(s)}</span>`,staffName:id=>'Fictional '+id,structureLabel:c=>c.legal_structure||'',leader:true,...over});
 test('six tabs, Overview first, and each tab shows only this client’s records',()=>{
- assert.deepEqual(PROFILE_TABS.map(x=>x[1]),['Overview','Contacts','Projects & Tasks','Set-up','Documents / KYC','Communication & Activity','Tax & returns','AML scope']);
+ assert.deepEqual(PROFILE_TABS.map(x=>x[1]),['Overview','Contacts','Projects & Tasks','Set-up','Documents / KYC','Communication & Activity','Tax & returns','AML scope','Understanding the client']);
  let h=clientProfile(ctx());for(const [,l] of PROFILE_TABS)assert.match(h,new RegExp('>'+l.replace(/&/g,'&amp;')+'<'));assert.match(h,/A123456789Z/);assert.match(h,/aria-selected="true"[^>]*data-cprofile-tab="overview"/);
  h=clientProfile(ctx({tab:'contacts'}));assert.match(h,/Wanjiru Kamau/);assert.match(h,/data-suite="compliance"/);
  h=clientProfile(ctx({tab:'projects'}));assert.match(h,/Fictional tax compliance/);assert.match(h,/VAT return Nov/);assert.doesNotMatch(h,/Other client/);assert.doesNotMatch(h,/Old task/,'completed tasks are not listed as open');assert.match(h,/data-open-project="p1"/);assert.match(h,/data-open-task="t1"/);
