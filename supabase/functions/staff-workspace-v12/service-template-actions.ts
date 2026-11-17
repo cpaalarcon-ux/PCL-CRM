@@ -166,7 +166,7 @@ export async function serviceTemplateAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='engagement_setup_options'){
   if(!EDITORS.includes(a.category_code))fail(403,'A Supervisor, Manager or Partner sets up an engagement.');
   const cid=uuid(p.client_id);
-  const client=(await tx`select client_id,company_name from erp_private.clients where client_id=${cid} and deleted_at is null`)[0];if(!client)fail(403,'This client is unavailable to your account.');
+  const client=(await tx`select client_id,company_name,year_end_month,year_end_day from erp_private.clients where client_id=${cid} and deleted_at is null`)[0];if(!client)fail(403,'This client is unavailable to your account.');
   const firms=await tx`select f.firm_id,f.legal_name from erp_private.client_firm_links l join erp_private.firms f on f.firm_id=l.firm_id where l.client_id=${cid} and l.deleted_at is null and f.deleted_at is null order by f.legal_name`;
   const templates=[];for(const r of await tx`select template_id from erp_private.service_templates where status='Approved' order by template_code`)templates.push(await templateWithItems(tx,r.template_id));
   const staff=await tx`select staff_id,full_name,category_code,firm_id from erp_private.assignment_candidates()`;
