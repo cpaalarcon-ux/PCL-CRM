@@ -54,7 +54,7 @@ test('the audit lock: both routes, frozen notes, stale figures and ending a lock
  assert.equal(f.has_prior,true);assert.equal(line(f,'Total assets').prior,300000);assert.equal(line(f,'Total equity and liabilities').prior,300000);
  assert.deepEqual(s.statements.problems,[]);
  // Build 2873: everything else is in order, but the statements are not ready until a Partner has approved the notes
- assert.deepEqual(s.readiness.checks.filter(c=>c.status==='Blocked').map(c=>c.code),['NOTES_APPROVED']);assert.equal(s.readiness.ready,false);assert.equal(s.statements.notes.items.length>0,true);assert.deepEqual(s.statements.notes.problems,[]);
+ assert.deepEqual(s.readiness.checks.filter(c=>c.status==='Blocked').map(c=>c.code),['NOTES_APPROVED','WORDING_COMPLETE']);assert.equal(s.readiness.ready,false);assert.equal(s.statements.notes.items.length>0,true);assert.deepEqual(s.statements.notes.problems,[]);
  assert.equal(line(s.statements.profit_or_loss,'Revenue').note,1,'the note number is written on the face');
  const NA=await import('../supabase/functions/staff-workspace-v12/notes-actions.ts');
  const nget=(asOf)=>A.statementsFrom(tx,per,data);
@@ -76,6 +76,7 @@ test('the audit lock: both routes, frozen notes, stale figures and ending a lock
  await assert.rejects(()=>nact('PARTNER',{action:'ledger_notes_review',set_id:n3.set_id,decision:'Approved'}),/different Partner approves/);
  await assert.rejects(()=>nact('PARTNER2',{action:'ledger_notes_review',set_id:n2.set_id,decision:'Approved'}),/have changed/,'the earlier draft was replaced');
  const ap=await nact('PARTNER2',{action:'ledger_notes_review',set_id:n3.set_id,decision:'Approved'});assert.equal(ap.status,'Approved');assert.equal(ap.sole_partner_approval,false);
+ {const {approveWording}=await import('./helpers/wording_ready.mjs'),W=await import('../supabase/functions/staff-workspace-v12/wording-actions.ts');const w=await approveWording({tx,as,W,per,getStatements:nget,asOf:'2026-12-31'});assert.equal(w.complete,true,w.problems.join(' '));}
  s=await get('MANAGER');assert.equal(s.readiness.checks.find(c=>c.code==='NOTES_APPROVED').status,'Pass');assert.equal(s.readiness.ready,true);assert.equal(s.status,'Ready for review');
  await assert.rejects(()=>nact('MANAGER',{action:'ledger_notes_prepare'}),/already approved/);
  const changed={...data,tb:data.tb.map(r=>r.code==='10020'?{...r,movement_debit:r.movement_debit+1000,net:r.net+1000}:r)};

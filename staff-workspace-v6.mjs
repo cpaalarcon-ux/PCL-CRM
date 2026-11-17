@@ -7,7 +7,7 @@ import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=2
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
 import {createAccountingUI} from './staff-accounting.mjs?v=20261123-mapq-v1';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261125-cfprior-v1';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261126-wording-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
 import {mountObligationCheck} from './staff-obligation-check.mjs?v=20261115-obligation-check-v1';
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
