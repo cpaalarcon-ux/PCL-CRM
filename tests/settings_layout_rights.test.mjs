@@ -42,7 +42,7 @@ test('the rights page says what the server enforces',()=>{
  const all=fs.readdirSync(path.join(root,fx)).filter(f=>/\.(ts|mjs)$/.test(f)).map(f=>rd(fx+f)).join('\n');
  for(const msg of ['Only an Engagement Partner can manage additional rights','Only a Partner can sign off or withdraw a policy','Only a Partner can set the go-live date','Only the Engagement Partner can approve the audit file','Only the named signatory or an Engagement Partner can issue this letter','The measurement register is kept by Supervisors, Managers and Partners','Only an Engagement Partner or the designated Tax Manager can confirm and approve tax rules'])assert.ok(all.includes(msg),msg);
  assert.match(rd('supabase/migrations/20261116250000_partner_rank_tax_rules.sql'),/category_code='PARTNER'/);
- assert.match(rd(fx+'release.json'),/2026-11-14\.2874/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2874"/);
+ assert.match(rd(fx+'release.json'),/2026-11-14\.2875/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2875"/);
 });
 test('tabs with nothing to configure say so; every tab has a breadcrumb',()=>{
  const html=L.layoutView({active:'payroll',panels:Object.fromEntries(L.SETTINGS_TABS.map(t=>[t.code,'']) ),button});

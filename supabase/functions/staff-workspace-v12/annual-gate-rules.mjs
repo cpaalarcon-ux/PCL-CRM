@@ -7,7 +7,7 @@ const PACK_CHECKS=['REPORTING_BASIS','MAP_APPROVED','NO_LEGACY','NO_UNRESOLVED',
 // Legal-form checks (build 2870) count only when the pack reports them; a partnership has the extra profit-share check.
 const LEGAL_CHECKS=['LEGAL_FORM','PARTNER_SHARES'];
 // The Partner's approval of the notes (build 2873) is a final-stage step like the sign-off: until it is given the pack is still ready for review.
-const FINAL_STEPS=['SIGN_OFF','A_NOTES_APPROVED'];
+const FINAL_STEPS=['SIGN_OFF','A_NOTES_APPROVED','A_AUDIT_LOCKED'];
 // gate: reportGate() result for the Year end report of this client year. pack: packReadiness() result. statementProblems: the problems list of the built statements, or null if they could not be built.
 export function annualGate({gate,pack,statementProblems}){
  const base=(gate&&gate.checks)||[],checks=base.filter(c=>c.code!=='SIGN_OFF'),signOff=base.find(c=>c.code==='SIGN_OFF')||{code:'SIGN_OFF',label:'Signed off by an independent reviewer',ok:false,detail:'No independent sign-off.'};
@@ -18,6 +18,7 @@ export function annualGate({gate,pack,statementProblems}){
  }
  for(const code of LEGAL_CHECKS){const c=byCode.get(code);if(c&&c.status!=='Info')checks.push({code:'A_'+code,label:c.label,ok:c.status==='Pass',detail:c.status==='Pass'?'':(c.detail||'Not ready.')});}
  {const c=byCode.get('NOTES_APPROVED');if(c&&c.status!=='Info')checks.push({code:'A_NOTES_APPROVED',label:c.label,ok:c.status==='Pass',detail:c.status==='Pass'?'':(c.detail||'Not ready.')});}
+ {const c=byCode.get('AUDIT_LOCKED');if(c&&c.status!=='Info')checks.push({code:'A_AUDIT_LOCKED',label:c.label,ok:c.status==='Pass',detail:c.status==='Pass'?'':(c.detail||'Not ready.')});}
  const probs=Array.isArray(statementProblems)?statementProblems:null;
  checks.push({code:'A_STATEMENTS',label:'Statements complete and agree with the trial balance',ok:probs!==null&&probs.length===0,detail:probs===null?'The statements could not be built.':probs.slice(0,4).join(' ')+(probs.length>4?` (+${probs.length-4} more)`:'')});
  checks.push(signOff);

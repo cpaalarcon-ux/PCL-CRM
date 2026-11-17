@@ -1,6 +1,7 @@
 import {comparativesStatus} from './annual-pack-comparatives.mjs';
 import {formOf,usedLineCodes,legalFormCheck,partnerSharesCheck} from './annual-pack-legal-form.mjs';
 import {notesCheck} from './annual-pack-notes.mjs';
+import {auditCheck} from './audit-lock-rules.mjs';
 // Annual financial statements: what must be true before a pack can be relied on. Pure rules, no database and no tax rates.
 // IFRS for SMEs Accounting Standard, Third Edition (2025) is effective for annual periods beginning on or after 1 January 2027; earlier use is early application and must be disclosed.
 export const THIRD_EDITION_EFFECTIVE='2027-01-01';
@@ -40,7 +41,7 @@ const sample=(items,n=6)=>items.slice(0,n).join(', ')+(items.length>n?` and ${it
 // Readiness for one client year. Each check is Pass, Blocked or Info. The pack is ready only when nothing is Blocked.
 // Input: {period:{starts_on,ends_on,status}, reporting, tb:[{code,name,opening,net,movement_debit,movement_credit}], maps:[...rows], lines:[{line_code,statement}],
 //         issues:[string], prior:{source}, priorPeriodExists:boolean, asOf}
-export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,priorPeriodExists=false,asOf,approvedSet=null,draftSet=null,recon=null,legal=null,notes=null}){
+export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,priorPeriodExists=false,asOf,approvedSet=null,draftSet=null,recon=null,legal=null,notes=null,audit=null}){
  const at=asOf||day(period.ends_on),checks=[],add=(code,label,status,detail='')=>checks.push({code,label,status,detail});
  const problems=validateReporting(reporting,period.starts_on);
  add('REPORTING_BASIS','Reporting framework and edition recorded',problems.length?'Blocked':'Pass',problems.join(' ')||`${reporting.framework}, ${reporting.edition}, ${reporting.presentation_currency}, ${reporting.rounding.toLowerCase()}, indirect cash flow.`);
@@ -68,6 +69,8 @@ export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,pr
  }
  // Notes (build 2873): a Partner approves the notes before the statements can be final. Left out when the caller gives no notes, so older callers are unchanged.
  if(notes){const nc=notesCheck(notes);add('NOTES_APPROVED','Notes approved by a Partner',nc.status,nc.detail);}
+ // Audit lock (build 2875): when the year is audited, the pack is final only once it is locked against the audit. Left out when the caller gives no audit state.
+ if(audit){const ac=auditCheck(audit.state);add('AUDIT_LOCKED','Audit complete and pack locked',ac.status,ac.detail);}
  const total=tb.reduce((s,r)=>s+cents(r.net),0);
  add('TB_BALANCED','Trial balance balances',total===0?'Pass':'Blocked',total===0?'':`Out by KES ${kes(total)}.`);
  add('LEDGER_REVIEW','Ledger review items cleared',issues.length?'Blocked':'Pass',issues.length?`${issues.length} item(s): ${issues.slice(0,3).join(' | ')}${issues.length>3?' | …':''}`:'');
