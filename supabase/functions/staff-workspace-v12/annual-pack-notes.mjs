@@ -5,7 +5,6 @@
 // separate. Prior-year figures are shown at caption level only, because the prior year is held by line, not by account.
 import {mapInForce} from './annual-pack-rules.mjs';
 import {UNITS,roundTo,plSign,sfpSign} from './annual-pack-statements.mjs';
-import {FORMS} from './annual-pack-legal-form.mjs';
 
 export const NOTES_VERSION='system-notes-v1';
 const cents=v=>Math.round(Number(v||0)*100);
@@ -15,12 +14,13 @@ const TITLES={
  INV:'Inventories and cost of sales',REC:'Receivables and prepayments',CONTRACTS:'Contract balances and customer deposits',RELATED:'Related party balances',TAX:'Taxation',CASH:'Cash and cash equivalents',
  FUNDS:'Funds and grants',BORROW:'Borrowings',PROV:'Provisions',PAY:'Trade and other payables',OTHER:'Other income and gains',STAFF:'Staff costs',OPEX:'Other operating expenses',FINANCE:'Finance income and costs'
 };
-const EQUITY_TITLE={[FORMS.COMPANY]:'Share capital and reserves',[FORMS.PARTNERSHIP]:"Partners' capital and current accounts",[FORMS.PROPRIETOR]:"Owner's capital and drawings",[FORMS.OTHER]:'Equity and funds'};
-export const noteTitle=(ref,form=FORMS.OTHER)=>ref==='EQUITY'?(EQUITY_TITLE[form]||EQUITY_TITLE[FORMS.OTHER]):(TITLES[ref]||null);
+// Keyed by the legal-form names directly: this module is imported by annual-pack-rules, which the legal-form module imports, so FORMS cannot be read while this file loads.
+const EQUITY_TITLE={'Company':'Share capital and reserves','Partnership':"Partners' capital and current accounts",'Sole proprietor':"Owner's capital and drawings",'Other':'Equity and funds'};
+export const noteTitle=(ref,form='Other')=>ref==='EQUITY'?(EQUITY_TITLE[form]||EQUITY_TITLE.Other):(TITLES[ref]||null);
 
 // statements: the built statements (rows carry code, label, current, prior). Returns {notes,face_refs,problems,unit}.
 // notes: [{number,ref,title,sections:[{line_code,label,statement,accounts:[{code,name,amount}],rounding,total,face,prior,ties}],ties,control}]
-export function buildNotes({statements,lineDefs,tb,maps,asOf,form=FORMS.OTHER,rounding='Whole shillings'}){
+export function buildNotes({statements,lineDefs,tb,maps,asOf,form='Other',rounding='Whole shillings'}){
  const unit=UNITS[rounding]||100,defs=new Map(lineDefs.map(d=>[d.line_code,d])),problems=[];
  // Account amounts per statement line, in cents, with the same sign the face uses.
  const byLine=new Map();
