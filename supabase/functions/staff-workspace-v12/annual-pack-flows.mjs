@@ -153,6 +153,8 @@ export function buildCashFlow({lineDefs,maps,tb,asOf,rounding='Whole shillings',
   if((pri.get('CF.CASH_OPEN')||0)+priorNet!==(pri.get('CF.CASH_CLOSE')||0))problems.push('The approved prior-year cash flow does not add up to its closing cash.');
   if((pri.get('CF.CASH_CLOSE')||0)!==cashOpen)problems.push(`Cash at the start of the year (KES ${kes(cashOpen)}) differs from cash at the end of the prior year (KES ${kes(pri.get('CF.CASH_CLOSE')||0)}).`);
  }
- return {title:'Statement of cash flows',rows,has_prior:!!pri,net_change:net/100,cash_open:cashOpen/100,cash_close:cashClose/100,reconciles:residual===0,residual:residual/100,problems,
+ // Exact amounts in shillings by line code, for deriving a prior-year cash flow (build 2876). Unrounded, so the lines add up exactly when the cash flow reconciles.
+ const exact={};for(const [c] of CASH_FLOW_LINES)if(f[c])exact[c]=f[c]/100;if(f[OTHER_FIN])exact[OTHER_FIN]=f[OTHER_FIN]/100;exact['CF.CASH_OPEN']=cashOpen/100;exact['CF.CASH_CLOSE']=cashClose/100;
+ return {title:'Statement of cash flows',rows,exact,has_prior:!!pri,net_change:net/100,cash_open:cashOpen/100,cash_close:cashClose/100,reconciles:residual===0,residual:residual/100,problems,
   sections:{operating:op/100,investing:inv/100,financing:fin/100}};
 }

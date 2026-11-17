@@ -45,17 +45,19 @@ test('prior-year trial balances: recorded as versions, balanced and from the cha
  const ye=await save('MANAGER',{tb_kind:'Year-end',as_of:'2025-12-31',closing_state:'Before year-end close',text:END});assert.equal(ye.trial_balance.version,1);assert.equal(ye.trial_balance.total_debit,1200);
  const a1=await tb('MANAGER',{action:'ledger_comparatives_from_tbs'});
  assert.equal(a1.statements['Profit or loss'].state,'Derived');assert.match(a1.texts.pl,/PL\.REVENUE\t1000\.00/);assert.equal(a1.statements['Changes in equity'].state,'Not available');assert.match(a1.statements['Changes in equity'].reason,/No opening trial balance is recorded for 2024-12-31/);
- assert.equal(a1.statements['Cash flow'].state,'Not available');assert.equal(a1.texts.eq,'');
+ assert.equal(a1.statements['Cash flow'].state,'Not available');assert.match(a1.statements['Cash flow'].reason,/No opening trial balance/);assert.equal(a1.texts.cf,'');assert.equal(a1.texts.eq,'');
 
  // With the opening trial balance, equity is derived and still needs a Partner's confirmation.
  await save('PARTNER',{tb_kind:'Opening',as_of:'2024-12-31',text:OPEN});
  const a2=await tb('PARTNER',{action:'ledger_comparatives_from_tbs'});
  assert.equal(a2.statements['Changes in equity'].state,'Needs review');assert.match(a2.texts.eq,/SFP\.SHARE_CAP\tOPENING\t100\.00/);assert.match(a2.texts.eq,/SFP\.RETAINED\tPROFIT\t400\.00/);
+ assert.equal(a2.statements['Cash flow'].state,'Needs review');assert.match(a2.texts.cf,/CF\.PBT\t400\.00/);assert.match(a2.texts.cf,/CF\.CASH_OPEN\t200\.00/);assert.match(a2.texts.cf,/CF\.CASH_CLOSE\t600\.00/);
  assert.equal(a2.source_tb_ids.length,2);assert.match(a2.source_reference,/2025-12-31 and 2024-12-31/);
 
  // A year-end trial balance taken after the close no longer carries the year's activity: profit or loss is Not available, never zero.
  await save('MANAGER',{tb_kind:'Year-end',as_of:'2025-12-31',closing_state:'After year-end close',text:`${CASH}\t600\t0\n${SHARE}\t0\t100\n${RET}\t0\t500`});
  const a3=await tb('MANAGER',{action:'ledger_comparatives_from_tbs'});
+ assert.equal(a3.statements['Cash flow'].state,'Not available');assert.equal(a3.texts.cf,'');
  assert.equal(a3.statements['Profit or loss'].state,'Not available');assert.match(a3.statements['Profit or loss'].reason,/after the year-end close/);assert.equal(a3.statements['Changes in equity'].state,'Not available');
  // Versions: the new one is current, the old one is kept; recorded versions are never edited or deleted.
  const vs=await tx`select version,status from erp_private.client_year_tbs where tb_kind='Year-end' order by version`;assert.deepEqual(vs.map(x=>[x.version,x.status]),[[1,'Superseded'],[2,'Current']]);
@@ -63,12 +65,12 @@ test('prior-year trial balances: recorded as versions, balanced and from the cha
  await assert.rejects(()=>as('PARTNER',()=>tx`update erp_private.client_year_tbs set row_count=9 where tb_kind='Opening'`),/never edited/);
  await assert.rejects(()=>as('PARTNER',()=>tx`delete from erp_private.client_year_tbs where tb_kind='Opening'`));
  await assert.rejects(()=>as('PARTNER',()=>tx`update erp_private.client_year_tbs set status='Current' where version=1 and tb_kind='Year-end'`));
- // Back to a pre-close trial balance, then save comparatives built from them. The cash flow is typed from the signed statements.
+ // Back to a pre-close trial balance, then save comparatives built from them. The cash flow is the one derived from the same two trial balances.
  await save('MANAGER',{tb_kind:'Year-end',as_of:'2025-12-31',closing_state:'Before year-end close',text:END});
  const a4=await tb('MANAGER',{action:'ledger_comparatives_from_tbs'});assert.equal(a4.statements['Profit or loss'].state,'Derived');
  await db.exec('set session_replication_role=replica');
  let per;try{per=(await tx`insert into erp_private.ledger_periods(project_id,client_id,handling_firm_id,starts_on,ends_on,entity_type,entity_evidence,created_by) values(${P},${C},${F},'2026-01-01','2026-12-31','Limited company','Fictional evidence for the period',${actors.PARTNER.staff_id}) returning *`)[0];}finally{await db.exec('set session_replication_role=origin');}
- const sv=(role,x)=>as(role,a=>comparativesSave(tx,a,per,{source_kind:'Recorded prior-year trial balances',source_reference:a4.source_reference,pl:a4.texts.pl,eq:a4.texts.eq,cf:'CF.PBT\t400\nCF.CASH_OPEN\t200\nCF.CASH_CLOSE\t600',source_tb_ids:a4.source_tb_ids,...x}));
+ const sv=(role,x)=>as(role,a=>comparativesSave(tx,a,per,{source_kind:'Recorded prior-year trial balances',source_reference:a4.source_reference,pl:a4.texts.pl,eq:a4.texts.eq,cf:a4.texts.cf,source_tb_ids:a4.source_tb_ids,...x}));
  const set=await sv('MANAGER',{});assert.equal(set.status,'Draft');
  const head=(await tx`select source_kind,source_tb_ids from erp_private.period_comparative_sets where set_id=${set.set_id}`)[0];assert.equal(head.source_kind,'Recorded prior-year trial balances');assert.deepEqual([...head.source_tb_ids].sort(),[...a4.source_tb_ids].sort());
  await assert.rejects(()=>sv('MANAGER',{source_tb_ids:[]}),/Choose the recorded trial balances/);

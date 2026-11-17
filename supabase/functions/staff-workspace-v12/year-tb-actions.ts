@@ -48,7 +48,7 @@ export async function yearTbAction(tx:any,a:any,l:any,p:any):Promise<any>{
  const tbs=await currentTbs(tx,l.client_id);
  const yeRow=tbs.find((t:any)=>t.tb_kind==='Year-end'&&day(t.as_of)===dates.prior_end),opRow=tbs.find((t:any)=>t.tb_kind==='Opening'&&day(t.as_of)===dates.opening_as_of);
  const ye=await withRows(tx,yeRow),op=await withRows(tx,opRow);
- const lineDefs=await tx`select line_code,statement,section,label,sort_order,normal_side from erp_private.statement_lines`;
+ const lineDefs=await tx`select line_code,statement,section,label,sort_order,normal_side,cash_flow_class from erp_private.statement_lines`;
  const maps=await tx`select account_code,line_code,effective_from,effective_to,status from erp_private.account_statement_map where status='Approved'`;
  const r=deriveComparatives({yearEnd:ye,opening:op,maps,lineDefs,priorEnd:dates.prior_end});
  const ids=[yeRow,opRow].filter(Boolean).map((t:any)=>t.tb_id);
