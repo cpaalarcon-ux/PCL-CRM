@@ -78,4 +78,50 @@ test('formatted statements through the action: draft until comparatives are appr
  // a company account on a partnership is reported on the statements and in the readiness list
  const mix=await as('MANAGER',a=>A.statementsFrom(tx,per2,{...pdata,tb:[...pdata.tb,row('30000','Share capital',-1000,0,0),row('10000','Cash',1000,0,0)].filter((r,i,arr)=>arr.findIndex(x=>x.code===r.code)===i)}));
  assert.match(mix.statements.problems.join(' '),/Share capital is a company account/);assert.equal(mix.readiness.checks.find(c=>c.code==='LEGAL_FORM').status,'Blocked');
+
+ // Build 2872: the partners' profit shares are recorded from the deed, a different Partner approves them, and only then is profit allocated
+ const PS=await import('../supabase/functions/staff-workspace-v12/partner-shares-actions.ts');
+ const save=(role,body,l=per2)=>as(role,a=>PS.partnerSharesAction(tx,a,l,{action:'ledger_partner_shares_save',ratio_only:true,source_reference:'Partnership deed dated 3 March 2020',...body}));
+ const review=(role,body,l=per2)=>as(role,a=>PS.partnerSharesAction(tx,a,l,{action:'ledger_partner_shares_review',...body}));
+ const read=(role,l=per2)=>as(role,a=>PS.partnerSharesAction(tx,a,l,{action:'ledger_partner_shares_read'}));
+ assert.match(ps.statements.problems.join(' '),/profit shares are not recorded/);assert.equal(ps.statements.partner_allocation,undefined);
+ const two=[{partner_name:'Fictional A Bahari',share_percent:'60'},{partner_name:'Fictional B Mwangi',share_percent:'40'}];
+ await assert.rejects(()=>save('ASSISTANT',{partners:two}),/Manager or Partner/);
+ await assert.rejects(()=>save('MANAGER',{partners:two,ratio_only:false}),/no partner salary or interest/);
+ await assert.rejects(()=>save('MANAGER',{partners:[two[0]]}),/at least 2 partners/);
+ await assert.rejects(()=>save('MANAGER',{partners:[two[0],{partner_name:'Fictional B Mwangi',share_percent:'30'}]}),/add to 90%, not 100%/);
+ await assert.rejects(()=>save('MANAGER',{partners:two,source_reference:'deed'}),/partnership deed/i);
+ await assert.rejects(()=>save('MANAGER',{partners:two},per),/partnership only/);
+ const v1=await save('MANAGER',{partners:two});assert.equal(v1.version,1);assert.equal(v1.partners,2);
+ let r=await read('MANAGER');assert.equal(r.eligible,true);assert.equal(r.draft.lines.length,2);assert.equal(r.approved,null);assert.equal(r.can_review,false);
+ let st=await as('MANAGER',a=>A.statementsFrom(tx,per2,pdata));
+ assert.equal(st.readiness.checks.find(c=>c.code==='PARTNER_SHARES').status,'Blocked');assert.match(st.readiness.checks.find(c=>c.code==='PARTNER_SHARES').detail,/wait for a Partner/);assert.equal(st.statements.partner_allocation,undefined);
+ await assert.rejects(()=>review('MANAGER',{set_id:v1.set_id,decision:'Approved'}),/Only a Partner/);
+ await assert.rejects(()=>review('PARTNER2',{set_id:v1.set_id,decision:'Returned',review_note:'no'}),/at least 10/);
+ // a different Partner approves; the profit (300,000) is shared 60 / 40 to the shilling
+ const ok=await review('PARTNER2',{set_id:v1.set_id,decision:'Approved'});assert.equal(ok.status,'Approved');assert.equal(ok.sole_partner_approval,false);
+ st=await as('MANAGER',a=>A.statementsFrom(tx,per2,pdata));
+ assert.equal(st.readiness.checks.find(c=>c.code==='PARTNER_SHARES').status,'Pass');
+ assert.deepEqual(st.statements.partner_allocation.rows.map(x=>[x.partner_name,x.percent,x.amount]),[['Fictional A Bahari','60%',180000],['Fictional B Mwangi','40%',120000]]);
+ assert.equal(st.statements.partner_allocation.total,300000);assert.equal(st.statements.partner_allocation.profit,300000);
+ // a new version replaces the approved one only once approved; a Partner cannot approve what they recorded unless they are the only Partner
+ const v2=await save('PARTNER',{partners:[{partner_name:'Fictional A Bahari',share_percent:'50'},{partner_name:'Fictional B Mwangi',share_percent:'50'}]});
+ await assert.rejects(()=>review('PARTNER',{set_id:v2.set_id,decision:'Approved',sole_partner_approval:true}),/different Partner|only Partner/);
+ await assert.rejects(()=>review('PARTNER',{set_id:v2.set_id,decision:'Approved'}),/different Partner approves/);
+ r=await read('PARTNER2');assert.equal(r.approved.version,1);assert.equal(r.draft.version,2);assert.equal(r.can_review,true);
+ assert.equal((await review('PARTNER2',{set_id:v2.set_id,decision:'Approved'})).version,2);
+ r=await read('MANAGER');assert.equal(r.approved.version,2);assert.deepEqual(r.history.map(h=>h.status),['Approved','Superseded']);
+ // the firm's only active Partner may approve what they recorded, and it is recorded that way
+ const v3=await save('PARTNER',{partners:[{partner_name:'Fictional A Bahari',share_percent:'70'},{partner_name:'Fictional B Mwangi',share_percent:'30'}]});
+ await tx`update erp_private.staff_members set access_status='Inactive' where staff_id=${actors.PARTNER2.staff_id}`;
+ await assert.rejects(()=>review('PARTNER',{set_id:v3.set_id,decision:'Approved'}),/different Partner approves/);
+ const sole=await review('PARTNER',{set_id:v3.set_id,decision:'Approved',sole_partner_approval:true});assert.equal(sole.sole_partner_approval,true);
+ await tx`update erp_private.staff_members set access_status='Active' where staff_id=${actors.PARTNER2.staff_id}`;
+ r=await read('MANAGER');assert.equal(r.approved.version,3);assert.equal(r.approved.sole_partner_approval,true);
+ // the database itself refuses what the action would: shares that do not add to 100%, edits, and deletes
+ const off=(await as('MANAGER',a=>tx`insert into erp_private.period_partner_share_sets(period_id,project_id,client_id,version,source_reference,ratio_only,entered_by) values(${per2.period_id},${P2},${CL2},4,'Partnership deed dated 3 March 2020',true,${a.staff_id}) returning set_id`))[0];
+ await as('MANAGER',a=>tx`insert into erp_private.period_partner_share_lines(set_id,project_id,partner_name,share_bp) values(${off.set_id},${P2},'Fictional A Bahari',5000),(${off.set_id},${P2},'Fictional B Mwangi',4000)`);
+ await assert.rejects(()=>as('PARTNER2',a=>tx`update erp_private.period_partner_share_sets set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now() where set_id=${off.set_id}`),/exactly 100 per cent/);
+ await assert.rejects(()=>as('MANAGER',a=>tx`update erp_private.period_partner_share_sets set ratio_only=false where set_id=${off.set_id}`),/./);
+ await assert.rejects(()=>as('MANAGER',a=>tx`delete from erp_private.period_partner_share_lines where set_id=${off.set_id}`),/./);
 });

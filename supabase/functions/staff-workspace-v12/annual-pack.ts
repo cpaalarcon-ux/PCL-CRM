@@ -5,7 +5,9 @@ import {buildStatements} from './annual-pack-statements.mjs';
 import {buildEquityStatement,buildCashFlow} from './annual-pack-flows.mjs';
 import {DATA_CUTOFF} from './ledger-rules.mjs';
 import {buildReview,checkGroupIds,checkException} from './statement-review-rules.mjs';
-import {formOf,usedLineCodes,misfits,applyCaptions} from './annual-pack-legal-form.mjs';
+import {formOf,usedLineCodes,misfits,applyCaptions,FORMS} from './annual-pack-legal-form.mjs';
+import {shareStateFor} from './partner-shares-actions.ts';
+import {allocateProfit,bpToPercent} from './partner-shares-rules.mjs';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 const addDays=(d:string,n:number)=>{const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10);};
@@ -207,7 +209,8 @@ export async function packReadinessFrom(tx:any,l:any,data:any){
  const priorPeriodExists=(await tx`select 1 from erp_private.ledger_periods where client_id=${l.client_id} and ends_on=${day(l.starts_on)}::date-1`).length>0;
  const sets=await loadSets(tx,l.period_id),inp=await reconInputs(tx,l,data),recon=sets.approved?reconcileComparatives({lines:sets.approved.lines,lineDefs:inp.lineDefs,opening:inp.opening}):null;
  const legalEntityType=(await tx`select legal_entity_type from erp_private.clients where client_id=${l.client_id}`)[0]?.legal_entity_type||null;
- const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:'none'}}});
+ const shareState=await shareStateFor(tx,l.period_id);
+ const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:shareState.status,lines:shareState.lines}}});
  return {...readiness,as_of:data.as_of,reporting:reporting||{...defaultReporting(day(l.starts_on)),saved:false}};
 }
 
@@ -239,6 +242,14 @@ export async function statementsFrom(tx:any,l:any,data:any){
   const labelOf=(c:string)=>lineDefs.find((d:any)=>d.line_code===c)?.label||null;
   for(const m of misfits(form,usedLineCodes({tb:data.tb,maps,asOf:data.as_of}),labelOf))statements.problems.push(`${m.label} ${m.reason}.`);
   statements.complete=statements.problems.length===0;
+ }
+ // Partners' profit shares (build 2872): a partnership's profit for the year is shared between the partners from the approved shares, in the statements' own unit. No approved shares, no allocation.
+ if(form===FORMS.PARTNERSHIP){
+  const sh=await shareStateFor(tx,l.period_id),plRows=statements.profit_or_loss?.rows||[],last=plRows[plRows.length-1];
+  if(sh.status==='approved'&&last&&last.kind==='total'){
+   const unit=statements.presentation?.unit_label||'KES',alloc=allocateProfit(last.current,sh.lines,0);
+   statements.partner_allocation={title:'Allocation of profit for the year to the partners',unit_label:unit,profit:last.current,rows:alloc.rows.map((r:any)=>({partner_name:r.partner_name,percent:bpToPercent(r.share_bp),amount:r.amount})),total:alloc.total,version:sh.set.version};
+  }else{statements.problems.push(sh.status==='draft'?'The partners\u2019 profit shares are recorded but not approved by a Partner, so profit is not allocated to the partners.':'The partners\u2019 profit shares are not recorded for this year, so profit is not allocated to the partners.');statements.complete=false;}
  }
  const readiness=await packReadinessFrom(tx,l,data);
  return {client:{name:client.company_name||'',kra_pin:client.kra_pin||'',legal_entity_type:client.legal_entity_type||null,legal_form:form},reporting:{framework:reporting.framework,edition:reporting.edition,presentation_currency:reporting.presentation_currency,rounding:reporting.rounding,early_application_note:reporting.early_application_note||'',saved:reporting.saved!==false},
