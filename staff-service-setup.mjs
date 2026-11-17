@@ -2,6 +2,7 @@
 // The type of client decides what the client file asks for. It never selects a service: a Supervisor, Manager or Partner chooses the service, period, scope,
 // responsible person and reviewer, previews the tasks, and only then confirms. Tasks that need a registration the client's verified profile does not show
 // are not created, and the plan says why. Every step is authorised again on the server.
+import {attachWizard,suggestPeriod,inFirm} from './staff-wizard.mjs?v=20261121-wiz-v1';
 export function createServiceSetupUI(ctx){
  const {esc,field,select,form,modal,request,notice,shortDate}=ctx,d=()=>ctx.data();
  const editor=()=>['PARTNER','MANAGER','SUPERVISOR'].includes(d().me?.category_code);
@@ -44,14 +45,30 @@ export function createServiceSetupUI(ctx){
   const firmName=new Map(o.firms.map(f=>[f.firm_id,f.legal_name]));
   const staff=o.staff.filter(s=>firmName.has(s.firm_id)).map(s=>[s.staff_id+'|'+s.firm_id,`${s.full_name} (${s.category_code.toLowerCase()}) · ${firmName.get(s.firm_id)}`]);
   const projects=[['','A new draft project']].concat(o.projects.map(p=>[p.project_id,`${p.project_name} (${p.status})`]));
+  // Build 2869: the set-up is a short wizard. Defaults are suggestions the person can change; nothing is filled from a guess about scope or reviewer.
+  const today=new Date(Date.now()+3*3600000).toISOString().slice(0,10),sp=suggestPeriod(o.client.year_end_month,o.client.year_end_day,today);
+  const meOption=(d().me&&staff.find(x=>String(x[0]).startsWith(d().me.staff_id+'|')))?.[0]||'';
+  const step=(title,body)=>`<fieldset class="wz-step full" data-title="${esc(title)}">${body}</fieldset>`;
   modal('Set up a service · '+o.client.company_name,form(`<p class="info full">${esc(o.note)}${o.client_template?' This client uses the "'+esc(o.client_template.name)+'" file template.':' This client\'s legal structure has no client-type template.'}</p>`+
-   select('svc','Service and template *',svcOptions)+select('firm_id','Handling firm *',firms)+select('project_id','Project',projects,'')+field('period_start','Period starts *','','date','required')+field('period_end','Period ends *','','date','required')+
-   `<label class="full">Scope *<textarea name="scope" required minlength="10" maxlength="2000" placeholder="What is included, and what is not"></textarea></label>`+
-   select('responsible','Responsible person *',staff)+select('reviewer','Reviewer *',staff)+`<p class="info full">The reviewer must be a different Supervisor, Manager or Partner. People are listed with their handling firm; choose people from the firm above.</p>`+prior,'Preview tasks'),
+   step('Service',select('svc','Service and template *',svcOptions)+select('firm_id','Handling firm *',firms)+select('project_id','Project',projects,'')+prior)+
+   step('Period and scope',(sp?`<p class="info full" data-period-hint>Suggested from the client's year-end: the last financial year that has ended. Change it if this engagement covers another period.</p>`:'<p class="muted full">The client\'s year-end is not recorded, so no period is suggested.</p>')+field('period_start','Period starts *',sp?sp.start:'','date','required')+field('period_end','Period ends *',sp?sp.end:'','date','required')+
+    `<label class="full">Scope *<textarea name="scope" required minlength="10" maxlength="2000" placeholder="What is included, and what is not"></textarea></label>`)+
+   step('People',select('responsible','Responsible person *',staff,meOption,'Choose the responsible person…')+select('reviewer','Reviewer *',staff,'','Choose the reviewer…')+`<p class="info full">The reviewer must be a different Supervisor, Manager or Partner. People are listed with their handling firm; choose people from the firm chosen in step 1.</p>`),'Preview tasks'),
    async f=>{const [template_id,service_code]=f.get('svc').split('|');return request({action:'engagement_setup_plan',...base(cid,f,template_id,service_code)});},
    async r=>{await review(cid,r.plan,lastInput);},{refreshWorkspace:false,pendingLabel:'Planning…',pendingMessage:'Working out the tasks. Nothing is created yet.',successMessage:null});
+  wireSetupWizard();
  }
  let lastInput=null;
+ // Build 2869: step-by-step display, people limited to the chosen firm, and a reviewer who is not the responsible person.
+ function wireSetupWizard(){
+  const f=typeof document!=='undefined'?document.getElementById('editForm'):null;if(!f)return;
+  const firm=f.elements.firm_id,resp=f.elements.responsible,rev=f.elements.reviewer;
+  const limit=()=>{for(const sel of [resp,rev]){if(!sel)continue;for(const op of sel.options){const ok=inFirm(op.value,firm&&firm.value);op.hidden=!ok;op.disabled=!ok;}if(sel.selectedOptions[0]&&sel.selectedOptions[0].disabled)sel.value='';}};
+  const same=()=>{if(rev)rev.setCustomValidity(rev.value&&resp&&rev.value.split('|')[0]===resp.value.split('|')[0]?'The reviewer must be a different person from the responsible person.':'');};
+  if(firm)firm.addEventListener('change',limit);if(resp)resp.addEventListener('change',same);if(rev)rev.addEventListener('change',same);
+  limit();same();attachWizard(f);
+ }
+
  function base(cid,f,template_id,service_code,exclusions){
   const [responsible]=f.get('responsible').split('|'),[reviewer]=f.get('reviewer').split('|');
   lastInput={client_id:cid,firm_id:f.get('firm_id'),template_id,service_code,project_id:f.get('project_id')||undefined,period_start:f.get('period_start'),period_end:f.get('period_end'),scope:f.get('scope'),responsible_staff:responsible,reviewer_staff:reviewer,exclusions:exclusions||[]};

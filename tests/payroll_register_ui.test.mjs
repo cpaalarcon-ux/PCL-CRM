@@ -21,7 +21,7 @@ test('server wiring: actions are routed and classified under project access',()=
 test('the balance stylesheet block keeps the header from clipping',()=>{
  const css=rd('staff-pilot.css');
  assert.match(css,/Build 2804: balance and consistency/);assert.match(css,/\.workspace-topbar\{flex-wrap:wrap/);assert.match(css,/\.workspace-topbar \.header-tools\{flex:0 1 auto;flex-wrap:wrap/);
- assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261121-fill-v1/);
+ assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261121-wiz-v1/);
 });
 
 test('build 2819: inactive, return, removal request, decision and carry-forward choice are wired through the server actions',()=>{

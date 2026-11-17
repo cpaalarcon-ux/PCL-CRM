@@ -634,3 +634,15 @@ dialog#editor{border-radius:14px;box-shadow:0 24px 60px rgba(15,23,42,.28)}
 .mywork-board .kanban-card .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 /* Build 2859 */
 small.warn{color:#8a5a00;display:block}
+/* Build 2869: step-by-step forms (staff-wizard.mjs). The footer stays in view; the stepper shows where the person is. */
+.wz-stepper{list-style:none;display:flex;gap:.5rem;margin:0 0 .75rem;padding:0;grid-column:1/-1}
+.wz-stepper li{flex:1;display:flex;align-items:center;gap:.5rem;padding:.4rem .5rem;border-bottom:3px solid var(--line);color:var(--muted);font-size:.9rem}
+.wz-stepper .wz-dot{width:1.6rem;height:1.6rem;border-radius:50%;display:inline-grid;place-items:center;background:#e6edf0;font-size:.8rem;font-weight:700;flex:0 0 auto}
+.wz-stepper li[data-state=done]{border-color:#2c7a5c;color:var(--text);cursor:pointer}.wz-stepper li[data-state=done] .wz-dot{background:#2c7a5c;color:#fff}
+.wz-stepper li[data-state=current]{border-color:var(--green);color:var(--green);font-weight:700}.wz-stepper li[data-state=current] .wz-dot{background:var(--green);color:#fff}
+.wz-step{border:0;margin:0;padding:0;min-width:0;grid-column:1/-1;display:grid;grid-template-columns:inherit;gap:inherit}
+.wz-step[hidden]{display:none}
+.wz-footer{position:sticky;bottom:0;z-index:3;display:flex;gap:.5rem;justify-content:flex-end;padding:.6rem 0;background:#fff;border-top:1px solid var(--line);grid-column:1/-1}
+.wz-footer button[hidden]{display:none}
+#editor .form-grid .wz-footer button[type=submit]{position:static;box-shadow:none}
+@media (max-width:640px){.wz-stepper .wz-name{display:none}}
