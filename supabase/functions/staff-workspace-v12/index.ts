@@ -70,6 +70,7 @@ import {bulkSetupAction} from './bulk-setup-actions.ts';
 import {practiceTemplateAction} from './practice-template-actions.ts';
 import {statutoryFileAction} from './statutory-file-actions.ts';
 import {p9Action} from './p9-actions.ts';
+import {wordingLibraryAction} from './wording-actions.ts';
 import {kraCsvAction} from './kra-csv-actions.ts';
 import {eligibilityAction} from './eligibility-actions.ts';
 import {searchCalendarAction} from './search-calendar-actions.ts';
@@ -505,6 +506,7 @@ async function action(id:any,p:any){
   const practiceTemplates=await practiceTemplateAction(tx,a,p);if(practiceTemplates!==undefined)return practiceTemplates;
   const statutoryFile=await statutoryFileAction(tx,a,p);if(statutoryFile!==undefined)return statutoryFile;
   const p9=await p9Action(tx,a,p);if(p9!==undefined)return p9;
+ const wl=await wordingLibraryAction(tx,a,p);if(wl!==undefined)return wl;
   const kraCsv=await kraCsvAction(tx,a,p);if(kraCsv!==undefined)return kraCsv;
   const eligibility=await eligibilityAction(tx,a,p);if(eligibility!==undefined)return eligibility;
   const searchCal=await searchCalendarAction(tx,a,p);if(searchCal!==undefined)return searchCal;
