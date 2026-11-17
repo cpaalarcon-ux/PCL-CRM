@@ -3,7 +3,7 @@ import {proposalIssues,PAYROLL_CODES,payrollSide,cleanCode,MODULES} from './rout
 
 // The approved routing map (build 2802, Partner approval and versions from 2803): read it, a Manager or Partner proposes mappings (one or many), a Partner who did not propose approves, and a Manager or Partner ends or withdraws them.
 // The rules for the table are in 20261114150000_client_routing_map.sql; the matching rules are in routing-map-rules.mjs. Nothing here posts anything.
-const ACTIONS=['routing_map_read','routing_map_copy','routing_map_propose','routing_map_approve','routing_map_end','routing_map_withdraw'];
+const ACTIONS=['routing_map_read','routing_map_suggestions','routing_map_suggest_propose','routing_map_copy','routing_map_propose','routing_map_approve','routing_map_end','routing_map_withdraw'];
 const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 const one=(r:any[])=>{if(!r.length)fail(403,'This is unavailable to your account.');return r[0];};
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
@@ -11,7 +11,7 @@ const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 export async function routingMapAction(tx:any,a:any,p:any):Promise<any>{
  if(!ACTIONS.includes(p.action))return undefined;
  if(['INTERN','ADMIN'].includes(a.category_code))fail(403,'The routing map is maintained by staff with client access.');
- if(['routing_map_propose','routing_map_copy'].includes(p.action)&&!isLeader(a))fail(403,'A Manager or Partner proposes a routing mapping.');
+ if(['routing_map_propose','routing_map_copy','routing_map_suggest_propose'].includes(p.action)&&!isLeader(a))fail(403,'A Manager or Partner proposes a routing mapping.');
  const cid=uuid(p.client_id);
  one(await tx`select client_id from erp_private.clients where client_id=${cid}`);
  if(p.action==='routing_map_read'){
@@ -20,6 +20,28 @@ export async function routingMapAction(tx:any,a:any,p:any):Promise<any>{
    where m.client_id=${cid} and (${p.module?text(p.module,20):null}::text is null or m.module=${p.module?text(p.module,20):null}) order by m.module,m.routing_code,m.effective_from desc limit 1000`;
   const accounts=await tx`select code,name,route,category_code,account_group from erp_private.account_catalog where status='Active' and not is_legacy order by code`;
   return {maps,accounts,payroll_codes:PAYROLL_CODES,modules:MODULES};
+ }
+ // The Manager's queue (firm approval rule, 17 Nov 2026): purchase rows whose routing code and TB code are a valid pair but have no approved mapping. Nothing here is mapped or posted.
+ // A Manager or Partner turns a pair into a draft mapping; a different Partner approves it; the next automatic mapping then maps the rows.
+ if(p.action==='routing_map_suggestions'||p.action==='routing_map_suggest_propose'){
+  const found=await tx`select r.normalized->>'routing_code' as routing_code,r.normalized->>'tb_code' as tb_code,count(*)::int as rows,min(coalesce(r.normalized->>'date',b.period_start::text)) as first_date,max(coalesce(r.normalized->>'date',b.period_start::text)) as last_date,
+    coalesce(sum(nullif(r.normalized->>'amount','')::numeric),0) as net
+    from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${cid} and b.archived_at is null and r.account_code is null and r.parent_row_id is null
+     and r.review_details->'auto_map_note'->>'code'='SUGGESTED_AWAITING_APPROVAL' group by 1,2 order by rows desc,1,2`;
+  const pairs=found.map((x:any)=>({routing_code:x.routing_code,tb_code:x.tb_code,rows:x.rows,first_date:String(x.first_date).slice(0,10),last_date:String(x.last_date).slice(0,10),net:Number(x.net)}));
+  if(p.action==='routing_map_suggestions'){
+   const names=new Map((await tx`select code,name from erp_private.account_catalog where code=any(${tx.array(pairs.map((x:any)=>x.tb_code))}::text[])`).map((x:any)=>[x.code,x.name]));
+   const drafts=await tx`select m.routing_id,m.routing_code,m.item_code,m.created_by,erp_private.reviewer_label(m.created_by) as created_by_name from erp_private.client_routing_map m where m.client_id=${cid} and m.module='Purchases' and m.status='Draft'`;
+   const exc=await tx`select count(*)::int as n from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${cid} and b.archived_at is null and r.account_code is null and r.parent_row_id is null and r.dataset in ('Purchases','Expenditure','Non-eTIMS') and r.review_details->'auto_map_note'->>'code' in ('NO_CODES','ROUTING_BLANK','TB_BLANK','CODES_INVALID')`;
+   return {pairs:pairs.map((x:any)=>{const d=drafts.find((y:any)=>cleanCode(y.routing_code)===cleanCode(x.routing_code)&&(!y.item_code||y.item_code===x.tb_code));
+    return {...x,account_name:names.get(x.tb_code)||'',state:d?'Draft: waiting for a Partner':'Suggested - Awaiting Approval',draft_id:d?.routing_id||null,drafted_by_name:d?.created_by_name||null};}),exception_rows:exc[0].n,can_propose:isLeader(a),can_approve:a.category_code==='PARTNER'};
+  }
+  const wanted=Array.isArray(p.pairs)?p.pairs:[];if(!wanted.length||wanted.length>100)fail(400,'Choose between 1 and 100 suggested pairs.');
+  const rows:any[]=[];
+  for(const w of wanted){const rc=cleanCode(w.routing_code),tb=String(w.tb_code||'').trim(),hit=pairs.find((x:any)=>cleanCode(x.routing_code)===rc&&x.tb_code===tb);
+   if(!hit)fail(409,`Routing code ${rc||'(blank)'} with TB code ${tb||'(blank)'} is no longer waiting for approval. Refresh the queue.`);
+   rows.push({module:'Purchases',routing_code:rc,item_code:tb,erp_account_code:tb,effective_from:hit.first_date,label:'Proposed from a suggested upload pair'});}
+  return await routingMapAction(tx,a,{action:'routing_map_propose',client_id:cid,rows});
  }
  if(p.action==='routing_map_copy'){
   // Reuse is a head start for the proposer, never an approval: the source client's current approved mappings become new DRAFT proposals for this client.

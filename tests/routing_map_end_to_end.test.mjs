@@ -35,11 +35,11 @@ test('the approved routing map: one approval maps every row with the code for it
  await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by) values(${B},${P},${D},'Purchases',1,'Purchases','2026-09-01','2026-09-30','{}',5,5,0,0,${actors.ASSISTANT.staff_id})`;
  const acct=(await tx`select code,category_code from erp_private.account_catalog where route=2 and status='Active' and not is_legacy order by code limit 3`),[a1,a2]=acct;
  const mk=(key,routing,tb,date='2026-09-10')=>tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B},${P},${C},'Purchases',${Math.floor(Math.random()*1e6)},${'RM-'+key},'{}',${tx.json({date,amount:1000,vat:160,invoice:'RM-'+key,party:'Fictional supplier',party_pin:'P000000001A',description:'Fictional goods',vat_category:'16%',routing_code:routing,tb_code:tb})})`;
- await mk('A1','XRT1','');await mk('A2','XRT1','');await mk('LATE','XRT1','','2026-12-20');await mk('NOMAP','XRT9','');await mk('CODEONLY','','');
+ await mk('A1','XRT1',a1.code);await mk('A2','XRT1',a1.code);await mk('LATE','XRT1',a1.code,'2026-12-20');await mk('NOMAP','XRT9',a2.code);await mk('CODEONLY','','');await mk('NOTB','XRT1','');
  const get=key=>tx`select * from erp_private.workbook_rows where row_key=${'RM-'+key}`.then(r=>r[0]);
  const rm=(role,p)=>as(role,a=>routingMapAction(tx,a,{client_id:C,...p}));
  // Before any approval nothing is mapped, and the reason names the code.
- const none=await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal(none.mapped,0);assert.deepEqual(none.unmapped_routing_codes.map(x=>[x.routing_code,x.rows]),[['XRT1',3],['XRT9',1]]);
+ const none=await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal(none.mapped,0);assert.deepEqual(none.unmapped_routing_codes.map(x=>[x.routing_code,x.rows]),[['XRT1',4],['XRT9',1]]);assert.equal(none.suggested_awaiting_approval,4,'valid pairs with no approved mapping are only suggestions');assert.equal((await get('NOTB')).review_details.auto_map_note.code,'TB_BLANK','a routing code without a TB code is an exception');assert.equal((await get('CODEONLY')).review_details.auto_map_note.code,'NO_CODES');
  assert.match((await get('A1')).review_details.auto_map_note.reason,/XRT1 has no approved mapping/);
  // Staff propose; a draft maps nothing.
  await assert.rejects(()=>rm('ASSISTANT',{action:'routing_map_propose',module:'Purchases',routing_code:'XRT1',erp_account_code:a1.code,effective_from:'2026-09-01'}),/Manager or Partner proposes/);
@@ -66,7 +66,25 @@ test('the approved routing map: one approval maps every row with the code for it
  await assert.rejects(()=>rm('ASSISTANT',{action:'routing_map_withdraw',routing_id:m.routing_id,revision:live.revision,reason:'Staff cannot withdraw an approved one'}),/Manager or Partner withdraws/);
  await assert.rejects(()=>rm('PARTNER',{action:'routing_map_withdraw',routing_id:m.routing_id,revision:live.revision,reason:'short'}),/at least 10/);
  assert.deepEqual(await rm('PARTNER',{action:'routing_map_withdraw',routing_id:m.routing_id,revision:live.revision,reason:'Wrong account chosen for this code'}),{ok:true});
- await mk('AFTER','XRT1','');assert.equal((await auto('ASSISTANT',{action:'workbook_auto_map'})).mapped,0,'a withdrawn mapping maps nothing new');
+ await mk('AFTER','XRT1',a1.code);assert.equal((await auto('ASSISTANT',{action:'workbook_auto_map'})).mapped,0,'a withdrawn mapping maps nothing new');
  assert.equal((await get('A1')).account_code,a1.code,'rows already mapped keep their classification');
  await assert.rejects(()=>tx`update erp_private.client_routing_map set erp_account_code=${a2.code} where routing_id=${m.routing_id}`,/cannot be edited|withdrawn/);
+ // The Manager's queue: a valid pair with no approved mapping waits as "Suggested - Awaiting Approval"; a Manager proposes it, a Partner approves it, and only then does the next automatic mapping map the rows.
+ await mk('Q1','XRT7',a2.code,'2026-09-12');await mk('Q2','XRT7',a2.code,'2026-09-20');
+ await auto('ASSISTANT',{action:'workbook_auto_map'});
+ assert.equal((await get('Q1')).account_code,null,'a valid TB code in a file is never approval');
+ const q1=await rm('MANAGER',{action:'routing_map_suggestions'});
+ const pair=q1.pairs.find(x=>x.routing_code==='XRT7');assert.deepEqual([pair.tb_code,pair.rows,pair.first_date,pair.last_date,pair.state],[a2.code,2,'2026-09-12','2026-09-20','Suggested - Awaiting Approval']);
+ assert.ok(q1.pairs.find(x=>x.routing_code==='XRT9'),'every waiting pair is listed');assert.ok(q1.exception_rows>=2,'rows missing a code are counted as exceptions, not suggestions');
+ assert.equal(q1.pairs.some(x=>!x.routing_code||!x.tb_code),false);assert.equal(q1.can_propose,true);assert.equal(q1.can_approve,false);
+ await assert.rejects(()=>rm('ASSISTANT',{action:'routing_map_suggest_propose',pairs:[{routing_code:'XRT7',tb_code:a2.code}]}),/Manager or Partner proposes/);
+ await assert.rejects(()=>rm('MANAGER',{action:'routing_map_suggest_propose',pairs:[{routing_code:'XRT7',tb_code:'11111'}]}),/no longer waiting/);
+ assert.equal((await rm('MANAGER',{action:'routing_map_suggest_propose',pairs:[{routing_code:'XRT7',tb_code:a2.code}]})).saved,1);
+ const q2=(await rm('MANAGER',{action:'routing_map_suggestions'})).pairs.find(x=>x.routing_code==='XRT7');assert.equal(q2.state,'Draft: waiting for a Partner');assert.ok(q2.draft_id);
+ await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal((await get('Q1')).account_code,null,'a draft maps nothing');
+ const dm=(await rm('PARTNER',{action:'routing_map_read'})).maps.find(x=>x.routing_id===q2.draft_id);assert.equal(dm.effective_from.toISOString?.().slice(0,10)||String(dm.effective_from).slice(0,10),'2026-09-12');
+ await assert.rejects(()=>rm('MANAGER',{action:'routing_map_approve',routing_id:dm.routing_id,revision:dm.revision}),/Partner approves/);
+ await rm('PARTNER',{action:'routing_map_approve',routing_id:dm.routing_id,revision:dm.revision});
+ const done=await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal(done.mapped,2);assert.equal((await get('Q1')).account_code,a2.code);assert.equal((await get('Q1')).review_details.mapping_confirmation.method,ROUTING_METHOD);
+ assert.equal((await rm('MANAGER',{action:'routing_map_suggestions'})).pairs.some(x=>x.routing_code==='XRT7'),false,'approved pairs leave the queue');
 });

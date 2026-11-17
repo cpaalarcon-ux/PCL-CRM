@@ -1,13 +1,15 @@
 import {fail,text,uuid} from './validation.mjs';
 import {mapValue,inventoryDetails,isCost} from './accounting-rules.mjs';
 import {chartResolver} from './client-chart.ts';
-import {suggestionsFor,loadBlocks,isBlocked,HISTORY_METHOD} from './purchase-history.ts';
+import {loadBlocks,isBlocked,HISTORY_METHOD} from './purchase-history.ts';
 import {resolveRouting,cleanCode,unmappedByCode} from './routing-map-rules.mjs';
-// Automatic account mapping. A purchase row whose routing code (column M) and TB item code (column N) exactly match one active,
-// non-legacy account of the central chart is mapped when it is imported, so staff only handle exceptions. The mapping classifies the
-// row; it never approves input VAT, deductibility or posting. A Manager or Partner can remove it with a reason; a removed row is
-// never mapped automatically again. A Manager or Partner can also record a dated supplier override so the same supplier and account are not mapped automatically again.
+// Automatic account mapping (rule kept 17 Nov 2026). A purchase row is mapped when it is imported only if its routing code (column M) AND its TB item code (column N) exactly match a mapping
+// that a Partner approved for this client and the invoice date. Nothing else is mapped automatically: a valid pair with no approved mapping is "Suggested - Awaiting Approval" (nothing is posted;
+// a Manager proposes it and a Partner approves it), and a row missing either code goes to the exception queue. Supplier history and uploaded codes alone never map a row.
+// The mapping classifies the row; it never approves input VAT, deductibility or posting. A Manager or Partner can remove it with a reason; a removed row is never mapped automatically again.
+// A Manager or Partner can also record a dated supplier override so the same supplier and account are not mapped automatically again.
 // An automatic mapping also needs the client's approved chart in force on the invoice date; every row left for staff carries the reason.
+export const SUGGESTED_CODE='SUGGESTED_AWAITING_APPROVAL';
 export const AUTO_METHOD='Auto-mapped — chart verified';
 export const ROUTING_METHOD='Auto-mapped — approved routing map';
 export const CODE_METHODS=['Uploaded routing and TB codes',AUTO_METHOD,HISTORY_METHOD,ROUTING_METHOD];
@@ -29,25 +31,32 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
  const activities=await tx`select * from erp_private.client_activities where client_id=${project.client_id} order by effective_from`;
  const policies=activities.length?await tx`select * from erp_private.stock_policy_versions where activity_id=any(${tx.array(activities.map((x:any)=>x.activity_id))}::uuid[]) order by effective_from desc`:[];
  const soldVat=(await tx`select vat_categories_sold from erp_private.clients where client_id=${project.client_id}`)[0]?.vat_categories_sold||null;
- const stamp=new Date().toISOString(),updates:any[]=[],history=await suggestionsFor(tx,project,rows);let viaHistory=0;
+ const stamp=new Date().toISOString(),updates:any[]=[],suggested=new Map<string,{routing_code:string,tb_code:string}>();
  const blocks=await loadBlocks(tx,project.client_id),notes=new Map<string,{code:string,reason:string}>(),exceptionCodes=new Map<string,string>();
  const routingMap=await tx`select module,routing_code,item_code,erp_account_code,side,effective_from,effective_to,status,routing_id,version from erp_private.client_routing_map where client_id=${project.client_id} and module='Purchases' and status='Active'`;
  for(const r of rows){
   const note=(code:string,reason:string)=>{notes.set(r.row_id,{code,reason});};
   try{
-   // Without uploaded codes, a long and perfectly consistent expense history for the supplier maps the row, but only when that history was
-   // independently posted and not reversed; a shorter or unposted history is only suggested on screen.
-   // The client's approved routing map comes first: a routing code in the file is matched to exactly one approved, date-valid account of this client.
-   let hint=r.normalized.mapping_suggestion,fromHistory=false,viaMap:any=null;
-   const rcode=cleanCode(r.normalized.routing_code);
-   if(rcode){
-    const found=resolveRouting(routingMap,{module:'Purchases',routing_code:rcode,item_code:r.normalized.tb_code,date:String(r.normalized.date||day(r.period_start))});
-    if(found.status==='mapped'){
-     const acct=accounts.find((x:any)=>x.code===found.mapping.erp_account_code);
-     if(acct){hint={route:Number(acct.route),category_code:acct.category_code,account_code:acct.code};viaMap=found.mapping;}
-    }else if(found.status!=='none'||!hint){note(found.code,found.reason);exceptionCodes.set(r.row_id,rcode);continue;}
-   }
-   if(!hint){const s=history.get(r.row_id);if(!s?.auto){note('NO_CODES','No routing and TB codes in the upload, and not enough posted history for this supplier to map it automatically.');continue;}hint={route:s.route,category_code:s.category_code,account_code:s.account_code};fromHistory=true;}
+   // The firm's approval rule (14 Nov, kept 17 Nov): a row maps automatically only when its routing code AND its TB code exactly match a mapping that a Partner approved for this client
+   // for the invoice date. A valid pair with no approved mapping is only a suggestion; a row missing either code is an exception. A valid TB code in a file is never approval, and supplier history never maps a row.
+   const rcode=cleanCode(r.normalized.routing_code),tb=String(r.normalized.tb_code??'').trim();
+   if(!rcode&&!tb){note('NO_CODES','Exception queue: the row has no routing code and no TB code. It needs manual review; nothing is guessed from history.');continue;}
+   if(!rcode){note('ROUTING_BLANK',`Exception queue: the row has TB code ${tb} but no routing code.`);continue;}
+   exceptionCodes.set(r.row_id,rcode);
+   if(!tb){note('TB_BLANK',`Exception queue: the row has routing code ${rcode} but no TB code.`);continue;}
+   const found=resolveRouting(routingMap,{module:'Purchases',routing_code:rcode,item_code:tb,date:String(r.normalized.date||day(r.period_start))});
+   let hint:any=null,viaMap:any=null;
+   if(found.status==='mapped'){
+    const acct=accounts.find((x:any)=>x.code===found.mapping.erp_account_code);
+    if(!acct){note('TB_CODE_UNKNOWN',`TB item code ${found.mapping.erp_account_code} is not an account in the master chart.`);continue;}
+    hint={route:Number(acct.route),category_code:acct.category_code,account_code:acct.code};viaMap=found.mapping;
+   }else if(found.code==='ROUTING_UNMAPPED'){
+    // A valid pair is a well-formed routing code with a TB code that is an active purchase account of the master chart. It is only ever a suggestion.
+    const acctTb=accounts.find((x:any)=>x.code===tb&&x.status==='Active'&&!x.is_legacy&&[1,2,3].includes(Number(x.route)));
+    if(/^[A-Z][A-Z0-9_]{1,29}$/.test(rcode)&&acctTb){suggested.set(r.row_id,{routing_code:rcode,tb_code:tb});note(SUGGESTED_CODE,`Suggested - Awaiting Approval (routing code ${rcode}, TB code ${tb}): ${found.reason} Nothing is posted.`);}
+    else note('CODES_INVALID',String(r.normalized.mapping_suggestion_issue||`Routing code ${rcode} and TB code ${tb} are not a valid pair of codes.`)+' Exception queue.');
+    continue;
+   }else{note(found.code,found.reason);continue;}
    const at=String(r.normalized.date||day(r.period_start)),route=Number(hint.route),code=String(hint.account_code??'');
    const account=accounts.find((x:any)=>x.code===code);
    if(!account){note('TB_CODE_UNKNOWN',`TB item code ${code||'(blank)'} is not an account in the master chart.`);continue;}
@@ -70,8 +79,7 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
    const own=policies.filter((v:any)=>v.activity_id===chosen?.activity_id),dated=own.find((v:any)=>day(v.effective_from)<=at);
    const v=mapValue(r,{route,account_code:account.code},accounts,own.length?dated:policy);
    const details=inventoryDetails(r,{route,account_code:account.code});if(chosen)details.activity_id=chosen.activity_id;delete details.auto_map_note;
-   details.mapping_confirmation={method:viaMap?ROUTING_METHOD:fromHistory?HISTORY_METHOD:AUTO_METHOD,routing_code:viaMap?viaMap.routing_code:account.category_code,tb_item_code:account.code,chart_version:account.catalog_version??null,mapped_at:stamp,imported_by:a.staff_id,...(viaMap?{routing_map_id:viaMap.routing_id,routing_map_version:viaMap.version,awaiting_review:true}:{})};
-   if(fromHistory)viaHistory++;
+   details.mapping_confirmation={method:ROUTING_METHOD,routing_code:viaMap?viaMap.routing_code:account.category_code,tb_item_code:account.code,chart_version:account.catalog_version??null,mapped_at:stamp,imported_by:a.staff_id,...(viaMap?{routing_map_id:viaMap.routing_id,routing_map_version:viaMap.version,awaiting_review:true}:{})};
    updates.push({row_id:r.row_id,route:v.route,category_code:v.category_code,account_code:v.account_code,narration:v.narration,asset_details:v.asset_details,first_use_status:v.first_use_status,first_use_date:v.first_use_date,review_details:details});
   }catch(e:any){ /* Anything the manual mapping would refuse stays unmapped for staff to resolve, with the reason. */ note('MAPPING_REFUSED',String(e?.message||'The mapping rules refused this row.').slice(0,300)); }
  }
@@ -79,10 +87,13 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
  for(const r of rows){const n=notes.get(r.row_id);if(!n||mappedIds.has(r.row_id))continue;const old=r.review_details?.auto_map_note;if(old?.code===n.code&&old?.reason===n.reason)continue;noteUpdates.push({row_id:r.row_id,note:{...n,at:stamp}});}
  for(let i=0;i<noteUpdates.length;i+=500)await tx`update erp_private.workbook_rows r set review_details=coalesce(r.review_details,'{}'::jsonb)||jsonb_build_object('auto_map_note',v.note) from jsonb_to_recordset(${tx.json(noteUpdates.slice(i,i+500))}::jsonb) as v(row_id uuid,note jsonb) where r.row_id=v.row_id and r.account_code is null`;
  for(let i=0;i<updates.length;i+=500)await tx`update erp_private.workbook_rows r set route=v.route,category_code=v.category_code,account_code=v.account_code,narration=v.narration,asset_details=v.asset_details,first_use_status=v.first_use_status,first_use_date=v.first_use_date,review_details=v.review_details from jsonb_to_recordset(${tx.json(updates.slice(i,i+500))}::jsonb) as v(row_id uuid,route integer,category_code text,account_code text,narration text,asset_details text,first_use_status text,first_use_date date,review_details jsonb) where r.row_id=v.row_id`;
- if(updates.length)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'workbook_rows','AUTO_MAPPING',${project.project_id},${tx.json({count:updates.length,method:AUTO_METHOD,via_supplier_history:viaHistory,row_ids:updates.map((x:any)=>x.row_id).slice(0,500)})})`;
+ if(updates.length)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'workbook_rows','AUTO_MAPPING',${project.project_id},${tx.json({count:updates.length,method:AUTO_METHOD,via_supplier_history:0,row_ids:updates.map((x:any)=>x.row_id).slice(0,500)})})`;
  const exceptions=rows.filter((r:any)=>!mappedIds.has(r.row_id)&&notes.has(r.row_id)).map((r:any)=>({row_id:r.row_id,source_row:r.source_row,...notes.get(r.row_id)!,routing_code:exceptionCodes.get(r.row_id)||null})),reasons:Record<string,number>={};
  for(const e of exceptions)reasons[e.code]=(reasons[e.code]||0)+1;
- return {mapped:updates.length,left_for_staff:rows.length-updates.length,reasons,exceptions:exceptions.slice(0,200),unmapped_routing_codes:unmappedByCode(exceptions),via_routing_map:updates.filter((u:any)=>u.review_details?.mapping_confirmation?.method===ROUTING_METHOD).length};
+ const pairs=new Map<string,{routing_code:string,tb_code:string,rows:number}>();
+ for(const x of suggested.values()){const k=x.routing_code+'|'+x.tb_code,cur=pairs.get(k);pairs.set(k,{...x,rows:(cur?.rows||0)+1});}
+ const suggestedIds=new Set(suggested.keys());
+ return {mapped:updates.length,left_for_staff:rows.length-updates.length,suggested_awaiting_approval:suggestedIds.size,exception_queue:exceptions.filter((e:any)=>!suggestedIds.has(e.row_id)).length,suggested_pairs:[...pairs.values()].sort((x,y)=>y.rows-x.rows),reasons,exceptions:exceptions.slice(0,200),unmapped_routing_codes:unmappedByCode(exceptions),via_routing_map:updates.filter((u:any)=>u.review_details?.mapping_confirmation?.method===ROUTING_METHOD).length};
 }
 
 export async function autoMapAction(tx:any,a:any,p:any){

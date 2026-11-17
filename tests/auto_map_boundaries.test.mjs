@@ -6,6 +6,7 @@ const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@
 const {improvementAction}=await import('../supabase/functions/staff-workspace-v12/improvement-actions.ts');
 const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
 const {autoMapAction,AUTO_METHOD}=await import('../supabase/functions/staff-workspace-v12/auto-map.ts');
+const {routingMapAction}=await import('../supabase/functions/staff-workspace-v12/routing-map-actions.ts');
 const {assertSupportedPeriod}=await import('../supabase/functions/staff-workspace-v12/supported-period.ts');
 const {loadCrosswalk,revenueAccount}=await import('../supabase/functions/staff-workspace-v12/sales-crosswalk.ts');
 const {firstSupportedStart}=await import('../supabase/functions/staff-workspace-v12/ledger-rules.mjs');
@@ -36,31 +37,38 @@ test('auto-mapping boundaries: approved chart required, every exception has a re
  const OKC=route2[0],NOT_IN=route2[1].code,OTHER=route2[2];assert.ok(OKC&&NOT_IN&&OTHER);
  const chartCodes=await approveChart(tx,{C,prepared:actors.MANAGER.staff_id,reviewed:actors.PARTNER.staff_id,exclude:[NOT_IN]});
  assert(chartCodes.includes(OKC.code)&&!chartCodes.includes(NOT_IN));
- let n=1;const put=async(key,hint,{date='2026-09-10',pin='P000000021A'}={})=>{n++;await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B},${P},${C},'Purchases',${n},${'BD-'+key},'{}',${tx.json({date,amount:1000,vat:160,invoice:'BD-'+key,party:'Fictional supplier',party_pin:pin,description:'Fictional goods',vat_category:'16%',...(hint?{mapping_suggestion:{confirmed:false,...hint}}:{})})})`;};
+ // The firm's approval rule: a row maps automatically only when its routing code AND TB code match a mapping a Partner approved. Each row carries the codes the upload would have read from columns M and N.
+ const rm=(role,q)=>as(role,a=>routingMapAction(tx,a,{client_id:C,...q}));
+ const approve=async(code,account)=>{const pr=await rm('MANAGER',{action:'routing_map_propose',module:'Purchases',routing_code:code,item_code:account,erp_account_code:account,effective_from:'2025-01-01'});assert.equal(pr.saved,1);
+  const m=(await tx`select routing_id,revision from erp_private.client_routing_map where client_id=${C} and routing_code=${code} and item_code=${account} and status='Draft'`)[0];await rm('PARTNER',{action:'routing_map_approve',routing_id:m.routing_id,revision:String(m.revision)});};
+ let n=1;const put=async(key,hint,{date='2026-09-10',pin='P000000021A',valid=true}={})=>{n++;await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B},${P},${C},'Purchases',${n},${'BD-'+key},'{}',${tx.json({date,amount:1000,vat:160,invoice:'BD-'+key,party:'Fictional supplier',party_pin:pin,description:'Fictional goods',vat_category:'16%',...(hint?{routing_code:hint.category_code,tb_code:hint.account_code,...(valid?{mapping_suggestion:{confirmed:false,...hint}}:{mapping_suggestion_issue:'The uploaded routing code and TB item code do not match an active ERP account.'})}:{})})})`;};
  const get=key=>tx`select * from erp_private.workbook_rows where row_key=${'BD-'+key}`.then(r=>r[0]);
  const good={route:2,category_code:OKC.category_code,account_code:OKC.code};
  const legacy=(await tx`select code from erp_private.account_catalog where is_legacy limit 1`)[0];
  const draftAcct=(await tx`select code from erp_private.account_catalog where status<>'Active' and not is_legacy limit 1`)[0];
+ await approve('EXP08',OKC.code);await approve('EXP08',NOT_IN);await approve('EXP08',OTHER.code);
  await put('GOOD',good);
  await put('ROUTE',{...good,route:1});
- await put('CATEGORY',{...good,category_code:'EXP01'});
- await put('UNKNOWN',{...good,account_code:'99999'});
+ await put('CATEGORY',{...good,category_code:'EXP01'},{valid:false});
+ await put('UNKNOWN',{...good,account_code:'99999'},{valid:false});
  await put('BLANK',{route:2,category_code:'EXP08',account_code:''});
  await put('NOTCHART',{route:2,category_code:'EXP08',account_code:NOT_IN});
  await put('NOCHART',good,{date:'2025-12-15'});
+ await put('VALIDNOAPPROVAL',{route:2,category_code:'EXP02',account_code:OTHER.code});
  await put('NOCODES',null);
- if(legacy)await put('LEGACY',{route:2,category_code:'EXP08',account_code:legacy.code});
- if(draftAcct)await put('INACTIVE',{route:2,category_code:'EXP08',account_code:draftAcct.code});
+ if(legacy)await put('LEGACY',{route:2,category_code:'EXP08',account_code:legacy.code},{valid:false});
+ if(draftAcct)await put('INACTIVE',{route:2,category_code:'EXP08',account_code:draftAcct.code},{valid:false});
  const out=await auto('ASSISTANT',{action:'workbook_auto_map'});
- assert.equal(out.mapped,1,'only the correct pair inside the approved chart maps');
+ assert.equal(out.mapped,2,'GOOD maps, and ROUTE maps from the approved account because the approved mapping, not the uploaded route, decides');
+ assert.equal((await get('ROUTE')).account_code,OKC.code);
  const why=async k=>(await get(k)).review_details?.auto_map_note?.code;
  assert.equal((await get('GOOD')).account_code,OKC.code);assert.equal(await why('GOOD'),undefined);
- const expected={ROUTE:'ROUTE_DIFFERS',CATEGORY:'CATEGORY_DIFFERS',UNKNOWN:'TB_CODE_UNKNOWN',BLANK:'TB_CODE_UNKNOWN',NOTCHART:'NOT_IN_CHART',NOCHART:'NO_APPROVED_CHART',NOCODES:'NO_CODES',...(legacy?{LEGACY:'TB_CODE_LEGACY'}:{}),...(draftAcct?{INACTIVE:'TB_CODE_INACTIVE'}:{})};
+ const expected={CATEGORY:'SUGGESTED_AWAITING_APPROVAL',UNKNOWN:'ROUTING_ITEM_UNMAPPED',BLANK:'TB_BLANK',NOTCHART:'NOT_IN_CHART',NOCHART:'NO_APPROVED_CHART',VALIDNOAPPROVAL:'SUGGESTED_AWAITING_APPROVAL',NOCODES:'NO_CODES',...(legacy?{LEGACY:'ROUTING_ITEM_UNMAPPED'}:{}),...(draftAcct?{INACTIVE:'ROUTING_ITEM_UNMAPPED'}:{})};
  for(const [k,code] of Object.entries(expected)){assert.equal(await why(k),code,k);assert.equal((await get(k)).account_code,null,k+' stays with staff');assert.ok((await get(k)).review_details.auto_map_note.reason.length>15,k+' has a readable reason');}
  assert.equal(out.exceptions.length,Object.keys(expected).length);assert.equal(out.reasons.NO_CODES,1);assert.equal(out.reasons.NOT_IN_CHART,1);
  assert.equal(out.exceptions.find(e=>e.code==='NOT_IN_CHART').source_row,(await get('NOTCHART')).source_row);
  // Running it again changes nothing and does not rewrite unchanged notes.
- const before=(await get('ROUTE')).revision;await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal((await get('ROUTE')).revision,before,'unchanged reasons are not rewritten');
+ const before=(await get('CATEGORY')).revision;await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal((await get('CATEGORY')).revision,before,'unchanged reasons are not rewritten');
 
  // Supplier rule: removal with block_supplier records a dated rule; the same supplier and account are not mapped again from that date.
  const goodRow=await get('GOOD');
