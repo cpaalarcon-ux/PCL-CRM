@@ -49,7 +49,7 @@ test('the old long window is split in two and every entry point lands in the fil
 test('the page paints the host after every render of the tab, for Managers and Partners only, and shows a failure in place',()=>{
  const p=rd('staff-pilot.mjs');
  assert.match(p,/if\(view==='clientfile'&&isLeader\(\)&&\['setup','tax'\]\.includes\(clientTab\)\)void improvements\.paintClientTab\(clientTab,selectedClient\)\.catch\(/);
- assert.match(p,/staff-improvements\.mjs\?v=20261119-tabs-v1/);
+ assert.match(p,/staff-improvements\.mjs\?v=20261120-grid-v1/);
 });
 
 test('names: the card menu says Set-up and opens the tab; the old seven-name window title is gone',()=>{

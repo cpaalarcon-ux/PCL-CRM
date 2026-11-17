@@ -21,14 +21,14 @@ test('templates: client type decides the file, never the service; services are c
  assert.deepEqual(list.templates.map(x=>x.template_code),['INDIVIDUAL','PARTNERSHIP','COMPANY','NONPROFIT','COOPERATIVE','PUBLIC_SECTOR','ASSOCIATION','ESTATE','OTHER_REGISTERED']);
  assert.match(list.note,/does not choose any service/);
  const c0=await st('MANAGER',{action:'client_template_read',client_id:C});
- assert.equal(c0.template.template_code,'COMPANY');assert.equal(c0.checklist.counts.facts.required,10);assert.equal(c0.checklist.ready,false);
+ assert.equal(c0.template.template_code,'COMPANY');assert.equal(c0.checklist.counts.facts.required,15);assert.equal(c0.checklist.ready,false);
  assert.deepEqual(c0.checklist.evidence.filter(e=>e.requirement==='Required').map(e=>e.key).sort(),['BENEFICIAL_OWNERSHIP','DIRECTORS_CR12','KRA_PIN','REGISTER_MEMBERS','REGISTRATION_IDENTITY']);
  assert.deepEqual(c0.checklist.parties.map(x=>x.label.split(' ')[0]),['Directors','Shareholders']);
  assert.ok(c0.checklist.exceptions.length>=17);
  // Someone who is not a Manager or Partner sees the lines but not the state of the KYC file.
  const c1=await st('ASSISTANT',{action:'client_template_read',client_id:C});assert.equal(c1.checklist.restricted,true);assert.equal(c1.checklist.ready,false);assert.ok(c1.checklist.evidence.every(e=>e.state==='Not visible'));
  // The client master follows the template.
- const m0=await cm('ASSISTANT',{action:'client_master_read',client_id:C});assert.equal(m0.template.template_code,'COMPANY');assert.equal(m0.required,10);assert.ok(m0.rows.some(r=>r.key==='authority_basis'));assert.ok(m0.fields.some(f=>f.key==='regulator'));
+ const m0=await cm('ASSISTANT',{action:'client_master_read',client_id:C});assert.equal(m0.template.template_code,'COMPANY');assert.equal(m0.required,15);assert.ok(m0.rows.some(r=>r.key==='authority_basis'));assert.ok(m0.fields.some(f=>f.key==='regulator'));
  // A legal structure with no template is shown as missing one, not guessed.
  const C2=id();await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id,legal_entity_type,legal_structure,legal_subtype) values(${C2},'Fictional unclassified client',${actors.ASSISTANT.staff_id},'Other legal entity','Other',null)`;await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C2},${F})`;
  const n=await st('MANAGER',{action:'client_template_read',client_id:C2});assert.equal(n.template,null);assert.match(n.message,/no client-type template/);
