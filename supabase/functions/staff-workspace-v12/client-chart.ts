@@ -21,16 +21,25 @@ export function chartLayer(account:any){
 }
 
 // Accounts the ERP proposes for an entity type, set of packs and statutory position (pure, used by the server and tests).
-export function proposeAccounts(accounts:any[],entityType:string,packs:string[],statutory:Record<string,string>={}){
- return accounts.filter((x:any)=>x.status==='Active'&&!x.is_legacy&&x.proposed!==false
-  &&(!x.entity_types?.length||x.entity_types.includes(entityType))
-  &&(!x.industry_packs?.length||x.industry_packs.some((p:string)=>packs.includes(p)))
-  &&(!x.statutory_tags?.length||x.statutory_tags.some((t:string)=>statutory[t]!=='no')));
+// Build 2868: licence-driven accounts. `licences.map` says which licence types an account carries fees for; `licences.held` are the types the client holds now.
+// An account with such a link and no industry pack is proposed only to a client that holds one of its licences. An account that also sits in an industry pack is proposed when either applies.
+export type LicenceLinks={map:Record<string,string[]>,held:string[]};
+export const heldFor=(code:string,l?:LicenceLinks):string[]=>(l?.map?.[code]||[]).filter(t=>l!.held.includes(t));
+export function proposeAccounts(accounts:any[],entityType:string,packs:string[],statutory:Record<string,string>={},licences?:LicenceLinks){
+ return accounts.filter((x:any)=>{
+  if(!(x.status==='Active'&&!x.is_legacy&&x.proposed!==false))return false;
+  if(x.entity_types?.length&&!x.entity_types.includes(entityType))return false;
+  if(x.statutory_tags?.length&&!x.statutory_tags.some((t:string)=>statutory[t]!=='no'))return false;
+  const packOk=!x.industry_packs?.length||x.industry_packs.some((p:string)=>packs.includes(p)),linked=!!licences?.map?.[x.code]?.length,licOk=heldFor(x.code,licences).length>0;
+  if(linked&&!x.industry_packs?.length)return licOk;
+  return packOk||(linked&&licOk);
+ });
 }
 
 // Why an account is in a proposed chart: the entity layer, an industry activity, a tax obligation, or the core every client gets.
-export function accountWhy(x:any,entityType:string,packs:string[],statutory:Record<string,string>={}):string[]{
+export function accountWhy(x:any,entityType:string,packs:string[],statutory:Record<string,string>={},licences?:LicenceLinks):string[]{
  const why:string[]=[];
+ const held=heldFor(x.code,licences);if(held.length)why.push(`The client holds ${held.join(' / ')} ${held.length>1?'licences':'licence'} on the licence register`);
  if(x.entity_types?.length&&x.entity_types.includes(entityType))why.push(`For ${entityType} clients`);
  const hit=(x.industry_packs||[]).filter((p:string)=>packs.includes(p));
  if(hit.length)why.push(`Needed by the ${hit.join(' / ')} ${hit.length>1?'activities':'activity'}`);
@@ -111,11 +120,13 @@ async function proposal(tx:any,clientId:string,from:string){
  const packs=await clientPacks(tx,clientId,from);
  const catalog=await tx`select code,name,account_group,category_code,status,is_legacy,proposed,entity_types,industry_packs,statutory_tags from erp_private.account_catalog order by code`;
  const statutory=await clientStatutory(tx,clientId,from);
- const proposed=proposeAccounts(catalog,c.legal_entity_type||'',packs,statutory);
+ const licenceRows=await tx`select type_code,account_code from erp_private.licence_type_accounts`,held=(await tx`select type_code from erp_private.client_licence_types(${clientId}::uuid)`).map((r:any)=>r.type_code);
+ const licences:LicenceLinks={map:{},held};for(const r of licenceRows)(licences.map[r.account_code]??=[]).push(r.type_code);
+ const proposed=proposeAccounts(catalog,c.legal_entity_type||'',packs,statutory,licences);
  const codes=new Set(proposed.map((x:any)=>x.code)),used=await usedAccounts(tx,clientId,from);
  const exceptions=[...used.entries()].filter(([code])=>!codes.has(code)).map(([code,sources])=>{const x=catalog.find((y:any)=>y.code===code);return {code,name:x?.name||'Unknown account',sources,reason:x?(x.entity_types?.length&&!x.entity_types.includes(c.legal_entity_type)?`For ${x.entity_types.join(', ')} only`:x.statutory_tags?.length&&x.statutory_tags.every((t:string)=>statutory[t]==='no')?`Needs the client's ${x.statutory_tags.join(' / ')} obligation, which is not on its verified tax profile`:x.industry_packs?.length?`Industry pack ${x.industry_packs.join(', ')} not among the client's activities`:x.status!=='Active'?'Account is not active':'Outside the proposal'):'Not in the master chart'};});
- const draftsForPacks=catalog.filter((x:any)=>x.status==='Draft'&&x.industry_packs?.some((p:string)=>packs.includes(p))).map((x:any)=>({code:x.code,name:x.name}));
- return {client:c,packs,statutory,accounts:proposed.map((x:any)=>({code:x.code,name:x.name,account_group:x.account_group,layer:chartLayer(x),entity_types:x.entity_types,industry_packs:x.industry_packs,statutory_tags:x.statutory_tags||[],why:accountWhy(x,c.legal_entity_type||'',packs,statutory)})),exceptions,awaiting_partner_approval:draftsForPacks,catalog};
+ const draftsForPacks=catalog.filter((x:any)=>x.status==='Draft'&&(x.industry_packs?.some((p:string)=>packs.includes(p))||heldFor(x.code,licences).length>0)).map((x:any)=>({code:x.code,name:x.name}));
+ return {client:c,packs,statutory,licences:held,accounts:proposed.map((x:any)=>({code:x.code,name:x.name,account_group:x.account_group,layer:chartLayer(x),entity_types:x.entity_types,industry_packs:x.industry_packs,statutory_tags:x.statutory_tags||[],why:accountWhy(x,c.legal_entity_type||'',packs,statutory,licences)})),exceptions,awaiting_partner_approval:draftsForPacks,catalog};
 }
 
 export async function clientChartAction(tx:any,a:any,p:any){
