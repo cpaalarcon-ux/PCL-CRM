@@ -106,11 +106,20 @@ test('My Approvals filters and views',()=>{
  assert.equal(n({}),'Rule A,Map B,Tpl C');assert.equal(n({mine:true}),'Rule A');assert.equal(n({state:'Active'}),'Tpl C');assert.equal(n({owner:'PARTNER'}),'Map B,Tpl C');
  assert.equal(n({scope:'firm'}),'Rule A,Tpl C');assert.equal(n({scope:'Fictional Client Ltd'}),'Map B');assert.equal(n({from:'2026-01-01'}),'Rule A,Map B');assert.equal(n({to:'2025-12-31'}),'Tpl C');assert.equal(n({q:'bob'}),'Map B');
  assert.equal(AF.visibleRecords(items,{}).length,2,'waiting records only by default');assert.equal(AF.visibleRecords(items,{state:'Active'}).length,1);assert.equal(AF.visibleRecords(items,{owner:'PARTNER'}).length,2);
- const data={note:'N',queues:[{key:'approve_chart',title:'<i>Chart</i>',count:3,owner_label:'Manager',where:'Settings',needs_my_action:true},{key:'approve_policies',title:'Policies',count:1,owner_label:'',where:'',needs_my_action:false}],records:items,scopes:['Fictional Client Ltd'],roles:[{code:'PARTNER',label:'Engagement Partner'}]};
+ const data={note:'N',actionGroups:[{key:'approve_chart',waiting_count:3,actionable_count:2,blocked_count:1}],queues:[{key:'approve_policies',title:'<i>Policies</i>',count:1,owner_label:'',where:'Settings',needs_my_action:false}],records:items,scopes:['Fictional Client Ltd'],roles:[{code:'PARTNER',label:'Engagement Partner'}]};
  const v=MA.approvalsView(data,{...MA.FILTER_DEFAULT});
- assert.match(v,/id="apFilters"/);assert.match(v,/&lt;i&gt;Chart/);assert.match(v,/data-suite="ap-open" data-id="approve_chart"/);assert.doesNotMatch(v,/Policies/,'a queue that is not mine is hidden under Needs my action');
- assert.match(MA.approvalsView(data,{...MA.FILTER_DEFAULT,mine:false}),/Policies/);
+ assert.match(v,/id="apFilters"/);assert.match(v,/Chart of Accounts/);assert.match(v,/data-suite="ap-review" data-id="approve_chart"/);assert.match(v,/data-suite="ap-bulk-open"[^>]*disabled/);assert.doesNotMatch(v,/Policies/,'other approval queues stay collapsed under Other approval tasks');
+ const all=MA.approvalsView(data,{...MA.FILTER_DEFAULT,mine:false});assert.match(all,/Policies/);assert.match(all,/&lt;i&gt;Policies/);
  assert.match(MA.recordsView([],{}),/No records match/);
+});
+
+test('Quick review drawer shows item details and requires an explicit review confirmation',()=>{
+ const groups=[{key:'approve_tax_rates',items:[{id:'rate-1',revision:4,label:'VAT standard',code:'KE_VAT_STANDARD',kind:'VAT',effective_from:'2026-01-01',legal_citation:'Value Added Tax Act',source_url:'https://example.test/law',eligible:true}]}];
+ const selected=new Map([['approve_tax_rates',new Set(['rate-1'])]]);
+ const v=MA.drawerView(groups,selected);
+ assert.match(v,/data-ap-selectall/);assert.match(v,/data-ap-item="approve_tax_rates\|rate-1" checked/);assert.match(v,/data-ap-confirm/);
+ assert.match(v,/I confirm that I completed each applicable review above/);assert.match(v,/statutory basis, eligibility conditions and effective dates/);
+ assert.match(v,/Value Added Tax Act/);assert.match(v,/Open official source/);
 });
 
 test('Owner Matrix view and diff: only changed rows are sent; Managers cannot confirm',()=>{
@@ -136,14 +145,14 @@ test('hub rows: Open button, owner shown as confirmed or suggested, areas named'
 
 test('wiring: suite handlers and cards, ledger screen, tokens, rights, access control, server wiring',()=>{
  const suite=rd('staff-suite.mjs');
- for(const m of ['staff-statement-review','staff-owner-matrix'])assert.match(suite,new RegExp(m+'\\.mjs\\?v=20261117-actions-v1'));assert.match(suite,/staff-my-approvals\.mjs\?v=20261116-setuptasks-v1/);
+ assert.match(suite,/staff-statement-review\.mjs\?v=20261118-approval-board-v1/);assert.match(suite,/staff-owner-matrix\.mjs\?v=20261117-actions-v1/);assert.match(suite,/staff-my-approvals\.mjs\?v=20261118-approval-board-v1/);
  assert.match(suite,/myApprovalsCard:myApprovals\.card\(\)/);assert.match(suite,/ownerMatrixCard:ownerMatrix\.card\(\)/);
  assert.match(suite,/settingsHub\.handle\(action,id\)/);assert.match(suite,/myApprovals\.handle\(action,id\)/);assert.match(suite,/ownerMatrix\.handle\(action,id\)/);assert.match(suite,/stmtReview\.handle\(action,id\)/);
  const layout=rd('staff-settings-layout.mjs');assert.match(layout,/myApprovalsCard:'overview'/);assert.match(layout,/ownerMatrixCard:'access'/);
  const ledger=rd('staff-ledger.mjs');assert.match(ledger,/data-suite=\\"stmt-review-open\\"|data-suite="stmt-review-open"/);assert.doesNotMatch(ledger,/btn\('statement-map-approve'/);
- assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261121-comply-v1/);assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261128-rates-v1/);
+ assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261118-approval-board-v1/);assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261128-rates-v1/);
  for(const f of ['staff-rights-catalog.mjs',fx.slice(3)+'staff-rights-catalog.mjs'])assert.match(rd(f),/ledger_statement_map_review_read','ledger_statement_map_review_approve'/);
- assert.match(rd(fx.slice(3)+'staff-access-control.mjs'),/settings_owners_\|settings_approvals_/);
+ assert.match(rd(fx.slice(3)+'staff-access-control.mjs'),/settings_owners_\|settings_approval\(\?:s\)\?_/);
  const idx=rd(fx.slice(3)+'index.ts');assert.match(idx,/settingsOwnerAction\(tx,a,p\)/);
  const ap=rd(fx.slice(3)+'annual-pack.ts');assert.match(ap,/ledger_statement_map_review_approve/);assert.match(ap,/decideMaps\(tx,a,ids,approve,note\)/);
  const mig=rd('supabase/migrations/20261117200000_settings_owners.sql');assert.match(mig,/FORCE ROW LEVEL SECURITY/);assert.match(mig,/no_delete/);assert.match(mig,/never edited/);assert.match(mig,/GRANT EXECUTE ON FUNCTION erp_private\.settings_register\(\) TO erp_api/);

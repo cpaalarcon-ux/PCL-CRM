@@ -2,12 +2,14 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 globalThis.Deno=globalThis.Deno||{env:{get:()=>''}};
 const {statementMapAction}=await import('../supabase/functions/staff-workspace-v12/annual-pack.ts');
+const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
 const {settingsOwnerAction}=await import('../supabase/functions/staff-workspace-v12/settings-owner-actions.ts');
 const {settingsHubAction}=await import('../supabase/functions/staff-workspace-v12/settings-hub-actions.ts');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
 async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}
 const map=(role,p)=>as(role,a=>statementMapAction(tx,a,p));
+const account=(role,p)=>as(role,a=>accountingAction(tx,a,p));
 const own=(role,p)=>as(role,a=>settingsOwnerAction(tx,a,p));
 test('grouped statement-line review, Owner Matrix and My Approvals through the real actions',async t=>{
  t.after(()=>db.close());
@@ -88,4 +90,35 @@ test('grouped statement-line review, Owner Matrix and My Approvals through the r
  assert.equal(q(apP,'approve_chart').owner_label,'Manager');assert.match(q(apP,'approve_tax_rates').owner_label,/Tax Lead/);
  assert(Array.isArray(apP.records)&&Array.isArray(apP.scopes)&&apP.roles.length===6);
  await assert.rejects(own('SUPERVISOR',{action:'settings_approvals_read'}),/Managers and Partners/);
+
+ // ---- Actionable approval batches ----
+ await account('MANAGER',{action:'accounting_account_add',code:'99976',name:'Fictional batch expense A',route:2,category_code:'EXP01',statement:'Profit or loss',notes:'Fictional test proposal A'});
+ await account('MANAGER',{action:'accounting_account_add',code:'99977',name:'Fictional batch expense B',route:2,category_code:'EXP01',statement:'Profit or loss',notes:'Fictional test proposal B'});
+ const chart=(await own('PARTNER',{action:'settings_approval_items_read',queue_keys:['approve_chart']})).groups[0];
+ const first=chart.items.find(x=>x.id==='99976'),second=chart.items.find(x=>x.id==='99977');
+ assert(first?.eligible&&second?.eligible,'another Partner may review the Manager proposals');
+ await assert.rejects(own('MANAGER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_chart',items:[{id:first.id,revision:first.revision}]}]}),/Partner approval required/);
+ await assert.rejects(own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:false,selections:[{queue_key:'approve_chart',items:[{id:first.id,revision:first.revision}]}]}),/Confirm that you reviewed/);
+ await assert.rejects(own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_chart',items:[{id:first.id,revision:first.revision},{id:second.id,revision:999}]}]}),/This record changed\. Refresh before saving/);
+ assert.equal((await tx`select count(*)::int n from erp_private.approval_batches`)[0].n,0,'failed batches leave no audit record');
+ assert.equal((await tx`select count(*)::int n from erp_private.account_catalog where code in ('99976','99977') and status='Draft'`)[0].n,2,'a stale item rolls back the earlier item in the same batch');
+ const chartDone=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_chart',items:[{id:first.id,revision:first.revision}]}]});
+ assert.equal(chartDone.total,1);
+ const approved=(await tx`select status,approved_by,approved_at from erp_private.account_catalog where code='99976'`)[0];
+ assert.equal(approved.status,'Active');assert.equal(approved.approved_by,actors.PARTNER.staff_id);assert(approved.approved_at);
+
+ await account('PARTNER',{action:'accounting_account_add',code:'99978',name:'Fictional self-check expense',route:2,category_code:'EXP01',statement:'Profit or loss',notes:'Fictional self-check proposal'});
+ const ownProposal=(await own('PARTNER',{action:'settings_approval_items_read',queue_keys:['approve_chart']})).groups[0].items.find(x=>x.id==='99978');
+ assert(ownProposal);
+ await assert.rejects(own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_chart',items:[{id:ownProposal.id,revision:ownProposal.revision}]}]}),/cannot approve it/);
+ const otherPartner=await own('PARTNER2',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_chart',items:[{id:ownProposal.id,revision:ownProposal.revision}]}]});
+ assert.equal(otherPartner.total,1,'a different Partner can approve the proposal');
+
+ const mapGroup=(await own('PARTNER',{action:'settings_approval_items_read',queue_keys:['approve_statement_lines']})).groups[0];
+ const mapItem=mapGroup.items.find(g=>g.eligible&&g.items.length)?.items[0];
+ assert(mapItem,'a consistent statement-line item is available for the grouped path');
+ const mapDone=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_statement_lines',items:[{id:mapItem.id,revision:null}]}]});
+ assert.equal(mapDone.total,1);
+ assert.equal((await tx`select count(*)::int n from erp_private.approval_batches`)[0].n,3,'each successful typed group has one batch audit row');
+ assert.equal((await tx`select count(*)::int n from erp_private.approval_batches where review_confirmed`)[0].n,3,'all successful batches retain the reviewer confirmation');
 });

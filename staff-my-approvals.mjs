@@ -41,7 +41,7 @@ export function approvalsView(data,f,{esc=e0,selectedGroups=new Set()}={}){
  <details class="approval-secondary"><summary>Renewals and expiries (${esc(data.renewals?.length||0)})</summary>${renewalsView(data.renewals,{esc})}</details>
  <details class="approval-secondary"><summary>Search all settings records</summary><p class="muted">Use these filters when you need the history or current state of a specific record.</p>${filtersView(f,data,{esc})}<div id="apRecordsBody">${recordsView(recs,{esc})}</div></details>`;
 }
-function drawerView(groups,selected,{esc=e0}={}){
+export function drawerView(groups,selected,{esc=e0}={}){
  const flattened=groups.flatMap(g=>groupItems(g).map(i=>({...i,queue_key:g.key,type:g.type})));
  const eligible=flattened.filter(i=>i.eligible);
  const selectedCount=flattened.filter(i=>selected.get(i.queue_key)?.has(String(i.id))).length;
