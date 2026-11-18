@@ -11,7 +11,7 @@ test('every Settings card sits on exactly one tab and none is dropped',()=>{
  const tabs=new Set(L.SETTINGS_TABS.map(t=>t.code));
  for(const k of keys){assert.ok(tabs.has(L.tabForCard(k)),k);assert.ok(k in L.CARD_TAB,k+' has a named tab');}
  assert.equal(L.tabForCard('aFutureCard'),'records','a card nobody placed still shows, under Records & Audit History');
- assert.match(suite,/staff-settings-layout\.mjs\?v=20261119-settings-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261118-approval-board-v1/);
+ assert.match(suite,/staff-settings-layout\.mjs\?v=20261118-settings-nav-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261118-settings-nav-v1/);
  assert.match(suite,/action==='settings-tab'/);
 });
 test('the page shows one tab and keeps the others in the page, hidden',()=>{
@@ -19,7 +19,7 @@ test('the page shows one tab and keeps the others in the page, hidden',()=>{
  const html=L.layoutView({active:'accounting',panels,button});
  for(const t of L.SETTINGS_TABS)assert.match(html,new RegExp(`id="settingsPanel-${t.code}"`));
  assert.equal((html.match(/ hidden>/g)||[]).length,L.SETTINGS_TABS.length-1);
- assert.match(html,/id="settingsPanel-accounting" role="tabpanel">/);
+ assert.match(html,/id="settingsPanel-accounting" role="tabpanel" aria-labelledby="settingsTab-accounting" tabindex="0">/);
  assert.match(html,/aria-selected="true"/);assert.deepEqual(L.SETTINGS_TABS.map(t=>t.label),['Overview','Firm & Users','Access & Approvals','Service Catalogue','Accounting & Tax Rules','Upload & Export Templates','Payroll Configuration','Integrations','Records & Audit History']);assert.match(html,/Settings \u2192 Tax|Settings → Accounting/);
  assert.match(L.layoutView({active:'nonsense',panels,button}),/id="settingsPanel-overview" role="tabpanel">/,'an unknown tab falls back to the overview');
 });

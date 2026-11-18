@@ -42,11 +42,19 @@ export const EMPTY_NOTES=Object.freeze({
  integrations:'No connected service is configured from here. The ERP prepares files and records references; it does not file on the KRA or eTIMS portals, and bank lines come in by upload.'
 });
 
-export const tabBar=(active,button)=>`<div class="actions subnav settings-tabs" role="tablist" aria-label="Settings sections">${SETTINGS_TABS.map(t=>button('settings-tab',t.label,t.code,`class="${t.code===active?'primary':''}" role="tab" aria-selected="${t.code===active}"`)).join('')}</div>`;
+export const SETTINGS_NAV_GROUPS=Object.freeze([
+ {label:'Overview',codes:['overview']},
+ {label:'Firm & governance',codes:['firm','access']},
+ {label:'Service delivery',codes:['services','accounting','templates','payroll']},
+ {label:'System & records',codes:['integrations','records']}
+]);
+const tabButton=(t,active,button)=>button('settings-tab',t.label,t.code,
+ `id="settingsTab-${t.code}" class="settings-nav-item${t.code===active?' is-active primary':''}" role="tab" aria-selected="${t.code===active}" aria-controls="settingsPanel-${t.code}"`);
+export const tabBar=(active,button)=>`<div class="actions subnav settings-tabs" role="tablist" aria-label="Settings sections">${SETTINGS_NAV_GROUPS.map(g=>`<div class="settings-nav-group"><span class="settings-nav-group-label">${esc(g.label)}</span>${g.codes.map(code=>tabButton(SETTINGS_TABS.find(t=>t.code===code),active,button)).join('')}</div>`).join('')}</div>`;
 
 export function layoutView({active='overview',panels={},button}){
  const tab=SETTINGS_TABS.find(t=>t.code===active)||SETTINGS_TABS[0];
- return `${tabBar(tab.code,button)}<p class="muted settings-tab-about">${esc(tab.about)}</p>${SETTINGS_TABS.map(t=>`<div class="settings-panel" id="settingsPanel-${t.code}" role="tabpanel"${t.code===tab.code?'':' hidden'}><p class="muted settings-crumb">Settings \u2192 ${esc(t.label)}</p>${panels[t.code]||(EMPTY_NOTES[t.code]?`<section class="card"><p class="info">${esc(EMPTY_NOTES[t.code])}</p></section>`:'')}</div>`).join('')}`;
+ return `<div class="settings-layout">${tabBar(tab.code,button)}<div class="settings-content"><p class="muted settings-tab-about">${esc(tab.about)}</p>${SETTINGS_TABS.map(t=>`<div class="settings-panel" id="settingsPanel-${t.code}" role="tabpanel" aria-labelledby="settingsTab-${t.code}" tabindex="0"${t.code===tab.code?'':' hidden'}><p class="muted settings-crumb">Settings \u2192 ${esc(t.label)}</p>${panels[t.code]||(EMPTY_NOTES[t.code]?`<section class="card"><p class="info">${esc(EMPTY_NOTES[t.code])}</p></section>`:'')}</div>`).join('')}</div></div>`;
 }
 
 // ---- Who can do what -------------------------------------------------------------------------------------------------
