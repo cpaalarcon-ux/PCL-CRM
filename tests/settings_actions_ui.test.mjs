@@ -118,7 +118,7 @@ test('Quick review drawer shows item details and requires an explicit review con
  const selected=new Map([['approve_tax_rates',new Set(['rate-1'])]]);
  const v=MA.drawerView(groups,selected);
  assert.match(v,/data-ap-selectall/);assert.match(v,/data-ap-item="approve_tax_rates\|rate-1" checked/);assert.match(v,/data-ap-confirm/);
- assert.match(v,/I confirm that I completed each applicable review above/);assert.match(v,/statutory basis, eligibility conditions and effective dates/);
+ assert.match(v,/I confirm that I completed each applicable review above/);assert.match(v,/statutory basis, application conditions and effective dates/);
  assert.match(v,/Value Added Tax Act/);assert.match(v,/Open official source/);
 });
 
@@ -145,7 +145,7 @@ test('hub rows: Open button, owner shown as confirmed or suggested, areas named'
 
 test('wiring: suite handlers and cards, ledger screen, tokens, rights, access control, server wiring',()=>{
  const suite=rd('staff-suite.mjs');
- assert.match(suite,/staff-statement-review\.mjs\?v=20261118-approval-board-v1/);assert.match(suite,/staff-owner-matrix\.mjs\?v=20261117-actions-v1/);assert.match(suite,/staff-my-approvals\.mjs\?v=20261118-approval-board-v1/);
+ assert.match(suite,/staff-statement-review\.mjs\?v=20261118-approval-board-v1/);assert.match(suite,/staff-owner-matrix\.mjs\?v=20261117-actions-v1/);assert.match(suite,/staff-my-approvals\.mjs\?v=20261118-official-tax-source-v2/);
  assert.match(suite,/myApprovalsCard:myApprovals\.card\(\)/);assert.match(suite,/ownerMatrixCard:ownerMatrix\.card\(\)/);
  assert.match(suite,/settingsHub\.handle\(action,id\)/);assert.match(suite,/myApprovals\.handle\(action,id\)/);assert.match(suite,/ownerMatrix\.handle\(action,id\)/);assert.match(suite,/stmtReview\.handle\(action,id\)/);
  const layout=rd('staff-settings-layout.mjs');assert.match(layout,/myApprovalsCard:'overview'/);assert.match(layout,/ownerMatrixCard:'access'/);

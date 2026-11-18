@@ -92,7 +92,10 @@ export async function settingsOwnerAction(tx:any,a:any,p:any):Promise<any>{
  }
  if(act==='settings_approval_batch_approve'){
   if(p.review_confirmed!==true)fail(400,'Confirm that you reviewed every selected item before approving.');
-  const selections=cleanSelections(p.selections),counts:any={},auditRows:any[]=[];
+  const selections=cleanSelections(p.selections);
+  const taxSourceReviewRequired=selections.some((g:any)=>g.queue_key==='approve_tax_rates');
+  if(taxSourceReviewRequired&&p.tax_source_review_confirmed!==true)fail(400,'Tax rule approval requires an official Kenya Law, KRA, Gazette or competent regulator URL. Confirm that you opened and checked the source URL for every selected tax rule.');
+  const counts:any={},auditRows:any[]=[];
   for(const group of selections){
    if(group.queue_key==='approve_tax_rates'){
     const ids=[];
