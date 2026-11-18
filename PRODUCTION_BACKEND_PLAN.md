@@ -1,54 +1,59 @@
 # PCL Nexus: production backend plan
 
-Status: 14 November 2026. Supersedes the "Current observed position" of [PRODUCTION_ROLLOUT.md](PRODUCTION_ROLLOUT.md); the release sequence (Releases 0 to 5) in that file still applies. Repository preparation is merged into the staging line (PR #204). Nothing here is on `main`, and no production Supabase project exists yet. This file does not approve a production release.
+**Status:** 18 November 2026. The preliminary release review is in [PRODUCTION_RELEASE_REVIEW_2026-11-18.md](PRODUCTION_RELEASE_REVIEW_2026-11-18.md). It records migration findings and current blockers; it is not a production release approval. Draft PR #291 remains open against `main` and has been refreshed from the latest staging source commit.
 
-## Decision
+## Decision and production project
 
-A separate production Supabase project (own database, storage, keys and secrets) and a separate Cloudflare Pages project, with the same migrations and Edge Function code as staging. No staging data is copied: it is all fictional, so production starts empty. Region: Mumbai (`ap-south-1`), pending the data-protection adviser's confirmation of the transfer basis. A project's region cannot be changed later.
+Use a separate production Supabase project and separate Cloudflare Pages project, while keeping the staging project in the existing organization. The production Supabase project `pcl-erp-production` (`tafrrmcxrsorffkonrxq`) is Active/Healthy in Mumbai (`ap-south-1`) under the existing Pro organization. The user approved the quoted additional project cost of $10/month.
 
-## What staging is today
+Production starts empty. No staging data is copied. No production schema, migrations, Edge Function or secrets have been applied by the release-review preparation. The Mumbai/data-transfer basis still requires written confirmation from the firm’s data-protection adviser before real client data is stored.
 
-| Part | State |
+## Current environments
+
+| Part | Current state |
 |---|---|
-| Database | Supabase `pcl-erp-staging` (`yfjiculexbzpkvtapudk`, `ap-south-1`), 191 migrations, 242 tables in the private `erp_private` schema, 550 functions, 13 pg_cron jobs created by migrations. |
-| Server | One Edge Function, `staff-workspace-v12`, deployed with `--no-verify-jwt`; it authenticates every action itself. |
-| Files | Private bucket `staff-pilot-private`; migration `20261114100000_private_evidence_bucket.sql` creates it where missing. |
-| Web | Cloudflare Pages `pcl-crm`: production deployment is `main`; other branches get public previews. |
-| Deploy | Push to `deploy/staging-backend` runs the staging workflow (hard-coded to the staging project). |
+| Staging database | Supabase `pcl-erp-staging` (`yfjiculexbzpkvtapudk`, `ap-south-1`); the current ledger lists 247 migrations, through `20261129100000_support_schedules`. |
+| Future migration IDs | 20 staging versions are dated after 18 November 2026. They are preserved as applied version identifiers. See the release review for the full list and safe replay rule. |
+| Production database | Supabase `pcl-erp-production` (`tafrrmcxrsorffkonrxq`); migration ledger is empty. |
+| Production app config | `environments/production.json` still has placeholders for the project reference and publishable key. |
+| Backend | The production workflow targets `staff-workspace-v12`, checks the exact `main` tip, requires typed confirmation and protected-environment approval, checks staging runs on the same commit and performs a migration dry-run before applying. |
+| Web | A separate PCL Nexus production Pages project exists, but the canonical production hostname/custom-domain connection is not complete. The previous `pcl-crm` and legacy host must be handled carefully during cutover; do not change mail records. |
+| Release checks | Latest staging source is `aab4245` (Build 2890, PR #297). Its hosted check (run `44312657819`) and browser UAT (run `44312657658`) both passed. The workflow-gate follow-up PR #295 also passed its full regression suite and browser UAT. |
 
-## What the repository now provides
+## Repository and migration preparation
 
-- `scripts/build-site.mjs` and `environments/*.json`: build the staff app for one environment from only the files it loads, swap in that environment's project address and publishable key, redirect `/` to `/staff-pilot`, and refuse a production build that is a placeholder or still names staging.
-- Server settings `PCL_SITE_ORIGIN` and `PCL_ALLOWED_ORIGINS` for setup links and allowed browser origins. Staging keeps its addresses as the default; any other project with no settings issues no setup links and allows no browser origin.
-- `.github/workflows/production-backend-deploy.yml`: manual start, typed confirmation (`DEPLOY TO PRODUCTION`), approval from the GitHub `production` environment, tip of `main` only, refuses the staging project, needs green staging checks on the same commit, sets the two server settings (refusing staging addresses) before the function goes live, uses its own secrets, and dry-runs migrations.
-- `supabase/bootstrap/first-partner.sql`: one guarded statement that creates the firm, the first Partner in "Pending setup" with firm-wide access, and one 24-hour single-use setup link. It refuses to run if any staff record exists.
-- Tests for the build, the workflow and the bootstrap (`tests/environment_build.test.mjs`, `tests/production_workflow.test.mjs`, `tests/first_partner_bootstrap.test.mjs`).
-- An empty-database replay of all 191 migrations matched staging (tables, functions, jobs, bucket, extensions).
+The staging source branch is `backend/staging-foundation` at `aab4245a7a294de73d98f64e6dc0cd924491efbf`. It is 536 commits ahead of `main`; draft PR #291 carries two release-review commits and therefore represents a broad ERP release that needs review across the full diff.
 
-## Owner steps (no one else can do these)
+The production build tooling, per-environment configuration, origin checks, protected production workflow and guarded first-Partner bootstrap are present in the staging source. The earlier clean replay covered a 191-migration snapshot; it does not establish that the current 247-migration snapshot replays cleanly.
 
-1. Decide region, plan (Pro with daily backups; add point-in-time recovery if a day of lost work is unacceptable), named system administrator and recovery targets; get the adviser's confirmation for the chosen region.
-2. Create the production Supabase project in the firm-owned organisation. Choose the database password yourself; it goes only into a GitHub secret.
-3. Create a new Supabase access token for production deploys (not the staging one).
-4. In the GitHub `production` environment (reviewer and origin variables already set): add variable `PROD_PROJECT_REF` and secrets `PROD_SUPABASE_ACCESS_TOKEN`, `PROD_SUPABASE_DB_PASSWORD`.
-5. Give the project reference and publishable key (public by design) so `environments/production.json` can be filled in. Never share secret keys or passwords in chat or in the repository.
-6. Run the first-Partner bootstrap once in the production SQL editor and give the setup link to the named Partner.
-7. Later, with the Partner's written release decision: move the staging line onto `main`, then point `pcl.phamalarcon.com` at the production Pages project (the old `pcl-crm` project must release it first; change only that one DNS record, never mail records).
+**Migration rule:** Do not retimestamp or rename migrations already applied in staging. On the empty production project, review a dry-run against the final release commit and confirm all 247 expected versions are pending in ascending order. Replay that exact set on a disposable empty database, then compare schema objects, functions, extensions, scheduled jobs and private storage configuration. Stop on any missing, skipped, duplicated or out-of-order version. No production dry-run or schema replay has been run for this release review.
 
-## Go-live gates (all before real client data)
+## Owner steps
 
-- Test suite and browser UAT green on the release commit; empty-database replay passed.
-- Fictional-client guard off; no "Testing" tax rate relied on for a real client (the Tax Lead verifies and approves each rate; a new database seeds all rates as Draft).
-- Anonymous access, expired sessions, other clients' identifiers, self-approval, locked periods and duplicate uploads are refused when called directly against the production API.
-- A restore of database and files is done and timed. Database backups do not include stored file bytes, so files need their own backup.
-- Build label, security headers and sign-in verified on the production URL; a setup link opens the production site, not staging.
-- A named owner for failed jobs, backups and access changes.
-- The adviser has signed off the transfer basis (and whether any local copy in Kenya is required); consent wording is in client forms and staff contracts.
+1. Obtain written data-residency/transfer advice for Mumbai and confirm whether local Kenyan storage or another control is required before entering real client data.
+2. Complete the draft PR review and confirm hosted and browser UAT on the exact final release commit, including assistant, manager and partner role checks with staging-only test accounts. The latest staging hosted and browser checks on `aab4245` passed; the role-specific release verification still needs explicit confirmation.
+3. Run the release test suite and the full empty-database replay on the final release commit. Record the exact migration list and comparison results in the PR.
+4. Confirm the production hostname and attach it to the PCL Nexus Pages project only after a successful production web build. Preserve email-related DNS records during cutover.
+5. After the release gates and a separate written release decision, add `PROD_PROJECT_REF`, `PROD_SITE_ORIGIN`, `PROD_ALLOWED_ORIGINS`, `PROD_SUPABASE_ACCESS_TOKEN` and `PROD_SUPABASE_DB_PASSWORD` to the protected GitHub `production` environment. Keep passwords and tokens there only; never put them in the repository or chat.
+6. Run the guarded first-Partner bootstrap once after the production schema is deployed, then securely deliver its single-use setup link to the named Partner.
 
-## Open items
+## Go-live gates
 
-- Tax Lead: confirm the testing rates and the 2027 COMPUTER rate.
-- Decide whether production launches without case kinds for housing levy, NSSF, SHIF and individual income tax.
-- The staging Supabase access token expires on 7 December 2026.
-- The set-up guide status check takes 30 to 40 seconds on staging.
-- Every non-`main` branch gets a public Cloudflare preview of the whole repository, including SQL.
+- The draft PR has a complete code review, resolved comments and green required checks.
+- The full 247-migration set dry-runs and replays successfully against a disposable empty database; production’s first dry-run matches that reviewed set.
+- Anonymous access, expired sessions, cross-client access, self-approval, locked-period edits and duplicate uploads are refused by direct API checks.
+- Supabase security findings are reviewed and remediated; table and private-document access is verified by firm, client, role and assignment.
+- A database and private-file restore is completed and timed. Database backups do not include stored file bytes.
+- Production build, HTTPS, security headers, sign-in, setup links, custom domain and error monitoring are verified.
+- A named owner is assigned for failed jobs, backups, restores and access changes.
+- Data-transfer advice is documented before any real client data is loaded.
+
+## Open decisions and follow-up
+
+- Confirm the data-residency basis for the Mumbai region.
+- Confirm the public production hostname.
+- The server/page build mismatch and sign-in warning were reported on older commit `0e06d26`; later hosted checks, including the latest on `aab4245`, passed. Confirm role-specific access and approval checks on the exact final release head before closing this gate.
+- Confirm the current tax-rule approvals and required payroll/tax case coverage before real work begins.
+- Confirm backup retention and recovery time/point objectives; test the restore process.
+
+**Current disposition:** Keep the candidate PR draft. Production secrets and schema remain untouched until the release review, UAT and migration replay gates are complete.
