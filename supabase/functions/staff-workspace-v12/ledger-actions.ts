@@ -28,6 +28,7 @@ import {partnerSharesAction} from './partner-shares-actions.ts';
 import {notesAction} from './notes-actions.ts';
 import {auditLockAction} from './audit-lock-actions.ts';
 import {wordingAction} from './wording-actions.ts';
+import {pagesAction} from './client-pages-actions.ts';
 import {ppeAction} from './ppe-actions.ts';
 import {stockRollsRead,stockJournalPlan} from './stock-journal.ts';
 import {money} from './accounting-rules.mjs';
@@ -391,6 +392,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  {const al=await auditLockAction(tx,a,l,p,async(asOf:string)=>await statementsFrom(tx,l,(await reportSnapshot(tx,l,'Year end',asOf)).full),p.as_of?date(p.as_of):day(l.ends_on));if(al!==undefined)return al;}
  {const pa=await ppeAction(tx,a,l,p,async(asOf:string)=>(await reportSnapshot(tx,l,'Year end',asOf)).full,p.as_of?date(p.as_of):day(l.ends_on));if(pa!==undefined)return pa;}
  {const wa=await wordingAction(tx,a,l,p,async(asOf:string)=>await statementsFrom(tx,l,(await reportSnapshot(tx,l,'Year end',asOf)).full),p.as_of?date(p.as_of):day(l.ends_on));if(wa!==undefined)return wa;}
+ {const pa=await pagesAction(tx,a,l,p,async(asOf:string)=>await statementsFrom(tx,l,(await reportSnapshot(tx,l,'Year end',asOf)).full),p.as_of?date(p.as_of):day(l.ends_on));if(pa!==undefined)return pa;}
  if(p.action==='ledger_comparatives_save')return await comparativesSave(tx,a,l,p);
  if(p.action==='ledger_comparatives_read')return await comparativesRead(tx,a,l,await report(tx,l,day(l.ends_on)));
  if(p.action==='ledger_comparatives_review')return await comparativesReview(tx,a,l,p,await report(tx,l,day(l.ends_on)));

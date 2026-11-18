@@ -59,7 +59,7 @@ test('formatted statements through the action: draft until comparatives are appr
  assert.equal(f.has_prior,true);assert.equal(line(f,'Total assets').prior,300000);assert.equal(line(f,'Total equity and liabilities').prior,300000);
  assert.deepEqual(s.statements.problems,[]);
  // Build 2873: everything else is in order, but the statements are not ready until a Partner has approved the notes
- assert.deepEqual(s.readiness.checks.filter(c=>c.status==='Blocked').map(c=>c.code),['NOTES_APPROVED','WORDING_COMPLETE']);assert.equal(s.readiness.ready,false);assert.equal(s.statements.notes.items.length>0,true);assert.deepEqual(s.statements.notes.problems,[]);
+ assert.deepEqual(s.readiness.checks.filter(c=>c.status==='Blocked').map(c=>c.code),['NOTES_APPROVED','WORDING_COMPLETE','CLIENT_PAGES']);assert.equal(s.readiness.ready,false);assert.equal(s.statements.notes.items.length>0,true);assert.deepEqual(s.statements.notes.problems,[]);
  assert.equal(line(s.statements.profit_or_loss,'Revenue').note,1,'the note number is written on the face');
  const NA=await import('../supabase/functions/staff-workspace-v12/notes-actions.ts');
  const nget=(asOf)=>A.statementsFrom(tx,per,data);
@@ -83,6 +83,7 @@ test('formatted statements through the action: draft until comparatives are appr
  const ap=await nact('PARTNER2',{action:'ledger_notes_review',set_id:n3.set_id,decision:'Approved'});assert.equal(ap.status,'Approved');assert.equal(ap.sole_partner_approval,false);
  s=await get('MANAGER');assert.equal(s.readiness.checks.find(c=>c.code==='NOTES_APPROVED').status,'Pass');assert.equal(s.readiness.ready,false,'the wording is still to be approved');assert.equal(s.readiness.checks.find(c=>c.code==='WORDING_COMPLETE').status,'Blocked');
  {const {approveWording}=await import('./helpers/wording_ready.mjs'),W=await import('../supabase/functions/staff-workspace-v12/wording-actions.ts');const w=await approveWording({tx,as,W,per,getStatements:nget,asOf:'2026-12-31'});assert.equal(w.complete,true,w.problems.join(' '));}
+ {const {approvePages}=await import('./helpers/pages_ready.mjs'),Pg=await import('../supabase/functions/staff-workspace-v12/client-pages-actions.ts');const pr=await approvePages({tx,as,Pg,per,getStatements:nget,asOf:'2026-12-31'});assert.equal(pr.complete,true,pr.problems.join(' '));}
  s=await get('MANAGER');assert.equal(s.readiness.checks.find(c=>c.code==='WORDING_COMPLETE').status,'Pass');assert.equal(s.readiness.ready,true);assert.equal(s.status,'Ready for review');
  await assert.rejects(()=>nact('MANAGER',{action:'ledger_notes_prepare'}),/already approved/);
  // any change to a figure makes the approval stale: the pack is blocked again until the notes are prepared and approved again
