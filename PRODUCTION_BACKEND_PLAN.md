@@ -1,6 +1,6 @@
 # PCL Nexus: production backend plan
 
-Status: 14 November 2026. Supersedes the "Current observed position" of [PRODUCTION_ROLLOUT.md](PRODUCTION_ROLLOUT.md); the release sequence (Releases 0 to 5) in that file still applies. Repository preparation is merged into the staging line (PR #204). Nothing here is on `main`, and no production Supabase project exists yet. This file does not approve a production release.
+Status: updated 18 November 2026. The 14 November observations below are historical where they differ from [the current production release review](PRODUCTION_RELEASE_REVIEW_2026-11-18.md). A separate production Supabase project now exists, but it is empty: no schema, function, secrets or staging data have been copied. This file does not approve a production release.
 
 ## Decision
 
