@@ -42,7 +42,7 @@ const sample=(items,n=6)=>items.slice(0,n).join(', ')+(items.length>n?` and ${it
 // Readiness for one client year. Each check is Pass, Blocked or Info. The pack is ready only when nothing is Blocked.
 // Input: {period:{starts_on,ends_on,status}, reporting, tb:[{code,name,opening,net,movement_debit,movement_credit}], maps:[...rows], lines:[{line_code,statement}],
 //         issues:[string], prior:{source}, priorPeriodExists:boolean, asOf}
-export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,priorPeriodExists=false,asOf,approvedSet=null,draftSet=null,recon=null,legal=null,notes=null,audit=null,wording=null}){
+export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,priorPeriodExists=false,asOf,approvedSet=null,draftSet=null,recon=null,legal=null,notes=null,audit=null,wording=null,ppe=null}){
  const at=asOf||day(period.ends_on),checks=[],add=(code,label,status,detail='')=>checks.push({code,label,status,detail});
  const problems=validateReporting(reporting,period.starts_on);
  add('REPORTING_BASIS','Reporting framework and edition recorded',problems.length?'Blocked':'Pass',problems.join(' ')||`${reporting.framework}, ${reporting.edition}, ${reporting.presentation_currency}, ${reporting.rounding.toLowerCase()}, indirect cash flow.`);
@@ -68,6 +68,8 @@ export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,pr
   const ps=partnerSharesCheck({form,shares:legal.shares});
   if(ps)add('PARTNER_SHARES','Partners\u2019 profit shares recorded',ps.status,ps.detail);
  }
+ // Property, plant and equipment register (build 2881): when the year has PPE, every asset record is approved and the register agrees to the trial balance. Left out when the year has none.
+ if(ppe&&ppe.relevant)add('PPE_REGISTER','Property, plant and equipment register approved and agrees to the trial balance',ppe.ok?'Pass':'Blocked',ppe.ok?'':ppe.problems.slice(0,3).join(' '));
  // Notes (build 2873): a Partner approves the notes before the statements can be final. Left out when the caller gives no notes, so older callers are unchanged.
  if(notes){const nc=notesCheck(notes);add('NOTES_APPROVED','Notes approved by a Partner',nc.status,nc.detail);}
  // Standard wording and disclosures (build 2878): every wording section approved and every client-specific disclosure declared and approved. Left out when the caller gives no wording state.
