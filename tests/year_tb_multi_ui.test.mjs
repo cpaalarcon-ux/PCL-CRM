@@ -51,7 +51,7 @@ test('only opening columns need no taken-state question',async()=>{
  await ui.open();await shown.at(-1).done(pv({years:[yr({as_of:'2024-12-31',role:'Opening'})]}));assert.equal(document.querySelector('select[name="closing_state"]'),null);
 });
 test('the comparatives screen offers it and the ledger wires it with a fresh cache token',()=>{
- assert.match(rd('staff-year-tbs.mjs'),/btn\('tb-multi','Record several years at once'\)/);const s=rd('staff-ledger.mjs');assert.match(s,/createTbMultiUI/);assert.match(s,/staff-tb-multi\.mjs\?v=/);assert.match(s,/a==='tb-multi'/);assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261130-tbmulti-v1/);
+ assert.match(rd('staff-year-tbs.mjs'),/btn\('tb-multi','Record several years at once'\)/);const s=rd('staff-ledger.mjs');assert.match(s,/createTbMultiUI/);assert.match(s,/staff-tb-multi\.mjs\?v=/);assert.match(s,/a==='tb-multi'/);assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261201-rnotes-v1/);
 });
 test('screens escape what they show',async()=>{
  await ui.open();await shown.at(-1).done(pv({years:[yr({unmapped_accounts:1,unmapped:[{code:'<b>1</b>',name:'<script>x</script>',amount:1}],state:'Accounts not mapped'})],parse_errors:[],warnings:['<img src=x>']}));

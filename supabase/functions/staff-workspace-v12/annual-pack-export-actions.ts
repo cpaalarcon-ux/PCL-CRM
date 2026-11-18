@@ -6,6 +6,7 @@ import {packWorkbook} from './annual-pack-workbook.mjs';
 import {pagesFor} from './client-pages-actions.ts';
 import {wordingFor} from './wording-actions.ts';
 import {loadAudit} from './audit-lock-actions.ts';
+import {registerPack} from './report-notes-actions.ts';
 // Pack assembly and export (build 2885). One model, built from the same statements, pages, wording and audit lock the screens use, is drawn as a PDF or a workbook. The status word and the watermark
 // come from the annual gate and the audit lock; nothing here changes a figure or approves anything. A signed external auditor's report is read from the client's private document vault, checked
 // against the fingerprint recorded when the pack was locked, and added to the PDF exactly as signed. If it does not match, it is not attached and the pack says so.
@@ -31,7 +32,7 @@ export async function packAssembleModel(tx:any,l:any,ann:any,storage:any,asOf:st
  const model=assemblePack({client:st.client,reporting:st.reporting,statements:st.statements,wording:{sections:wd.asm.sections},pages:pg.built,gate:ann.gate,audit:st.statements.audit,lock,asOf,attachment:att.attachment});
  // The wording's own problems are open checks of the pack already; they are not repeated here.
  const fingerprint=await digestOf({m:model,att:att.attachment&&att.attachment.sha256||null});
- return {model,fingerprint,attachmentBytes:att.bytes};
+ return {model,fingerprint,attachmentBytes:att.bytes,lockId:lock&&lock.lock_id||null};
 }
 export async function packAssembleAction(tx:any,a:any,l:any,p:any,deps:{annualGateFor:(tx:any,l:any,asOf:string)=>Promise<any>,storage:any,pdfLib:()=>any,ExcelJS:any}){
  if(!['ledger_pack_assemble_read','ledger_pack_assemble'].includes(p.action))return undefined;
@@ -49,5 +50,8 @@ export async function packAssembleAction(tx:any,a:any,l:any,p:any,deps:{annualGa
   const book=packWorkbook(m,deps.ExcelJS,{fingerprint:built.fingerprint});bytes=new Uint8Array(await book.xlsx.writeBuffer());mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
  }
  let str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));
- return {...summary,format,file_name:`${safeName}_Annual_pack_${asOf}_${word}.${format}`,mime_type:mime,base64:btoa(str)};
+ const file_name=`${safeName}_Annual_pack_${asOf}_${word}.${format}`;
+ // Build 2890: the produced pack is registered by its fingerprint. It is final only when no check is open; a live, current audit lock signs it.
+ const pack_id=await registerPack(tx,a,l,{pack_kind:'Annual filing pack',report_kind:null,as_of:asOf,file_format:format,file_name,status_word:m.status.word,fingerprint:built.fingerprint,is_final:!m.status.open_checks.length&&m.status.word!=='Draft',lock:{lock_id:built.lockId,stale:m.status.word!=='Audited'}});
+ return {...summary,format,file_name,mime_type:mime,base64:btoa(str),pack_id};
 }
