@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const { isPreparationParticipant, openingImportDecision } = await import('../supabase/functions/staff-workspace-v12/workflow-gate-rules.mjs');
-const source = fs.readFileSync(new URL('../supabase/functions/staff-workspace-v12/ledger-actions.ts', import.meta.url), 'utf8');
 
 test('segregation of duties includes both the original preparer and the last editor', () => {
   assert.equal(isPreparationParticipant('assistant-1', 'assistant-1', 'manager-1'), true);
@@ -33,6 +32,7 @@ test('non-Excel opening journals cannot be overwritten by a workbook upload', ()
 });
 
 test('server action paths use the shared gates for review and opening import', () => {
+  const source = fs.readFileSync(new URL('../supabase/functions/staff-workspace-v12/ledger-actions.ts', import.meta.url), 'utf8');
   assert.match(source, /isPreparationParticipant\(a\.staff_id,j\.prepared_by,j\.last_prepared_by\)/);
   assert.match(source, /openingImportDecision\(openingDraft\)/);
   assert.match(source, /openingDecision\.action==='replace'\)edit\(openingDraft,a\)/);
