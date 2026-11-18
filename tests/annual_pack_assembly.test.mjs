@@ -97,3 +97,16 @@ test('build 2886: an approved supporting schedule is printed under its note, in 
  const txt=execFileSync('pdftotext',['-layout',dir+'/p.pdf','-'],{encoding:'utf8'});assert.match(txt,/Supporting schedule: Inventories/);assert.match(txt,/Hardware \(Count p1\)/);assert.match(txt,/Total supporting schedule/);
  const wb=packWorkbook(m,ExcelJS,{fingerprint:'abc123'});const cells=[];wb.eachSheet(w=>w.eachRow(r=>cells.push(r.values.join('|'))));assert.ok(cells.some(c=>/Supporting schedule: Inventories/.test(c)));assert.ok(cells.some(c=>/Hardware \(Count p1\)\|400/.test(c)));
 });
+test('build 2888: the partners capital and current accounts are a section of the pack, printed after the allocation of profit, in the PDF and the workbook',async()=>{
+ const matrix={columns:['Fictional Amani','Fictional Zawadi','Total'],rows:[{label:'Capital account: balance at the start of the year',cells:[600000,400000,1000000]},{label:'Total partners’ equity at the end of the year',cells:[890000,560000,1450000],total:true}]};
+ const withP=input();withP.statements.partner_allocation={title:'Allocation of profit for the year to the partners',unit_label:'KES',profit:500000,rows:[{partner_name:'Fictional Amani',percent:'60%',amount:300000},{partner_name:'Fictional Zawadi',percent:'40%',amount:200000}],total:500000,version:1};
+ withP.statements.partner_equity={built:true,ties:true,title:"Statement of partners' capital and current accounts",unit_label:'KES',rounding_shown:false,matrix};
+ const m=A.assemblePack(withP),codes=m.sections.map(s=>s.code);assert.ok(codes.indexOf('PEQ')>codes.indexOf('ALLOC'),'after the allocation');assert.ok(codes.indexOf('PEQ')>=0);
+ const peq=m.sections.find(s=>s.code==='PEQ');assert.equal(peq.title,"Statement of partners' capital and current accounts");assert.deepEqual(peq.blocks[0].columns,matrix.columns);
+ assert.equal(A.assemblePack(input()).sections.some(s=>s.code==='PEQ'),false,'a company has no such page');
+ withP.statements.partner_equity={...withP.statements.partner_equity,built:false};assert.equal(A.assemblePack(withP).sections.some(s=>s.code==='PEQ'),false,'nothing is printed until the record is approved');
+ withP.statements.partner_equity={...withP.statements.partner_equity,built:true};
+ const pdf=await packPdf(m,PDFLib,{fingerprint:'abc123'});const dir=fs.mkdtempSync(path.join(os.tmpdir(),'peq-'));fs.writeFileSync(dir+'/p.pdf',pdf);
+ const txt=execFileSync('pdftotext',['-layout',dir+'/p.pdf','-'],{encoding:'utf8'});assert.match(txt,/partners' capital and current accounts/i);assert.match(txt,/1,450,000/);assert.match(txt,/Fictional Zawadi/);
+ const wb=packWorkbook(m,ExcelJS,{fingerprint:'abc123'});const cells=[];wb.eachSheet(w=>w.eachRow(r=>cells.push(r.values.join('|'))));assert.ok(cells.some(c=>/Total partners’ equity at the end of the year\|890000\|560000\|1450000/.test(c)));
+});

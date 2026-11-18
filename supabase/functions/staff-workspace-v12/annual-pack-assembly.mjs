@@ -80,6 +80,7 @@ export function assemblePack({client,reporting,statements,wording,pages,gate,aud
  }
  if(S.cash_flow)sections.push({code:'SCF',title:S.cash_flow.title,ready:true,blocks:[statementBlock(S.cash_flow,{offset:seq.offset,yearLabel})]});
  if(S.partner_allocation){const A=S.partner_allocation;sections.push({code:'ALLOC',title:A.title,ready:true,blocks:[{type:'matrix',columns:['Share of profit and loss',`Amount (${A.unit_label})`],rows:[...A.rows.map(r=>({label:r.partner_name,cells:[`${r.percent}%`,r.amount]})),{label:'Profit for the year',cells:['100%',A.total]}]}]});}
+ if(S.partner_equity&&S.partner_equity.built){const P=S.partner_equity,m=P.matrix;sections.push({code:'PEQ',title:P.title,ready:true,blocks:[{type:'matrix',columns:m.columns,rows:m.rows,caption:`Amounts in ${P.unit_label}`},...(P.rounding_shown?[{type:'text',text:'Totals agree to the statement of changes in equity before presentation rounding.'}]:[])]});}
  // notes: one numbered sequence
  const nb=[];
  for(const n of seq.items){

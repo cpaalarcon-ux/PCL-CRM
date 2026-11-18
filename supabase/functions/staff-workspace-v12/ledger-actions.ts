@@ -30,6 +30,7 @@ import {auditLockAction} from './audit-lock-actions.ts';
 import {wordingAction} from './wording-actions.ts';
 import {pagesAction} from './client-pages-actions.ts';
 import {schedulesAction} from './support-schedules-actions.ts';
+import {partnerEquityAction} from './partner-equity-actions.ts';
 import {packAssembleAction} from './annual-pack-export-actions.ts';
 import {pdfLib} from './suite-actions.ts';
 import {ppeAction} from './ppe-actions.ts';
@@ -306,6 +307,9 @@ async function annualWorkbook({client,st,mark,banner,signedOff,asOf}:any){
  if(S.partner_allocation){const A=S.partner_allocation,w=sheet('Profit allocation',A.title);w.addRow(['Partner','Share of profit and loss',`Amount (${A.unit_label})`]).font={name:'Arial',size:9,bold:true};
   for(const r of A.rows)w.addRow([r.partner_name,r.percent,r.amount]).font={name:'Arial',size:9};
   w.addRow(['Profit for the year','100%',A.total]).font={name:'Arial',size:9,bold:true};w.getColumn(3).numFmt=fmt;w.columns.forEach((c:any,i:number)=>{c.width=i?22:56;});}
+ if(S.partner_equity&&S.partner_equity.built){const P=S.partner_equity,m=P.matrix,w=sheet('Partners accounts',P.title);w.addRow(['',...m.columns]).font={name:'Arial',size:9,bold:true};
+  for(const r of m.rows)w.addRow([r.label,...r.cells]).font={name:'Arial',size:9,bold:!!r.total};
+  w.addRow([`Amounts in ${P.unit_label}`]).font={name:'Arial',size:8,italic:true};w.columns.forEach((c:any,i:number)=>{c.width=i?20:56;});for(let i=2;i<=m.columns.length+1;i++)w.getColumn(i).numFmt=fmt;}
  const bytes=new Uint8Array(await book.xlsx.writeBuffer());let str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));
  const safe=String(client.name||'client').replace(/[^A-Za-z0-9]+/g,'_').slice(0,60);
  return {mark:draft?'DRAFT':'FINAL',file_name:`${safe}_Annual_statements_${asOf}${draft?'_DRAFT':''}.xlsx`,mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',base64:btoa(str)};
@@ -395,6 +399,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  {const al=await auditLockAction(tx,a,l,p,async(asOf:string)=>await statementsFrom(tx,l,(await reportSnapshot(tx,l,'Year end',asOf)).full),p.as_of?date(p.as_of):day(l.ends_on));if(al!==undefined)return al;}
  {const pa=await ppeAction(tx,a,l,p,async(asOf:string)=>(await reportSnapshot(tx,l,'Year end',asOf)).full,p.as_of?date(p.as_of):day(l.ends_on));if(pa!==undefined)return pa;}
  {const wa=await wordingAction(tx,a,l,p,async(asOf:string)=>await statementsFrom(tx,l,(await reportSnapshot(tx,l,'Year end',asOf)).full),p.as_of?date(p.as_of):day(l.ends_on));if(wa!==undefined)return wa;}
+ {const qa=await partnerEquityAction(tx,a,l,p,async(asOf:string)=>await statementsFrom(tx,l,(await reportSnapshot(tx,l,'Year end',asOf)).full),p.as_of?date(p.as_of):day(l.ends_on));if(qa!==undefined)return qa;}
  {const sa=await schedulesAction(tx,a,l,p,async(asOf:string)=>await statementsFrom(tx,l,(await reportSnapshot(tx,l,'Year end',asOf)).full),p.as_of?date(p.as_of):day(l.ends_on));if(sa!==undefined)return sa;}
  {const pa=await pagesAction(tx,a,l,p,async(asOf:string)=>await statementsFrom(tx,l,(await reportSnapshot(tx,l,'Year end',asOf)).full),p.as_of?date(p.as_of):day(l.ends_on));if(pa!==undefined)return pa;}
  if(p.action==='ledger_comparatives_save')return await comparativesSave(tx,a,l,p);
