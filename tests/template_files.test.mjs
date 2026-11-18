@@ -27,7 +27,7 @@ test('sales templates are recognised: net only (calculated VAT) and category tot
 test('purchase templates: the standard 14 columns, and all four sheets of the firm\'s layout',async()=>{
  const std=(await readWorkbookSheet(await bytes(byLabel('Purchases (one template, all categories)')),'Purchase Upload')).sheet;assert.equal(purchaseUploadProfile(std,true).id,'PCL-PURCHASES-1');
  for(const name of ['Gen Purchase Upload','Other Purchase Upload','Zero Purchase Upload','Exempt Purchase Upload']){
-  const s=(await readWorkbookSheet(await bytes(byLabel('Purchases, monthly four-sheet layout')),name)).sheet,p=purchaseUploadProfile(s,false);
+  const s=(await readWorkbookSheet(await bytes('/templates/Purchases_Monthly_Four_Sheet_Template.xlsx'),name)).sheet,p=purchaseUploadProfile(s,false);
   assert.equal(p.source_layout,true,name);assert.equal(p.header_row,2,name);assert.equal(p.derive_vat,true);
  }
  const d=(await readWorkbookSheet(await bytes(byLabel('Non-eTIMS expenditure (D09)')),'D09 Non-eTIMS Expenditure')).sheet,t=detectTemplate(d);assert.equal(t.kind,'D09');assert.equal(t.blocks[0].header_row,4);

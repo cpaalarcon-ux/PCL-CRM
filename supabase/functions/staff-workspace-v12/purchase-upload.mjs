@@ -1,5 +1,6 @@
 import {excelValue,excelDate,money} from './workspace-rules.mjs';
 import {fail} from './validation.mjs';
+import {resolveRouting} from './routing-map-rules.mjs';
 
 export const purchaseUploadId='PCL-PURCHASES-1';
 export const purchaseUploadHeaders=['Type of purchases','Supplier PIN','Supplier name','Invoice date','Invoice number','Description','Customs entry number','Net amount','VAT amount','Gross amount','Original invoice number','Original invoice date','ERP routing code','ERP TB item code'];
@@ -103,11 +104,17 @@ export function normalizePurchaseUpload(values,rate,start,end,accounts=[],client
  const key=JSON.stringify([norm(row.invoice),norm(row.party_pin)||norm(row.party),line]);
  return {raw,row,issues,pending,key,route:null,category_code:null,narration:row.description||null};
 }
-export function purchaseUploadSummary(records,rate,start,end,accounts=[],clientMappings,deriveVat=false){
- const out={source_count:records.length,valid_count:0,rejected_count:0,pending_count:0,credit_count:0,rounded_count:0,mapping_hint_count:0,mapping_issue_count:0,mapping_issues:[],net:0,vat:0,gross:0,source_totals:{net:0,vat:0,gross:0,complete:true},pending_totals:{net:0,vat:0,gross:0},issues:[],pending_issues:[]};
+export function purchaseUploadSummary(records,rate,start,end,accounts=[],clientMappings,deriveVat=false,routingMap=[]){
+ const out={source_count:records.length,valid_count:0,rejected_count:0,pending_count:0,credit_count:0,rounded_count:0,mapping_hint_count:0,mapping_issue_count:0,mapping_issues:[],auto_map_count:0,suggested_count:0,review_count:0,review_rows:[],net:0,vat:0,gross:0,source_totals:{net:0,vat:0,gross:0,complete:true},pending_totals:{net:0,vat:0,gross:0},issues:[],pending_issues:[]};
  for(const {source_row,values} of records){const n=normalizePurchaseUpload(values,rate,start,end,accounts,clientMappings,deriveVat);if(n.row.amount<0)out.credit_count++;if(n.row.rounded_fields.length)out.rounded_count++;if(n.row.mapping_suggestion)out.mapping_hint_count++;if(n.row.mapping_suggestion_issue){out.mapping_issue_count++;if(out.mapping_issues.length<100)out.mapping_issues.push({row:source_row,reason:n.row.mapping_suggestion_issue});}
   for(const k of ['net','vat','gross']){const amount=n.row[k==='net'?'amount':k];if(amount===null)out.source_totals.complete=false;else out.source_totals[k]+=Math.round(amount*100);}
   if(n.issues.length){out.rejected_count++;if(out.issues.length<100)out.issues.push({row:source_row,reason:n.issues.join(' ')});continue;}
+  // The ERP routing code (M) and TB item code (N) are the only classifier. A pair that exactly matches a Partner-approved mapping for the invoice date maps by itself; a valid pair with no approved
+  // mapping is a suggestion for a Partner to approve once; a row with a blank, half-filled or invalid pair is marked Review. Nothing is guessed from the supplier or description, and nothing is posted.
+  const r=n.row,found=r.mapping_suggestion?resolveRouting(routingMap,{module:'Purchases',routing_code:String(r.routing_code).toUpperCase(),item_code:r.tb_code,date:r.date}):null;
+  if(found&&found.status==='mapped')out.auto_map_count++;
+  else if(found)out.suggested_count++;
+  else{out.review_count++;if(out.review_rows.length<100)out.review_rows.push({row:source_row,reason:!r.routing_code&&!r.tb_code?'Review: no routing code (M) and no TB code (N).':r.mapping_suggestion_issue?'Review: '+r.mapping_suggestion_issue:!r.tb_code?`Review: routing code ${r.routing_code} has no TB code (N).`:'Review: the routing code and TB code do not make a valid pair.'});}
   if(n.pending.length){out.pending_count++;if(out.pending_issues.length<100)out.pending_issues.push({row:source_row,invoice:n.row.invoice,reason:n.pending.join(' ')});for(const k of ['net','vat','gross'])out.pending_totals[k]+=Math.round(n.row[k==='net'?'amount':k]*100);continue;}
   out.valid_count++;for(const k of ['net','vat','gross'])out[k]+=Math.round(n.row[k==='net'?'amount':k]*100);
  }

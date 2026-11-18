@@ -54,8 +54,8 @@ test('standard purchase template has fixed 14 headers and clear routing/account 
  assert.deepEqual(Array.from({length:14},(_,i)=>sheet.getRow(1).getCell(i+1).value),purchaseUploadHeaders);
  const {sheet:guide}=await readWorkbookSheet(bytes,'Read first');
  assert.match(guide.getRow(3).getCell(2).value,/14 standard headers.*A-N/i);
- assert.match(guide.getRow(11).getCell(2).value,/routing code in M.*TB item code in N/i);
+ assert.match(guide.getRow(11).getCell(2).value,/routing code in M first.*TB item code in N.*only classifier/i);assert.match(guide.getRow(11).getCell(2).value,/Review/);
  const excel=new ExcelJS.Workbook();await excel.xlsx.load(bytes);assert.deepEqual(excel.worksheets.map(x=>x.name),['Purchase Upload','Read first','ERP account codes']);
- const excelSheet=excel.getWorksheet('Purchase Upload');assert.equal(excelSheet.dataValidations.model.M2.formulae[0],'ERPRoutingCodes');assert.equal(excelSheet.dataValidations.model.N2.formulae[0],'ERPTBItemCodes');
+ const excelSheet=excel.getWorksheet('Purchase Upload');assert.equal(excelSheet.dataValidations.model.M2.formulae[0],'ERPRoutingCodes');assert.equal(excelSheet.dataValidations.model.N2.formulae[0],'INDIRECT("R_"&$M2)');for(const c of ['EXP01','STOCK','PPE25V'])assert.ok(excel.definedNames.getRanges('R_'+c).ranges.length,c);
  assert.equal(excel.getWorksheet('ERP account codes').rowCount-1,167);
 });
