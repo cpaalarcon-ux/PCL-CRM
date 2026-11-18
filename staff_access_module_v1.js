@@ -13,11 +13,11 @@
   let editingSnapshot = null;
   let currentHost = null;
   const rights = {
-    "Engagement Partner": "All authorised firms, all clients and engagements, financial WIP, approvals and PIE/EQR sign-off. System settings remain restricted to System Administrators.",
-    "Manager": "Assigned firms and teams, client and engagement management, timesheet approval and engagement financials for assigned work. No system settings or final Partner sign-off.",
-    "Audit Supervisor": "Assigned projects, fieldwork tasks, documents and team coordination. Engagement fees, rates, invoices and exports are hidden.",
-    "Audit Assistant": "Read-only assigned client details, assigned tasks and personal time. No fees, rates, client-list export, deletion or work outside assigned engagements.",
-    "Intern": "Only tasks explicitly assigned to the intern and documents attached to those tasks. No client contacts, financial data, client lists or exports."
+    "Engagement Partner": "All clients, projects and working records within authorised firms. Independent review and approval are recorded; no self-approval.",
+    "Manager": "All client and project visibility within authorised firms. Edit allocated or task-assigned work, review independent submissions, and decide allocation requests.",
+    "Audit Supervisor": "Read all clients, projects and role-permitted working data within authorised firms. Edit only work allocated to you or assigned by task.",
+    "Audit Assistant": "View the full client directory and project summaries. Client details and working data open when work is allocated or a task is sent to you.",
+    "Intern": "Open client and project details only through tasks explicitly assigned to you. No client directory, unassigned work or independent approval."
   };
   const escapeHtml = value => String(value ?? "").replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[char]));
   const read = () => {

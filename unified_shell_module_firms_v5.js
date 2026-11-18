@@ -12,11 +12,11 @@
   const staffCategories = ["Engagement Partner", "Manager", "Audit Supervisor", "Audit Assistant", "Intern"];
   const functionalPermissions = ["System Administration", "Finance", "HR"];
   const rolePolicy = {
-    "Engagement Partner": { modules: ["clients", "projects", "finance", "timehr", "communications"], finance: "full", description: "All client and engagement work across assigned firms; finance access subject to the assigned finance permission." },
-    "Manager": { modules: ["clients", "projects", "timehr", "communications"], finance: "view", description: "Team client and project work; finance is read-only where explicitly permitted." },
-    "Audit Supervisor": { modules: ["clients", "projects", "timehr", "communications"], finance: "none", description: "Assigned fieldwork, tasks, evidence and team coordination only." },
-    "Audit Assistant": { modules: ["clients", "projects", "timehr", "communications"], finance: "none", description: "Read-only assigned clients, assigned tasks and personal time only." },
-    "Intern": { modules: ["projects", "timehr", "communications"], finance: "none", description: "Only specifically assigned tasks, task documents and personal time." }
+    "Engagement Partner": { modules: ["clients", "projects", "finance", "timehr", "communications"], finance: "full", description: "All client, project and working-record visibility within authorised firms; independent approval and posting." },
+    "Manager": { modules: ["clients", "projects", "timehr", "communications"], finance: "view", description: "All client and project visibility within authorised firms; edit allocated or task-assigned work and approve independently." },
+    "Audit Supervisor": { modules: ["clients", "projects", "timehr", "communications"], finance: "none", description: "Read all client, project and role-permitted working records; edit allocated or task-assigned work only." },
+    "Audit Assistant": { modules: ["clients", "projects", "timehr", "communications"], finance: "none", description: "Full client directory and project summaries; client details and working data after allocation or task assignment." },
+    "Intern": { modules: ["projects", "timehr", "communications"], finance: "none", description: "Client and project details only through tasks explicitly assigned to the intern." }
   };
   const groups = {
     clients: { label: "Clients", icon: "⌂", items: [
@@ -287,7 +287,7 @@
       return;
     }
     if (view === "staff") {
-      body.innerHTML = `${note}<div class="section-heading"><h3>Staff categories, functions and scopes</h3><span class="hint">Primary staff category controls hierarchy; functions grant specific departmental authority.</span></div><div class="table-wrap"><table class="data-table settings-table"><thead><tr><th>Staff category</th><th>Default scope</th><th>Finance default</th><th>Functional permissions available</th></tr></thead><tbody>${staffCategories.map(category => `<tr><td><b>${esc(category)}</b></td><td>${esc(rolePolicy[category].description)}</td><td>${esc(rolePolicy[category].finance === "full" ? "Full if Finance is assigned" : rolePolicy[category].finance === "view" ? "Read-only if Finance is assigned" : "No finance access")}</td><td>${functionalPermissions.map(permission => `<span class="permission-tag">${esc(permission)}</span>`).join("")}</td></tr>`).join("")}</tbody></table></div><div class="section"><h3>User-profile pattern</h3><p class="hint">Each user needs: staff category; authorised firm scope (All Firms / selected firms); client scope (All / assigned); project scope (All / assigned); and optional Finance, HR or System Administration permission. The backend must return only authorised records, even if a user tries a URL directly.</p></div>`;
+      body.innerHTML = `${note}<div class="section-heading"><h3>Staff categories, functions and scopes</h3><span class="hint">Primary staff category controls hierarchy; functions grant specific departmental authority.</span></div><div class="table-wrap"><table class="data-table settings-table"><thead><tr><th>Staff category</th><th>Default scope</th><th>Finance default</th><th>Functional permissions available</th></tr></thead><tbody>${staffCategories.map(category => `<tr><td><b>${esc(category)}</b></td><td>${esc(rolePolicy[category].description)}</td><td>${esc(rolePolicy[category].finance === "full" ? "Full if Finance is assigned" : rolePolicy[category].finance === "view" ? "Read-only if Finance is assigned" : "No finance access")}</td><td>${functionalPermissions.map(permission => `<span class="permission-tag">${esc(permission)}</span>`).join("")}</td></tr>`).join("")}</tbody></table></div><div class="section"><h3>User-profile pattern</h3><p class="hint">Use the access UAT panel to verify firm-scoped client visibility, task recipients, independent review and Manager / Partner allocation approval. Browser preview controls are for UAT only; the authenticated backend must enforce every read and write.</p></div>`;
       return;
     }
     if (view === "security") {
