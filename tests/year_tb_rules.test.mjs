@@ -42,7 +42,7 @@ test('screens escape what they show and the ledger screen uses them',()=>{
  const h=tbListHtml({expected:{year_end:'2025-12-31',opening:'2024-12-31'},trial_balances:[{tb_kind:'Year-end',as_of:'2025-12-31',closing_state:'Before year-end close',version:1,row_count:5,total_debit:1200,entered_by_name:'A <b>',source_reference:'Signed accounts'}]},{esc,table,btn,canEdit:true});
  assert.match(h,/A &lt;b>/);assert.match(h,/\[tb-add\]/);assert.match(h,/never as zero/);assert.doesNotMatch(tbListHtml({expected:{year_end:'a',opening:'b'},trial_balances:[]},{esc,table,btn,canEdit:false}),/tb-add/);
  assert.match(deriveHtml({statements:{'Cash flow':{state:'Not available',reason:'Enter it <now>'}},warnings:['Check this']},{esc,warn}),/Not available[\s\S]*&lt;now>/);
- const ui=rd('staff-ledger.mjs');assert.match(ui,/ledger_tb_list/);assert.match(ui,/ledger_tb_save/);assert.match(ui,/ledger_comparatives_from_tbs/);assert.match(ui,/staff-year-tbs\.mjs\?v=20261116-yeartb-v1/);assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261129-packx-v1/);
+ const ui=rd('staff-ledger.mjs');assert.match(ui,/ledger_tb_list/);assert.match(ui,/ledger_tb_save/);assert.match(ui,/ledger_comparatives_from_tbs/);assert.match(ui,/staff-year-tbs\.mjs\?v=20261116-yeartb-v1/);assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261129-sched-v1/);
 });
 
 test('build 2876: the prior-year cash flow is worked out from the two year-end trial balances, and is Not available when it cannot be',()=>{

@@ -150,7 +150,7 @@ test('wiring: suite handlers and cards, ledger screen, tokens, rights, access co
  assert.match(suite,/settingsHub\.handle\(action,id\)/);assert.match(suite,/myApprovals\.handle\(action,id\)/);assert.match(suite,/ownerMatrix\.handle\(action,id\)/);assert.match(suite,/stmtReview\.handle\(action,id\)/);
  const layout=rd('staff-settings-layout.mjs');assert.match(layout,/myApprovalsCard:'overview'/);assert.match(layout,/ownerMatrixCard:'access'/);
  const ledger=rd('staff-ledger.mjs');assert.match(ledger,/data-suite=\\"stmt-review-open\\"|data-suite="stmt-review-open"/);assert.doesNotMatch(ledger,/btn\('statement-map-approve'/);
- assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261118-approval-board-v1/);assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261129-packx-v1/);
+ assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261118-approval-board-v1/);assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261129-sched-v1/);
  for(const f of ['staff-rights-catalog.mjs',fx.slice(3)+'staff-rights-catalog.mjs'])assert.match(rd(f),/ledger_statement_map_review_read','ledger_statement_map_review_approve'/);
  assert.match(rd(fx.slice(3)+'staff-access-control.mjs'),/settings_owners_\|settings_approval\(\?:s\)\?_/);
  const idx=rd(fx.slice(3)+'index.ts');assert.match(idx,/settingsOwnerAction\(tx,a,p\)/);

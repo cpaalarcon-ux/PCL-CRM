@@ -5,6 +5,7 @@
 // separate. Prior-year figures are shown at caption level only, because the prior year is held by line, not by account.
 import {mapInForce} from './annual-pack-rules.mjs';
 import {UNITS,roundTo,plSign,sfpSign} from './annual-pack-statements.mjs';
+import {buildSupport,canonicalSupport,kindForRef} from './annual-pack-schedules.mjs';
 
 export const NOTES_VERSION='system-notes-v1';
 const cents=v=>Math.round(Number(v||0)*100);
@@ -20,7 +21,7 @@ export const noteTitle=(ref,form='Other')=>ref==='EQUITY'?(EQUITY_TITLE[form]||E
 
 // statements: the built statements (rows carry code, label, current, prior). Returns {notes,face_refs,problems,unit}.
 // notes: [{number,ref,title,sections:[{line_code,label,statement,accounts:[{code,name,amount}],rounding,total,face,prior,ties}],ties,control}]
-export function buildNotes({statements,lineDefs,tb,maps,asOf,form='Other',rounding='Whole shillings',ppeSchedule=null}){
+export function buildNotes({statements,lineDefs,tb,maps,asOf,form='Other',rounding='Whole shillings',ppeSchedule=null,schedules=null}){
  const unit=UNITS[rounding]||100,defs=new Map(lineDefs.map(d=>[d.line_code,d])),problems=[];
  // Account amounts per statement line, in cents, with the same sign the face uses.
  const byLine=new Map();
@@ -32,7 +33,7 @@ export function buildNotes({statements,lineDefs,tb,maps,asOf,form='Other',roundi
   const pl=d.statement==='Profit or loss',signed=pl?mv:net,natural=d.normal_side==='Credit'?-signed:signed,shown=natural*(pl?plSign(d):sfpSign(d));
   if(!shown)continue;
   if(!byLine.has(d.line_code))byLine.set(d.line_code,[]);
-  byLine.get(d.line_code).push({code:r.code,name:r.name||'',cents:shown});
+  byLine.get(d.line_code).push({code:r.code,name:r.name||'',cents:shown,natural});
  }
  // Face rows in statement order, profit or loss first, as the statements are presented.
  const face=[];
@@ -44,8 +45,11 @@ export function buildNotes({statements,lineDefs,tb,maps,asOf,form='Other',roundi
   byRef.get(ref).push(f);
  }
  const faceRefs={},notes=order.map((ref,i)=>{
+  const basis=[];
   const number=i+1,sections=byRef.get(ref).map(({row,statement,def})=>{
    const accts=(byLine.get(def.line_code)||[]).sort((a,b)=>String(a.code).localeCompare(String(b.code))),exact=accts.reduce((s,a)=>s+a.cents,0);
+   // The basis of a supporting schedule is in the natural direction of the caption (a cost is positive, a deduction negative), which is how a schedule is written; the face may show a cost in brackets.
+   for(const a of accts)basis.push({code:a.code,name:a.name,cents:a.natural});
    const accounts=accts.map(a=>({code:a.code,name:a.name,amount:roundTo(a.cents,unit)})),total=roundTo(exact,unit),sum=accounts.reduce((s,a)=>s+a.amount,0),diff=total-sum;
    const ties=total===row.current;
    if(!ties)problems.push(`Note ${number} ${noteTitle(ref,form)}: ${row.label} is ${total.toLocaleString('en-KE')} in the note and ${Number(row.current).toLocaleString('en-KE')} on the statements.`);
@@ -53,8 +57,10 @@ export function buildNotes({statements,lineDefs,tb,maps,asOf,form='Other',roundi
    return {line_code:def.line_code,label:row.label,statement,accounts,rounding:diff,total,face:row.current,prior:row.prior??null,ties};
   });
   // The movement schedule of the PPE register (build 2881) sits under the property, plant and equipment note, so an approved note is tied to the register as well as to the trial balance.
-  return {number,ref,title:noteTitle(ref,form),sections,...(ref==='PPE'&&ppeSchedule?{schedule:ppeSchedule}:{}),ties:sections.every(s=>s.ties),
-   control:{source:'Posted trial balance through the Partner-approved statement-line map',calculation:NOTES_VERSION,evidence:'System figures from the ledger. No supporting schedule is attached yet.',prior_year:'Shown for the caption only; the prior year is held by statement line.'}};
+  // Supporting schedule (build 2886): the approved schedule for this note family, tied account by account to the same trial balance figures. The basis lists every account the note holds, in exact cents.
+  const kind=kindForRef(ref),sched=kind&&schedules?schedules[kind.code]||null:null,support=sched?buildSupport({kind:kind.code,schedule:sched,basis,rounding}):null;
+  return {number,ref,title:noteTitle(ref,form),sections,...(ref==='PPE'&&ppeSchedule?{schedule:ppeSchedule}:{}),...(kind?{support_basis:{kind:kind.code,accounts:basis.map(a=>({code:a.code,name:a.name,cents:a.cents,amount:a.cents/100}))},support}:{}),ties:sections.every(s=>s.ties),
+   control:{source:'Posted trial balance through the Partner-approved statement-line map',calculation:NOTES_VERSION,evidence:support?'System figures from the ledger, with the supporting schedule approved by a Manager or Partner.':'System figures from the ledger. No supporting schedule is attached.',prior_year:'Shown for the caption only; the prior year is held by statement line.'}};
  });
  return {notes,face_refs:faceRefs,problems,unit_label:UNITS[rounding]===100000?'KES thousands':'KES'};
 }
@@ -64,7 +70,7 @@ export function applyFaceRefs(statements,faceRefs){
  return statements;
 }
 // What is hashed: the numbers, titles and every figure. Any change in a figure, an account or a number changes it.
-export const canonicalNotes=notes=>notes.map(n=>({n:n.number,ref:n.ref,t:n.title,s:n.sections.map(s=>({l:s.line_code,tot:s.total,r:s.rounding,pr:s.prior,a:s.accounts.map(a=>[a.code,a.amount])})),...(n.schedule?{sc:n.schedule.classes.map(g=>[g.account,g.opening_cost,g.additions,g.disposals,g.closing_cost,g.opening_acc,g.charge,g.released,g.closing_acc,g.nbv])}:{})}));
+export const canonicalNotes=notes=>notes.map(n=>({n:n.number,ref:n.ref,t:n.title,s:n.sections.map(s=>({l:s.line_code,tot:s.total,r:s.rounding,pr:s.prior,a:s.accounts.map(a=>[a.code,a.amount])})),...(n.schedule?{sc:n.schedule.classes.map(g=>[g.account,g.opening_cost,g.additions,g.disposals,g.closing_cost,g.opening_acc,g.charge,g.released,g.closing_acc,g.nbv])}:{}),...(n.support?{su:canonicalSupport(n.support)}:{})}));
 // State of the notes set against the notes the ledger would produce now: none, draft, approved, or stale (an approval that no longer matches the figures).
 export function notesState({approved,draft,digestNow}){
  if(approved&&approved.digest===digestNow)return {status:'approved',set:approved};
