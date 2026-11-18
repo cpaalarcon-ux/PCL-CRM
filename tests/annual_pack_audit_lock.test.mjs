@@ -196,6 +196,10 @@ test('the audit lock: both routes, frozen notes, stale figures and ending a lock
   assert.match(pdf2.file_name,/_Annual_pack_2026-12-31_Audited\.pdf$/);assert.match(t2,/FICTIONAL SIGNED REPORT BODY/);assert.match(t2,/AUDITED/);assert.doesNotMatch(t2,/SUBJECT TO AUDIT|DRAFT|MANAGEMENT DRAFT/);assert.match(t2,/Fictional ext ref 7/);assert.match(t2,/Qualified/);
   assert.equal(pdf2.fingerprint,r.fingerprint);assert.match(t2,new RegExp('Fingerprint '+r.fingerprint.slice(0,16)));
   const xl=await run('MANAGER',{format:'xlsx'},store(signedBytes));assert.match(xl.file_name,/Audited\.xlsx$/);assert.equal(xl.mime_type,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  // Build 2890: every pack produced is registered; the one made while a check was open is a draft, the audited ones are signed through the live audit lock.
+  {const liveLock=(await aread('MANAGER')).lock.lock_id,regs=await tx`select pack_kind,report_kind,file_format,status_word,is_final,lock_id,review_id from erp_private.ledger_report_packs where period_id=${per.period_id} order by generated_at`;
+   assert.deepEqual(regs.map(x=>[x.pack_kind,x.report_kind,x.file_format,x.status_word,x.is_final,x.lock_id===liveLock,x.review_id]),[['Annual filing pack',null,'pdf','Subject to audit',false,false,null],['Annual filing pack',null,'pdf','Audited',true,true,null],['Annual filing pack',null,'xlsx','Audited',true,true,null]]);
+   assert.equal(regs[0].lock_id,null,'a pack that was produced while a check was open is not signed');}
   // a file changed in storage after the lock is refused, never attached
   const tampered=new Uint8Array([...signedBytes,32]);r=await run('MANAGER',{action:'ledger_pack_assemble_read'},store(tampered));assert.equal(r.attachments.length,0);assert.notEqual(r.status_word,'Audited');
   const gone=await run('MANAGER',{action:'ledger_pack_assemble_read'},{download:async()=>({error:{message:'missing'},data:null})});assert.equal(gone.attachments.length,0);assert.notEqual(gone.status_word,'Audited');

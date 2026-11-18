@@ -54,5 +54,5 @@ test('a locked pack shows who locked it and the opinion; only a Partner can end 
 });
 test('the ledger screen offers the audit lock and the page module is cache-pinned',()=>{
  const led=fs.readFileSync(new URL('../staff-ledger.mjs',import.meta.url),'utf8'),v6=fs.readFileSync(new URL('../staff-workspace-v6.mjs',import.meta.url),'utf8');
- assert.match(led,/staff-audit-lock\.mjs\?v=20261124-audit-v1/);assert.match(led,/btn\('audit','Audit status and lock'\)/);assert.match(led,/a==='audit'\)\{await auditScr\(\)\.open\(\)/);assert.match(v6,/staff-ledger\.mjs\?v=20261130-tbmulti-v1/);
+ assert.match(led,/staff-audit-lock\.mjs\?v=20261124-audit-v1/);assert.match(led,/btn\('audit','Audit status and lock'\)/);assert.match(led,/a==='audit'\)\{await auditScr\(\)\.open\(\)/);assert.match(v6,/staff-ledger\.mjs\?v=20261201-rnotes-v1/);
 });

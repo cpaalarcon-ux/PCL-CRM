@@ -31,7 +31,9 @@ import {wordingAction} from './wording-actions.ts';
 import {pagesAction} from './client-pages-actions.ts';
 import {schedulesAction} from './support-schedules-actions.ts';
 import {partnerEquityAction} from './partner-equity-actions.ts';
-import {packAssembleAction} from './annual-pack-export-actions.ts';
+import {packAssembleAction,packAssembleModel} from './annual-pack-export-actions.ts';
+import {reportNotesAction,snapshotNotesFor,registerPack} from './report-notes-actions.ts';
+import {printable,packKindForReport} from './report-notes-rules.mjs';
 import {pdfLib} from './suite-actions.ts';
 import {ppeAction} from './ppe-actions.ts';
 import {stockRollsRead,stockJournalPlan} from './stock-journal.ts';
@@ -244,6 +246,10 @@ async function reportWorkbook({client,l,full,snapshot,mark='FINAL',banner='',sig
  const style=(sheet:any,from:number)=>{from+=(draft||signedOff)?1:0;sheet.eachRow((r:any,n:number)=>{if(n<from)return;r.eachCell((c:any)=>{c.font={name:'Arial',size:9,bold:n===from};if(typeof c.value==='number')c.numFmt=money;});});sheet.columns.forEach((c:any,i:number)=>c.width=i===0?34:18);};
  const cur=book.addWorksheet('Current period');head(cur,`${snapshot.report_kind} ${snapshot.starts_on} to ${snapshot.as_of}`,`${reportPeriodLine(snapshot.starts_on,snapshot.as_of,new Date().toLocaleDateString('en-CA',{timeZone:'Africa/Nairobi'}))} Posted entries only. Data cut-off: periods ending ${DATA_CUTOFF} onwards.`);
  cur.addRow(['Line','This report (KES)','Year to date (KES)']);for(const [k,label] of PNL_LINES)cur.addRow([label,Number(snapshot.profit[k]||0),Number(full.profit[k]||0)]);style(cur,4);
+ // Build 2890: the two client notes print on the report ("None" when blank). The internal notes are never read here.
+ const nt=book.addWorksheet('Notes');head(nt,'Notes for the client',`${snapshot.report_kind} ${snapshot.starts_on} to ${snapshot.as_of}`);
+ const pn=printable(snapshot.notes);nt.addRow(['Client highlights']);nt.addRow([pn.client_highlights]);nt.addRow([]);nt.addRow(['Information required']);nt.addRow([pn.information_required]);
+ const nf=(draft||signedOff)?5:4;nt.eachRow((r:any,n:number)=>{if(n<nf)return;r.eachCell((c:any)=>{c.font={name:'Arial',size:10,bold:n===nf||n===nf+3};c.alignment={wrapText:true,vertical:'top'};});});nt.columns.forEach((c:any)=>c.width=110);
  const act=book.addWorksheet('Profit by activity');head(act,'Profit and loss by business activity',`${snapshot.starts_on} to ${snapshot.as_of}. Unallocated = income and expense lines without an activity.`);
  const cols=snapshot.profit_by_activity.activities;act.addRow(['Line',...cols.map((c:any)=>`${c.activity_name} (${c.pack_code})`),'Unallocated','Total']);
  for(const [k,label] of PNL_LINES)act.addRow([label,...cols.map((c:any)=>Number(c[k]||0)),Number(snapshot.profit_by_activity.unallocated[k]||0),Number(snapshot.profit_by_activity.total[k]||0)]);style(act,4);
@@ -320,7 +326,8 @@ async function reportSnapshot(tx:any,l:any,kind:string,asOf:string){
  const inWindow=await tx`select x.account_code,x.debit,x.credit,x.activity_id,j.kind,j.reversal_of from erp_private.ledger_lines x join erp_private.ledger_journals j using(journal_id) where j.period_id=${l.period_id} and j.status='Posted' and j.journal_date>=${starts} and j.journal_date<=${asOf}`;
  const closing=new Set(full.journals.filter((j:any)=>j.kind==='Year close').map((j:any)=>j.journal_id)),lines=inWindow.filter((r:any)=>r.kind!=='Opening'&&r.kind!=='Year close'&&!closing.has(r.reversal_of));
  const tbTotals={debit:full.tb.reduce((n:number,a:any)=>n+Number(a.debit||0),0),credit:full.tb.reduce((n:number,a:any)=>n+Number(a.credit||0),0)};
- return {full,snapshot:{report_kind:kind,starts_on:starts,as_of:asOf,profit:profitReport(lines),profit_by_activity:profitByActivity(lines,full.activities),year_to_date_profit:full.profit,trial_balance_totals:tbTotals,open_issues:full.issues}};
+ const notes=await snapshotNotesFor(tx,l,kind,asOf);
+ return {full,snapshot:{report_kind:kind,starts_on:starts,as_of:asOf,profit:profitReport(lines),profit_by_activity:profitByActivity(lines,full.activities),year_to_date_profit:full.profit,trial_balance_totals:tbTotals,open_issues:full.issues,...(notes?{notes}:{})}};
 }
 async function report(tx:any,l:any,to:string){
  if(to<day(l.starts_on)||to>day(l.ends_on))fail(400,'Choose an as-of date inside the financial year.');
@@ -416,6 +423,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   return {...await annualWorkbook({client:ann.st.client,st:ann.st,mark:ann.gate.ready&&final?'FINAL':'DRAFT',banner:annualBanner(ann.gate)||(final?'':'DRAFT — every check has passed; request the final release to issue it.'),signedOff,asOf}),gate:ann.gate};
  }
  if(p.action==='ledger_pack_assemble_read'||p.action==='ledger_pack_assemble')return await packAssembleAction(tx,a,l,p,{annualGateFor,storage,pdfLib,ExcelJS});
+ {const rn=await reportNotesAction(tx,a,l,p,{current:async(pack:any)=>pack.pack_kind==='Annual filing pack'?(await packAssembleModel(tx,l,await annualGateFor(tx,l,pack.as_of),storage,pack.as_of)).fingerprint:await digest((await reportSnapshot(tx,l,pack.report_kind,pack.as_of)).snapshot)});if(rn!==undefined)return rn;}
  if(p.action==='ledger_pack_readiness'){
   const asOf=p.as_of?date(p.as_of):day(l.ends_on),ann=await annualGateFor(tx,l,asOf),base=ann.st.readiness,seen=new Set((base.checks||[]).map((c:any)=>c.code));
   // The pack checks keep their own rows; the report-gate checks (sources, journals, totals, sign-off, statements) are added beside them.
@@ -444,7 +452,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   leader(a);const r=one(await tx`select * from erp_private.ledger_report_reviews where review_id=${uuid(p.review_id)} and period_id=${l.period_id} for update`);rev(r,p);
   if(r.status!=='Submitted')fail(400,'Only a submitted report can be approved or returned.');if(r.prepared_by===a.staff_id)fail(403,'A different Manager or Partner must review this report.');await mustBeAskedReviewer(tx,a,r.requested_reviewer_id);
   const status=choice(p.status,['Approved','Returned']),note=text(p.review_note,2000);if(note.length<10)fail(400,'Enter a review note of at least 10 characters.');
-  if(status==='Approved'){const {snapshot}=await reportSnapshot(tx,l,r.report_kind,day(r.as_of));if(await digest(snapshot)!==r.snapshot_digest)fail(409,'The posted figures changed after this report was submitted. Return it so the preparer submits the current figures.');}
+  if(status==='Approved'){const {snapshot}=await reportSnapshot(tx,l,r.report_kind,day(r.as_of));if(await digest(snapshot)!==r.snapshot_digest)fail(409,'The posted figures or the client notes changed after this report was submitted. Return it so the preparer submits the current figures.');}
   await tx`update erp_private.ledger_report_reviews set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where review_id=${r.review_id}`;await notifyOutcome(tx,r.prepared_by,l.client_id,`${r.report_kind} report`,status,note,'outcome:report:'+r.review_id+':'+status);return {ok:true,status};
  }
  if(p.action==='ledger_report_gate'){
@@ -458,7 +466,10 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   // The final export is refused unless every check passes; a draft preview is always available and says so.
   if(final&&!g.gate.ready)fail(400,'The final report is blocked. '+g.gate.checks.filter((c:any)=>!c.ok).map((c:any)=>`${c.label}: ${c.detail}`).join(' ')+' Download the draft preview instead.');
   let signedOff='';if(final&&g.review){const who=(await tx`select erp_private.reviewer_label(${g.review.reviewed_by}) n`)[0]?.n;signedOff=`FINAL — signed off by ${who||'the reviewer'} on ${String(g.review.reviewed_at).slice(0,10)}`;}
-  return {...await reportWorkbook({client,l,full,snapshot,mark:g.gate.ready&&final?'FINAL':'DRAFT',banner:draftBanner(g.gate)||(final?'':'DRAFT PREVIEW — every check has passed; request the final export to release it.'),signedOff}),gate:g.gate};
+  const out=await reportWorkbook({client,l,full,snapshot,mark:g.gate.ready&&final?'FINAL':'DRAFT',banner:draftBanner(g.gate)||(final?'':'DRAFT PREVIEW — every check has passed; request the final export to release it.'),signedOff});
+  // Build 2890: every file produced is registered by the fingerprint of what it holds (a repeat download of the same content adds nothing).
+  const pack_id=await registerPack(tx,a,l,{pack_kind:packKindForReport(kind),report_kind:kind,as_of:asOf,file_format:'xlsx',file_name:out.file_name,status_word:out.mark,fingerprint:await digest(snapshot),is_final:out.mark==='FINAL',review:g.review});
+  return {...out,gate:g.gate,pack_id};
  }
  if(p.action==='ledger_account_read'){
   const code=text(p.account_code,5),to=p.as_of?date(p.as_of):day(l.ends_on);if(to<day(l.starts_on)||to>day(l.ends_on))fail(400,'Choose an as-of date inside this financial year.');return {lines:await tx`select x.*,j.reference,j.kind,j.journal_date,j.status,j.reviewed_by from erp_private.ledger_lines x join erp_private.ledger_journals j using(journal_id) where j.period_id=${l.period_id} and x.account_code=${code} and j.status='Posted' and j.journal_date<=${to} order by j.journal_date,j.reference,x.line_no limit 2001`};
