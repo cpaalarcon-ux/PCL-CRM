@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: disposable-empty-db-migration-replay
+  cancel-in-progress: true
+
 jobs:
   replay:
     runs-on: ubuntu-latest
@@ -20,6 +24,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+
+      - name: Install PDF text extraction utility
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes poppler-utils
 
       - name: Install dependencies and run the candidate regression suite
         run: |
