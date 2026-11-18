@@ -1,4 +1,4 @@
-// Test helper (build 2884): put the client file in order and declare and approve the client pages of a year, so a pack can reach the final stage.
+// Test helper (build 2885): put the client file in order and declare and approve the client pages of a year, so a pack can reach the final stage.
 // Verified facts and directors are inserted directly (fictional); the three declared pages are declared by ASSISTANT and approved by MANAGER.
 export async function approvePages({tx,as,Pg,per,getStatements,asOf,form='Company'}){
  const cid=per.client_id,rec=(await tx`select staff_id from erp_private.staff_members where category_code='ASSISTANT' limit 1`)[0].staff_id,ver=(await tx`select staff_id from erp_private.staff_members where category_code='PARTNER' limit 1`)[0].staff_id;
