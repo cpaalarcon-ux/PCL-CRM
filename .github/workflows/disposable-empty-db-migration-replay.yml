@@ -1,0 +1,65 @@
+name: Disposable empty database migration replay
+
+on:
+  push:
+    branches:
+      - validation/empty-db-migration-replay-2026-11-18
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the release candidate
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Supabase CLI
+        run: |
+          npm install --global supabase@2
+          supabase --version
+
+      - name: Create an unlinked local Supabase configuration
+        run: supabase init --force
+
+      - name: Start a fresh local Supabase stack
+        run: supabase start
+
+      - name: Replay all candidate migrations from an empty local database
+        run: supabase db reset --local --no-seed
+
+      - name: Confirm every repository migration was applied locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list --local | tee migration-list.txt
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+
+          const files = fs.readdirSync('supabase/migrations')
+            .filter(name => name.endsWith('.sql'))
+            .sort();
+          const expected = files.map(name => name.slice(0, 14));
+          assert.equal(new Set(expected).size, expected.length, 'migration versions must be unique');
+
+          const output = execFileSync('supabase', ['migration', 'list', '--local'], {encoding: 'utf8'});
+          const applied = new Set([...output.matchAll(/(?<!\\d)\\d{14}(?!\\d)/g)].map(match => match[0]));
+          const missing = expected.filter(version => !applied.has(version));
+          const extra = [...applied].filter(version => !expected.includes(version));
+          assert.deepEqual(missing, [], 'some candidate migration versions were not applied');
+          assert.deepEqual(extra, [], 'local database contains unexpected migration versions');
+          console.log(`PASS: applied all ${expected.length} candidate migrations in order on an empty, unlinked local database.`);
+          NODE
+
+      - name: Stop the disposable local Supabase stack
+        if: always()
+        run: supabase stop --no-backup || true
