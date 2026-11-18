@@ -20,7 +20,7 @@ export const noteTitle=(ref,form='Other')=>ref==='EQUITY'?(EQUITY_TITLE[form]||E
 
 // statements: the built statements (rows carry code, label, current, prior). Returns {notes,face_refs,problems,unit}.
 // notes: [{number,ref,title,sections:[{line_code,label,statement,accounts:[{code,name,amount}],rounding,total,face,prior,ties}],ties,control}]
-export function buildNotes({statements,lineDefs,tb,maps,asOf,form='Other',rounding='Whole shillings'}){
+export function buildNotes({statements,lineDefs,tb,maps,asOf,form='Other',rounding='Whole shillings',ppeSchedule=null}){
  const unit=UNITS[rounding]||100,defs=new Map(lineDefs.map(d=>[d.line_code,d])),problems=[];
  // Account amounts per statement line, in cents, with the same sign the face uses.
  const byLine=new Map();
@@ -52,7 +52,8 @@ export function buildNotes({statements,lineDefs,tb,maps,asOf,form='Other',roundi
    faceRefs[def.line_code]=number;
    return {line_code:def.line_code,label:row.label,statement,accounts,rounding:diff,total,face:row.current,prior:row.prior??null,ties};
   });
-  return {number,ref,title:noteTitle(ref,form),sections,ties:sections.every(s=>s.ties),
+  // The movement schedule of the PPE register (build 2881) sits under the property, plant and equipment note, so an approved note is tied to the register as well as to the trial balance.
+  return {number,ref,title:noteTitle(ref,form),sections,...(ref==='PPE'&&ppeSchedule?{schedule:ppeSchedule}:{}),ties:sections.every(s=>s.ties),
    control:{source:'Posted trial balance through the Partner-approved statement-line map',calculation:NOTES_VERSION,evidence:'System figures from the ledger. No supporting schedule is attached yet.',prior_year:'Shown for the caption only; the prior year is held by statement line.'}};
  });
  return {notes,face_refs:faceRefs,problems,unit_label:UNITS[rounding]===100000?'KES thousands':'KES'};
@@ -63,7 +64,7 @@ export function applyFaceRefs(statements,faceRefs){
  return statements;
 }
 // What is hashed: the numbers, titles and every figure. Any change in a figure, an account or a number changes it.
-export const canonicalNotes=notes=>notes.map(n=>({n:n.number,ref:n.ref,t:n.title,s:n.sections.map(s=>({l:s.line_code,tot:s.total,r:s.rounding,pr:s.prior,a:s.accounts.map(a=>[a.code,a.amount])}))}));
+export const canonicalNotes=notes=>notes.map(n=>({n:n.number,ref:n.ref,t:n.title,s:n.sections.map(s=>({l:s.line_code,tot:s.total,r:s.rounding,pr:s.prior,a:s.accounts.map(a=>[a.code,a.amount])})),...(n.schedule?{sc:n.schedule.classes.map(g=>[g.account,g.opening_cost,g.additions,g.disposals,g.closing_cost,g.opening_acc,g.charge,g.released,g.closing_acc,g.nbv])}:{})}));
 // State of the notes set against the notes the ledger would produce now: none, draft, approved, or stale (an approval that no longer matches the figures).
 export function notesState({approved,draft,digestNow}){
  if(approved&&approved.digest===digestNow)return {status:'approved',set:approved};
