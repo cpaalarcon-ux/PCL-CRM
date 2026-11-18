@@ -1,9 +1,11 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
 const root=path.resolve(import.meta.dirname,'..'),read=f=>fs.readFileSync(path.join(root,f),'utf8'),fn='supabase/functions/staff-workspace-v12/';
 test('an unposted opening draft is replaced in place; submitted and posted entries stay locked',()=>{
- const src=read(fn+'ledger-actions.ts');
- assert.match(src,/waiting for independent review\. Ask the reviewer to return it, then upload the corrected TB/);
- assert.match(src,/already posted\. Posted opening corrections require a reviewed adjustment/);
+ const src=read(fn+'ledger-actions.ts'),gates=read(fn+'workflow-gate-rules.mjs');
+ assert.match(src,/openingImportDecision\(openingDraft\)/);
+ assert.match(src,/openingDecision\.action==='replace'\)edit\(openingDraft,a\)/);
+ assert.match(gates,/waiting for independent review\. Ask the reviewer to return it, then upload the corrected TB/);
+ assert.match(gates,/already posted\. Posted opening corrections require a reviewed adjustment/);
  assert.match(src,/writeLines\(tx,openingDraft,parsed\)/);assert.match(src,/replaced:true/);
 });
 test('removing an opening upload is blocked only while its opening entry is submitted or posted',()=>{
