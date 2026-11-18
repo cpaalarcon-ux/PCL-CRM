@@ -1,5 +1,5 @@
 # Applied migration ledger for pcl-erp-staging (supabase_migrations.schema_migrations).
-# Verified 18 November 2026 after staging backend deploy #171.
+# Reconciled 18 November 2026 against the live staging migration ledger (249 versions).
 # Keep LAST_APPLIED_MIGRATION in .github/workflows/staging-backend-deploy.yml equal to the final version below.
 20261022180244 erp_staging_foundation
 20261022183641 staff_pilot_access
@@ -247,3 +247,6 @@
 20261126100000 ppe_register
 20261127120000 settings_approval_batches
 20261128100000 client_pages
+20261129100000 support_schedules
+20261130100000 partner_equity
+20261201100000 report_notes_and_packs
