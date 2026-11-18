@@ -102,7 +102,7 @@ test('screens: buttons, the routing map leaves Settings, and the Configure link 
  assert.match(rmap,/async function handle\(action,id\)/);assert.match(rmap,/if\(id\)\{if\(\$\('#editor'\)\?\.open\)\$\('#editor'\)\.close\(\);await open\(id\);return true;\}/);
  assert.equal(CONFIGURE_TARGETS.routing_map.view,'clients');assert.equal(CONFIGURE_TARGETS.routing_map.tab,undefined);assert.match(CONFIGURE_TARGETS.routing_map.where,/Tax & returns → Routing map/);
  assert.match(rd('staff-settings-frame.mjs'),/if\(target\.view\)\{[^}]*ctx\.navigate\(target\.view\)/);
- for(const f of ['staff-routing-map.mjs','staff-settings-frame.mjs','staff-settings-layout.mjs','staff-suite.mjs','staff-improvements.mjs','staff-my-approvals.mjs','staff-accounting.mjs','staff-workspace-v6.mjs'])assert.match(suite+imp+pilot+rd('staff-accounting.mjs')+rd('staff-workspace-v6.mjs'),new RegExp(f.replace('.','\\.')+'\\?v=(?:2026111[69]-(setuptasks|choices|bulk|practice|versions|dates|tabs|settings|tidy)-v1|20261121-aml-v2|20261121-coa-v1|20261121-evid-v1|20261121-base-v1|20261121-nobase-v1|20261121-scope-v1|20261121-comply-v1|20261121-fill-v1|20261121-und-v1|20261121-cat-v1|20261122-pshare-v1|20261122-notes-v1|20261123-mapq-v1|20261124-audit-v1|20261126-wording-v1|20261124-p9-v1|20261121-wiz-v1|20261122-loc-v1)'),f+' has a fresh cache token');
+ for(const f of ['staff-routing-map.mjs','staff-settings-frame.mjs','staff-settings-layout.mjs','staff-suite.mjs','staff-improvements.mjs','staff-my-approvals.mjs','staff-accounting.mjs','staff-workspace-v6.mjs'])assert.match(suite+imp+pilot+rd('staff-accounting.mjs')+rd('staff-workspace-v6.mjs'),new RegExp(f.replace('.','\\.')+'\\?v=(?:2026111[69]-(setuptasks|choices|bulk|practice|versions|dates|tabs|settings|tidy)-v1|20261121-aml-v2|20261121-coa-v1|20261121-evid-v1|20261121-base-v1|20261121-nobase-v1|20261121-scope-v1|20261121-comply-v1|20261121-fill-v1|20261121-und-v1|20261121-cat-v1|20261122-pshare-v1|20261122-notes-v1|20261123-mapq-v1|20261124-audit-v1|20261126-wording-v1|20261124-p9-v1|20261121-wiz-v1|20261122-loc-v1|20261118-approval-board-v1)'),f+' has a fresh cache token');
 });
 
 test('renewals: lapsed and ending soon, oldest first, with owner and a link to the record',()=>{
@@ -111,7 +111,7 @@ test('renewals: lapsed and ending soon, oldest first, with owner and a link to t
  assert.match(h,/data-lapsed="yes"/);assert.match(h,/Lapsed 15 days ago/);assert.match(h,/Ends in 34 days/);assert.match(h,/data-suite="settings-record" data-id="eligibility:r1"/);
  assert.match(renewalsView([],{}),/Nothing lapsed or ending within 60 days/);
  const page=approvalsView({note:'n',queues:[],records:[],renewals:items,scopes:[],roles:[]},{...FILTER_DEFAULT},{});
- assert.match(page,/<h3>Renewals<\/h3>/);assert.match(page,/data-v3="setup-tasks"/);assert.match(page,/separate queue/);
+ assert.match(page,/<summary>Renewals and expiries/);assert.match(page,/<summary>Search all settings records<\/summary>/);
  assert.match(rd('supabase/functions/staff-workspace-v12/settings-owner-actions.ts'),/buildOverview\(Array\.isArray\(reg\)\?reg:\[\],\[\],t\)\.expiring/);
 });
 

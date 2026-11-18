@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - backend/staging-foundation
+  pull_request:
+    branches:
+      - backend/staging-foundation
   workflow_dispatch:
 
 permissions:
@@ -31,6 +34,11 @@ jobs:
 
       - name: Install ERP function dependencies
         run: npm ci --prefix supabase/functions/staff-workspace-v6
+
+      - name: Install PDF text extraction utility
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes poppler-utils
 
       - name: Run automated regression suite
         run: npm test

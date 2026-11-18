@@ -33,7 +33,7 @@ export function createStatementReviewUI(ctx){
  let cur=null;
  const canApprove=()=>ctx.data().me?.category_code==='PARTNER';
  async function load(){cur=await request({action:'ledger_statement_map_review_read'});}
- function paint(){modal('Statement-line mapping review',reviewView(cur,{canApprove:canApprove(),esc:e0}),null,null,{refreshWorkspace:false});}
+ function paint(){if(document.getElementById('editor')?.open)document.getElementById('editor').close();modal('Statement-line mapping review',reviewView(cur,{canApprove:canApprove(),esc:e0}),null,null,{refreshWorkspace:false});}
  async function open(){try{await load();paint();}catch(e){notice(e.message||'The review could not be opened.',true);}}
  const ack=sel=>!!document.querySelector(sel)?.checked;
  async function approve(payload,done){
