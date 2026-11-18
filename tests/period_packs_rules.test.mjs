@@ -15,6 +15,23 @@ test('payroll is blocked while last month is unapproved; worst state wins; retur
  const two=sourceStates('2026-09',{imports:[{kind:'Sales',status:'Confirmed',starts_on:'2026-09-01',ends_on:'2026-09-15'},{kind:'Sales',status:'Returned',starts_on:'2026-09-16',ends_on:'2026-09-30'}]});assert.equal(two[0].state,'Returned for correction');
  assert.deepEqual(sourceStates('2026-09',{imports:[{kind:'Sales',status:'Discarded',starts_on:'2026-09-01',ends_on:'2026-09-30'}],earlier:{}}),[]);
 });
+test('out-of-order monthly preparation stays open except for the payroll dependency',()=>{
+ const states=sourceStates('2026-09',{
+  imports:[
+   {kind:'Sales',status:'Confirmed',starts_on:'2026-09-01',ends_on:'2026-09-30'},
+   {kind:'Payroll',status:'Draft',starts_on:'2026-09-01',ends_on:'2026-09-30'}
+  ],
+  batches:[
+   {dataset:'Purchases',period_start:'2026-09-01',period_end:'2026-09-30',rows:12,unmapped:0},
+   {dataset:'Bank',period_start:'2026-09-01',period_end:'2026-09-30',rows:31,unmapped:0}
+  ],
+  prior_payroll:'Draft'
+ });
+ assert.equal(states.find(x=>x.key==='sales').state,'Ready');
+ assert.equal(states.find(x=>x.key==='purchases').state,'Received');
+ assert.equal(states.find(x=>x.key==='bank').state,'Received');
+ assert.equal(states.find(x=>x.key==='payroll').state,'Blocked');
+});
 test('tasks and tax cases',()=>{
  const t=taskSummary([{task_name:'a',status:'Pending',due_at:'2026-09-01T00:00:00Z'},{task_name:'b',status:'Blocked',blocked_reason:'Waiting',due_at:'2027-01-01T00:00:00Z'},{task_name:'c',status:'Completed',due_at:'2026-01-01T00:00:00Z'},{task_name:'d',status:'Blocked',due_at:null}],'2026-10-01T00:00:00Z');
  assert.equal(t.open,3);assert.equal(t.overdue,1);assert.deepEqual(t.blocked.map(b=>b.reason),['Waiting','No reason recorded']);
