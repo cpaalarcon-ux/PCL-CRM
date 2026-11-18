@@ -82,7 +82,8 @@ export function buildEquityStatement({lineDefs,maps,tb,asOf,rounding='Whole shil
 const SECTIONS=[['Operating','Cash flows from operating activities'],['Investing','Cash flows from investing activities'],['Financing','Cash flows from financing activities']];
 const CF_LABEL=new Map(CASH_FLOW_LINES.map(([c,,l])=>[c,l])),CF_SECTION=new Map(CASH_FLOW_LINES.map(([c,s])=>[c,s]));
 const OTHER_FIN='CF.OTHER_FIN';
-export function buildCashFlow({lineDefs,maps,tb,asOf,rounding='Whole shillings',priorCashFlow=null}){
+// ppe (build 2882): the approved register's totals for the year, in cents: {relevant,usable,additions,proceeds,gain_loss}. Used only when the register is approved and agrees to the trial balance.
+export function buildCashFlow({lineDefs,maps,tb,asOf,rounding='Whole shillings',priorCashFlow=null,ppe=null}){
  const unit=UNITS[rounding]||100,{by,unmapped}=linesByNature({tb,maps,lineDefs,asOf});
  const nat=c=>by.get(c)||{open:0,mov:0,close:0};
  const pl=c=>nat(c).mov; // income and costs both positive in their own direction
@@ -107,6 +108,18 @@ export function buildCashFlow({lineDefs,maps,tb,asOf,rounding='Whole shillings',
  }
  for(const c of ['CF.WC_INV','CF.WC_REC','CF.WC_PAY','CF.WC_OTHER','CF.PPE_PURCHASE','CF.INVEST_NET','CF.LEASE_PAID',OTHER_FIN])f[c]+=acc[c]||0;
  f['CF.PPE_PURCHASE']-=f['CF.DEPREC']+f['CF.IMPAIR']; // depreciation reduced the equipment balance without any cash moving, so purchases are the change plus the charge
+ // Property, plant and equipment from the approved register (build 2882). The balance sheet gives only the net investing figure (purchases less the book value sold). When the register is
+ // approved and agrees to the trial balance, it supplies the three lines separately: purchases at cost, proceeds of sale, and the loss or (gain) added back in operating. The net of the
+ // three must equal the trial-balance figure; a difference is never absorbed, it stays in the unreconciled amount and is reported.
+ const impliedNet=f['CF.PPE_PURCHASE'];let ppeLink=null;
+ if(ppe&&ppe.relevant&&ppe.usable){
+  const additions=ppe.additions||0,proceeds=ppe.proceeds||0,gl=ppe.gain_loss||0;
+  f['CF.PPE_PURCHASE']=-additions;f['CF.PPE_PROCEEDS']=proceeds;f['CF.DISPOSAL']=-gl;
+  ppeLink={used:true,additions:additions/100,proceeds:proceeds/100,gain_loss:gl/100,difference:0};
+  // Book value sold = proceeds - gain; the register's net investing effect of PPE is proceeds - additions and its operating add-back is -gain, so together they are -additions - gain + proceeds.
+  const registerEffect=-additions+proceeds-gl,diff=registerEffect-impliedNet;ppeLink.difference=diff/100;ppeLink.trial_balance_effect=impliedNet/100;ppeLink.register_effect=registerEffect/100;
+  if(diff!==0)problems.push(`Property, plant and equipment in the cash flow: the register (purchases ${kes(additions)}, proceeds ${kes(proceeds)}, ${gl>=0?'gain':'loss'} ${kes(Math.abs(gl))}) differs from the trial-balance movement by KES ${kes(diff)}. Check the disposal and purchase journals.`);
+ }else if(ppe&&ppe.relevant)problems.push('Purchases and sales of property, plant and equipment are taken from the trial-balance movement, not from the register, because the register has no approved assets or does not agree to the trial balance.');
  f['CF.TAX_PAID']=-tax+(acc.TAX||0);
  f['CF.BORROW_PROCEEDS']=Math.max(acc.BORROW||0,0);f['CF.BORROW_REPAID']=Math.min(acc.BORROW||0,0);
  // Equity movements other than the year's profit, with the same classification as the statement of changes in equity.
@@ -155,6 +168,6 @@ export function buildCashFlow({lineDefs,maps,tb,asOf,rounding='Whole shillings',
  }
  // Exact amounts in shillings by line code, for deriving a prior-year cash flow (build 2876). Unrounded, so the lines add up exactly when the cash flow reconciles.
  const exact={};for(const [c] of CASH_FLOW_LINES)if(f[c])exact[c]=f[c]/100;if(f[OTHER_FIN])exact[OTHER_FIN]=f[OTHER_FIN]/100;exact['CF.CASH_OPEN']=cashOpen/100;exact['CF.CASH_CLOSE']=cashClose/100;
- return {title:'Statement of cash flows',rows,exact,has_prior:!!pri,net_change:net/100,cash_open:cashOpen/100,cash_close:cashClose/100,reconciles:residual===0,residual:residual/100,problems,
+ return {title:'Statement of cash flows',rows,exact,has_prior:!!pri,net_change:net/100,cash_open:cashOpen/100,cash_close:cashClose/100,reconciles:residual===0,residual:residual/100,problems,ppe_link:ppeLink,
   sections:{operating:op/100,investing:inv/100,financing:fin/100}};
 }

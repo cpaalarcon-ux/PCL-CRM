@@ -12,6 +12,7 @@ import {buildNotes,applyFaceRefs} from './annual-pack-notes.mjs';
 import {notesDigest,noteStateFor} from './notes-actions.ts';
 import {wordingFor} from './wording-actions.ts';
 import {ppeRegisterFor} from './ppe-actions.ts';
+import {cashFlowInput} from './ppe-register-rules.mjs';
 import {auditStateFor,figuresDigest} from './audit-lock-actions.ts';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
@@ -232,7 +233,9 @@ export async function statementsFrom(tx:any,l:any,data:any){
  const priorEquity=approved?approved.lines.filter((x:any)=>x.statement==='Changes in equity').map((x:any)=>({line_code:x.line_code,movement:x.movement,amount:x.amount})):null;
  const priorCash=approved?approved.lines.filter((x:any)=>x.statement==='Cash flow').map((x:any)=>({line_code:x.line_code,amount:x.amount})):null;
  const flowIn={lineDefs,maps,tb:data.tb,asOf:data.as_of,rounding:reporting.rounding};
- const equity=buildEquityStatement({...flowIn,priorEquity}),cashFlow=buildCashFlow({...flowIn,priorCashFlow:priorCash});
+ // Property, plant and equipment register (build 2881), read before the cash flow so that purchases, sale proceeds and the gain or loss on disposal come from the same approved records (build 2882).
+ const ppe=await ppeRegisterFor(tx,l,data.tb||[]);
+ const equity=buildEquityStatement({...flowIn,priorEquity}),cashFlow=buildCashFlow({...flowIn,priorCashFlow:priorCash,ppe:cashFlowInput(ppe)});
  // Unmapped accounts are already reported once for the statements above.
  const flowProblems=[...equity.problems,...cashFlow.problems].filter((p:string)=>!/have no approved statement line/.test(p));
  if(approved&&!equity.has_prior)flowProblems.push('The approved comparatives have no prior-year changes in equity, so that column is not shown.');
@@ -258,7 +261,6 @@ export async function statementsFrom(tx:any,l:any,data:any){
  }
  // System notes (build 2873): built from the same trial balance and map, numbered in statement order, with the number written on the face. The Partner's approval is tied to a digest of every figure.
  // Property, plant and equipment register (build 2881): the note carries the movement schedule, and the pack is blocked while the register does not agree to the trial balance.
- const ppe=await ppeRegisterFor(tx,l,data.tb||[]);
  const nb=buildNotes({statements,lineDefs,tb:data.tb,maps,asOf:data.as_of,form,rounding:reporting.rounding,ppeSchedule:ppe.schedule});
  applyFaceRefs(statements,nb.face_refs);
  const nDigest=await notesDigest(nb.notes);

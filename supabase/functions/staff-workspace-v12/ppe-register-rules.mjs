@@ -163,3 +163,10 @@ export function registerReadiness({register,reconciliation,drafts=0,hasPpeBalanc
  if(!reconciliation.ties)problems.push(`The register is out by the amounts shown against the trial balance on ${reconciliation.differences} line${reconciliation.differences===1?'':'s'}.`);
  return {relevant:true,ok:!problems.length,problems,summary:problems.length?problems[0]:'The register is approved and ties to the trial balance.'};
 }
+// What the cash flow takes from the register (build 2882), in cents. usable only when the register is approved, has no open issues and agrees to the trial balance;
+// otherwise the cash flow keeps the trial-balance movement and says so. Purchases are at cost, proceeds are the recorded sale proceeds, gain_loss is proceeds less book value sold.
+export function cashFlowInput({register,readiness}){
+ if(!readiness||!readiness.relevant)return {relevant:false,usable:false,additions:0,proceeds:0,gain_loss:0};
+ const sum=k=>(register.cents||[]).reduce((s,r)=>s+(r[k]||0),0);
+ return {relevant:true,usable:!!readiness.ok&&(register.cents||[]).length>0,additions:sum('additions'),proceeds:sum('proceeds'),gain_loss:sum('gain_loss')};
+}
