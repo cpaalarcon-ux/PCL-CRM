@@ -1,6 +1,6 @@
 // The PPE register (build 2881): property, plant and equipment across the years. Staff declare an asset or a disposal; a Manager or Partner who did not declare it approves it. The year's cost,
 // accumulated depreciation, carrying amount and tax written-down value are worked out from the approved records and checked against the trial balance. The server owns every rule;
-// this file draws what it returns.
+// this file draws what it returns. Build 2883: classes with no reviewed rate for a year are listed, and a Partner can prepare the missing rate from the nearest existing one.
 export function createPpeUI(ctx,{payload,show,onChange}){
  const {esc,field,select,form,request,notice,shortDate}=ctx;
  const btn=(a,l,id='',extra='')=>`<button type="button" data-ppe="${a}" data-id="${esc(id)}" ${extra}>${esc(l)}</button>`;
@@ -20,6 +20,12 @@ export function createPpeUI(ctx,{payload,show,onChange}){
    r.rows.map(x=>`<tr><td>${esc(x.asset_name)}</td>${[x.tax_opening,x.tax_addition,x.tax_allowance,x.tax_balancing_allowance,x.tax_balancing_charge,x.tax_closing].map(money).join('')}</tr>`),
    `<tr><th>Total</th>${[t.tax_opening,r.rows.reduce((s,x)=>s+(x.tax_addition||0),0),t.tax_allowance,t.tax_balancing_allowance,t.tax_balancing_charge,t.tax_closing].map(money).join('')}</tr>`);
   return `<h4>Book values</h4>${book}<h4>Tax written-down values</h4>${tax}`;
+ }
+ function gapsHtml(){
+  const g=data.register.rate_gaps||[];
+  if(!g.length)return '';
+  return `<h3>Rates needed</h3><p class="muted">These classes have no reviewed rate for the year shown, so the register cannot work out depreciation or wear and tear for them. The register never fills in a rate by itself.${data.can_add_rate?'':' A Partner adds the rate.'}</p>`+
+   table(['Class','Year','Assets affected',''],g.map((x,i)=>`<tr><td>${esc(x.class_code)}</td><td>${esc(shortDate(x.start))} to ${esc(shortDate(x.end))}</td><td>${x.assets.map(esc).join(', ')}</td><td>${data.can_add_rate&&x.fill?btn('rate','Prepare the rate',String(i)):data.can_add_rate?'<small class="muted">No earlier rate for this class to start from.</small>':''}</td></tr>`));
  }
  function reconHtml(){
   const rc=data.reconciliation;
@@ -48,7 +54,7 @@ export function createPpeUI(ctx,{payload,show,onChange}){
   const rd=data.readiness,state=!rd.relevant?'<p><span class="badge good">No property, plant and equipment this year</span></p>':rd.ok?'<p><span class="badge good">Approved and agrees to the trial balance</span></p>':'<p><span class="badge red">Not ready</span></p>';
   show('Property, plant and equipment register',`<p class="info full">${esc(data.note)}</p>${data.locked?'<p class="error" role="alert">The pack is locked by an audit, so the register cannot change until a Partner ends the lock.</p>':''}${state}${rd.problems&&rd.problems.length?`<ul class="error" role="alert">${rd.problems.map(p=>`<li>${esc(p)}</li>`).join('')}</ul>`:''}
    <div class="actions">${data.can_declare?btn('add','Add an asset')+btn('add-bf','Add a brought-forward asset'):''}${btn('refresh','Refresh')}</div>
-   <h3>Year ${esc(shortDate(data.year.start))} to ${esc(shortDate(data.year.end))}</h3>${registerHtml()}
+   ${gapsHtml()}<h3>Year ${esc(shortDate(data.year.start))} to ${esc(shortDate(data.year.end))}</h3>${registerHtml()}
    <h3>Agreement to the trial balance</h3>${reconHtml()}
    ${data.candidates.length&&data.can_declare?`<h3>Purchases mapped to property, plant and equipment, not yet in the register</h3>${table(['Date','Description','Account','Cost',''],data.candidates.map(c=>`<tr><td>${esc(shortDate(c.acquired_on))}</td><td>${esc(c.asset_name)} <small class="muted">${esc(c.supplier)}</small></td><td>${esc(c.asset_account)}</td>${money(c.cost)}<td>${btn('from-purchase','Add to the register',c.source_row_id)}</td></tr>`))}`:''}
    <h3>Assets</h3>${data.assets.length?data.assets.map(assetHtml).join(''):'<p class="muted">No assets are recorded for this client yet.</p>'}
@@ -74,6 +80,19 @@ export function createPpeUI(ctx,{payload,show,onChange}){
  const assetOf=key=>data.assets.find(x=>x.asset_key===key);
  const handlers={
   refresh:()=>open(),
+  rate(i){
+   const g=data.register.rate_gaps[Number(i)],f=g&&g.fill;if(!f)throw Error('There is no earlier rate for this class to start from. Add it from the rates screen.');
+   const hid=(k,v)=>`<input type="hidden" name="${k}" value="${esc(v??'')}">`,b=f.based_on;
+   show('Prepare the rate for class '+f.class_code,form(`<p class="info full">Copied from the ${esc(f.class_code)} rate that applied from ${esc(shortDate(b.effective_from))} to ${esc(shortDate(b.effective_to))} (${esc(b.source_reference||'no source recorded')}). Nothing has been checked against the law for these dates. Check the Income Tax Act for the new dates, change any figure that has changed, then type the authority you checked and the date. Once saved, the rate cannot be edited; a correction is a later dated version.</p>
+    ${hid('class_code',f.class_code)}${hid('name',f.name)}${hid('expense_account',f.expense_account)}${hid('contra_account',f.contra_account)}
+    ${field('effective_from','Effective from *',f.effective_from,'date','required')}${field('effective_to','Effective to *',f.effective_to,'date','required')}
+    ${field('first_rate','First-use annual rate % *',f.first_rate,'number','required min="0" max="100" step="0.0001"')}${field('annual_rate','Later annual rate % *',f.annual_rate,'number','required min="0" max="100" step="0.0001"')}
+    ${field('later_basis_percentage','Later qualifying cost basis % *',f.later_basis_percentage,'number','required min="0" max="100" step="0.0001"')}${field('tax_cost_cap','Noncommercial motor cost cap KES (if applicable)',f.tax_cost_cap??'','number','min="0" step="0.01"')}
+    ${field('source_checked_on','Authority checked on *','','date','required')}
+    <label class="full">Official authority and reference you checked for these dates * <textarea name="source_reference" required minlength="10" maxlength="4000"></textarea></label>
+    <label class="full">Qualifying scope and restrictions * <textarea name="scope" required minlength="10" maxlength="2000">${esc(f.scope||'')}</textarea></label>`,'Save the rate'),
+    fd=>request({...payload('ledger_rate_add'),...Object.fromEntries(fd)}),done('The rate is saved. The register has been refreshed.'));
+  },
   add(){from=null;show('Add an asset',assetForm({}),declare(),done('Declared. A Manager or Partner approves it.'));},
   'add-bf'(){from=null;show('Add a brought-forward asset',assetForm({},'Brought forward'),declare(),done('Declared. A Manager or Partner approves it.'));},
   'from-purchase'(id){const c=data.candidates.find(x=>x.source_row_id===id);show('Add to the register: '+c.asset_name,assetForm({asset_name:c.asset_name,asset_account:c.asset_account,acquired_on:c.acquired_on,first_use_on:c.acquired_on,cost:c.cost,evidence:'Purchase row in the ERP, supplier '+(c.supplier||'')}),declare({source_row_id:id}),done('Declared from the purchase. A Manager or Partner approves it.'));},

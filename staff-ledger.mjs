@@ -8,7 +8,7 @@ import {createPartnerSharesUI} from './staff-partner-shares.mjs?v=20261122-pshar
 import {createNotesUI} from './staff-notes.mjs?v=20261122-notes-v1';
 import {createAuditLockUI} from './staff-audit-lock.mjs?v=20261124-audit-v1';
 import {createWordingUI} from './staff-wording.mjs?v=20261126-wording-v1';
-import {createPpeUI} from './staff-ppe.mjs?v=20261127-ppe-v1';
+import {createPpeUI} from './staff-ppe.mjs?v=20261128-rates-v1';
 import {gateHtml,finalAvailable,declarationsHtml} from './staff-report-gate.mjs?v=20261115-declare-v1';
 // Client working papers. All reads and mutations are authorised again by the API.
 export function createLedgerUI(ctx,{onPayrollImport}={}){
