@@ -59,7 +59,9 @@ test('formatted statements through the action: draft until comparatives are appr
  assert.equal(f.has_prior,true);assert.equal(line(f,'Total assets').prior,300000);assert.equal(line(f,'Total equity and liabilities').prior,300000);
  assert.deepEqual(s.statements.problems,[]);
  // Build 2873: everything else is in order, but the statements are not ready until a Partner has approved the notes
- assert.deepEqual(s.readiness.checks.filter(c=>c.status==='Blocked').map(c=>c.code),['NOTES_APPROVED','WORDING_COMPLETE','CLIENT_PAGES']);assert.equal(s.readiness.ready,false);assert.equal(s.statements.notes.items.length>0,true);assert.deepEqual(s.statements.notes.problems,[]);
+ assert.deepEqual(s.readiness.checks.filter(c=>c.status==='Blocked').map(c=>c.code),['SUPPORT_SCHEDULES','NOTES_APPROVED','WORDING_COMPLETE','CLIENT_PAGES'],'build 2886: the supporting schedules come first, because the notes digest includes them');
+ {const {approveSchedules}=await import('./helpers/schedules_ready.mjs'),S=await import('../supabase/functions/staff-workspace-v12/support-schedules-actions.ts');const sr=await approveSchedules({tx,as,S,per,getStatements:()=>A.statementsFrom(tx,per,data),asOf:'2026-12-31'});assert.equal(sr.ok,true,sr.problems.join(' '));assert.ok(sr.relevant>0);}
+ s=await get('MANAGER');assert.deepEqual(s.readiness.checks.filter(c=>c.status==='Blocked').map(c=>c.code),['NOTES_APPROVED','WORDING_COMPLETE','CLIENT_PAGES']);assert.equal(s.readiness.ready,false);assert.equal(s.statements.notes.items.length>0,true);assert.deepEqual(s.statements.notes.problems,[]);
  assert.equal(line(s.statements.profit_or_loss,'Revenue').note,1,'the note number is written on the face');
  const NA=await import('../supabase/functions/staff-workspace-v12/notes-actions.ts');
  const nget=(asOf)=>A.statementsFrom(tx,per,data);

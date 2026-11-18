@@ -87,3 +87,13 @@ test('the workbook: contents with the status and open checks, one sheet per sect
  const aud=packWorkbook(A.assemblePack(input({gate:{ready:true,checks:[]},audit:{required:true,locked:true,stale:false},lock:{mode:'External audit',report_reference:'R1',report_date:'2027-02-20',opinion:'Unmodified',auditor_name:'Fictional Auditors LLP',locked_name:'M',locked_at:'2027-02-21T08:00:00Z'},attachment:{verified:true,document_id:'d',file_name:'signed.pdf',sha256:'b'.repeat(64)}})),ExcelJS,{fingerprint:'d'.repeat(64)});
  for(const w of aud.worksheets)assert.match(String(w.getRow(1).getCell(1).value),/^AUDITED/);let att='';aud.getWorksheet('Contents').eachRow(r=>{att+=String(r.getCell(1).value??'')+'|'+String(r.getCell(2).value??'')+'\n';});assert.match(att,/Signed auditor's report: signed\.pdf\|SHA-256 b{64}/);
 });
+test('build 2886: an approved supporting schedule is printed under its note, in the PDF and the workbook; an unapproved one is not',async()=>{
+ const support={kind:'STOCK',title:'Inventories',version:1,evidence:'Fictional count sheet',categories:[{category:'Goods for resale',lines:[{description:'Hardware',reference:'Count p1',account:'1000',amount:400},{description:'Tools',reference:'',account:'1000',amount:100}],total:500,rounding:0}],total:500,ties:true,tie:{rows:[],ties:true,differences:0}};
+ const withSupport=input();withSupport.statements.notes={...withSupport.statements.notes,items:sys.map((n,i)=>i===1?{...n,support}:n)};
+ const m=A.assemblePack(withSupport),blocks=m.sections.find(s=>s.code==='NOTES').blocks,sc=blocks.find(b=>b.type==='matrix'&&/Supporting schedule: Inventories/.test(b.caption||''));
+ assert.ok(sc,'the schedule is a block under the note');assert.deepEqual(sc.rows.map(r=>[r.label.trim(),r.cells[0]]),[['Goods for resale',''],['Hardware (Count p1)',400],['Tools',100],['Total goods for resale',500],['Total supporting schedule',500]]);
+ assert.equal(A.assemblePack(input()).sections.find(s=>s.code==='NOTES').blocks.some(b=>/Supporting schedule/.test(b.caption||'')),false,'no approved schedule, nothing printed');
+ const pdf=await packPdf(m,PDFLib,{fingerprint:'abc123'});const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sup-'));fs.writeFileSync(dir+'/p.pdf',pdf);
+ const txt=execFileSync('pdftotext',['-layout',dir+'/p.pdf','-'],{encoding:'utf8'});assert.match(txt,/Supporting schedule: Inventories/);assert.match(txt,/Hardware \(Count p1\)/);assert.match(txt,/Total supporting schedule/);
+ const wb=packWorkbook(m,ExcelJS,{fingerprint:'abc123'});const cells=[];wb.eachSheet(w=>w.eachRow(r=>cells.push(r.values.join('|'))));assert.ok(cells.some(c=>/Supporting schedule: Inventories/.test(c)));assert.ok(cells.some(c=>/Hardware \(Count p1\)\|400/.test(c)));
+});

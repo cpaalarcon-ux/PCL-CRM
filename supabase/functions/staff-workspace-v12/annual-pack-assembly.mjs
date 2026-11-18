@@ -89,6 +89,8 @@ export function assemblePack({client,reporting,statements,wording,pages,gate,aud
     nb.push({type:'matrix',columns:[`Year ended ${yearEnd}`,...(sec.prior!==null&&sec.prior!==undefined?['Prior year']:[])],caption:sec.label,rows:[...sec.accounts.map(a=>({label:`${a.code} ${a.name}`,cells:[a.amount,...(sec.prior!==null&&sec.prior!==undefined?['']:[])]})),...(sec.rounding?[{label:'Rounding',cells:[sec.rounding,...(sec.prior!==null&&sec.prior!==undefined?['']:[])]}]:[]),{label:'Total '+String(sec.label).toLowerCase(),cells:[sec.total,...(sec.prior!==null&&sec.prior!==undefined?[sec.prior]:[])],total:true}]});
    }
    if(n.note.schedule&&n.note.schedule.classes)nb.push({type:'schedule',schedule:n.note.schedule});
+   // Supporting schedule (build 2886): printed only when a Manager or Partner has approved it; it is tied to the same trial balance figures as the note above it.
+   if(n.note.support){const su=n.note.support;nb.push({type:'matrix',columns:[`Year ended ${yearEnd}`],caption:`Supporting schedule: ${su.title}`,rows:[...su.categories.flatMap(c=>[{label:c.category,cells:['']},...c.lines.map(l=>({label:`  ${l.description}${l.reference?' ('+l.reference+')':''}`,cells:[l.amount]})),...(c.rounding?[{label:'  Rounding',cells:[c.rounding]}]:[]),{label:`Total ${c.category.toLowerCase()}`,cells:[c.total],total:true}]),{label:'Total supporting schedule',cells:[su.total],total:true}]});}
   }else for(const s of n.sections){
    if(s.title)nb.push({type:'heading',text:s.title,minor:true});
    nb.push({type:'text',text:s.text===null||s.text===undefined?'Not ready. This wording is not approved.':s.text});
