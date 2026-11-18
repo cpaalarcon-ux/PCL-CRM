@@ -39,6 +39,7 @@ import {money} from './accounting-rules.mjs';
 import {openingTbMappingMatches} from './opening-tb-mapping.mjs';
 import {bankCloseChecks} from './bank-close.mjs';
 import {confirmPeriodImport} from './period-import-actions.ts';
+import {isPreparationParticipant,openingImportDecision} from './workflow-gate-rules.mjs';
 
 const one=(r:any[])=>{if(!r.length)fail(403,'This working paper is not available to your account.');return r[0];};
 const leader=(a:any)=>{if(!staffReviewer(a))fail(403,'A Manager or Partner must approve client accounting.');};
@@ -621,7 +622,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner must check this entry.');
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);
   if(j.status!=='Submitted')fail(400,'Only a submitted entry can be checked.');
-  if([j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'You prepared or edited this entry. A different Supervisor, Manager or Partner must check it.');
+  if(isPreparationParticipant(a.staff_id,j.prepared_by,j.last_prepared_by))fail(403,'You prepared or edited this entry. A different Supervisor, Manager or Partner must check it.');
   if(j.checked_by)fail(409,'This entry has already been checked.');
   const outcome=choice(p.outcome,['Checked','Returned']),note=text(p.check_note,5000);if(note.length<10)fail(400,'Enter a check note of at least 10 characters.');
   const what=`${j.kind==='Opening'?'opening balances':j.kind.toLowerCase()+' journal'} ${j.reference}`;
@@ -633,7 +634,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
  if(['ledger_journal_submit','ledger_journal_review'].includes(p.action)){
   const j=one(await tx`select * from erp_private.ledger_journals where journal_id=${uuid(p.journal_id)} and period_id=${l.period_id} for update`);rev(j,p);
   if(p.action==='ledger_journal_submit'){edit(j,a);const currentLines=await lines(tx,j.journal_id),issues=journalIssues(currentLines,await chartCatalogue(tx,await catalogue(tx),l.client_id,day(j.journal_date||l.starts_on)),{kind:j.kind,entityType:l.entity_type,sourceSnapshot:j.source_snapshot});if(j.kind==='Opening')for(const line of currentLines.filter((x:any)=>x.account_code)){const ok=await openingAccountApproved(tx,a,project.client_id,String(line.account_code),day(l.starts_on));if(!ok.ok)issues.push(`Line ${line.line_no}: ${openingAccountMessage(String(line.account_code),day(l.starts_on),ok)}`);}if(issues.length)fail(400,issues.join(' '));await sourceCheck(tx,j);await tx`update erp_private.ledger_journals set status='Submitted',last_prepared_by=${a.staff_id},updated_at=now() where journal_id=${j.journal_id}`;await notifyReviewers(tx,l.client_id,`${j.kind==='Opening'?'opening balances':j.kind.toLowerCase()+' journal'} ${j.reference}`,'review:journal:'+j.journal_id+':'+Date.now());}
-  else{leader(a);if(j.status!=='Submitted'||[j.prepared_by,j.last_prepared_by].includes(a.staff_id))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);let activated:string[]=[];if(status==='Posted'){const jr=(await tx`select erp_private.is_junior_preparer(${j.prepared_by}) a,erp_private.is_junior_preparer(${j.last_prepared_by}) b`)[0];if(jr.a||jr.b){if(!j.checked_by)fail(409,'This entry was prepared by an Assistant. A Supervisor, Manager or Partner must check it before it can be approved and posted.');if(j.checked_by===a.staff_id)fail(403,'You checked this entry. A different Manager or Partner must approve and post it.');}}if(status==='Posted'){const chart=await approvedChart(tx,l.client_id,day(j.journal_date||l.starts_on)),outside=chart?(await lines(tx,j.journal_id)).filter((x:any)=>x.account_code&&(Number(x.debit)||Number(x.credit))&&!chart.codes.has(x.account_code)):[];if(outside.length)fail(400,`Return this journal: ${[...new Set(outside.map((x:any)=>x.account_code))].map((c:any)=>chartMessage(c)).join(' ')}`);await sourceCheck(tx,j);await confirmJournalSources(tx,a,project,j,l,p.review_note);activated=await activateJournalMappings(tx,a,project.client_id,j,l,await lines(tx,j.journal_id));}await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;await notifyOutcome(tx,j.last_prepared_by||j.prepared_by,l.client_id,`${j.kind==='Opening'?'opening balances':j.kind.toLowerCase()+' journal'} ${j.reference}`,status,text(p.review_note,5000),'outcome:journal:'+j.journal_id+':'+Date.now());return {ok:true,journal_id:j.journal_id,activated_mapping_count:activated.length};}
+  else{leader(a);if(j.status!=='Submitted'||isPreparationParticipant(a.staff_id,j.prepared_by,j.last_prepared_by))fail(403,'A different Manager or Partner must review the submitted journal.');const status=choice(p.status,['Posted','Returned']);let activated:string[]=[];if(status==='Posted'){const jr=(await tx`select erp_private.is_junior_preparer(${j.prepared_by}) a,erp_private.is_junior_preparer(${j.last_prepared_by}) b`)[0];if(jr.a||jr.b){if(!j.checked_by)fail(409,'This entry was prepared by an Assistant. A Supervisor, Manager or Partner must check it before it can be approved and posted.');if(j.checked_by===a.staff_id)fail(403,'You checked this entry. A different Manager or Partner must approve and post it.');}}if(status==='Posted'){const chart=await approvedChart(tx,l.client_id,day(j.journal_date||l.starts_on)),outside=chart?(await lines(tx,j.journal_id)).filter((x:any)=>x.account_code&&(Number(x.debit)||Number(x.credit))&&!chart.codes.has(x.account_code)):[];if(outside.length)fail(400,`Return this journal: ${[...new Set(outside.map((x:any)=>x.account_code))].map((c:any)=>chartMessage(c)).join(' ')}`);await sourceCheck(tx,j);await confirmJournalSources(tx,a,project,j,l,p.review_note);activated=await activateJournalMappings(tx,a,project.client_id,j,l,await lines(tx,j.journal_id));}await tx`update erp_private.ledger_journals set status=${status},reviewed_by=${a.staff_id},review_note=${text(p.review_note,5000)} where journal_id=${j.journal_id}`;await notifyOutcome(tx,j.last_prepared_by||j.prepared_by,l.client_id,`${j.kind==='Opening'?'opening balances':j.kind.toLowerCase()+' journal'} ${j.reference}`,status,text(p.review_note,5000),'outcome:journal:'+j.journal_id+':'+Date.now());return {ok:true,journal_id:j.journal_id,activated_mapping_count:activated.length};}
   return {ok:true,journal_id:j.journal_id};
  }
  if(p.action==='ledger_reverse'){
@@ -788,12 +789,9 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   // A corrected upload replaces an unposted opening draft in place (its old lines are zeroed and kept in the audit history). Once the draft is
   // submitted or posted it is locked: the reviewer returns it first, or a reviewed adjustment corrects a posted opening.
   const openingDraft=kind==='Opening'?(await tx`select * from erp_private.ledger_journals where period_id=${l.period_id} and kind='Opening' limit 1 for update`)[0]:null;
-  if(openingDraft){
-   if(openingDraft.status==='Submitted')fail(409,'The opening balance entry is waiting for independent review. Ask the reviewer to return it, then upload the corrected TB.');
-   if(openingDraft.status==='Posted')fail(409,'The opening balance entry is already posted. Posted opening corrections require a reviewed adjustment.');
-   if(openingDraft.source_snapshot?.kind!=='Excel')fail(409,'An opening balance entry already exists for this financial year. Open it from Entry register and edit the draft there.');
-   edit(openingDraft,a);
-  }
+  const openingDecision=openingImportDecision(openingDraft);
+  if(openingDecision.action==='reject')fail(409,openingDecision.message);
+  if(openingDecision.action==='replace')edit(openingDraft,a);
   if(kind==='Opening'){
    for(const [id,code] of retargets)await tx`update erp_private.client_account_mappings set erp_account_code=${code} where mapping_id=${id} and status='Draft' and created_by=${a.staff_id}`;
    for(const [group,g] of chosenGroups){
