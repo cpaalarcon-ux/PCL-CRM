@@ -63,7 +63,22 @@ export function templateRow(sheet,i,template,block){
  if(/^(VAT CLAIM MONTH|TOTAL(?:\s|$)|SUBTOTAL(?:\s|$)|GRAND TOTAL(?:\s|$))/.test(first)||mapHeaders(vals).purchase_type)return null;
  return vals;
 }
-export function normalizeTemplate(values,template,block,start,end){
+// Expenditure codes (build 2879). The expenditure workbook carries a class or category code and an ERP TB item code. They are read as a SUGGESTED pair only, with the same rules as the
+// standard Purchases upload: the TB code must be a five-digit active, non-legacy expenditure account (route 2) of the master chart, and the category must be the one that account uses.
+// A TB code is never used to work out the category, and a valid pair never maps a row by itself: it maps automatically only when a Partner has approved it for the client.
+export function expenditureCodes({category,tb},accounts){
+ const routing=category?String(category).trim().toUpperCase():'',code=tb?String(tb).trim():'';
+ if(!routing&&!code)return {};
+ if(!routing)return {issue:'Enter the class / category code (an ERP routing code such as EXP01) with the TB code, or leave both blank. A TB code alone is not used to choose the category.'};
+ if(!/^[A-Z][A-Z0-9_]{1,29}$/.test(routing))return {issue:'The class / category code must be an ERP routing code such as EXP01.'};
+ if(!code)return {routing_code:routing};
+ if(!/^\d{5}$/.test(code))return {routing_code:routing,issue:'The TB code must be a five-digit ERP TB item code.'};
+ const acct=(accounts||[]).find(x=>String(x.code)===code&&x.status==='Active'&&!x.is_legacy&&Number(x.route)===2);
+ if(!acct){const any=(accounts||[]).find(x=>String(x.code)===code);return {routing_code:routing,issue:any?`TB code ${code} is not an active expenditure account (it is routing ${any.route}${any.status!=='Active'||any.is_legacy?', and not active':''}). Select a valid account in the mapping screen.`:`TB code ${code} is not an account in the master chart. Select a valid account in the mapping screen.`};}
+ if(String(acct.category_code||'').toUpperCase()!==routing)return {routing_code:routing,issue:`Routing code ${routing} does not match ERP TB item code ${code}. This TB account uses routing code ${acct.category_code}; correct the category or the TB code.`};
+ return {routing_code:routing,suggestion:{route:2,category_code:acct.category_code,account_code:acct.code,confirmed:false}};
+}
+export function normalizeTemplate(values,template,block,start,end,accounts=[]){
  const m=block.column_map,raw=Object.fromEntries(block.headers.map((header,i)=>[`${i+1}: ${header}`,values[i]??'']));
  const get=k=>m[k]?values[m[k]-1]??'':'';
  const row={};for(const k of Object.keys(m)){
@@ -87,6 +102,7 @@ export function normalizeTemplate(values,template,block,start,end){
  const route=template.kind==='B02'?null:2;
  const category=template.kind==='B02'?null:row.category_code||workbookCategories.find(c=>c.route===route&&norm(c.label)===norm(row.pl_group))?.code||null;
  const valid=workbookCategories.some(c=>c.route===route&&c.code===category);
+ if(template.kind==='B03'){const x=expenditureCodes({category:valid?category:row.category_code,tb:row.tb_code},accounts);if(x.routing_code)row.routing_code=x.routing_code;if(x.issue)row.mapping_suggestion_issue=x.issue;if(x.suggestion)row.mapping_suggestion=x.suggestion;}
  return {raw,row,issues,key,route:[1,2,3].includes(route)?route:null,category_code:valid?category:null,narration:row.description||null};
 }
 // Imported classifications are suggestions. Neither an uploaded reviewer name nor a formula grants approval.

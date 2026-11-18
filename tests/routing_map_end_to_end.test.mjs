@@ -59,6 +59,11 @@ test('the approved routing map: one approval maps every row with the code for it
  const run=await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal(run.mapped,2);assert.equal(run.via_routing_map,2);
  const a=await get('A1');assert.equal(a.account_code,a1.code);assert.equal(a.review_details.mapping_confirmation.method,ROUTING_METHOD);assert.equal(a.review_details.mapping_confirmation.awaiting_review,true);assert.equal(a.review_details.mapping_confirmation.routing_map_id,m.routing_id);assert.equal(a.review_details.mapping_confirmation.routing_map_version,1);
  assert.equal((await get('A2')).account_code,a1.code);
+ // An expenditure workbook row follows the same rule (build 2879): its category and TB code map only through the Partner-approved map, and a pair with no approved mapping is only a suggestion.
+ await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B},${P},${C},'Expenditure',${Math.floor(Math.random()*1e6)},${'RM-X1'},'{}',${tx.json({date:'2026-09-11',amount:1000,vat:160,invoice:'RM-X1',party:'Fictional supplier',description:'Fictional expense',routing_code:'XRT1',tb_code:a1.code})})`;
+ await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B},${P},${C},'Expenditure',${Math.floor(Math.random()*1e6)},${'RM-X2'},'{}',${tx.json({date:'2026-09-11',amount:1000,vat:160,invoice:'RM-X2',party:'Fictional supplier',description:'Fictional expense',routing_code:'XRT8',tb_code:a2.code})})`;
+ const runX=await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal(runX.mapped,1,'only the expenditure row whose pair has an approved mapping');
+ assert.equal((await get('X1')).account_code,a1.code);assert.equal((await get('X2')).account_code,null);assert.match((await get('X2')).review_details.auto_map_note.reason,/XRT8 has no approved mapping|Suggested - Awaiting Approval/);
  const late=await get('LATE');assert.equal(late.account_code,null);assert.match(late.review_details.auto_map_note.reason,/not one that covers 2026-12-20/);
  assert.equal((await get('NOMAP')).account_code,null);assert.match((await get('NOMAP')).review_details.auto_map_note.reason,/XRT9 has no approved mapping/);
  // The mapping is never edited; it is ended or withdrawn with a reason.
