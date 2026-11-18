@@ -33,7 +33,9 @@ test('described approval boundaries remain present in server handlers',()=>{
  assert.match(mapping,/p\.action==='v3_client_account_mapping_approve_batch'\)\{\s*leader\(a\);fail\(409,'Client account mappings no longer have a separate approval/);
  assert.match(ledger,/activated=await activateJournalMappings\(tx,a,project\.client_id,j,l,/);
  assert.match(accounting,/if\(p\.action==='accounting_account_approve'\)\{if\(a\.category_code!=='PARTNER'\)/);
- assert.match(ledger,/else\{leader\(a\);if\(j\.status!=='Submitted'\|\|\[j\.prepared_by,j\.last_prepared_by\]\.includes\(a\.staff_id\)\)/);
+ assert.match(ledger,/import \{isPreparationParticipant,openingImportDecision\} from '\.\/workflow-gate-rules\.mjs';/);
+ assert.match(ledger,/else\{leader\(a\);if\(j\.status!=='Submitted'\|\|isPreparationParticipant\(a\.staff_id,j\.prepared_by,j\.last_prepared_by\)\)/);
+ assert.match(ledger,/choice\(p\.status,\['Posted','Returned'\]\)/);
  assert.match(periods,/const reviewer=\(a:any\)=>\['PARTNER','MANAGER','SUPERVISOR'\]/);
  assert.match(audit,/if\(a\.category_code!=='PARTNER'\)fail\(403,'Only the Engagement Partner can approve the audit file\.'/);
 });
