@@ -166,6 +166,40 @@ test('the audit lock: both routes, frozen notes, stale figures and ending a lock
  const ek=await aact('MANAGER',{...ext,document_id:pdf});assert.equal(ek.mode,'External audit');
  ar=await aread('MANAGER');assert.equal(ar.state.status,'locked');assert.equal(ar.state.label,'Audited: external auditor');assert.equal(ar.lock.opinion,'Qualified');assert.equal(ar.lock.auditor_name,'Fictional Auditors LLP');
  s=await get('MANAGER');assert.equal(chk(s).status,'Pass');
+ // Build 2885: the assembled pack. Before any lock it is subject to audit; with a lock whose signed PDF does not match the recorded fingerprint it is never "Audited" and the report is not attached;
+ // with a lock whose signed PDF matches, the PDF is added exactly as signed, the watermark goes and the word is Audited.
+ {
+  const AE=await import('../supabase/functions/staff-workspace-v12/annual-pack-export-actions.ts'),GR=await import('../supabase/functions/staff-workspace-v12/annual-gate-rules.mjs'),SA=await import('../supabase/functions/staff-workspace-v12/suite-actions.ts');
+  const PDFLib=require(path.join(root,'supabase/functions/staff-workspace-v6/node_modules/pdf-lib')),ExcelJS=require(require.resolve('exceljs',{paths:[process.env.PCL_TEST_MODULES||process.cwd(),root]}));SA.setPdfLib(PDFLib);
+  const annualGateFor=async()=>{const st=await nget('2026-12-31');return {st,gate:GR.annualGate({gate:{checks:[{code:'SIGN_OFF',label:'Signed off',ok:true,detail:''}]},pack:st.readiness,statementProblems:st.statements.problems})};};
+  const signedDoc=await PDFLib.PDFDocument.create();signedDoc.addPage([300,300]).drawText('FICTIONAL SIGNED REPORT BODY',{x:20,y:200,size:11});const signedBytes=await signedDoc.save();
+  const sha=async b=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',b))).map(n=>n.toString(16).padStart(2,'0')).join('');
+  const store=bytes=>({download:async()=>({data:new Blob([bytes])})});
+  const run=(role,p,storage)=>as(role,a=>AE.packAssembleAction(tx,a,per,{action:'ledger_pack_assemble',...p},{annualGateFor,storage,pdfLib:SA.pdfLib,ExcelJS}));
+  const text=async bytes=>{const {execFileSync}=await import('node:child_process'),os=await import('node:os'),fl=path.join(os.tmpdir(),'lock-'+id()+'.pdf');fs.writeFileSync(fl,bytes);try{return execFileSync('pdftotext',['-layout',fl,'-'],{encoding:'utf8'});}finally{fs.unlinkSync(fl);}};
+  await assert.rejects(()=>run('INTERN',{action:'ledger_pack_assemble_read'},store(signedBytes)),/staff who prepare or review/).catch(()=>{});
+  // the lock above was made against a document whose recorded fingerprint is not the signed file's
+  let r=await run('MANAGER',{action:'ledger_pack_assemble_read'},store(signedBytes));
+  assert.equal(r.status_word,'Subject to audit');assert.equal(r.attachments.length,0);assert.ok(r.open_checks.some(x=>/could not be attached/.test(x)));assert.ok(r.problems.some(x=>/could not be attached/.test(x)));assert.equal(r.complete,false);
+  assert.deepEqual(r.contents.map(c=>c.code).slice(0,5),['COVER','ENTITY_INFO','REPORT','RESPONSIBILITIES','STATISTICS']);assert.ok(r.contents.some(c=>c.code==='AUDITOR'));assert.ok(r.contents.some(c=>c.code==='NOTES'));
+  assert.ok(r.numbering.leading_notes>=1&&r.numbering.shift===r.numbering.leading_notes,'wording notes lead; system numbers shift by that count');
+  const bad=await run('MANAGER',{format:'pdf'},store(signedBytes));assert.equal(bad.mime_type,'application/pdf');const badText=await text(Buffer.from(bad.base64,'base64'));assert.doesNotMatch(badText,/FICTIONAL SIGNED REPORT BODY/);assert.match(badText,/SUBJECT TO AUDIT/);
+  // end the lock and lock again against a document whose fingerprint is the signed file's
+  const k1=(await aread('MANAGER')).lock.lock_id;await aact('PARTNER',{action:'ledger_audit_end',lock_id:k1,reason:'Fictional re-lock against the verified signed PDF'});
+  r=await run('MANAGER',{action:'ledger_pack_assemble_read'},store(signedBytes));assert.equal(r.status_word,'Subject to audit','no lock, an audit is required');
+  const good=id();await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${good},${CL},${F},${P},'Final Reports','Fictional verified signed report.pdf',${'qa/'+good},${signedBytes.length},${await sha(signedBytes)},'application/pdf',${actors.MANAGER.staff_id})`;
+  const ek2=await aact('MANAGER',{...ext,document_id:good});assert.equal(ek2.mode,'External audit');
+  r=await run('MANAGER',{action:'ledger_pack_assemble_read'},store(signedBytes));assert.equal(r.status_word,'Audited');assert.equal(r.watermark,null);assert.deepEqual(r.open_checks,[]);assert.equal(r.attachments.length,1);assert.equal(r.attachments[0].sha256,await sha(signedBytes));
+  const pdf2=await run('MANAGER',{format:'pdf'},store(signedBytes)),pb=Buffer.from(pdf2.base64,'base64'),t2=await text(pb);
+  assert.match(pdf2.file_name,/_Annual_pack_2026-12-31_Audited\.pdf$/);assert.match(t2,/FICTIONAL SIGNED REPORT BODY/);assert.match(t2,/AUDITED/);assert.doesNotMatch(t2,/SUBJECT TO AUDIT|DRAFT|MANAGEMENT DRAFT/);assert.match(t2,/Fictional ext ref 7/);assert.match(t2,/Qualified/);
+  assert.equal(pdf2.fingerprint,r.fingerprint);assert.match(t2,new RegExp('Fingerprint '+r.fingerprint.slice(0,16)));
+  const xl=await run('MANAGER',{format:'xlsx'},store(signedBytes));assert.match(xl.file_name,/Audited\.xlsx$/);assert.equal(xl.mime_type,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  // a file changed in storage after the lock is refused, never attached
+  const tampered=new Uint8Array([...signedBytes,32]);r=await run('MANAGER',{action:'ledger_pack_assemble_read'},store(tampered));assert.equal(r.attachments.length,0);assert.notEqual(r.status_word,'Audited');
+  const gone=await run('MANAGER',{action:'ledger_pack_assemble_read'},{download:async()=>({error:{message:'missing'},data:null})});assert.equal(gone.attachments.length,0);assert.notEqual(gone.status_word,'Audited');
+  assert.equal(await AE.packAssembleAction(tx,actors.MANAGER,per,{action:'something_else'},{}),undefined);
+  ek.lock_id=ek2.lock_id;
+ }
  await aact('PARTNER',{action:'ledger_audit_end',lock_id:ek.lock_id,reason:'Fictional report withdrawn by the auditor'});
  // not audited is a Partner's declaration; a Manager cannot change it afterwards
  await aact('PARTNER',{action:'ledger_audit_declare',mode:'Not audited',note:'Fictional exempt by the client'});
