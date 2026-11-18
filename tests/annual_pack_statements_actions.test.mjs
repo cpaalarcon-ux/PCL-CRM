@@ -34,6 +34,7 @@ test('formatted statements through the action: draft until comparatives are appr
  const line=(st,label)=>st.rows.find(r=>r.label===label&&r.kind!=='heading');
 
  // before comparatives are approved: current year is complete and balanced, prior columns are absent with the reason given
+ {const {approvePpe}=await import('./helpers/ppe_ready.mjs'),X=await import('../supabase/functions/staff-workspace-v12/ppe-actions.ts');await approvePpe({tx,as,X,per,account:'15004',cost:180000});}
  let s=await get('ASSISTANT');
  assert.equal(s.client.name,'Fictional Mlima Traders');assert.equal(s.statements.checks.balanced,true);
  assert.equal(line(s.statements.profit_or_loss,'Profit for the year').current,300000);
