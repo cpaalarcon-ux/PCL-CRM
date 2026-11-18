@@ -66,7 +66,7 @@ test('wiring: action routed, leaders only, one audit record per row, insert-only
  assert.match(imp,/staff-bulk-setup\.mjs\?v=20261116-dates-v1/);assert.match(imp,/if\(a==='bulk-setup'\)await bulk\.open\(\)/);assert.match(pilot,/staff-improvements\.mjs\?v=20261122-loc-v1/);
  const btn=pilot.match(/isLeader\(\)\?'<div class="actions">'[^\n]*data-v3="bulk-setup"/);assert.ok(btn,'the button is in the leaders\' action row');
  const ui=rd('staff-bulk-setup.mjs');assert.match(ui,/bulk_setup_preview/);assert.match(ui,/bulk_setup_apply/);assert.match(ui,/confirm:true/);assert.match(ui,/I have checked this list/);
- assert.match(rd(fx+'release.json'),/2026-11-14\.2883/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2883"/);
+ assert.match(rd(fx+'release.json'),/2026-11-14\.2884/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-14\.2884"/);
  // The latent project-creation defect found by this build stays fixed: no `returning` on the project insert.
  assert.doesNotMatch(rd(fx+'service-template-actions.ts'),/insert into erp_private\.projects[^`]*returning project_id/);
 });
