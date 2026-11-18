@@ -1,7 +1,5 @@
--- Tax rule approval requires a distinct Partner and independently checked official-source evidence.
-ALTER TABLE erp_private.tax_rates
- ADD COLUMN partner_source_verified_on date;
-
+-- Keep database approval-source hosts aligned with taxSourceIssue in tax-registry.mjs.
+-- NITA's current official domain is also accepted by the application-level check.
 CREATE OR REPLACE FUNCTION erp_private.approved_rule_guard()
 RETURNS trigger
 LANGUAGE plpgsql
