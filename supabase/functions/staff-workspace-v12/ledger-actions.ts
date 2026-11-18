@@ -29,6 +29,8 @@ import {notesAction} from './notes-actions.ts';
 import {auditLockAction} from './audit-lock-actions.ts';
 import {wordingAction} from './wording-actions.ts';
 import {pagesAction} from './client-pages-actions.ts';
+import {packAssembleAction} from './annual-pack-export-actions.ts';
+import {pdfLib} from './suite-actions.ts';
 import {ppeAction} from './ppe-actions.ts';
 import {stockRollsRead,stockJournalPlan} from './stock-journal.ts';
 import {money} from './accounting-rules.mjs';
@@ -405,6 +407,7 @@ export async function ledgerAction(tx:any,a:any,p:any,storage:any){
   let signedOff='';if(final&&ann.review){const who=(await tx`select erp_private.reviewer_label(${ann.review.reviewed_by}) n`)[0]?.n;signedOff=`FINAL — signed off by ${who||'the reviewer'} on ${String(ann.review.reviewed_at).slice(0,10)}`;}
   return {...await annualWorkbook({client:ann.st.client,st:ann.st,mark:ann.gate.ready&&final?'FINAL':'DRAFT',banner:annualBanner(ann.gate)||(final?'':'DRAFT — every check has passed; request the final release to issue it.'),signedOff,asOf}),gate:ann.gate};
  }
+ if(p.action==='ledger_pack_assemble_read'||p.action==='ledger_pack_assemble')return await packAssembleAction(tx,a,l,p,{annualGateFor,storage,pdfLib,ExcelJS});
  if(p.action==='ledger_pack_readiness'){
   const asOf=p.as_of?date(p.as_of):day(l.ends_on),ann=await annualGateFor(tx,l,asOf),base=ann.st.readiness,seen=new Set((base.checks||[]).map((c:any)=>c.code));
   // The pack checks keep their own rows; the report-gate checks (sources, journals, totals, sign-off, statements) are added beside them.
