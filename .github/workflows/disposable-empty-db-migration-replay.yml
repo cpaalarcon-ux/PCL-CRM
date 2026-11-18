@@ -57,7 +57,7 @@ jobs:
           assert.equal(new Set(expected).size, expected.length, 'migration versions must be unique');
 
           const output = execFileSync('supabase', ['migration', 'list', '--local'], {encoding: 'utf8'});
-          const applied = new Set([...output.matchAll(/(?<!\\d)\\d{14}(?!\\d)/g)].map(match => match[0]));
+          const applied = new Set([...output.matchAll(/(?<!\d)\d{14}(?!\d)/g)].map(match => match[0]));
           const missing = expected.filter(version => !applied.has(version));
           const extra = [...applied].filter(version => !expected.includes(version));
           assert.deepEqual(missing, [], 'some candidate migration versions were not applied');
