@@ -17,7 +17,7 @@ Production starts empty. No staging data is copied. No production schema, migrat
 | Production database | Supabase `pcl-erp-production` (`tafrrmcxrsorffkonrxq`); migration ledger is empty. |
 | Production app config | `environments/production.json` still has placeholders for the project reference and publishable key. |
 | Backend | The production workflow targets `staff-workspace-v12`, checks the exact `main` tip, requires typed confirmation and protected-environment approval, checks staging runs on the same commit and performs a migration dry-run before applying. |
-| Web | A separate PCL Nexus production Pages project exists, but the canonical production hostname/custom-domain connection is not complete. The previous `pcl-crm` and legacy host must be handled carefully during cutover; do not change mail records. |
+| Web | The legacy `pcl-crm` Pages project automatically publishes the repository root from `main` to `pcl.phamalarcon.com`. The separate `pcl-nexus-production` project runs the production build into `dist` and has its Pages hostname only. |
 | Release checks | Build 2892 (`299b599`, PR #300) passed hosted smoke, regression and browser UAT. The hosted run skipped signed-in role checks. All 249 candidate migrations replayed on a fresh local Supabase stack. |
 
 ## Repository and migration preparation
@@ -33,7 +33,7 @@ Preserve the applied staging migration identifiers. For the first production dep
 1. Obtain written data-residency/transfer advice for Mumbai and confirm whether local Kenyan storage or another control is required before entering real client data.
 2. Complete the draft PR review and attach staging acceptance evidence from the Assistant, Manager and Partner on the agreed build. After the approved merge, manually run both required checks on the resulting `main` commit.
 3. Confirm the final release carries the exact 249 replayed migrations and record the staging parity comparison in the PR.
-4. Before merging, verify how the legacy Pages project handles `main` and confirm the cutover sequence. Attach the approved production hostname to the PCL Nexus Pages project after a successful production web build. Preserve email-related DNS records during cutover.
+4. Before merging, pause automatic production deployments on the legacy Pages project under the approved cutover plan and verify the existing deployment remains active. Attach the approved production hostname to the PCL Nexus Pages project after a successful production web build. Preserve email-related DNS records during cutover.
 5. After the release gates and a separate written release decision, add `PROD_PROJECT_REF`, `PROD_SITE_ORIGIN`, `PROD_ALLOWED_ORIGINS`, `PROD_SUPABASE_ACCESS_TOKEN` and `PROD_SUPABASE_DB_PASSWORD` to the protected GitHub `production` environment. Keep passwords and tokens there only; never put them in the repository or chat.
 6. Run the guarded first-Partner bootstrap once after the production schema is deployed, then securely deliver its single-use setup link to the named Partner.
 

@@ -20,9 +20,10 @@ The updates after Build 2890 reconcile the staging migration ledger, simplify pr
 | Regression and browser UAT | **Passed** on Build 2892. All 1,751 regression tests passed and the browser UAT job passed. [Run 44382818372](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44382818372) |
 | Hosted staging smoke check | **Passed** on Build 2892. Page and server labels matched. Anonymous access to a protected action was refused and Chromium found the sign-in page ready. [Run 44382818313](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44382818313) |
 | Authenticated release acceptance | **Pending.** The hosted run skipped Assistant, Manager and Partner checks because the staging test credentials were unset. Attach sign-off from the staff tests on the agreed build, including maker-checker and role-scope results. |
-| Empty-database migration replay | **Passed for the candidate migration files.** A clean, unlinked local Supabase reset applied all 249 versions in order. The reset log order matches the candidate filenames and the complete migration tree is identical to Build 2892. [Run 44344081974](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44344081974) |
-| Broad release review | **In progress.** Reviewed the post-2890 scope, production deployment and build controls, first-Partner bootstrap and migration history. Full application diff sign-off, database object parity with staging, and final security and private-file isolation evidence are open. |
-| Production launch preparations | **Open.** The production web build still requires its public project configuration. Verify the legacy Pages connection to `main` before merging. The approved production hostname, timed database and private-file restore, and written Mumbai data-transfer decision are also outstanding. |
+| Empty-database migration replay | **Passed for the candidate migration files.** A clean, unlinked local Supabase reset applied all 249 versions in order. The reset log order matches the candidate filenames and the live staging migration ledger. The production ledger is empty. [Run 44344081974](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44344081974) |
+| Broad release review | **In progress.** Reviewed the post-2890 scope, production deployment and build controls, first-Partner bootstrap and migration history. Staging security advisors returned two warnings and five informational findings. Full application diff sign-off, database object parity with staging, and final security and private-file isolation evidence are open. |
+| Cloudflare merge prerequisite | **Blocked.** The `pcl-crm` Pages project has automatic production deployment from `main` enabled, serves `pcl.phamalarcon.com` and publishes the repository root. Pause legacy production auto-deploy under the approved cutover plan and verify the existing deployment remains active before merging. |
+| Production launch preparations | **Open.** The separate `pcl-nexus-production` Pages project runs the isolated production build, has its Pages hostname only and still requires its public project configuration. The approved production hostname, timed database and private-file restore, and written Mumbai data-transfer decision are outstanding. |
 
 ## Migration order
 
@@ -57,7 +58,7 @@ Confirm the first production dry-run matches the reviewed order before applying 
 
 ## Merge and launch sequence
 
-1. Keep the PR in draft until the application review and role sign-off are recorded. Confirm whether the legacy Cloudflare Pages project would publish the `main` merge to the current hostname, and put the approved cutover arrangement in place before merging.
+1. Keep the PR in draft until the application review and role sign-off are recorded. Pause automatic production deployments on the legacy Pages project as part of the approved cutover. Verify the existing site remains active at its current domain before proceeding with the merge.
 2. Record the Engagement Partner’s release decision. On an approved merge, manually run **Staging browser UAT** and **Staging hosted check** on the resulting `main` commit. The draft enables manual dispatch of the hosted check and verifies production site addresses before database work. Both exact-commit checks must pass.
 3. Obtain the separate production deployment approval. Use the protected production environment, verify the production migration dry-run and web build, and complete the cutover and live smoke checks before users start live work.
 
