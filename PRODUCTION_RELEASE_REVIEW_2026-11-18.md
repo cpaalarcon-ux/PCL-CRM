@@ -1,28 +1,32 @@
 # PCL Nexus production release review
 
-**Review date:** 18 November 2026 (Africa/Nairobi)  
-**Status:** Draft release review — not a production deployment approval  
-**Purpose:** Record the future-version migration resolution and current release gates before production secrets or schema are applied.
+**Updated 19 November 2026, Africa/Nairobi.** The proposed merge window is Friday, 20 November 2026. The Engagement Partner makes the release decision after the outstanding checks are recorded.
 
-## Candidate source
+## Candidate
 
-| Item | Verified value |
+| Item | Value |
 |---|---|
-| Repository | `cpaalarcon-ux/PCL-CRM` |
-| Candidate branch | `release/pcl-nexus-reviewed-2026-11-18` |
-| Source staging branch | `backend/staging-foundation` |
-| Source staging commit | `aab4245a7a294de73d98f64e6dc0cd924491efbf` (Build 2890, latest staging head) |
+| Release PR | [Draft PR #291](https://github.com/cpaalarcon-ux/PCL-CRM/pull/291), targeting `main` |
+| Application source | `299b599530117af03d960049fedd1a6c404a3a60` on `backend/staging-foundation`, Build 2892 |
 | Main base | `c7ccf3f4e586da8060ed89eeeb2fe1b188aec088` |
-| Change size to main | 538 commits ahead, 0 behind (536 from staging plus two release-review commits) |
-| Proposed review | Draft PR to `main`; the candidate includes the whole staging release, not only this review note |
+| Release size | Staging contributes 539 commits and changes 1,326 files against the current `main`. The release branch also carries review documents, deployment workflow corrections and their regression test. |
 
-The PR is intentionally draft. It needs a full code and product review because the staging-to-main change is a broad release. This note records readiness evidence; it does not claim that every ERP feature has passed UAT.
+The updates after Build 2890 reconcile the staging migration ledger, simplify project activation and add the four-sheet purchases template and multi-month sales workflow. The draft keeps the Build 2892 application and migrations as tested on staging.
 
-## Future-dated migration resolution
+## Evidence and open checks
 
-The staging database currently lists 247 migrations. The newly created production project `pcl-erp-production` (`tafrrmcxrsorffkonrxq`, Mumbai `ap-south-1`) is Active/Healthy and its migration ledger is empty. No production schema has been applied.
+| Check | Result |
+|---|---|
+| Regression and browser UAT | **Passed** on Build 2892. All 1,751 regression tests passed and the browser UAT job passed. [Run 44382818372](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44382818372) |
+| Hosted staging smoke check | **Passed** on Build 2892. Page and server labels matched. Anonymous access to a protected action was refused and Chromium found the sign-in page ready. [Run 44382818313](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44382818313) |
+| Authenticated release acceptance | **Pending.** The hosted run skipped Assistant, Manager and Partner checks because the staging test credentials were unset. Attach sign-off from the staff tests on the agreed build, including maker-checker and role-scope results. |
+| Empty-database migration replay | **Passed for the candidate migration files.** A clean, unlinked local Supabase reset applied all 249 versions in order. The reset log order matches the candidate filenames and the complete migration tree is identical to Build 2892. [Run 44344081974](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44344081974) |
+| Broad release review | **In progress.** Reviewed the post-2890 scope, production deployment and build controls, first-Partner bootstrap and migration history. Full application diff sign-off, database object parity with staging, and final security and private-file isolation evidence are open. |
+| Production launch preparations | **Open.** The production web build still requires its public project configuration. Verify the legacy Pages connection to `main` before merging. The approved production hostname, timed database and private-file restore, and written Mumbai data-transfer decision are also outstanding. |
 
-Twenty staging migration version IDs are dated after the review date. These are version identifiers, not scheduled execution dates:
+## Migration order
+
+Preserve the 249 applied staging migration identifiers through `20261201100000_report_notes_and_packs`. The ledger includes these 22 versions with identifiers later than 18 November 2026. The identifiers control replay order.
 
 | Version | Migration |
 |---|---|
@@ -46,39 +50,15 @@ Twenty staging migration version IDs are dated after the review date. These are 
 | `20261127120000` | `settings_approval_batches` |
 | `20261128100000` | `client_pages` |
 | `20261129100000` | `support_schedules` |
+| `20261130100000` | `partner_equity` |
+| `20261201100000` | `report_notes_and_packs` |
 
-**Resolution:** Keep these version IDs and filenames unchanged. Migrations `20261127120000` and `20261128100000` were already applied to staging before the 29 November support-schedules migration was added. Rewriting or renaming an applied migration would make the repository disagree with the staging migration ledger. The production database is empty, so its first replay should apply the release’s complete migration set in ascending version order.
+Confirm the first production dry-run matches the reviewed order before applying schema. Compare the replayed schema, functions, extensions, scheduled jobs and private storage with staging. The replay used a disposable database and no production dry-run has been performed.
 
-**Required before any production apply:** Use the exact reviewed release commit against a disposable empty database; confirm the dry-run enumerates the complete expected set (247 migrations for the current snapshot), then replay and compare the resulting schema, functions, extensions, jobs and private storage setup with the expected staging state. Stop if the migration tool reports missing, skipped, duplicate or out-of-order versions. The current production workflow performs a dry-run before its apply step; its output must be reviewed before an approved manual run. No production dry-run or replay was run for this review.
+## Merge and launch sequence
 
-## Staging checks observed on the refreshed source
+1. Keep the PR in draft until the application review and role sign-off are recorded. Confirm whether the legacy Cloudflare Pages project would publish the `main` merge to the current hostname, and put the approved cutover arrangement in place before merging.
+2. Record the Engagement Partner’s release decision. On an approved merge, manually run **Staging browser UAT** and **Staging hosted check** on the resulting `main` commit. The draft enables manual dispatch of the hosted check and verifies production site addresses before database work. Both exact-commit checks must pass.
+3. Obtain the separate production deployment approval. Use the protected production environment, verify the production migration dry-run and web build, and complete the cutover and live smoke checks before users start live work.
 
-For latest staging source commit `aab4245a7a294de73d98f64e6dc0cd924491efbf` (Build 2890, PR #297), GitHub Actions reports:
-
-- **Staging hosted check:** passed (run `44312657819`).
-- **Staging browser UAT:** passed (run `44312657658`), including the full automated regression suite and browser workflow.
-- **Workflow-gate follow-up PR #295:** its full regression and browser UAT passed; the 11 focused workflow tests and server-wiring checks also passed locally.
-- The current staging source includes the workflow-gate corrections merged in PRs #294 and #295.
-
-PR #291 adds two release-review commits on top of this staging snapshot. Keep it draft until the exact candidate head has been reviewed and role-specific checks for assistant, manager and partner have been confirmed with staging-only accounts. The latest staging checks are green, but do not infer untested role coverage from the overall workflow result.
-
-## Production boundary and remaining configuration
-
-- The production Supabase project is in the existing Pro organization; the user approved the quoted additional project cost of $10/month.
-- The production migration ledger is empty. No production migrations, Edge Function or production secrets were applied by this review.
-- `environments/production.json` still contains placeholders. The production project reference and publishable key need to be configured separately; no private keys or passwords belong in that file or in this review.
-- GitHub production environment secrets and origin variables are not being configured in this step.
-- The production hostname and Cloudflare Pages custom-domain attachment are still pending. Do not change mail DNS records during the eventual cutover.
-- The Mumbai region/data-transfer basis still needs the firm’s data-protection adviser’s written confirmation before real client information is stored.
-
-## Release gates before schema application
-
-1. Review the entire staging-to-main code diff and resolve all PR comments.
-2. Confirm hosted and browser UAT on the exact final release PR head and verify assistant, manager and partner role checks. The latest staging checks passed; role-specific coverage on the release head remains to be confirmed.
-3. Run the release tests and the empty-database migration replay; attach the results to the PR.
-4. Review Supabase security findings and verify firm, client, role, assignment and document-storage isolation.
-5. Complete and time a database-and-files restore drill; database backups do not include private file bytes.
-6. Obtain the data-residency approval and confirm the production hostname and cutover plan.
-7. Only after these gates and a separate written release decision should production credentials be added to the protected GitHub environment and the production workflow be manually approved and run.
-
-**Current disposition:** Keep PR #291 as a draft. The future-dated IDs are preserved and production remains untouched. Hosted and browser checks passed on latest staging Build 2890; complete review and role-specific verification on the exact release head before any production release decision.
+Production schema, secrets, deployment and DNS were untouched during this review.

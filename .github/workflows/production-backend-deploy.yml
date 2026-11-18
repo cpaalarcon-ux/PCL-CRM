@@ -4,7 +4,8 @@ name: Production backend deploy
 # It is separate from the staging workflow and can never target the staging project.
 #
 # How to run (after the production project exists and the secrets below are added to the GitHub "production" environment):
-#   1. Merge the release into main. Staging browser UAT and the hosted staging check must be green on that commit.
+#   1. After an approved merge into main, manually run Staging browser UAT and Staging hosted check
+#      on main. Both must be green on the exact commit to deploy.
 #   2. Start this workflow from the Actions tab ("Run workflow"), on the main branch.
 #   3. A reviewer named on the "production" environment must approve before anything runs.
 # The web app is built separately by the production Cloudflare Pages project
@@ -45,8 +46,10 @@ jobs:
     environment: production
     steps:
       - name: Confirm the request
+        env:
+          DEPLOY_CONFIRMATION: ${{ inputs.confirm }}
         run: |
-          [ "${{ inputs.confirm }}" = "DEPLOY TO PRODUCTION" ] || { echo "::error::Confirmation text does not match."; exit 1; }
+          [ "$DEPLOY_CONFIRMATION" = "DEPLOY TO PRODUCTION" ] || { echo "::error::Confirmation text does not match."; exit 1; }
 
       - uses: actions/checkout@v4
         with:
@@ -63,6 +66,20 @@ jobs:
           [ "$PROJECT_REF" != "$STAGING_PROJECT_REF" ] \
             || { echo "::error::PROD_PROJECT_REF is the staging project. Stopping."; exit 1; }
           echo "Deploying $(git rev-parse --short HEAD) to production project $PROJECT_REF"
+
+      - name: Validate production site addresses before deployment
+        env:
+          PROD_SITE_ORIGIN: ${{ vars.PROD_SITE_ORIGIN }}
+          PROD_ALLOWED_ORIGINS: ${{ vars.PROD_ALLOWED_ORIGINS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          site="$PROD_SITE_ORIGIN"; origins="$PROD_ALLOWED_ORIGINS"
+          origin_pattern='https://[a-z0-9.-]+'
+          [[ "$site" =~ ^${origin_pattern}$ ]] || { echo "::error::PROD_SITE_ORIGIN must be an https address with no path."; exit 1; }
+          [[ "$origins" =~ ^${origin_pattern}(,${origin_pattern})*$ ]] || { echo "::error::PROD_ALLOWED_ORIGINS must contain comma-separated https addresses with no paths."; exit 1; }
+          case "$site,$origins" in *backend-staging-foundation*|*"$STAGING_PROJECT_REF"*) echo "::error::A staging address was given for production."; exit 1;; esac
+          case ",$origins," in *",$site,"*) ;; *) echo "::error::PROD_ALLOWED_ORIGINS must include PROD_SITE_ORIGIN."; exit 1;; esac
 
       - name: Require green staging checks on this exact commit
         env:
@@ -112,12 +129,11 @@ jobs:
         run: supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
 
       - name: Set the function's site address and allowed origins
+        env:
+          PROD_SITE_ORIGIN: ${{ vars.PROD_SITE_ORIGIN }}
+          PROD_ALLOWED_ORIGINS: ${{ vars.PROD_ALLOWED_ORIGINS }}
         run: |
-          site="${{ vars.PROD_SITE_ORIGIN }}"; origins="${{ vars.PROD_ALLOWED_ORIGINS }}"
-          [[ "$site" =~ ^https://[a-z0-9.-]+$ ]] || { echo "::error::PROD_SITE_ORIGIN must be an https address with no path."; exit 1; }
-          [ -n "$origins" ] || { echo "::error::PROD_ALLOWED_ORIGINS is empty."; exit 1; }
-          case "$site,$origins" in *backend-staging-foundation*|*"$STAGING_PROJECT_REF"*) echo "::error::A staging address was given for production."; exit 1;; esac
-          supabase secrets set PCL_SITE_ORIGIN="$site" PCL_ALLOWED_ORIGINS="$origins" --project-ref "$PROJECT_REF"
+          supabase secrets set PCL_SITE_ORIGIN="$PROD_SITE_ORIGIN" PCL_ALLOWED_ORIGINS="$PROD_ALLOWED_ORIGINS" --project-ref "$PROJECT_REF"
 
       - name: Deploy staff-workspace-v12
         # Gateway JWT verification stays off: login and setup routes are called before a session exists,

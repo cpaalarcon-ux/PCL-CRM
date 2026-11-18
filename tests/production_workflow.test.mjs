@@ -4,6 +4,8 @@ import fs from 'node:fs';
 
 const prod = fs.readFileSync(new URL('../.github/workflows/production-backend-deploy.yml', import.meta.url), 'utf8');
 const staging = fs.readFileSync(new URL('../.github/workflows/staging-backend-deploy.yml', import.meta.url), 'utf8');
+const hosted = fs.readFileSync(new URL('../.github/workflows/staging-hosted-uat.yml', import.meta.url), 'utf8');
+const browser = fs.readFileSync(new URL('../.github/workflows/staging-browser-uat.yml', import.meta.url), 'utf8');
 const REF = 'yfjiculexbzpkvtapudk';
 
 test('production workflow needs the production environment, a typed confirmation and main only', () => {
@@ -38,10 +40,20 @@ test('production requires green staging checks, migration safety and the same fu
   assert.match(prod, /functions deploy staff-workspace-v12 --project-ref "\$PROJECT_REF" --no-verify-jwt/);
 });
 
+test('both required staging checks can be dispatched on the exact main release commit', () => {
+  assert.match(prod, /--commit "\$sha"/);
+  for (const workflow of [hosted, browser]) {
+    assert.match(workflow, /^  workflow_dispatch:\s*$/m);
+  }
+});
+
 test('production sets its own site address and allowed origins and refuses staging ones', () => {
   assert.match(prod, /vars\.PROD_SITE_ORIGIN/);
   assert.match(prod, /vars\.PROD_ALLOWED_ORIGINS/);
   assert.match(prod, /supabase secrets set PCL_SITE_ORIGIN=/);
   assert.match(prod, /\*backend-staging-foundation\*/);
+  const preflight = prod.indexOf('Validate production site addresses before deployment');
+  assert.ok(preflight >= 0 && preflight < prod.indexOf('Link the production project'));
+  assert.match(prod, /PROD_ALLOWED_ORIGINS must include PROD_SITE_ORIGIN/);
   assert.ok(prod.indexOf('secrets set PCL_SITE_ORIGIN') < prod.indexOf('functions deploy staff-workspace-v12'), 'settings are in place before the function goes live');
 });

@@ -1,7 +1,8 @@
 name: Staging hosted check
 
 # Runs against the live staging site and server after every push to the staging branch, and on demand
-# by pushing any commit to uat/hosted. It waits for the Cloudflare Pages build, then checks that the
+# by pushing any commit to uat/hosted or dispatching the workflow on the release commit on main.
+# It waits for the Cloudflare Pages build, then checks that the
 # page, the server and this commit share one build label, and runs the role and workflow checks when
 # the fictional UAT accounts and client are configured. Fictional data only.
 on:
@@ -9,6 +10,7 @@ on:
     branches:
       - backend/staging-foundation
       - uat/hosted
+  workflow_dispatch:
 
 permissions:
   contents: read
