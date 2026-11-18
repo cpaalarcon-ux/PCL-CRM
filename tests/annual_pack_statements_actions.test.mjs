@@ -4,6 +4,7 @@ const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@
 globalThis.Deno=globalThis.Deno||{env:{get:()=>''}};
 const C=await import('../supabase/functions/staff-workspace-v12/annual-pack-comparatives.mjs');
 const A=await import('../supabase/functions/staff-workspace-v12/annual-pack.ts');
+const PE=await import('../supabase/functions/staff-workspace-v12/partner-equity-actions.ts');
 const root=path.resolve(import.meta.dirname,'..');
 const PL='PL.REVENUE\t1,000,000\nPL.COST_SALES\t400,000\nPL.STAFF\t200,000\nPL.OTHER_OPEX\t100,000\nPL.TAX\t90,000';
 const EQ='SFP.SHARE_CAP, OPENING, 100,000\nSFP.RETAINED, OPENING, 50,000\nSFP.RETAINED, PROFIT, 210,000\nSFP.RETAINED, DIVIDENDS_DRAWINGS, (60,000)';
@@ -148,6 +149,23 @@ test('formatted statements through the action: draft until comparatives are appr
  assert.equal(st.readiness.checks.find(c=>c.code==='PARTNER_SHARES').status,'Pass');
  assert.deepEqual(st.statements.partner_allocation.rows.map(x=>[x.partner_name,x.percent,x.amount]),[['Fictional A Bahari','60%',180000],['Fictional B Mwangi','40%',120000]]);
  assert.equal(st.statements.partner_allocation.total,300000);assert.equal(st.statements.partner_allocation.profit,300000);
+ // the partners' own accounts: not declared blocks the pack; declared figures that add to the statement of changes in equity pass, with the share of profit taken from the approved shares
+ {const pe=st.readiness.checks.find(c=>c.code==='PARTNER_EQUITY');assert.equal(pe.status,'Blocked');assert.match(pe.detail,/not declared/);assert.equal(st.statements.partner_equity.built,false);
+  const act=(role,p)=>as(role,a=>PE.partnerEquityAction(tx,a,per2,p,()=>A.statementsFrom(tx,per2,pdata),'2026-12-31'));
+  const mine=[{partner_name:'Fictional A Bahari',capital_opening:100000,capital_movement:0,current_opening:80000,drawings:0},{partner_name:'Fictional B Mwangi',capital_opening:70000,capital_movement:0,current_opening:50000,drawings:0}];
+  const d=await act('ASSISTANT',{action:'ledger_partner_equity_declare',evidence:'Fictional partners ledger at the year end',rows:mine});
+  st=await as('MANAGER',a=>A.statementsFrom(tx,per2,pdata));assert.match(st.readiness.checks.find(c=>c.code==='PARTNER_EQUITY').detail,/wait for approval/);
+  await act('MANAGER',{action:'ledger_partner_equity_review',equity_id:d.equity_id,decision:'Approved'});
+  st=await as('MANAGER',a=>A.statementsFrom(tx,per2,pdata));assert.equal(st.readiness.checks.find(c=>c.code==='PARTNER_EQUITY').status,'Pass');
+  assert.deepEqual(st.statements.partner_equity.matrix.rows.at(-1).cells,[ 180000+80000+100000,120000+50000+70000,600000],'each partner\u2019s closing equity, and the total agrees to the statement');assert.equal(st.statements.partner_equity.ties,true);
+  // a figure that is off is named, not absorbed
+  const bad=await act('ASSISTANT',{action:'ledger_partner_equity_declare',evidence:'Fictional partners ledger at the year end',rows:[{...mine[0],current_opening:85000},mine[1]]});
+  await act('MANAGER',{action:'ledger_partner_equity_review',equity_id:bad.equity_id,decision:'Approved'});
+  st=await as('MANAGER',a=>A.statementsFrom(tx,per2,pdata));const off=st.readiness.checks.find(c=>c.code==='PARTNER_EQUITY');assert.equal(off.status,'Blocked');assert.match(off.detail,/Opening equity: the partners’ accounts give 305,000\.00 and the statement of changes in equity 300,000\.00/);
+  const fix=await act('ASSISTANT',{action:'ledger_partner_equity_declare',evidence:'Fictional partners ledger at the year end',rows:mine});await act('MANAGER',{action:'ledger_partner_equity_review',equity_id:fix.equity_id,decision:'Approved'});
+  st=await as('MANAGER',a=>A.statementsFrom(tx,per2,pdata));assert.equal(st.readiness.checks.find(c=>c.code==='PARTNER_EQUITY').status,'Pass');}
+
+
  // a new version replaces the approved one only once approved; a Partner cannot approve what they recorded unless they are the only Partner
  const v2=await save('PARTNER',{partners:[{partner_name:'Fictional A Bahari',share_percent:'50'},{partner_name:'Fictional B Mwangi',share_percent:'50'}]});
  await assert.rejects(()=>review('PARTNER',{set_id:v2.set_id,decision:'Approved',sole_partner_approval:true}),/different Partner|only Partner/);

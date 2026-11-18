@@ -46,13 +46,14 @@ export function buildEquityStatement({lineDefs,maps,tb,asOf,rounding='Whole shil
  for(const d of equity){const v=by.get(d.line_code);if(v&&(v.open||v.mov||v.close))cols.push({code:d.line_code,label:d.label,def:d,v});}
  if(profit)cols.push({code:PROFIT_COLUMN,label:'Profit for the year',def:null,v:null});
  const cell={};for(const [m] of MOVE_ROWS)cell[m]={};
- let exactClose=0,exactOpen=0;
+ let exactClose=0,exactOpen=0;const exact={OPENING:0,PROFIT:0,DIVIDENDS_DRAWINGS:0,CAPITAL:0,OTHER:0,CLOSING:0};
  for(const c of cols){
   let openC,closeC,prof=0;
   if(c.def){const s=disp(c.def);openC=s*c.v.open;closeC=s*c.v.close;}else{openC=0;closeC=profit;prof=profit;}
   const mv=closeC-openC-prof;
   exactOpen+=openC;exactClose+=closeC;
   const kind=c.def?classify(c.code,mv):'OTHER';
+  exact.OPENING+=openC;exact.PROFIT+=prof;exact[kind]+=mv;exact.CLOSING+=closeC;
   const r={OPENING:roundTo(openC,unit),PROFIT:roundTo(prof,unit),DIVIDENDS_DRAWINGS:0,CAPITAL:0,OTHER:0};
   if(c.def)r[kind]=roundTo(mv,unit);
   const closing=roundTo(closeC,unit),parts=r.OPENING+r.PROFIT+r.DIVIDENDS_DRAWINGS+r.CAPITAL+r.OTHER;
@@ -75,7 +76,7 @@ export function buildEquityStatement({lineDefs,maps,tb,asOf,rounding='Whole shil
   for(const code of pc){if(code!==PROFIT_COLUMN&&!cols.some(c=>c.code===code)&&priorClose.cells[code])problems.push(`${defs.get(code)?.label||code} closed the prior year at KES ${kes(priorClose.cells[code]*unit)} but has no balance this year.`);}
  }
  if(unmapped.length)problems.push(`${unmapped.length} account(s) have no approved statement line, so equity may be incomplete.`);
- return {title:'Statement of changes in equity',current,prior,has_prior:!!prior,total_closing:rows.find(r=>r.move==='CLOSING').total,exact_closing:exactClose/100,exact_opening:exactOpen/100,problems};
+ return {title:'Statement of changes in equity',current,prior,has_prior:!!prior,total_closing:rows.find(r=>r.move==='CLOSING').total,exact_closing:exactClose/100,exact_opening:exactOpen/100,exact,problems};
 }
 
 // ---------------------------------------------------------------- cash flow (indirect)

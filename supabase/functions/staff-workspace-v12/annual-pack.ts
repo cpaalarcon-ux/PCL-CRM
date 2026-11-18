@@ -15,6 +15,8 @@ import {pagesFor} from './client-pages-actions.ts';
 import {ppeRegisterFor} from './ppe-actions.ts';
 import {cashFlowInput} from './ppe-register-rules.mjs';
 import {schedulesFor} from './support-schedules-actions.ts';
+import {partnerEquityFor} from './partner-equity-actions.ts';
+import {buildPartnerEquity,partnerEquityState} from './annual-pack-partner-equity.mjs';
 import {scheduleReadiness} from './annual-pack-schedules.mjs';
 import {auditStateFor,figuresDigest} from './audit-lock-actions.ts';
 const day=(v:any)=>String(v instanceof Date?v.toISOString():v||'').slice(0,10);
@@ -219,7 +221,7 @@ export async function packReadinessFrom(tx:any,l:any,data:any,extra:any={}){
  const sets=await loadSets(tx,l.period_id),inp=await reconInputs(tx,l,data),recon=sets.approved?reconcileComparatives({lines:sets.approved.lines,lineDefs:inp.lineDefs,opening:inp.opening}):null;
  const legalEntityType=(await tx`select legal_entity_type from erp_private.clients where client_id=${l.client_id}`)[0]?.legal_entity_type||null;
  const shareState=await shareStateFor(tx,l.period_id);
- const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:shareState.status,lines:shareState.lines}},notes:extra.notes||null,audit:extra.audit||null,wording:extra.wording||null,ppe:extra.ppe||null,pages:extra.pages||null,schedules:extra.schedules||null});
+ const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:shareState.status,lines:shareState.lines}},notes:extra.notes||null,audit:extra.audit||null,wording:extra.wording||null,ppe:extra.ppe||null,pages:extra.pages||null,schedules:extra.schedules||null,partnerEquity:extra.partnerEquity||null});
  return {...readiness,as_of:data.as_of,reporting:reporting||{...defaultReporting(day(l.starts_on)),saved:false}};
 }
 
@@ -255,11 +257,14 @@ export async function statementsFrom(tx:any,l:any,data:any){
   statements.complete=statements.problems.length===0;
  }
  // Partners' profit shares (build 2872): a partnership's profit for the year is shared between the partners from the approved shares, in the statements' own unit. No approved shares, no allocation.
+ let peBuilt:any=null,peDraft=false,peRecord=false;
  if(form===FORMS.PARTNERSHIP){
   const sh=await shareStateFor(tx,l.period_id),plRows=statements.profit_or_loss?.rows||[],last=plRows[plRows.length-1];
   if(sh.status==='approved'&&last&&last.kind==='total'){
    const unit=statements.presentation?.unit_label||'KES',alloc=allocateProfit(last.current,sh.lines,0);
    statements.partner_allocation={title:'Allocation of profit for the year to the partners',unit_label:unit,profit:last.current,rows:alloc.rows.map((r:any)=>({partner_name:r.partner_name,percent:bpToPercent(r.share_bp),amount:r.amount})),total:alloc.total,version:sh.set.version};
+   // Partners' capital and current accounts (build 2888): declared per partner, approved by someone else, and tied to the statement of changes in equity.
+   {const rec=await partnerEquityFor(tx,l);peBuilt=buildPartnerEquity({record:rec.approved,shares:sh.lines,equity,alloc:statements.partner_allocation,rounding:reporting.rounding});peDraft=!!rec.draft;peRecord=!!rec.approved;statements.partner_equity=peBuilt;}
   }else{statements.problems.push(sh.status==='draft'?'The partners\u2019 profit shares are recorded but not approved by a Partner, so profit is not allocated to the partners.':'The partners\u2019 profit shares are not recorded for this year, so profit is not allocated to the partners.');statements.complete=false;}
  }
  // System notes (build 2873): built from the same trial balance and map, numbered in statement order, with the number written on the face. The Partner's approval is tied to a digest of every figure.
@@ -282,9 +287,12 @@ export async function statementsFrom(tx:any,l:any,data:any){
  // Client-specific pages (build 2884): the cover, entity information, report, statement of responsibilities and key figures. The pack is final only when each is ready and, where declared, approved.
  const cp=await pagesFor(tx,l,{statements,client:{name:client.company_name||'',legal_form:form},reporting});
  statements.client_pages={complete:cp.built.complete,problems:cp.built.problems,pages:cp.built.pages.map((x:any)=>({code:x.code,title:x.title,state:x.state}))};
+ // The partners' accounts check applies to a partnership with approved shares and equity balances; without approved shares the profit-share check already says so.
+ const pe=partnerEquityState({relevant:form===FORMS.PARTNERSHIP&&!!statements.partner_allocation&&!!equity.exact&&(equity.exact.OPENING!==0||equity.exact.CLOSING!==0),record:peRecord?{}:null,draft:peDraft,built:peBuilt||{built:false,problems:[]}});
+ statements.partner_equity_check=pe;
  statements.support_schedules={relevant:sr.relevant,ok:sr.ok,problems:sr.problems,kinds:sr.kinds};
  statements.ppe_register={relevant:ppe.readiness.relevant,ok:ppe.readiness.ok,summary:ppe.readiness.summary,differences:ppe.reconciliation.differences};
- const readiness=await packReadinessFrom(tx,l,data,{notes:{state:{status:nState.status},count:nb.notes.length,problems:nb.problems},audit:{state:aState},wording:{count:wd.asm.sections.length,problems:wd.asm.problems},ppe:ppe.readiness,pages:cp.built,schedules:sr});
+ const readiness=await packReadinessFrom(tx,l,data,{notes:{state:{status:nState.status},count:nb.notes.length,problems:nb.problems},audit:{state:aState},wording:{count:wd.asm.sections.length,problems:wd.asm.problems},ppe:ppe.readiness,pages:cp.built,schedules:sr,partnerEquity:pe});
  return {client:{name:client.company_name||'',kra_pin:client.kra_pin||'',legal_entity_type:client.legal_entity_type||null,legal_form:form},reporting:{framework:reporting.framework,edition:reporting.edition,presentation_currency:reporting.presentation_currency,rounding:reporting.rounding,early_application_note:reporting.early_application_note||'',saved:reporting.saved!==false},
   statements,readiness:{ready:readiness.ready,status:readiness.status,summary:readiness.summary,blocked:readiness.blocked,checks:readiness.checks},
   status:readiness.ready&&statements.complete?'Ready for review':'Draft - not ready',as_of:data.as_of};

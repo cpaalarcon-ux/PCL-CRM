@@ -5,7 +5,7 @@
 // Nothing passes by default: statements that have not been built, or comparatives that are not there, fail; they are never treated as zero.
 const PACK_CHECKS=['REPORTING_BASIS','MAP_APPROVED','NO_LEGACY','NO_UNRESOLVED','COMPARATIVES'];
 // Legal-form checks (build 2870) count only when the pack reports them; a partnership has the extra profit-share check.
-const LEGAL_CHECKS=['LEGAL_FORM','PARTNER_SHARES','PPE_REGISTER','SUPPORT_SCHEDULES'];
+const LEGAL_CHECKS=['LEGAL_FORM','PARTNER_SHARES','PPE_REGISTER','SUPPORT_SCHEDULES','PARTNER_EQUITY'];
 // The Partner's approval of the notes (build 2873) is a final-stage step like the sign-off: until it is given the pack is still ready for review.
 const FINAL_STEPS=['SIGN_OFF','A_NOTES_APPROVED','A_WORDING_COMPLETE','A_CLIENT_PAGES','A_AUDIT_LOCKED'];
 // gate: reportGate() result for the Year end report of this client year. pack: packReadiness() result. statementProblems: the problems list of the built statements, or null if they could not be built.

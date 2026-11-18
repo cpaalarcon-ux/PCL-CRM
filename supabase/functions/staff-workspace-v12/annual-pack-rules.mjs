@@ -5,6 +5,7 @@ import {auditCheck} from './audit-lock-rules.mjs';
 import {wordingCheck} from './annual-pack-wording.mjs';
 import {pagesCheck} from './annual-pack-client-pages.mjs';
 import {schedulesCheck} from './annual-pack-schedules.mjs';
+import {partnerEquityCheck} from './annual-pack-partner-equity.mjs';
 // Annual financial statements: what must be true before a pack can be relied on. Pure rules, no database and no tax rates.
 // IFRS for SMEs Accounting Standard, Third Edition (2025) is effective for annual periods beginning on or after 1 January 2027; earlier use is early application and must be disclosed.
 export const THIRD_EDITION_EFFECTIVE='2027-01-01';
@@ -44,7 +45,7 @@ const sample=(items,n=6)=>items.slice(0,n).join(', ')+(items.length>n?` and ${it
 // Readiness for one client year. Each check is Pass, Blocked or Info. The pack is ready only when nothing is Blocked.
 // Input: {period:{starts_on,ends_on,status}, reporting, tb:[{code,name,opening,net,movement_debit,movement_credit}], maps:[...rows], lines:[{line_code,statement}],
 //         issues:[string], prior:{source}, priorPeriodExists:boolean, asOf}
-export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,priorPeriodExists=false,asOf,approvedSet=null,draftSet=null,recon=null,legal=null,notes=null,audit=null,wording=null,ppe=null,pages=null,schedules=null}){
+export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,priorPeriodExists=false,asOf,approvedSet=null,draftSet=null,recon=null,legal=null,notes=null,audit=null,wording=null,ppe=null,pages=null,schedules=null,partnerEquity=null}){
  const at=asOf||day(period.ends_on),checks=[],add=(code,label,status,detail='')=>checks.push({code,label,status,detail});
  const problems=validateReporting(reporting,period.starts_on);
  add('REPORTING_BASIS','Reporting framework and edition recorded',problems.length?'Blocked':'Pass',problems.join(' ')||`${reporting.framework}, ${reporting.edition}, ${reporting.presentation_currency}, ${reporting.rounding.toLowerCase()}, indirect cash flow.`);
@@ -74,6 +75,8 @@ export function packReadiness({period,reporting,tb,maps,lines,issues=[],prior,pr
  if(ppe&&ppe.relevant)add('PPE_REGISTER','Property, plant and equipment register approved and agrees to the trial balance',ppe.ok?'Pass':'Blocked',ppe.ok?'':ppe.problems.slice(0,3).join(' '));
  // Supporting schedules (build 2886): every note with balances has an approved schedule that agrees, account by account, to the trial balance. Left out when the caller gives none or no note needs one.
  if(schedules){const sc=schedulesCheck(schedules);if(sc.status!=='Info')add('SUPPORT_SCHEDULES','Supporting schedules approved and agree to the trial balance',sc.status,sc.detail);}
+ // Partners' capital and current accounts (build 2888): a partnership's equity is attributed to each partner and agrees to the statement of changes in equity. Left out when the caller gives none or it does not apply.
+ if(partnerEquity){const pc=partnerEquityCheck(partnerEquity);if(pc.status!=='Info')add('PARTNER_EQUITY','Partners\u2019 capital and current accounts approved and agree to the statement of changes in equity',pc.status,pc.detail);}
  // Notes (build 2873): a Partner approves the notes before the statements can be final. Left out when the caller gives no notes, so older callers are unchanged.
  if(notes){const nc=notesCheck(notes);add('NOTES_APPROVED','Notes approved by a Partner',nc.status,nc.detail);}
  // Standard wording and disclosures (build 2878): every wording section approved and every client-specific disclosure declared and approved. Left out when the caller gives no wording state.
