@@ -67,7 +67,7 @@ export function assetIssues(a,{accounts=[],rates=[]}={}){
 }
 // Roll one approved asset forward to the target year. Returns that year's row, in cents, or {issues} when it cannot be worked.
 export function rollAsset(asset,disposal,rates,target){
- const issues=[],cost=c(asset.cost),bu=Number(asset.business_percentage??100)/100,acq=day(asset.acquired_on),use=day(asset.first_use_on),disp=disposal?day(disposal.disposed_on):null;
+ const issues=[],gaps=[],cost=c(asset.cost),bu=Number(asset.business_percentage??100)/100,acq=day(asset.acquired_on),use=day(asset.first_use_on),disp=disposal?day(disposal.disposed_on):null;
  const bf=asset.origin==='Brought forward',after=bf?day(asset.bf_as_of):addYears(day(acq),-1);
  const empty={asset_key:asset.asset_key,asset_name:asset.asset_name,asset_account:asset.asset_account,class_code:asset.class_code,opening_cost:0,additions:0,disposal_cost:0,closing_cost:0,opening_acc:0,charge:0,released:0,closing_acc:0,nbv:0,tax_opening:0,tax_addition:0,tax_allowance:0,tax_balancing_allowance:0,tax_balancing_charge:0,tax_closing:0,proceeds:0,gain_loss:0,disposed:false,expense_account:null,contra_account:null,issues};
  if(bf&&after>=target.end)return empty;
@@ -89,7 +89,7 @@ export function rollAsset(asset,disposal,rates,target){
   if(disp&&disp<y.start){gone=true;row=null;continue;}
   let charge=0,tax=0,released=0,proceeds=0,gain=0,balA=0,balC=0,expense=null,contra=null;
   const landClass=rate&&rate.class_code==='LAND';
-  if(!rate&&present&&use<=y.end&&!disposedHere)issues.push(`No reviewed rate for class ${asset.class_code} covers the year ending ${y.end}.`);
+  if(!rate&&present&&use<=y.end&&!disposedHere){issues.push(`No reviewed rate for class ${asset.class_code} covers the year ending ${y.end}.`);gaps.push({class_code:asset.class_code,start:y.start,end:y.end});}
   if(rate){expense=rate.expense_account;contra=rate.contra_account;}
   const nbvOpen=(present?cost:0)-acc;
   if(present&&!disposedHere&&rate&&!landClass&&use<=y.end){
@@ -109,20 +109,21 @@ export function rollAsset(asset,disposal,rates,target){
    tax_opening:inYearAcq?0:openingWdv,tax_allowance:tax,tax_balancing_allowance:balA,tax_balancing_charge:balC,tax_closing:present?wdv:0,proceeds,gain_loss:disposedHere?gain:0,disposed:disposedHere,expense_account:expense,contra_account:contra,
    tax_addition:inYearAcq?taxBasis:0};
  }
- return row?{...row,issues}:{...empty,issues};
+ return row?{...row,issues,gaps}:{...empty,issues,gaps};
 }
 // The register for one financial year. assets: the approved asset records (one per asset_key); disposals: the approved disposal records; rates: asset_class_rates.
 export function registerYear({assets,disposals,rates,start,end}){
- const target={start:day(start),end:day(end)},rows=[],issues=[];
+ const target={start:day(start),end:day(end)},rows=[],issues=[],gapMap=new Map();
  for(const a of assets||[]){
   const d=(disposals||[]).find(x=>x.asset_key===a.asset_key)||null,r=rollAsset(a,d,rates,target);
   for(const m of r.issues)issues.push({asset_key:a.asset_key,asset_name:a.asset_name,message:m});
+  for(const g of r.gaps||[]){const k=g.class_code+'|'+g.start+'|'+g.end;let x=gapMap.get(k);if(!x){x={class_code:g.class_code,start:g.start,end:g.end,assets:[]};gapMap.set(k,x);}if(!x.assets.includes(a.asset_name))x.assets.push(a.asset_name);}
   if(r.opening_cost||r.additions||r.closing_cost||r.disposed||r.charge||r.closing_acc)rows.push(r);
  }
  const sum=k=>rows.reduce((s,r)=>s+(r[k]||0),0),keys=['opening_cost','additions','disposal_cost','closing_cost','opening_acc','charge','released','closing_acc','nbv','tax_opening','tax_addition','tax_allowance','tax_balancing_allowance','tax_balancing_charge','tax_closing','proceeds','gain_loss'];
  const totals=Object.fromEntries(keys.map(k=>[k,money(sum(k))]));
  const view=rows.map(r=>({...r,...Object.fromEntries(keys.map(k=>[k,money(r[k])]))}));
- return {version:REGISTER_VERSION,start:target.start,end:target.end,rows:view,totals,issues,policy:POLICY,cents:rows};
+ return {version:REGISTER_VERSION,start:target.start,end:target.end,rows:view,totals,issues,rate_gaps:[...gapMap.values()].sort((x,y)=>(x.class_code+x.start).localeCompare(y.class_code+y.start)),policy:POLICY,cents:rows};
 }
 // The register against the trial balance. tb rows: {code,name,net,movement_debit,movement_credit} with net debit-positive. ppeCodes: the master-chart cost accounts for property, plant and equipment (route 3).
 // Returns the lines (register, trial balance, difference) and whether everything ties. Only accounts with a balance on either side are listed.
@@ -169,4 +170,23 @@ export function cashFlowInput({register,readiness}){
  if(!readiness||!readiness.relevant)return {relevant:false,usable:false,additions:0,proceeds:0,gain_loss:0};
  const sum=k=>(register.cents||[]).reduce((s,r)=>s+(r[k]||0),0);
  return {relevant:true,usable:!!readiness.ok&&(register.cents||[]).length>0,additions:sum('additions'),proceeds:sum('proceeds'),gain_loss:sum('gain_loss')};
+}
+
+// Build 2883: the class rates the register still needs, and a starting point for the Partner who adds them. The register never invents a rate: it names the class and the year with no reviewed rate and, for a Partner,
+// offers the nearest existing row as a prefill (same percentages, cap and accounts) with the dates that close the gap. The Partner types the authority they checked and the date; nothing is saved until then.
+const prevDay=d=>new Date(Date.parse(day(d)+'T00:00:00Z')-86400000).toISOString().slice(0,10);
+export function rateGapFill(rates,classCode,start,end){
+ const rows=(rates||[]).filter(r=>r.class_code===classCode).sort((a,b)=>day(a.effective_from).localeCompare(day(b.effective_from)));
+ if(!rows.length)return null;
+ const before=rows.filter(r=>day(r.effective_from)<=day(start)),tpl=before.length?before[before.length-1]:rows[0];
+ let from,to;
+ if(before.length){
+  const covered=day(rateCoveredTo(tpl,rates));
+  if(covered>=day(end))return null;
+  from=covered<day(start)?day(start):nextDay(covered);to=from.slice(0,4)+'-12-31';
+ }else{from=day(start);to=prevDay(day(tpl.effective_from));if(to>day(end))to=day(end);}
+ if(to<from)return null;
+ const pick=k=>tpl[k]==null?null:tpl[k];
+ return {class_code:classCode,name:tpl.name,effective_from:from,effective_to:to,first_rate:Number(tpl.first_rate),annual_rate:Number(tpl.annual_rate),later_basis_percentage:Number(tpl.later_basis_percentage),tax_cost_cap:pick('tax_cost_cap')==null?null:Number(tpl.tax_cost_cap),
+  expense_account:tpl.expense_account,contra_account:tpl.contra_account,scope:tpl.scope||'',based_on:{effective_from:day(tpl.effective_from),effective_to:day(tpl.effective_to),source_reference:tpl.source_reference||'',source_checked_on:tpl.source_checked_on?day(tpl.source_checked_on):null}};
 }

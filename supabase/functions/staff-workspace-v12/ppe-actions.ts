@@ -1,5 +1,5 @@
 import {fail,text,uuid,choice} from './validation.mjs';
-import {assetIssues,registerYear,reconcileRegister,noteSchedule,registerReadiness,ORIGINS,DISPOSAL_KINDS,POLICY} from './ppe-register-rules.mjs';
+import {assetIssues,registerYear,reconcileRegister,noteSchedule,registerReadiness,rateGapFill,ORIGINS,DISPOSAL_KINDS,POLICY} from './ppe-register-rules.mjs';
 // The PPE register (build 2881). Staff declare an asset or a disposal; a Manager or Partner who did not declare it approves it (a sole Partner may approve their own, and it is recorded). Approved
 // records are never edited: a correction is a new version, and a record made in error is ended with a reason. The register works out each year from the approved records and the reviewed
 // class rates, and is checked against the trial balance. Nothing here posts a journal or changes a rate. The server owns every rule; the screen draws what it returns.
@@ -11,7 +11,7 @@ const num=(v:any,label:string,min=0)=>{if(v===''||v==null||typeof v==='boolean'|
 const ACTIONS=['ledger_ppe_read','ledger_ppe_asset_declare','ledger_ppe_asset_review','ledger_ppe_asset_end','ledger_ppe_disposal_declare','ledger_ppe_disposal_review','ledger_ppe_disposal_end'];
 export const PPE_CHECK_NOTE='The register is built from approved records and the reviewed class rates. It is a working schedule: it never posts a journal and never changes the trial balance.';
 
-async function loadClassRates(tx:any){return await tx`select class_code,name,first_rate,annual_rate,later_basis_percentage,expense_account,contra_account,tax_cost_cap,effective_from,effective_to from erp_private.asset_class_rates order by class_code,effective_from`;}
+async function loadClassRates(tx:any){return await tx`select class_code,name,first_rate,annual_rate,later_basis_percentage,expense_account,contra_account,tax_cost_cap,effective_from,effective_to,scope,source_reference,source_checked_on from erp_private.asset_class_rates order by class_code,effective_from`;}
 async function loadAccounts(tx:any){return await tx`select code,name,status,is_legacy,route from erp_private.account_catalog where route=3 order by code`;}
 async function loadRecords(tx:any,clientId:string){
  const assets=await tx`select record_id,asset_key,version,client_id,asset_name,asset_account,class_code,acquired_on,first_use_on,cost,business_percentage,noncommercial_vehicle,origin,bf_as_of,bf_accumulated_depreciation,bf_tax_wdv,source_row_id,evidence,status,prepared_by,prepared_at,reviewed_by,reviewed_at,review_note,sole_partner_approval,erp_private.reviewer_label(prepared_by) prepared_name,erp_private.reviewer_label(reviewed_by) reviewed_name from erp_private.ppe_assets where client_id=${clientId} and status in ('Draft','Approved','Returned') order by asset_name,version desc`;
@@ -68,9 +68,12 @@ export async function ppeAction(tx:any,a:any,l:any,p:any,getTb:(asOf:string)=>Pr
     and coalesce(r.normalized->>'date',b.period_start::text)>=${day(l.starts_on)} and coalesce(r.normalized->>'date',b.period_start::text)<=${day(l.ends_on)} order by r.normalized->>'date' limit 200`;
   const candidates=rows.filter((r:any)=>!used.has(r.row_id)).map((r:any)=>({source_row_id:r.row_id,asset_account:r.account_code,asset_name:String(r.narration||r.normalized?.description||'').slice(0,160),acquired_on:day(r.normalized?.date),cost:Number(r.normalized?.amount||0),supplier:r.normalized?.party||''}));
   const classes=[...new Map(rates.map((r:any)=>[r.class_code,r.name])).entries()].map(([code,name])=>({code,name}));
-  return {year:{start:day(l.starts_on),end:day(l.ends_on),open},locked,register:{rows:state.register.rows,totals:state.register.totals,issues:state.register.issues,policy:POLICY},reconciliation:state.reconciliation,readiness:state.readiness,schedule:state.schedule,
+  const dated=rates.map((r:any)=>({...r,effective_from:day(r.effective_from),effective_to:day(r.effective_to),source_checked_on:r.source_checked_on?day(r.source_checked_on):null}));
+  // Classes with no reviewed rate for a year the register needs (build 2883). A Partner may add the rate; the prefill carries the nearest row's percentages and accounts and leaves the authority blank.
+  const rateGaps=(state.register.rate_gaps||[]).map((g:any)=>({...g,fill:rateGapFill(dated,g.class_code,g.start,g.end)}));
+  return {year:{start:day(l.starts_on),end:day(l.ends_on),open},locked,register:{rate_gaps:rateGaps,rows:state.register.rows,totals:state.register.totals,issues:state.register.issues,policy:POLICY},reconciliation:state.reconciliation,readiness:state.readiness,schedule:state.schedule,
    assets:list,candidates,classes,accounts:accounts.filter((x:any)=>x.status==='Active'&&!x.is_legacy).map((x:any)=>({code:x.code,name:x.name})),origins:ORIGINS,kinds:DISPOSAL_KINDS,
-   can_declare:canDeclare(a)&&open,note:PPE_CHECK_NOTE};
+   can_declare:canDeclare(a)&&open,can_add_rate:a.category_code==='PARTNER',note:PPE_CHECK_NOTE};
  }
  // ---- changes ----
  if(p.action==='ledger_ppe_asset_declare'){
