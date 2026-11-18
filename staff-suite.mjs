@@ -26,7 +26,7 @@ import {SETTINGS_TABS,tabForCard,layoutView,rightsView,FOLD_TABS,fold} from './s
 import {createSettingsFrameUI} from './staff-settings-frame.mjs?v=20261118-approval-board-v1';
 import {createStatementReviewUI} from './staff-statement-review.mjs?v=20261118-approval-board-v1';
 import {createOwnerMatrixUI} from './staff-owner-matrix.mjs?v=20261117-actions-v1';
-import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261118-approval-board-v1';
+import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261118-official-tax-source-v1';
 import {createResourcesUI} from './staff-resources.mjs?v=20261114-templates-v1';
 import {createDueBacklogUI} from './staff-due-backlog.mjs?v=20261112-resources-v1';
 import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261116-whtvat-v1';
