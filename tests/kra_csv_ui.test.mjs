@@ -5,7 +5,7 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const button=(a,l,id='',extra='')=>`<button data-period-action="${a}" data-id="${id}" ${extra}>${l}</button>`;
 test('the KRA CSV screens are wired into the period imports panel with the cache chain bumped',()=>{
  assert.match(rd('staff-period-imports.mjs'),/staff-kra-csv\.mjs\?v=20261116-choices-v1/);assert.match(rd('staff-period-imports.mjs'),/button\('kra-csv','KRA VAT CSVs'\)/);assert.match(rd('staff-period-imports.mjs'),/kraCsv\.isAction\(action\)/);
- assert.match(rd('staff-workspace-v6.mjs'),/staff-period-imports\.mjs\?v=20261124-p9-v1/);assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261119-tidy-v1/);
+ assert.match(rd('staff-workspace-v6.mjs'),/staff-period-imports\.mjs\?v=20261118-months-v1/);assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261118-tpl-v1/);
  assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/kra_csv_/);assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/kraCsvAction/);
 });
 test('the sections table says not uploaded rather than zero and offers a new version for a retained file',()=>{

@@ -22,14 +22,20 @@ test('every template listed under Resources exists, opens, has a purpose, and ho
 });
 test('sales templates are recognised: net only (calculated VAT) and category totals',async()=>{
  const n=(await readWorkbookSheet(await bytes(byLabel('Sales update (net only)')),'Sales Update')).sheet;assert.equal(detectImportProfile(n).id,'SALES-NET-ONLY-v1');
- const c=(await readWorkbookSheet(await bytes(byLabel('Sales category totals')),'Sales Update')).sheet;assert.equal(detectImportProfile(c).id,'SALES-CATEGORIES-v3');
+ const c=(await readWorkbookSheet(await bytes(byLabel('Sales category totals (one month)')),'Sales Update')).sheet;assert.equal(detectImportProfile(c).id,'SALES-CATEGORIES-v3');
+ const m=(await readWorkbookSheet(await bytes(byLabel('Sales category totals (more than one month)')),'Sales Update')).sheet;assert.equal(detectImportProfile(m).id,'SALES-CATEGORIES-v3');
+ assert.equal(m.rowCount-1,48,'twelve months with all four VAT categories each');
 });
-test('purchase templates: the standard 14 columns, and all four sheets of the firm\'s layout',async()=>{
- const std=(await readWorkbookSheet(await bytes(byLabel('Purchases (one template, all categories)')),'Purchase Upload')).sheet;assert.equal(purchaseUploadProfile(std,true).id,'PCL-PURCHASES-1');
- for(const name of ['Gen Purchase Upload','Other Purchase Upload','Zero Purchase Upload','Exempt Purchase Upload']){
-  const s=(await readWorkbookSheet(await bytes('/templates/Purchases_Monthly_Four_Sheet_Template.xlsx'),name)).sheet,p=purchaseUploadProfile(s,false);
+test('purchase templates: the firm\'s four-sheet layout (16%, 8%, 0%, Exempt) and the older 14-column file still read',async()=>{
+ const std=(await readWorkbookSheet(await bytes('/Purchase_Upload_Template.xlsx'),'Purchase Upload')).sheet;assert.equal(purchaseUploadProfile(std,true).id,'PCL-PURCHASES-1');
+ const f=byLabel('Purchases (four sheets: 16%, 8%, 0%, Exempt)');assert.equal(f,'/templates/Purchases_Monthly_Four_Sheet_Template.xlsx');
+ const names=await sheetNames(await bytes(f));assert.deepEqual(names.slice(0,5),['16%','8%','0%','Exempt','Read first']);
+ for(const name of ['16%','8%','0%','Exempt']){
+  const s=(await readWorkbookSheet(await bytes(f),name)).sheet,p=purchaseUploadProfile(s,false);
   assert.equal(p.source_layout,true,name);assert.equal(p.header_row,2,name);assert.equal(p.derive_vat,true);
+  for(const k of ['routing_code','tb_code'])assert.ok(p.column_map[k]!==undefined,name+' '+k);
  }
+ const z=await JSZip.loadAsync(await bytes(f)),wbx=await z.file('xl/workbook.xml').async('string');assert.match(wbx,/ERPRoutingCodes/);
  const d=(await readWorkbookSheet(await bytes(byLabel('Non-eTIMS expenditure (D09)')),'D09 Non-eTIMS Expenditure')).sheet,t=detectTemplate(d);assert.equal(t.kind,'D09');assert.equal(t.blocks[0].header_row,4);
 });
 test('payroll template: the ERP reads its source and statutory columns, and PIN-less casuals still need their details',async()=>{
