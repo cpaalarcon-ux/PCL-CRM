@@ -11,6 +11,7 @@ import {allocateProfit,bpToPercent} from './partner-shares-rules.mjs';
 import {buildNotes,applyFaceRefs} from './annual-pack-notes.mjs';
 import {notesDigest,noteStateFor} from './notes-actions.ts';
 import {wordingFor} from './wording-actions.ts';
+import {pagesFor} from './client-pages-actions.ts';
 import {ppeRegisterFor} from './ppe-actions.ts';
 import {cashFlowInput} from './ppe-register-rules.mjs';
 import {auditStateFor,figuresDigest} from './audit-lock-actions.ts';
@@ -216,7 +217,7 @@ export async function packReadinessFrom(tx:any,l:any,data:any,extra:any={}){
  const sets=await loadSets(tx,l.period_id),inp=await reconInputs(tx,l,data),recon=sets.approved?reconcileComparatives({lines:sets.approved.lines,lineDefs:inp.lineDefs,opening:inp.opening}):null;
  const legalEntityType=(await tx`select legal_entity_type from erp_private.clients where client_id=${l.client_id}`)[0]?.legal_entity_type||null;
  const shareState=await shareStateFor(tx,l.period_id);
- const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:shareState.status,lines:shareState.lines}},notes:extra.notes||null,audit:extra.audit||null,wording:extra.wording||null,ppe:extra.ppe||null});
+ const readiness=packReadiness({period:{starts_on:day(l.starts_on),ends_on:day(l.ends_on),status:l.status},reporting,tb:data.tb,maps,lines,issues:data.issues,prior:data.prior_year,priorPeriodExists,asOf:data.as_of,approvedSet:sets.approved,draftSet:sets.draft,recon,legal:{legalEntityType,shares:{status:shareState.status,lines:shareState.lines}},notes:extra.notes||null,audit:extra.audit||null,wording:extra.wording||null,ppe:extra.ppe||null,pages:extra.pages||null});
  return {...readiness,as_of:data.as_of,reporting:reporting||{...defaultReporting(day(l.starts_on)),saved:false}};
 }
 
@@ -273,8 +274,11 @@ export async function statementsFrom(tx:any,l:any,data:any){
  // Standard wording and disclosures (build 2878): the pack is final only when every wording section the notes need is approved and every client-specific disclosure is declared and approved.
  const wd=await wordingFor(tx,l,{statements,client:{name:client.company_name||'',legal_form:form},reporting:{framework:reporting.framework,edition:reporting.edition,rounding:reporting.rounding,early_application_note:reporting.early_application_note||''},as_of:data.as_of});
  statements.wording={sections:wd.asm.sections.length,problems:wd.asm.problems,complete:wd.asm.complete};
+ // Client-specific pages (build 2884): the cover, entity information, report, statement of responsibilities and key figures. The pack is final only when each is ready and, where declared, approved.
+ const cp=await pagesFor(tx,l,{statements,client:{name:client.company_name||'',legal_form:form},reporting});
+ statements.client_pages={complete:cp.built.complete,problems:cp.built.problems,pages:cp.built.pages.map((x:any)=>({code:x.code,title:x.title,state:x.state}))};
  statements.ppe_register={relevant:ppe.readiness.relevant,ok:ppe.readiness.ok,summary:ppe.readiness.summary,differences:ppe.reconciliation.differences};
- const readiness=await packReadinessFrom(tx,l,data,{notes:{state:{status:nState.status},count:nb.notes.length,problems:nb.problems},audit:{state:aState},wording:{count:wd.asm.sections.length,problems:wd.asm.problems},ppe:ppe.readiness});
+ const readiness=await packReadinessFrom(tx,l,data,{notes:{state:{status:nState.status},count:nb.notes.length,problems:nb.problems},audit:{state:aState},wording:{count:wd.asm.sections.length,problems:wd.asm.problems},ppe:ppe.readiness,pages:cp.built});
  return {client:{name:client.company_name||'',kra_pin:client.kra_pin||'',legal_entity_type:client.legal_entity_type||null,legal_form:form},reporting:{framework:reporting.framework,edition:reporting.edition,presentation_currency:reporting.presentation_currency,rounding:reporting.rounding,early_application_note:reporting.early_application_note||'',saved:reporting.saved!==false},
   statements,readiness:{ready:readiness.ready,status:readiness.status,summary:readiness.summary,blocked:readiness.blocked,checks:readiness.checks},
   status:readiness.ready&&statements.complete?'Ready for review':'Draft - not ready',as_of:data.as_of};
