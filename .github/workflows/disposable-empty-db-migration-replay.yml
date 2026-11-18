@@ -33,6 +33,7 @@ jobs:
       - name: Install dependencies and run the candidate regression suite
         run: |
           npm ci
+          npm ci --prefix supabase/functions/staff-workspace-v6
           npm test
 
       - name: Install Supabase CLI
