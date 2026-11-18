@@ -67,5 +67,5 @@ test('an approved asset can be changed as a new version, disposed of, or ended; 
 });
 test('the ledger screen offers the register and the new files carry fresh cache tokens',()=>{
  const led=rd('staff-ledger.mjs'),v6=rd('staff-workspace-v6.mjs');
- assert.match(led,/staff-ppe\.mjs\?v=20261127-ppe-v1/);assert.match(led,/btn\('ppe','PPE register'\)/);assert.match(led,/a==='ppe'/);assert.match(v6,/staff-ledger\.mjs\?v=20261127-ppe-v1/);
+ assert.match(led,/staff-ppe\.mjs\?v=20261127-ppe-v1/);assert.match(led,/btn\('ppe','PPE register'\)/);assert.match(led,/a==='ppe'/);assert.match(v6,/staff-ledger\.mjs\?v=20261128-cf-v1/);
 });
