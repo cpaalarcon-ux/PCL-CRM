@@ -1,6 +1,7 @@
 import {fail,uuid,text} from './validation.mjs';
 import {reviewQueueAction} from './review-queue.ts';
 import {ledgerAction} from './ledger-actions.ts';
+import {FORM_KINDS} from './form-draft-rules.mjs';
 import {GROUPS,CAPS,planBatch,refusalText,noteOk,MIN_NOTE,journalCan,groupOfJournal,stageOfJournal,countGroups} from './work-queue-rules.mjs';
 
 // Build 2896: the work queue (read only) and the bulk decision on journals.
@@ -47,6 +48,11 @@ async function read(tx:any,a:any){
   where b.archived_at is null and pr.deleted_at is null and pr.status<>'Archived' and r.account_code is null and r.parent_row_id is null and not r.is_split_parent and r.dataset in ('Purchases','Expenditure','Non-eTIMS')
   group by pr.project_id,pr.client_id,c.company_name,pr.project_name order by count(*) desc limit 50`;
  for(const u of unmapped)items.push({key:'unmapped:'+u.project_id,kind:'unmapped',id:u.project_id,group:'To do',client_id:u.client_id,client_name:u.client_name,project_id:u.project_id,period_id:'',title:`${u.n} purchase or expenditure row${u.n===1?'':'s'} not mapped · ${u.project_name}`,stage:'Map each row, or leave it as a draft with its reason',amount:Number(u.value||0),revision:'',at:'',can:[],own:false});
+ // Build 2903: my own unfinished forms, saved as drafts. Private to me; resuming one reopens the form with what I had typed. Never an approval and never counted as work waiting on anyone else.
+ const drafts=await tx`select d.draft_id,d.form_kind,d.title,d.client_id,d.project_id,d.saved_at,d.revision,c.company_name as client_name,pr.project_name
+  from erp_private.staff_form_drafts d left join erp_private.clients c on c.client_id=d.client_id left join erp_private.projects pr on pr.project_id=d.project_id
+  where d.staff_id=${me} order by d.saved_at desc limit 50`;
+ for(const d of drafts)items.push({key:'draft:'+d.draft_id,kind:'draft',id:d.draft_id,group:'To do',client_id:d.client_id||'',client_name:d.client_name||'',project_id:d.project_id||'',period_id:'',title:`Unfinished ${FORM_KINDS[d.form_kind]||'form'} · ${d.title}`,stage:'Saved draft: resume where you stopped',amount:null,revision:String(d.revision),at:day(d.saved_at),can:[],own:true});
  // Work I sent for someone else's decision.
  const reports=await tx`select r.review_id as id,r.project_id,pr.client_id,c.company_name as client_name,pr.project_name,r.report_kind,r.created_at from erp_private.ledger_report_reviews r join erp_private.projects pr on pr.project_id=r.project_id join erp_private.clients c on c.client_id=pr.client_id where r.status='Submitted' and r.prepared_by=${me} order by r.created_at limit 100`;
  for(const r of reports)items.push({key:'report:'+r.id,kind:'report',id:r.id,group:'In progress',client_id:r.client_id,client_name:r.client_name,project_id:r.project_id,period_id:'',title:`${r.report_kind} report · ${r.project_name}`,stage:'Sent for review',amount:null,revision:'',at:day(r.created_at),can:[],own:true});
