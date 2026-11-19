@@ -42,6 +42,23 @@ export function applyFields(form,fields={}){
   else el.value=v;
  }
 }
+// Build 2904: a short stable key for a set of rows, so one draft belongs to one selection. It only names the draft; it is not a security value.
+export function shortHash(list){let h=5381;const t=[...list].map(String).sort().join('|');for(let i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))>>>0;return h.toString(36);}
+// What a saved selection of rows looks like now. A row that is gone from the page, already mapped, or changed since the draft was saved is reported, never silently applied.
+// saved: {row_ids:[...],revisions:{row_id:revision}}. current: the rows now on screen. Returns {rows:[rows still safe to use],changed:[{row_id,reason}]}.
+export function compareRows(saved,current){
+ const byId=new Map((current||[]).map(r=>[String(r.row_id),r])),rows=[],changed=[];
+ for(const id of saved?.row_ids||[]){
+  const r=byId.get(String(id));
+  if(!r){changed.push({row_id:id,reason:'No longer on this page or in this filter'});continue;}
+  if(r.account_code||r.is_split_parent){changed.push({row_id:id,reason:'Already mapped or split since the draft was saved'});continue;}
+  const was=saved.revisions?.[id];
+  if(was!==undefined&&was!==null&&String(was)!==String(r.revision)){changed.push({row_id:id,reason:'Changed since the draft was saved'});continue;}
+  rows.push(r);
+ }
+ return {rows,changed};
+}
+export const changedNote=changed=>changed.length?`${changed.length} row${changed.length===1?'':'s'} from your draft ${changed.length===1?'was':'were'} left out: ${[...new Set(changed.map(c=>c.reason))].join('; ').toLowerCase()}. Check the rows before you save.`:'';
 export const draftRow=(d,{esc=e0}={})=>`<div class="home-exception-row" data-draft-row="${esc(d.id||d.draft_id)}"><div><b>${esc(d.title)}</b><small>${esc(d.client_name||'')}${d.client_name&&d.project_name?' · ':''}${esc(d.project_name||'')}</small><small>${esc(d.stage||'Saved draft: resume where you stopped')}</small></div><div class="actions"><button type="button" data-draft-resume="${esc(d.id||d.draft_id)}">Resume draft</button><button type="button" data-draft-discard="${esc(d.id||d.draft_id)}" aria-label="Discard draft ${esc(d.title)}">Discard</button></div></div>`;
 
 // A small in-app question that does not depend on the browser's own dialog. Resolves with the id of the button pressed; Escape means the first (safe) choice.
@@ -72,7 +89,8 @@ export function createDraftUI(ctx){
    status.classList.toggle('error',!!failed);status.setAttribute('role',failed?'alert':'status');
    status.textContent=failed?`Not saved yet: ${failed}`:dirty?UNSAVED_LABEL:savedAt?savedLabel(savedAt):'No changes yet.';
   };
-  const payload=()=>({meta:spec.meta||{},fields:collectFields(form),...(spec.collect?spec.collect(form):{}),...(spec.aside?{aside:spec.aside()}:{})});
+  const fieldsOf=()=>{const out=collectFields(form);if(spec.skip)for(const k of Object.keys(out))if(spec.skip.test(k))delete out[k];return out;};
+  const payload=()=>({meta:spec.meta||{},fields:fieldsOf(),...(spec.collect?spec.collect(form):{}),...(spec.aside?{aside:spec.aside()}:{})});
   async function saveNow(explicit=false){
    clearTimeout(timer);timer=null;
    if(busy)await busy.catch(()=>{});

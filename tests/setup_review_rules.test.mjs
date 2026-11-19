@@ -63,7 +63,7 @@ test('the screens are wired in, and the setup hub and sub-steps move on without 
  assert.match(ui,/button\('setup-review','Setup review',id\)/);assert.match(ui,/leader\(\)\?button\('setup-queue'/);
  assert.match(ui,/'v3_identity_save'[^\n]*afterStep\(c\.client_id,'identity'\)/);assert.match(ui,/v3_vat_categories_save[^\n]*afterStep\(c\.client_id,'vat-cats'\)/);assert.match(ui,/v3_client_chart_propose[^\n]*afterStep\(id,'chart'\)/);
  assert.match(ui,/Back to setup checklist/);assert.match(ui,/Skip to the next step/);
- assert.match(rd('staff-pilot.mjs'),/staff-improvements\.mjs\?v=20261119-draft-v1/);
+ assert.match(rd('staff-pilot.mjs'),/staff-improvements\.mjs\?v=20261119-drafts2-v1/);
  const eng=rd('supabase/functions/staff-workspace-v12/engagement-actions.ts');assert.ok(!/Complete that client setup review before activating the engagement/.test(eng),'a pending activity change no longer blocks activation');assert.match(eng,/pendingSetupChange\?\[/);
  assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/client_setup_/);
 });

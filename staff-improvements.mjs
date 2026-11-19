@@ -1,6 +1,6 @@
 // Connected V3 controls. Every command is authorised again on the server.
 import {familyOf} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
-import {applyFields} from './staff-drafts.mjs?v=20261119-draft-v1';
+import {applyFields} from './staff-drafts.mjs?v=20261119-drafts2-v1';
 import {stockMethodChoices,stockCountChoices,stockPolicyStartDate} from './staff-stock-policy.mjs?v=20261028-stock-settings-date';
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261121-coa-v1';
 import {createClientMasterUI} from './staff-client-master.mjs?v=20261121-scope-v1';
