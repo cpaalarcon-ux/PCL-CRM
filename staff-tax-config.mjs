@@ -1,7 +1,7 @@
 // Tax rules and release checks use the same authenticated, scoped API as the workspace.
-import {createNonEtimsUI} from './staff-non-etims.mjs?v=20261107-annualpack-v3';
+import {createNonEtimsUI} from './staff-non-etims.mjs?v=20261119-fixes-v1&rev=20261119-legal';
 import {profileObligationChecks} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
-import {createExciseScheduleUI} from './staff-excise-schedule.mjs?v=20261112-excise-v4';
+import {createExciseScheduleUI} from './staff-excise-schedule.mjs?v=20261112-excise-v4&rev=20261119-nav';
 export function createTaxConfigUI(ctx){
  const {$,esc,field,select,form,modal,request,shortDate,badge,today,table,button,area,check}=ctx,d=ctx.data,s=()=>d().suite;
  const nonEtims=createNonEtimsUI(ctx),exciseSchedule=createExciseScheduleUI(ctx);
@@ -79,5 +79,5 @@ export function createTaxConfigUI(ctx){
   if(action==='release-read'){await release();return true;}if(action==='release-edit'){const r=$('#editorBody')._checks.find(x=>x.check_code===id);modal(r.title,form(select('status','Testing status',['Not tested','In progress','Passed','Blocked'],r.status)+area('evidence','Test date, result, evidence location and unresolved issues',r.evidence)),f=>request({action:'release_check_save',...val(f),check_code:id,revision:r.revision}));return true;}
   return false;
  }
- return {rates,handle,kinds};
+ return {rates,handle,kinds,openLegalBases:nonEtims.adminBases};
 }

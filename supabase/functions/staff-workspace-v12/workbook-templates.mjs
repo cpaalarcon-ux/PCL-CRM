@@ -19,6 +19,29 @@ export const workbookCategories=[
  ...Object.entries({PPE00:'Land / non-depreciable',PPE10B:'Commercial / educational building',PPE50Q:'Qualifying building / machinery / hospital asset',PPE25V:'Motor vehicle / heavy equipment',PPE25C:'Computer / copier',PPE25S:'Qualifying computer software',PPE10M:'Furniture / telecom / other machinery',PPE50F:'Farmworks',PPER:'Special / restricted investment'}).map(([code,label])=>[code,3,label])
 ].map(([code,route,label])=>({code,route,label,kind:'Purchase',group:'Workbook internal code'}));
 export const sheetValues=(sheet,i)=>Array.from({length:sheet.columnCount},(_,c)=>excelValue(sheet.getRow(i).getCell(c+1).value));
+// Build 2897: what a cell held, for a message that names the value it could not read.
+export const shown=v=>{if(v instanceof Date&&!Number.isFinite(v.getTime()))return 'an invalid date';const s=v instanceof Date?v.toISOString().slice(0,10):String(v??'').trim();return s===''?'(blank)':'"'+(s.length>40?s.slice(0,40)+'…':s)+'"';};
+const MONTH_NAMES=['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+const ymd=(y,m)=>`${y}-${String(m).padStart(2,'0')}-01`;
+// "Month incurred" (build 2897). A date is read as before. A month name such as JANUARY, Jan or January 2026, or 2026-01, is read against the selected period:
+// the first day of that month inside the period (never earlier than the period start). A month that is not inside the period is refused, naming the value and the period.
+export function monthIncurred(raw,start,end){
+ if(raw===''||raw===null||raw===undefined)return {value:''};
+ const asDate=excelDate(raw);if(asDate)return {value:asDate};
+ const s=String(raw instanceof Date?'':raw).trim().replace(/\s+/g,' ').replace(/\.$/,'');
+ let month=0,year=0,m;
+ if((m=s.match(/^(\d{4})-(\d{1,2})$/))){year=Number(m[1]);month=Number(m[2]);}
+ else if((m=s.match(/^(\d{1,2})[/-](\d{4})$/))){month=Number(m[1]);year=Number(m[2]);}
+ else if((m=s.match(/^([A-Za-z]{3,9})(?:[ -]+(\d{4}))?$/))){const w=m[1].toUpperCase(),i=MONTH_NAMES.findIndex(n=>n===w||(w.length>=3&&n.startsWith(w)));if(i>=0){month=i+1;year=m[2]?Number(m[2]):0;}}
+ if(month<1||month>12||!/^\d{4}-\d{2}-\d{2}$/.test(start||'')||!/^\d{4}-\d{2}-\d{2}$/.test(end||''))return {value:null,issue:`Month incurred ${shown(raw)} is not a date or a month name. Enter a date, or a month such as JANUARY.`};
+ for(let y=Number(start.slice(0,4));y<=Number(end.slice(0,4));y++){
+  if(year&&y!==year)continue;
+  let first=ymd(y,month);const last=new Date(Date.UTC(y,month,0)).toISOString().slice(0,10);
+  if(last<start||first>end)continue;
+  if(first<start)first=start;if(first>end)first=end;return {value:first};
+ }
+ return {value:null,issue:`Month incurred ${shown(raw)} is outside the selected period (${start} to ${end}).`};
+}
 function mapHeaders(headers){const m={};for(const [k,names] of Object.entries(aliases)){const col=headers.findIndex(h=>names.includes(norm(h)));if(col>=0)m[k]=col+1;}return m;}
 const formula=c=>!!(c&&typeof c==='object'&&(c.formula||c.sharedFormula));
 const filled=v=>v!==''&&v!==null&&v!==undefined&&v!==0;
@@ -37,6 +60,8 @@ export function detectTemplate(sheet){
    // Purchase routing and category are entered in the ERP. Old workbook K/P
    // values remain in source evidence only and are not imported mappings.
    if(kind==='B02'){delete map.route;delete map.category_code;}
+   // Build 2897: non-eTIMS expenditure carries no VAT (Partner decision). The D09 "Input VAT claim" column is never read, so its No / Review choices are not rejected as amounts.
+   if(kind==='D09')delete map.vat;
    found.push({header_row:i,column_map:map,headers:vals.slice(0,kind==='B03'?15:kind==='D09'?16:sheet.columnCount)});if(kind!=='B02')break;
   }
  }
@@ -83,18 +108,19 @@ export function normalizeTemplate(values,template,block,start,end,accounts=[]){
  const get=k=>m[k]?values[m[k]-1]??'':'';
  const row={};for(const k of Object.keys(m)){
   if(template.kind==='B02'&&['route','category_code'].includes(k))continue;
-  row[k]=['amount','vat','gross'].includes(k)?money(get(k)):['date','original_invoice_date','return_month'].includes(k)?excelDate(get(k)):String(get(k)).trim();
+  row[k]=['amount','vat','gross'].includes(k)?money(get(k)):k==='return_month'?monthIncurred(get(k),start,end).value:['date','original_invoice_date'].includes(k)?excelDate(get(k)):String(get(k)).trim();
  }
- const issues=[];if(!row.date)issues.push('Invoice / document date is missing or invalid.');
+ if(template.kind==='D09')row.vat=0;
+ const issues=[];if(!row.date)issues.push(`Invoice / document date is missing or invalid (read ${shown(get('date'))}).`);
  if(!row.invoice)issues.push('Invoice / document reference is required.');if(!row.party)issues.push('Supplier / payee is required.');
- if(row.amount===null)issues.push('Amount is missing or invalid.');if(m.vat&&get('vat')!==''&&row.vat===null)issues.push('VAT amount is invalid.');
- if(get('original_invoice_date')!==''&&!row.original_invoice_date)issues.push('Original invoice date is invalid.');
+ if(row.amount===null)issues.push(`Amount is missing or invalid (read ${shown(get('amount'))}).`);if(m.vat&&get('vat')!==''&&row.vat===null)issues.push(`VAT amount is invalid (read ${shown(get('vat'))}).`);
+ if(get('original_invoice_date')!==''&&!row.original_invoice_date)issues.push(`Original invoice date is invalid (read ${shown(get('original_invoice_date'))}).`);
  if(row.original_invoice_date&&row.date&&row.original_invoice_date>row.date)issues.push('Original invoice date cannot be later than this document date.');
- if(get('return_month')!==''&&!row.return_month)issues.push('Return / incurred month is invalid.');
+ const monthRead=m.return_month?monthIncurred(get('return_month'),start,end):{};if(get('return_month')!==''&&!row.return_month)issues.push(monthRead.issue||`Return / incurred month is invalid (read ${shown(get('return_month'))}).`);
  if(template.kind==='B02'&&row.party_pin&&!/^[A-Z]\d{9}[A-Z]$/i.test(row.party_pin))issues.push('Supplier PIN format is invalid.');
  // Claim month is independent of invoice date in these workbooks. A prior invoice remains a review item.
  row.return_month=template.kind==='B02'?block.period_start:row.return_month;
- const period=row.return_month||row.date;if(period&&(period<start||period>end))issues.push('Return / incurred month is outside the selected period.');
+ const period=row.return_month||row.date;if(period&&(period<start||period>end))issues.push(`Return / incurred month is outside the selected period (read ${shown(row.return_month||get('date'))}; period ${start} to ${end}).`);
  row.template_kind=template.kind;row.source_sheet=template.source_sheet;
  if(template.kind==='B02'&&/^B02B\b/i.test(template.source_sheet_name||template.source_sheet))row.legacy_tax_review=true;
  const line=row.line_id||[row.description||'',row.customs_entry||'',row.purchase_type||''].map(norm).join('|');

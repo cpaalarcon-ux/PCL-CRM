@@ -166,5 +166,5 @@ export async function workbookAction(tx:any,a:any,p:any,storage:any):Promise<any
  await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${a.auth_user_id},'DOWNLOAD')`;
  const outstanding=pendingCount?(await pendingPurchases(tx,project.project_id,null,null,batch)).total:0;
  const auto:any=standard?await autoMapRows(tx,a,project,{batchId:batch}):{mapped:0,left_for_staff:0,reasons:{}};
- return {ok:true,batch_id:batch,auto_mapped_count:auto.mapped,auto_left_for_staff:auto.left_for_staff,auto_reasons:auto.reasons||{},ignored_count:ignored,dataset,source_count:source,new_count:added,duplicate_count:duplicates+pendingCount-outstanding,pending_count:outstanding,rejected_count:rejected.length-pendingCount,rejections:rejected.filter(r=>!r.pending).slice(0,100).map(r=>({row:r.row,reason:r.reason}))};
+ return {ok:true,batch_id:batch,auto_mapped_count:auto.mapped,auto_via_alias:auto.via_alias||0,auto_left_for_staff:auto.left_for_staff,auto_reasons:auto.reasons||{},ignored_count:ignored,dataset,source_count:source,new_count:added,duplicate_count:duplicates+pendingCount-outstanding,pending_count:outstanding,rejected_count:rejected.length-pendingCount,rejections:rejected.filter(r=>!r.pending).slice(0,100).map(r=>({row:r.row,reason:r.reason}))};
 }

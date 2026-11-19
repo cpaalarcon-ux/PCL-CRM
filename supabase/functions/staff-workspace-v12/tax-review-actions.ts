@@ -10,6 +10,7 @@ import {one,leader,today} from './suite-actions.ts';
 import {assertSupportedPeriod} from './supported-period.ts';
 import {annualTaxLedgerControl} from './ledger-actions.ts';
 import {stockGateIssues} from './stock-vat.ts';
+import {assertSummaryViewed} from './upload-summary-gate.ts';
 import {sourceTotals,rulesStatus,rowFingerprint,appliedRateSummary} from './snapshot-rules.mjs';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
 const editor=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner must review this work.');};
@@ -66,6 +67,10 @@ export async function taxSummary(tx:any,c:any){
  const pending_information=await pendingPurchases(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on));
  const pendingHistory=Number((await tx`select count(*)::int n from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${c.project_id} and b.archived_at is null and b.period_start<=${c.ends_on} and b.period_end>=${c.starts_on} and r.raw_values ? '_pending_purchase'`)[0].n);
  const rejected=batches.reduce((s:number,b:any)=>s+b.rejected_count,0)-pendingHistory;
+ // An upload whose every row was rejected staged nothing, so removing it loses nothing. It is listed so the reviewer can remove it in one step (the same removal as the Documents list: the file, rows and history stay in Archived sources, with a reason). An upload that holds rows, or pending credit notes, is never listed.
+ const rejected_uploads=await tx`select b.batch_id,b.document_id,b.sheet_name,b.dataset,b.rejected_count,d.file_name from erp_private.workbook_batches b join erp_private.documents d on d.document_id=b.document_id
+  where b.project_id=${c.project_id} and b.archived_at is null and d.archived_at is null and d.deleted_at is null and b.period_start<=${c.ends_on} and b.period_end>=${c.starts_on} and b.rejected_count>0
+  and not exists(select 1 from erp_private.workbook_rows r where r.batch_id=b.batch_id) and not exists(select 1 from erp_private.workbook_rejections x where x.batch_id=b.batch_id and x.raw_values ? '_pending_purchase') order by b.created_at`;
  if(pending_information.total&&['VAT','Company','Individual','Partnership'].includes(c.kind)){const ag=ageingReport(pending_information.rows,new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date()));issues.push(`${pending_information.total} credit note(s) are Pending information and excluded from this working: net KES ${pending_information.net.toFixed(2)}, VAT KES ${pending_information.vat.toFixed(2)}, gross KES ${pending_information.gross.toFixed(2)}${ag.overdue.count?`; ${ag.overdue.count} older than ${ag.alert_days} days`:''}. Supply original invoice details and reupload before submitting this tax case; the totals are incomplete until then.`);}
  if(['VAT','Company','Individual','Partnership'].includes(c.kind)){
   const codes=[...new Set(rows.filter((r:any)=>r.dataset==='Non-eTIMS'&&r.review_details?.basis_code).map((r:any)=>String(r.review_details.basis_code)))];
@@ -84,13 +89,15 @@ export async function taxSummary(tx:any,c:any){
   const approved=r.source_revision===r.revision&&['Eligible','Excluded','Confirmed'].includes(r.decision);
   if(!approved)unreviewed++;
   if(c.kind==='VAT'&&r.dataset!=='Bank'){
-   if(!r.vat_rate_key)issues.push(`Row ${r.source_row}: reviewer must select the VAT treatment.`);
+   // Build 2898: non-eTIMS expenditure has no VAT (Partner decision), so no VAT treatment is asked for or checked on those rows.
+   if(r.dataset==='Non-eTIMS'){/* no VAT */}
+   else if(!r.vat_rate_key)issues.push(`Row ${r.source_row}: reviewer must select the VAT treatment.`);
    else {const rr=use(r.vat_rate_key,dateText(r.normalized.date)||dateText(c.starts_on),dateText(r.normalized.date)||dateText(c.starts_on));if(rr){if(rr.tax_type!=='VAT'||rr.parameters.treatment==='Withholding')issues.push(`Row ${r.source_row}: select a supply VAT rule.`);else {const issue=vatRuleCheck(r,rr);if(issue)issues.push(`Row ${r.source_row}: ${issue}`);r.applied_rate=rr;}}}
    if(['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset)&&(!r.income_treatment||r.income_treatment==='Review'))issues.push(`Row ${r.source_row}: income-tax classification requires review.`);
   }
   if(['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset)&&(!r.route||!r.category_code||!r.account_code))unmapped++;
   if(r.dataset==='Sales'&&approved&&r.decision==='Confirmed')output+=Number(r.normalized.vat||0);
-  if(['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset)&&approved&&r.decision==='Eligible')input+=round(Number(r.normalized.vat||0)*Number(r.deductible_percentage)/100);
+  if(['Purchases','Expenditure'].includes(r.dataset)&&approved&&r.decision==='Eligible')input+=round(Number(r.normalized.vat||0)*Number(r.deductible_percentage)/100);
  }
  let result:any={},salesReview:any=null,source_application:any=null,annualLedger:any=null,rate=rules[needed[0]]||null;
  if(c.rate_id){const selected=available.find((r:any)=>r.rate_id===c.rate_id);if(!selected||testRate(selected))issues.push('The previously selected rate is unavailable or test-only. Preview and save the current applicable rules.');else if(rate&&selected.rate_id!==rate.rate_id)issues.push('The selected rate does not match the current client/period rules. Preview and save again.');}
@@ -168,7 +175,7 @@ export async function taxSummary(tx:any,c:any){
  const source_checklist=sourceChecklist({kind:c.kind,batches,bankPending:salesReview?.result?.bank_status==='Bank pending',annualBankDocLinked});
  // Build 2841: approved client-specific exceptions to the rules used here are shown beside them. They change no rate and no figure.
  const appliedKeys=new Set(applied.map((r:any)=>r.rate_key)),client_exceptions=(await tx`select exception_id,rate_key,kind,effective_from,effective_to,reason,legal_basis from erp_private.client_tax_exceptions where client_id=${project.client_id} and status='Active' and effective_from<=${c.ends_on} and coalesce(effective_to,'9999-12-31')>=${c.starts_on} order by rate_key`).filter((x:any)=>appliedKeys.has(x.rate_key)).map((x:any)=>({exception_id:x.exception_id,rate_key:x.rate_key,kind:x.kind,effective_from:dateText(x.effective_from),effective_to:x.effective_to?dateText(x.effective_to):null,reason:x.reason,legal_basis:x.legal_basis}));
- return {result,client_exceptions,source_checklist,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
+ return {result,client_exceptions,source_checklist,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,rejected_uploads,unreviewed,unmapped};
 }
 
 // Numbered, immutable computation snapshots (20261110274000_computation_snapshots.sql). The server records what the reviewer is shown at the moment of submission and again at lock;
@@ -220,8 +227,30 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   const cost=['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset),decision=choice(p.decision,cost?['Eligible','Excluded','Unresolved']:['Confirmed','Unresolved']),percent=decision==='Eligible'?number(p.deductible_percentage,0,100):0;
   if(decision==='Eligible'&&(!r.route||!r.category_code))fail(400,'Map the purchase before deciding eligibility.');
   if(decision==='Eligible'&&r.dataset==='Non-eTIMS'&&(!r.review_details?.legal_basis||!r.review_details?.evidence))fail(400,'Complete the non-eTIMS legal basis and evidence before an eligibility decision.');
-  const vatKey=r.dataset==='Bank'?null:text(p.vat_rate_key||'',60,false),difference=text(p.vat_difference_reason||'',2000,false),income=cost?choice(p.income_treatment||'Review',['Allowable','Disallowable','Capital','Inventory','Review']):null;
+  const noVat=r.dataset==='Bank'||r.dataset==='Non-eTIMS',vatKey=noVat?null:text(p.vat_rate_key||'',60,false),difference=noVat?'':text(p.vat_difference_reason||'',2000,false),income=cost?choice(p.income_treatment||'Review',['Allowable','Disallowable','Capital','Inventory','Review']):null;
   await tx`insert into erp_private.tax_row_reviews(row_id,project_id,source_revision,decision,deductible_percentage,reason,reviewed_by,vat_rate_key,vat_difference_reason,income_treatment) values(${r.row_id},${r.project_id},${r.revision},${decision},${percent},${text(p.reason,2000)},${a.staff_id},${vatKey},${difference},${income}) on conflict(row_id) do update set source_revision=excluded.source_revision,decision=excluded.decision,deductible_percentage=excluded.deductible_percentage,reason=excluded.reason,reviewed_by=excluded.reviewed_by,vat_rate_key=excluded.vat_rate_key,vat_difference_reason=excluded.vat_difference_reason,income_treatment=excluded.income_treatment`;return {ok:true};
+ }
+ // Build 2895: review several source rows with one decision. Each row goes through exactly the same checks and writes as a single row review, in one transaction (all or none). Maker is not checker:
+ // if the person pressing the button imported any selected row, nothing is reviewed and the source rows are named. The reviewer's own name is recorded on every row.
+ if(p.action==='tax_row_review_batch'){
+  editor(a);
+  const items=Array.isArray(p.rows)?p.rows:[];if(!items.length||items.length>200)fail(400,'Select between 1 and 200 rows.');
+  const ids=items.map((x:any)=>uuid(x.row_id));if(new Set(ids).size!==ids.length)fail(400,'A row was selected more than once.');
+  const rows=await tx`select r.row_id,r.source_row,r.dataset,r.project_id,b.uploaded_by from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=any(${tx.array(ids)}::uuid[]) and b.archived_at is null`;
+  if(rows.length!==ids.length)fail(403,'All selected rows must be available to your account.');
+  if(new Set(rows.map((r:any)=>r.project_id)).size!==1)fail(400,'Select rows from one project.');
+  const mine=rows.filter((r:any)=>r.uploaded_by===a.staff_id);
+  if(mine.length)fail(403,`Another reviewer must review rows you imported. Nothing was reviewed. Rows you imported: ${mine.map((r:any)=>r.dataset+' '+r.source_row).slice(0,10).join(', ')}${mine.length>10?'…':''}. Remove them from the selection.`);
+  const cost=(r:any)=>['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset);
+  if(rows.some(cost)&&rows.some((r:any)=>!cost(r)))fail(400,'Select purchase and expenditure rows together, or sales and other rows together: their decisions differ.');
+  const byId=new Map(items.map((x:any)=>[String(x.row_id),x]));
+  for(const r of [...rows].sort((x:any,y:any)=>x.source_row-y.source_row)){
+   const it:any=byId.get(String(r.row_id));
+   try{await taxAction(tx,a,{...p,action:'tax_row_review',row_id:r.row_id,revision:it.revision,rows:undefined});}
+   catch(e:any){if(e&&e.status)e.message=`Source row ${r.source_row}: ${e.message} Nothing was reviewed.`;throw e;}
+  }
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'tax_row_reviews','TAX_ROW_REVIEW_BATCH',${rows[0].project_id},${tx.json({count:rows.length,decision:p.decision,income_treatment:p.income_treatment||null,deductible_percentage:p.deductible_percentage??null})})`;
+  return {ok:true,count:rows.length};
  }
  if(p.action==='tax_finding_add'){
   const pid=uuid(p.project_id),cid=p.case_id?uuid(p.case_id):null;if(cid)one(await tx`select case_id from erp_private.tax_cases where case_id=${cid} and project_id=${pid}`);
@@ -269,6 +298,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
    const orig=one(await tx`select inputs from erp_private.tax_cases where case_id=${c.amends_case_id}`),adjustmentKeys=(await tx`select erp_private.tax_amendment_adjustment_keys(${c.kind}) as keys`)[0].keys as string[];
    if(!adjustmentKeys.some((k:string)=>JSON.stringify(c.inputs?.[k]??null)!==JSON.stringify(orig.inputs?.[k]??null)))fail(400,'Record at least one adjustment before submitting an amendment. An amendment with no adjustment changes nothing.');
   }
+  await assertSummaryViewed(tx,c);// Build 2901: the preparer must have opened the upload summary first.
   const s=await taxSummary(tx,c);if(s.issues.length)fail(400,s.issues.join(' '));
   await takeSnapshot(tx,a,c,s,'SUBMITTED');
   await tx`update erp_private.tax_cases set status='Submitted',result=${tx.json(s.result)} where case_id=${c.case_id}`;return {ok:true};

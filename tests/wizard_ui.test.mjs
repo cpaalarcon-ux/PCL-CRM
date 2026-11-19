@@ -72,7 +72,7 @@ test('build 2869: the service set-up is three steps with the period suggested fr
 
 test('build 2869: wiring, styles and cache tokens',()=>{
  const css=rd('staff-pilot.css');for(const c of ['.wz-stepper','.wz-footer','.wz-step[hidden]'])assert.ok(css.includes(c),c);
- assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261118-approval-board-v1/);
- assert.match(rd('staff-service-setup.mjs'),/staff-wizard\.mjs\?v=20261121-wiz-v1/);assert.match(rd('staff-improvements.mjs'),/staff-service-setup\.mjs\?v=20261121-wiz-v1/);assert.match(rd('staff-pilot.mjs'),/staff-improvements\.mjs\?v=20261122-loc-v1/);
+ assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261119-queue-v1/);
+ assert.match(rd('staff-service-setup.mjs'),/staff-wizard\.mjs\?v=20261121-wiz-v1/);assert.match(rd('staff-improvements.mjs'),/staff-service-setup\.mjs\?v=20261121-wiz-v1/);assert.match(rd('staff-pilot.mjs'),/staff-improvements\.mjs\?v=20261119-drafts2-v1/);
  assert.match(rd('supabase/functions/staff-workspace-v12/service-template-actions.ts'),/select client_id,company_name,year_end_month,year_end_day from erp_private\.clients/);
 });

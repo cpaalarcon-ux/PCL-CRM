@@ -48,4 +48,12 @@ test('Purchase ledgers: scoped derived rows, split conservation, credit signs, s
  await assert.rejects(()=>call('INTERN',{}),/Interns/);await assert.rejects(()=>call('ASSISTANT',{project_id:P2}),/unavailable/);
  assert.equal((await tx`select count(*)::int n from erp_private.ledger_journals`)[0].n,0);
  const out=await call('ASSISTANT',{action:'purchase_ledger_export',ledger_group:'Construction raw materials'});assert.equal(out.rows,3);const ExcelJS=require(require.resolve('exceljs',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]})),book=new ExcelJS.Workbook();await book.xlsx.load(Buffer.from(out.base64,'base64'));assert.equal(book.worksheets[0].rowCount,6);assert.equal(book.worksheets[0].getCell('K4').value,-100);assert.equal(book.worksheets[0].views?.length||0,0);assert.equal((await tx`select count(*)::int n from erp_private.audit_events where action='EXPORT' and table_name='purchase_ledger_items'`)[0].n,1);
+ // A legacy non-eTIMS row has no VAT value. It shows and totals as nil, never Missing, and does not make the gross total incomplete.
+ const B2=id(),legacy=(await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by) values(${B2},${P},${D},'Non-eTIMS',1,'Non-eTIMS','2026-09-01','2026-09-30','{}',1,1,0,0,${actors.ASSISTANT.staff_id}) returning batch_id`);assert.equal(legacy.length,1);
+ await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B2},${P},${C},'Non-eTIMS',2,'NE-LEGACY','{}',${tx.json({date:'2026-09-02',invoice:'NE-LEG-1',party:'Fictional roadside seller',amount:500,description:'Fictional non-eTIMS expense'})})`;
+ const ne=await call('ASSISTANT',{vat_category:'Non-eTIMS'});
+ assert.equal(ne.total,1);assert.equal(Number(ne.rows[0].vat_amount),0,'a legacy non-eTIMS row has nil VAT, not a missing value');
+ assert.equal(ne.summary.reduce((n,x)=>n+x.missing_vat,0),0,'a legacy non-eTIMS row is not counted as missing VAT');
+ assert.equal(Number(ne.summary[0].gross),500,'the gross total is complete: net plus nil VAT');
+ const neOut=await call('ASSISTANT',{action:'purchase_ledger_export',vat_category:'Non-eTIMS'});assert.equal(neOut.rows,1);
 });

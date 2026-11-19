@@ -24,7 +24,7 @@ export function createDiscussionUI(ctx){
    const messages=host.querySelector('.discussion-messages');messages.scrollTop=messages.scrollHeight;
    const f=host.querySelector('#discussionSend');if(f)f.onsubmit=async e=>{e.preventDefault();const btn=f.querySelector('button[type=submit]');btn.disabled=true;btn.dataset.request??=crypto.randomUUID();const values=Object.fromEntries(new FormData(f));try{await request({action:'discussion_send',channel_id:id,request_id:btn.dataset.request,...values});f.reset();delete btn.dataset.request;refreshing=false;await paintThread(id);await updateList();}catch(error){f.querySelector('#discussionSendState').textContent=error.message;}finally{btn.disabled=false;}};
    if(!before&&document.visibilityState==='visible'&&r.messages.length){const last=r.messages.at(-1).sequence;await request({action:'discussion_read',channel_id:id,last_sequence:Number(last)});await updateList();}
-  }catch(e){if(document.contains(host))host.innerHTML=`<p class="error">${esc(e.message)}</p>`;if(subscription){void client.removeChannel(subscription);subscription=null;}}
+  }catch(e){if(document.contains(host))host.innerHTML=`<p class="error" role="alert">${esc(e.message)}</p>`;if(subscription){void client.removeChannel(subscription);subscription=null;}}
   finally{refreshing=false;}
  }
  async function open(scope){const r=await request({action:'discussion_open',...scope});selected=r.channel.channel_id;await updateList();modal('Internal discussion',`<div id="discussionThread"></div>`);document.querySelector('#editor').classList.add('discussion-dialog');await paintThread(selected);await live(selected);}

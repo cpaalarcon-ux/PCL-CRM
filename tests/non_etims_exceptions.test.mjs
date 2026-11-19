@@ -129,6 +129,7 @@ test('Non-eTIMS exceptions: approved bases, evidence, duplicate check, and the t
   await assert.rejects(()=>ne('PARTNER',{action:'non_etims_basis_retire',basis_id:bank.basis_id,revision:bank.revision,reason:'short'}),/at least 10/);
   await ne('PARTNER',{action:'non_etims_basis_retire',basis_id:bank.basis_id,revision:bank.revision,reason:'Replaced by a narrower basis'});
   const now=(await ne('PARTNER',{action:'non_etims_bases'})).bases.find(x=>x.basis_code==='NE-BANKCHG');assert.equal(now.status,'Retired');assert.equal(now.used,1);
+  const lite=(await ne('PARTNER',{action:'non_etims_bases',light:true}));assert.equal(lite.bases.length,(await ne('PARTNER',{action:'non_etims_bases'})).bases.length,'the light read lists the same bases');assert.ok(lite.bases.every(b=>b.used===0),'the light read leaves the usage count out');assert.equal(lite.bases.find(x=>x.basis_code==='NE-BANKCHG').status,'Retired');
   await assert.rejects(()=>mapNe('ASSISTANT','NE2',{basis_code:'NE-BANKCHG',evidence_reference:'Slip'}),/retired/);
   assert.equal((await get('NE1')).review_details.basis_code,'NE-BANKCHG');
   {const o=globalThis.Deno;globalThis.Deno={env:{get:()=>'https://yfjiculexbzpkvtapudk.supabase.co'}};try{const sum=await as('ASSISTANT',()=>taxSummary(tx,{case_id:id(),project_id:P,kind:'VAT',status:'Draft',starts_on:'2026-09-01',ends_on:'2026-09-30',inputs:{}}));assert.match(sum.issues.find(x=>/legal basis a Partner has not approved/.test(x))||'',/1 non-eTIMS row.*retired/);}finally{globalThis.Deno=o;}}

@@ -84,3 +84,17 @@ test('changes in equity and cash flows are shown with their prior-year blocks, a
  assert.match(tables[4].textContent,/Profit before tax/);assert.match(tables[4].textContent,/420,000/);assert.equal(tables[4].querySelectorAll('thead th').length,3);
  assert.match($('#editorBody').textContent,/Other equity movements of KES 40\.00/);
 });
+
+test('the prior-year comparatives button shows to a Manager or Partner on an open year even before any comparatives status exists, and not to an Assistant',async()=>{
+ const was=state.me.category_code;
+ try{
+  state.me.category_code='PARTNER';
+  await ui.open('project-1');
+  await click('[data-ledger-tab="Annual accounts"]');await pause();
+  assert.ok($('[data-ledger="comparatives-enter"]'),'a Partner can always reach the comparatives screen, even when the readiness reply lists no statements');
+  state.me.category_code='ASSISTANT';
+  await ui.open('project-1');
+  await click('[data-ledger-tab="Annual accounts"]');await pause();
+  assert.equal($('[data-ledger="comparatives-enter"]'),null,'an Assistant cannot enter comparatives');
+ }finally{state.me.category_code=was;}
+});

@@ -50,11 +50,12 @@ test('connection servers: public server only without a relay account, short-live
  }
 });
 
-test('the chat shows call buttons in one-to-one chats only and keeps the call screen outside the chat panel',()=>{
+test('the chat shows call buttons in one-to-one chats only and makes the call controls available over the messenger and the ERP',()=>{
  const m=fs.readFileSync(new URL('../staff-messenger.mjs',import.meta.url),'utf8');
  assert.match(m,/c\.kind!=='Direct'\|\|state\.thread\?\.read_only\|\|!callsSupported/);
  assert.match(m,/data-msgr="call-audio"/);assert.match(m,/data-msgr="call-video"/);
- assert.match(m,/closest\('#messenger,#callOverlay'\)/,'clicking the call screen does not close the chat panel');
+ assert.match(m,/host:\(\)=>panel\(\)\?\.open\?panel\(\):document\.body/,'calls use the active top-layer dialog when it is open');
+ assert.match(m,/dialog\.close\(\);calls\.place\(\)/,'closing Messenger leaves the call active over the ERP');
  assert.match(m,/pcl-user:/);assert.match(m,/\\w-\]\+\\\.\[\\w-\]\+\\\.\[\\w-\]\+\$/,'no live connection for a token that is not a signed token');
  const css=fs.readFileSync(new URL('../staff-pilot.css',import.meta.url),'utf8');assert.match(css,/\.call-overlay\{/);
  const headers=fs.readFileSync(new URL('../_headers',import.meta.url),'utf8');assert.match(headers,/microphone=\(self\)/);assert.match(headers,/camera=\(self\)/);assert.match(headers,/geolocation=\(\)/);

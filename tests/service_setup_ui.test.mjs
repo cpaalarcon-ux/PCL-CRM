@@ -26,6 +26,6 @@ test('officers and signatories: the client master records, verifies and ends the
  const src=rd('staff-client-master.mjs');for(const a of ['client_holder_record','client_holder_verify','client_holder_end','cm-holder-add','cm-holder-verify','cm-holder-end'])assert.match(src,new RegExp(a));
  assert.match(src,/Officers and signatories/);assert.match(src,/resolution or document that supports it/);
  const tax=rd('staff-tax-config.mjs');assert.match(tax,/classification_pending_clients/);assert.match(tax,/A Partner classifies this entity’s legal form first/);
- assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261115-holders-v1/);
+ assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261119-fixes-v1/);
  assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/client_holder_/);
 });

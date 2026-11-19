@@ -190,3 +190,59 @@ export function rateGapFill(rates,classCode,start,end){
  return {class_code:classCode,name:tpl.name,effective_from:from,effective_to:to,first_rate:Number(tpl.first_rate),annual_rate:Number(tpl.annual_rate),later_basis_percentage:Number(tpl.later_basis_percentage),tax_cost_cap:pick('tax_cost_cap')==null?null:Number(tpl.tax_cost_cap),
   expense_account:tpl.expense_account,contra_account:tpl.contra_account,scope:tpl.scope||'',based_on:{effective_from:day(tpl.effective_from),effective_to:day(tpl.effective_to),source_reference:tpl.source_reference||'',source_checked_on:tpl.source_checked_on?day(tpl.source_checked_on):null}};
 }
+
+// ---- Build 2900: assets from the opening trial balance and from purchases, completed in one step ----
+// An opening trial balance carries cost and accumulated depreciation by account but not the asset class or the tax written-down value, so the person completes those. Nothing is guessed:
+// class, first-use date and tax value are always entered; cost comes from the trial balance and, where one class maps to one accumulated-depreciation account, so does the depreciation.
+export const dayBefore=d=>new Date(Date.parse(day(d)+'T00:00:00Z')-86400000).toISOString().slice(0,10);
+// The latest rate row of each class: its name and the accumulated-depreciation account it uses, with the trial balance's opening figure for that account.
+export function classInfo(rates,tb){
+ const tbBy=new Map((tb||[]).map(x=>[String(x.code),x])),by=new Map();
+ for(const r of [...(rates||[])].sort((a,b)=>day(a.effective_from).localeCompare(day(b.effective_from))))by.set(r.class_code,r);
+ return [...by.values()].map(r=>({class_code:r.class_code,name:r.name,contra_account:String(r.contra_account),tb_accumulated:money(-c(tbBy.get(String(r.contra_account))?.opening))})).sort((a,b)=>a.class_code.localeCompare(b.class_code));
+}
+// Cost accounts whose opening balance in the trial balance has no register record yet (no draft or approved asset in that account acquired before the year starts).
+export function bfPendingRows({tb,accounts,rates,records,start}){
+ const contra=new Set((rates||[]).map(r=>String(r.contra_account))),expense=new Set((rates||[]).map(r=>String(r.expense_account)));
+ const tbBy=new Map((tb||[]).map(x=>[String(x.code),x])),covered=new Set((records||[]).filter(r=>['Draft','Approved'].includes(r.status)&&day(r.acquired_on)<day(start)).map(r=>String(r.asset_account)));
+ const out=[];
+ for(const a of accounts||[]){
+  const code=String(a.code);if(a.status!=='Active'||a.is_legacy||Number(a.route)!==3||contra.has(code)||expense.has(code))continue;
+  const open=c(tbBy.get(code)?.opening);if(open<=0||covered.has(code))continue;
+  out.push({asset_account:code,name:a.name,cost:money(open)});
+ }
+ return out.sort((x,y)=>x.asset_account.localeCompare(y.asset_account));
+}
+// Turn the person's entries into brought-forward asset records, or say what is wrong. picks: {asset_account,class_code,first_use_on,tax_wdv,business_percentage,accumulated_depreciation}.
+// The cost always comes from the trial balance. Accumulated depreciation comes from the trial balance only when the class's account is used by this one row and every pending account is being completed;
+// otherwise the person enters it, and when every pending account is completed the entries for a shared account must add up to the trial balance.
+export function bfPlan({picks,pending,classes,asOf}){
+ const problems=[],out=[];
+ if(!Array.isArray(picks)||!picks.length)return {assets:[],problems:['Choose a class for at least one account.']};
+ const seen=new Set(),cls=new Map(classes.map(x=>[x.class_code,x])),pend=new Map(pending.map(x=>[x.asset_account,x]));
+ const all=pending.every(x=>picks.some(p=>String(p.asset_account)===x.asset_account));
+ const byContra=new Map();
+ for(const p of picks){const k=cls.get(p.class_code)?.contra_account;if(k)byContra.set(k,(byContra.get(k)||0)+1);}
+ for(const p of picks){
+  const code=String(p.asset_account),row=pend.get(code),tag=`Account ${code}`;
+  if(seen.has(code)){problems.push(`${tag} is listed twice.`);continue;}seen.add(code);
+  if(!row){problems.push(`${tag} is not waiting for brought-forward balances.`);continue;}
+  const k=cls.get(p.class_code);if(!k){problems.push(`${tag}: choose an asset class.`);continue;}
+  if(!isDate(p.first_use_on)){problems.push(`${tag}: enter the date the assets were first used.`);continue;}
+  if(day(p.first_use_on)>day(asOf)){problems.push(`${tag}: the first-use date is after the brought-forward date ${day(asOf)}.`);continue;}
+  if(p.tax_wdv===''||p.tax_wdv==null||!Number.isFinite(Number(p.tax_wdv))||Number(p.tax_wdv)<0){problems.push(`${tag}: enter the tax written-down value from the prior-year tax computation (zero if none).`);continue;}
+  const given=p.accumulated_depreciation!==''&&p.accumulated_depreciation!=null,shared=(byContra.get(k.contra_account)||0)>1;
+  let acc;
+  if(given){acc=Number(p.accumulated_depreciation);if(!Number.isFinite(acc)||acc<0){problems.push(`${tag}: enter a valid accumulated depreciation.`);continue;}}
+  else if(!shared&&all)acc=k.tb_accumulated;
+  else{problems.push(`${tag}: enter the accumulated depreciation, because account ${k.contra_account} is shared or another account is not being completed.`);continue;}
+  if(acc>row.cost){problems.push(`${tag}: accumulated depreciation ${acc} is more than cost ${row.cost}.`);continue;}
+  out.push({asset_account:code,asset_name:`Brought forward: ${code} ${row.name}`,class_code:p.class_code,acquired_on:day(p.first_use_on),first_use_on:day(p.first_use_on),cost:row.cost,
+   business_percentage:p.business_percentage===''||p.business_percentage==null?100:Number(p.business_percentage),noncommercial_vehicle:false,origin:'Brought forward',bf_as_of:day(asOf),bf_accumulated_depreciation:acc,bf_tax_wdv:Number(p.tax_wdv),contra_account:k.contra_account});
+ }
+ if(!problems.length&&all){
+  const sums=new Map();for(const a of out)sums.set(a.contra_account,(sums.get(a.contra_account)||0)+c(a.bf_accumulated_depreciation));
+  for(const [k,v] of sums){const tbv=c(classes.find(x=>x.contra_account===k)?.tb_accumulated);if(v!==tbv)problems.push(`Accumulated depreciation entered for account ${k} is ${money(v)} but the trial balance has ${money(tbv)}.`);}
+ }
+ return {assets:problems.length?[]:out,problems};
+}

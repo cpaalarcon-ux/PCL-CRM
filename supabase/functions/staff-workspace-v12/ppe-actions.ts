@@ -1,5 +1,5 @@
 import {fail,text,uuid,choice} from './validation.mjs';
-import {assetIssues,registerYear,reconcileRegister,noteSchedule,registerReadiness,rateGapFill,ORIGINS,DISPOSAL_KINDS,POLICY} from './ppe-register-rules.mjs';
+import {assetIssues,registerYear,reconcileRegister,noteSchedule,registerReadiness,rateGapFill,classInfo,bfPendingRows,bfPlan,dayBefore,ORIGINS,DISPOSAL_KINDS,POLICY} from './ppe-register-rules.mjs';
 // The PPE register (build 2881). Staff declare an asset or a disposal; a Manager or Partner who did not declare it approves it (a sole Partner may approve their own, and it is recorded). Approved
 // records are never edited: a correction is a new version, and a record made in error is ended with a reason. The register works out each year from the approved records and the reviewed
 // class rates, and is checked against the trial balance. Nothing here posts a journal or changes a rate. The server owns every rule; the screen draws what it returns.
@@ -8,7 +8,7 @@ const canDeclare=(a:any)=>['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].include
 const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 const dateOf=(v:any,label:string)=>{const d=day(v);if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||Number.isNaN(Date.parse(d+'T00:00:00Z')))fail(400,`Enter a valid ${label}.`);return d;};
 const num=(v:any,label:string,min=0)=>{if(v===''||v==null||typeof v==='boolean'||!Number.isFinite(Number(v))||Number(v)<min)fail(400,`Enter a valid ${label}.`);return Number(v);};
-const ACTIONS=['ledger_ppe_read','ledger_ppe_asset_declare','ledger_ppe_asset_review','ledger_ppe_asset_end','ledger_ppe_disposal_declare','ledger_ppe_disposal_review','ledger_ppe_disposal_end'];
+const ACTIONS=['ledger_ppe_read','ledger_ppe_asset_declare','ledger_ppe_asset_review','ledger_ppe_asset_end','ledger_ppe_disposal_declare','ledger_ppe_disposal_review','ledger_ppe_disposal_end','ledger_ppe_bf_declare','ledger_ppe_additions_declare'];
 export const PPE_CHECK_NOTE='The register is built from approved records and the reviewed class rates. It is a working schedule: it never posts a journal and never changes the trial balance.';
 
 async function loadClassRates(tx:any){return await tx`select class_code,name,first_rate,annual_rate,later_basis_percentage,expense_account,contra_account,tax_cost_cap,effective_from,effective_to,scope,source_reference,source_checked_on from erp_private.asset_class_rates order by class_code,effective_from`;}
@@ -40,6 +40,17 @@ async function refuseIfLocked(tx:any,clientId:string,effective:string){
  const closed=await tx`select ends_on from erp_private.ledger_periods where client_id=${clientId} and status='Closed' and ends_on>=${effective}::date limit 1`;
  if(closed.length)fail(409,`The year ending ${day(closed[0].ends_on)} is closed, so a record that affects it cannot be added. A closed year is corrected by a controlled adjustment.`);
 }
+
+// Purchases already mapped to a property, plant and equipment account in this year and not yet in the register, so an asset is not typed twice. The suggested class is the one class
+// already used for that account in the register, when there is exactly one; nothing else suggests a class.
+async function loadCandidates(tx:any,cid:string,l:any,assets:any[]){
+ const used=new Set(assets.filter((r:any)=>['Draft','Approved'].includes(r.status)).map((r:any)=>r.source_row_id).filter(Boolean));
+ const rows=await tx`select r.row_id,r.account_code,r.narration,r.normalized from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${cid} and b.archived_at is null and r.route=3 and r.account_code is not null and r.parent_row_id is null and not r.is_split_parent
+  and coalesce(r.normalized->>'date',b.period_start::text)>=${day(l.starts_on)} and coalesce(r.normalized->>'date',b.period_start::text)<=${day(l.ends_on)} order by r.normalized->>'date',r.source_row limit 200`;
+ const classOf=new Map<string,Set<string>>();for(const r of assets)if(['Draft','Approved'].includes(r.status)){const s=classOf.get(r.asset_account)||new Set<string>();s.add(r.class_code);classOf.set(r.asset_account,s);}
+ return rows.filter((r:any)=>!used.has(r.row_id)).map((r:any)=>({source_row_id:r.row_id,asset_account:r.account_code,asset_name:String(r.narration||r.normalized?.description||'').slice(0,160),acquired_on:day(r.normalized?.date),cost:Number(r.normalized?.amount||0),supplier:r.normalized?.party||'',invoice:r.normalized?.invoice||'',
+  suggested_class:(classOf.get(r.account_code)?.size===1?[...classOf.get(r.account_code)!][0]:'')}));
+}
 const effectiveDate=(r:any)=>r.bf_as_of?new Date(Date.parse(day(r.bf_as_of)+'T00:00:00Z')+86400000).toISOString().slice(0,10):day(r.acquired_on);
 
 export async function ppeAction(tx:any,a:any,l:any,p:any,getTb:(asOf:string)=>Promise<any>,asOf:string){
@@ -62,17 +73,13 @@ export async function ppeAction(tx:any,a:any,l:any,p:any,getTb:(asOf:string)=>Pr
     can_review:isLeader(a)&&open&&!!g.draft&&(g.draft.prepared_by!==a.staff_id||a.category_code==='PARTNER'),
     can_dispose:canDeclare(a)&&open&&!!g.approved&&!dd.draft&&!dd.approved,can_end:isLeader(a)&&open&&!!g.approved&&!dd.draft&&!dd.approved,
     can_review_disposal:isLeader(a)&&open&&!!dd.draft&&(dd.draft.prepared_by!==a.staff_id||a.category_code==='PARTNER'),can_end_disposal:isLeader(a)&&open&&!!dd.approved&&!dd.draft};});
-  // Purchases already mapped to a property, plant and equipment account in this year and not yet in the register, so an asset is not typed twice.
-  const used=new Set(assets.map((r:any)=>r.source_row_id).filter(Boolean));
-  const rows=await tx`select r.row_id,r.account_code,r.narration,r.normalized from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.client_id=${cid} and b.archived_at is null and r.route=3 and r.account_code is not null and r.parent_row_id is null and not r.is_split_parent
-    and coalesce(r.normalized->>'date',b.period_start::text)>=${day(l.starts_on)} and coalesce(r.normalized->>'date',b.period_start::text)<=${day(l.ends_on)} order by r.normalized->>'date' limit 200`;
-  const candidates=rows.filter((r:any)=>!used.has(r.row_id)).map((r:any)=>({source_row_id:r.row_id,asset_account:r.account_code,asset_name:String(r.narration||r.normalized?.description||'').slice(0,160),acquired_on:day(r.normalized?.date),cost:Number(r.normalized?.amount||0),supplier:r.normalized?.party||''}));
+  const candidates=await loadCandidates(tx,cid,l,assets);
   const classes=[...new Map(rates.map((r:any)=>[r.class_code,r.name])).entries()].map(([code,name])=>({code,name}));
   const dated=rates.map((r:any)=>({...r,effective_from:day(r.effective_from),effective_to:day(r.effective_to),source_checked_on:r.source_checked_on?day(r.source_checked_on):null}));
   // Classes with no reviewed rate for a year the register needs (build 2883). A Partner may add the rate; the prefill carries the nearest row's percentages and accounts and leaves the authority blank.
   const rateGaps=(state.register.rate_gaps||[]).map((g:any)=>({...g,fill:rateGapFill(dated,g.class_code,g.start,g.end)}));
   return {year:{start:day(l.starts_on),end:day(l.ends_on),open},locked,register:{rate_gaps:rateGaps,rows:state.register.rows,totals:state.register.totals,issues:state.register.issues,policy:POLICY},reconciliation:state.reconciliation,readiness:state.readiness,schedule:state.schedule,
-   assets:list,candidates,classes,accounts:accounts.filter((x:any)=>x.status==='Active'&&!x.is_legacy).map((x:any)=>({code:x.code,name:x.name})),origins:ORIGINS,kinds:DISPOSAL_KINDS,
+   assets:list,candidates,bf:{as_of:dayBefore(day(l.starts_on)),pending:bfPendingRows({tb:data.tb||[],accounts:accounts,rates,records:assets,start:day(l.starts_on)}),classes:classInfo(rates,data.tb||[])},classes,accounts:accounts.filter((x:any)=>x.status==='Active'&&!x.is_legacy).map((x:any)=>({code:x.code,name:x.name})),origins:ORIGINS,kinds:DISPOSAL_KINDS,
    can_declare:canDeclare(a)&&open,can_add_rate:a.category_code==='PARTNER',note:PPE_CHECK_NOTE};
  }
  // ---- changes ----
@@ -101,6 +108,53 @@ export async function ppeAction(tx:any,a:any,l:any,p:any,getTb:(asOf:string)=>Pr
   const ver=Number((await tx`select coalesce(max(version),0)+1 v from erp_private.ppe_assets where asset_key=${key}`)[0].v);
   return (await tx`insert into erp_private.ppe_assets(asset_key,version,client_id,asset_name,asset_account,class_code,acquired_on,first_use_on,cost,business_percentage,noncommercial_vehicle,origin,bf_as_of,bf_accumulated_depreciation,bf_tax_wdv,source_row_id,evidence,prepared_by)
    values(${key},${ver},${cid},${v.asset_name},${v.asset_account},${v.class_code},${v.acquired_on},${v.first_use_on},${v.cost},${v.business_percentage},${v.noncommercial_vehicle},${v.origin},${v.bf_as_of},${v.bf_accumulated_depreciation},${v.bf_tax_wdv},${source},${v.evidence},${a.staff_id}) returning record_id,asset_key,version,status`)[0];
+ }
+
+ if(p.action==='ledger_ppe_bf_declare'){
+  if(!canDeclare(a))fail(403,'Staff who prepare the statements declare assets.');
+  const rates=await loadClassRates(tx),accounts=await loadAccounts(tx),{assets}=await loadRecords(tx,cid),data=await getTb(asOf);
+  const open=l.status==='Open'&&!(await tx`select erp_private.ppe_date_locked(${cid}::uuid,${day(l.starts_on)}::date) as locked`)[0].locked;
+  if(!open)fail(409,'This year is closed or locked, so the register cannot take new records.');
+  const bfAsOf=dayBefore(day(l.starts_on)),pending=bfPendingRows({tb:data.tb||[],accounts,rates,records:assets,start:day(l.starts_on)}),classes=classInfo(rates,data.tb||[]);
+  const picks=(Array.isArray(p.rows)?p.rows:[]).slice(0,60).map((x:any)=>({asset_account:String(x.asset_account||''),class_code:String(x.class_code||''),first_use_on:x.first_use_on,tax_wdv:x.tax_wdv,business_percentage:x.business_percentage,accumulated_depreciation:x.accumulated_depreciation}));
+  const evidence=text(p.evidence??'',500,false);if(evidence.trim().length<10)fail(400,'Say what the class, dates and tax values come from (for example the prior-year tax computation and fixed asset schedule), at least 10 characters.');
+  const plan=bfPlan({picks,pending,classes,asOf:bfAsOf});if(plan.problems.length)fail(400,plan.problems.slice(0,6).join(' '));
+  const made:any[]=[];
+  for(const v of plan.assets){
+   const bad=assetIssues({...v,evidence},{accounts,rates});if(bad.length)fail(400,`Account ${v.asset_account}: ${bad.join(' ')}`);
+   await refuseIfLocked(tx,cid,effectiveDate(v));
+   const key=crypto.randomUUID();await tx`select pg_advisory_xact_lock(hashtextextended(${'ppe:'+key},0))`;
+   made.push((await tx`insert into erp_private.ppe_assets(asset_key,version,client_id,asset_name,asset_account,class_code,acquired_on,first_use_on,cost,business_percentage,noncommercial_vehicle,origin,bf_as_of,bf_accumulated_depreciation,bf_tax_wdv,evidence,prepared_by)
+    values(${key},1,${cid},${v.asset_name},${v.asset_account},${v.class_code},${v.acquired_on},${v.first_use_on},${v.cost},${v.business_percentage},false,'Brought forward',${v.bf_as_of},${v.bf_accumulated_depreciation},${v.bf_tax_wdv},${evidence},${a.staff_id}) returning record_id,asset_key,asset_account`)[0]);
+  }
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'ppe_assets','PPE_BROUGHT_FORWARD_DECLARED',${cid},${tx.json({count:made.length,accounts:made.map((x:any)=>x.asset_account),as_of:bfAsOf})})`;
+  return {ok:true,declared:made.length,records:made};
+ }
+ if(p.action==='ledger_ppe_additions_declare'){
+  if(!canDeclare(a))fail(403,'Staff who prepare the statements declare assets.');
+  const rates=await loadClassRates(tx),accounts=await loadAccounts(tx),{assets}=await loadRecords(tx,cid);
+  const open=l.status==='Open'&&!(await tx`select erp_private.ppe_date_locked(${cid}::uuid,${day(l.starts_on)}::date) as locked`)[0].locked;
+  if(!open)fail(409,'This year is closed or locked, so the register cannot take new records.');
+  const list=Array.isArray(p.rows)?p.rows.slice(0,100):[];if(!list.length)fail(400,'Choose at least one purchase.');
+  const cands=await loadCandidates(tx,cid,l,assets),by=new Map(cands.map((x:any)=>[x.source_row_id,x])),seen=new Set<string>(),prepared:any[]=[];
+  for(const x of list){
+   const id=uuid(x.source_row_id),cand=by.get(id);if(seen.has(id))fail(400,'A purchase is listed twice.');seen.add(id);
+   if(!cand)fail(409,'A chosen purchase is no longer waiting for the register (it may already be in it). Refresh and choose again.');
+   const tag=`${cand.invoice||cand.asset_account} ${cand.supplier||''}`.trim(),first=x.first_use_on?dateOf(x.first_use_on,'first-use date'):cand.acquired_on;
+   const v:any={asset_name:(cand.asset_name&&cand.asset_name.trim().length>=3?cand.asset_name:`Purchase ${tag}`).slice(0,160),asset_account:cand.asset_account,class_code:String(x.class_code||''),acquired_on:cand.acquired_on,first_use_on:first,cost:cand.cost,
+    business_percentage:x.business_percentage===''||x.business_percentage==null?100:num(x.business_percentage,'business use'),noncommercial_vehicle:x.noncommercial_vehicle===true||x.noncommercial_vehicle==='true',origin:'Added in the year',bf_as_of:null,bf_accumulated_depreciation:null,bf_tax_wdv:null,
+    evidence:`Purchase row in the ERP, supplier ${cand.supplier||'not recorded'}, invoice ${cand.invoice||'not recorded'}`.slice(0,500)};
+   const bad=assetIssues(v,{accounts,rates});if(bad.length)fail(400,`${tag||cand.asset_name}: ${bad.join(' ')}`);
+   await refuseIfLocked(tx,cid,effectiveDate(v));prepared.push({v,source:id});
+  }
+  const made:any[]=[];
+  for(const {v,source} of prepared){
+   const key=crypto.randomUUID();await tx`select pg_advisory_xact_lock(hashtextextended(${'ppe:'+key},0))`;
+   made.push((await tx`insert into erp_private.ppe_assets(asset_key,version,client_id,asset_name,asset_account,class_code,acquired_on,first_use_on,cost,business_percentage,noncommercial_vehicle,origin,source_row_id,evidence,prepared_by)
+    values(${key},1,${cid},${v.asset_name},${v.asset_account},${v.class_code},${v.acquired_on},${v.first_use_on},${v.cost},${v.business_percentage},${v.noncommercial_vehicle},'Added in the year',${source},${v.evidence},${a.staff_id}) returning record_id,asset_key,asset_account`)[0]);
+  }
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'ppe_assets','PPE_ADDITIONS_DECLARED',${cid},${tx.json({count:made.length,source_rows:prepared.map((x:any)=>x.source)})})`;
+  return {ok:true,declared:made.length,records:made};
  }
  if(p.action==='ledger_ppe_asset_review'){
   if(!isLeader(a))fail(403,'A Manager or Partner approves or returns an asset.');

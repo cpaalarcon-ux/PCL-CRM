@@ -1,4 +1,4 @@
-import {routingConfirmed} from './routing-map-rules.mjs';
+import {routingConfirmed,resolveRouting} from './routing-map-rules.mjs';
 import {stockCategoryOptions} from './stock-category-options.ts';
 import {chartResolver,chartMessage,chartCatalogue} from './client-chart.ts';
 import {summarySalesRows,salesSourceCoverage} from './period-import-actions.ts';
@@ -32,7 +32,7 @@ async function calculate(tx:any,c:any,inputs:any){const source=await reconSource
  return {...source,result,deferral};
 }
 export async function accountingAction(tx:any,a:any,p:any){
- if(!String(p.action).startsWith('accounting_')&&!String(p.action).startsWith('sales_recon_')&&!['workbook_map','workbook_map_bulk','workbook_split','workbook_mapping_undo'].includes(p.action))return undefined;
+ if(!String(p.action).startsWith('accounting_')&&!String(p.action).startsWith('sales_recon_')&&!['workbook_map','workbook_map_bulk','workbook_map_groups','workbook_split','workbook_mapping_undo'].includes(p.action))return undefined;
  if(a.category_code==='INTERN'&&p.action!=='accounting_catalog')fail(403,'A staff preparer must handle purchase and tax working papers.');
  if(p.action==='accounting_catalog')return {accounts:await tx`select * from erp_private.account_catalog order by code`};
  if(p.action==='accounting_account_add'){
@@ -66,6 +66,21 @@ export async function accountingAction(tx:any,a:any,p:any){
   if((await tx`select row_id from erp_private.tax_row_reviews where row_id=${r.row_id} and source_revision=${r.revision} and decision in ('Eligible','Excluded','Confirmed')`).length)fail(400,'Independently reviewed mapping cannot be undone. Use a controlled correction.');
   const v=history.before_mapping;await tx`select set_config('erp.mapping_operation','undo',true)`;
   await tx`update erp_private.workbook_rows set route=${v.route},category_code=${v.category_code},account_code=${v.account_code},narration=${v.narration},asset_details=${v.asset_details},review_details=${tx.json(v.review_details)},first_use_status=${v.first_use_status},first_use_date=${v.first_use_date} where row_id=${r.row_id}`;return {ok:true};
+ }
+ // Build 2894: one save maps several accounts. Each group is one account with its own rows (and, for an asset, its own description and first-use date); every group runs through exactly the same checks and
+// writes as a one-account bulk mapping, in the same transaction, so either every group is mapped or none is. The "I confirm these uploaded codes" attestation is the person's and is passed through unchanged.
+ if(p.action==='workbook_map_groups'){
+  if(project.status==='Archived')fail(400,'Archived projects cannot change.');
+  const groups=Array.isArray(p.groups)?p.groups:[];if(!groups.length||groups.length>30)fail(400,'Choose between 1 and 30 account groups.');
+  const seen=new Set<string>();let total=0;
+  for(const g of groups){if(!Array.isArray(g.rows)||!g.rows.length)fail(400,'Every group needs at least one row.');for(const r of g.rows){const k=String(r.row_id);if(seen.has(k))fail(400,'A row was selected more than once.');seen.add(k);total++;}}
+  if(total>500)fail(400,'Select 1–500 rows.');
+  const done:any[]=[];let count=0;
+  for(const [i,g] of groups.entries()){
+   try{const out=await accountingAction(tx,a,{...p,...g,groups:undefined,action:'workbook_map_bulk',project_id:pid,rows:g.rows,selection_id:undefined,selection_hash:undefined,confirm_uploaded_mapping:p.confirm_uploaded_mapping===true});count+=Number(out.count||0);done.push({account_code:g.account_code,count:out.count});}
+   catch(e:any){if(e&&e.status){e.message=`Account ${g.account_code||i+1}: ${e.message} Nothing was mapped.`;}throw e;}
+  }
+  return {ok:true,count,groups:done};
  }
  if(['workbook_map','workbook_map_bulk','workbook_split','workbook_mapping_undo'].includes(p.action)){
   if(project.status==='Archived')fail(400,'Archived projects cannot change.');await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
@@ -103,6 +118,8 @@ export async function accountingAction(tx:any,a:any,p:any){
   const activityIds=[...new Set([...activityByRow.values()].filter(Boolean).map((x:any)=>x.activity_id))],activityPolicies=activityIds.length?await tx`select * from erp_private.stock_policy_versions where activity_id=any(${tx.array(activityIds)}::uuid[]) order by effective_from desc`:[];
   const categoryChoices=Number(p.route)===1&&p.mapping_options_version===1?await stockCategoryOptions(tx,project.client_id):[];
   const soldVat=(await tx`select vat_categories_sold from erp_private.clients where client_id=${project.client_id}`)[0]?.vat_categories_sold||null,resaleReason=text(p.resale_reason||'',500,false);
+  // Build 2898 (amendment H): confirming an uploaded code pair maps a row only when the pair is approved for the client in the routing map. A valid pair in a file is never approval.
+  const approvedRouting=p.confirm_uploaded_mapping===true?await tx`select module,routing_code,item_code,erp_account_code,side,effective_from,effective_to,status,routing_id,version from erp_private.client_routing_map where client_id=${project.client_id} and module='Purchases' and status='Active'`:[];
   const values=rows.map((r:any)=>{
    const at=String(r.normalized.date||day(r.period_start));
    const rowActivity=activityByRow.get(r.row_id),rowActivityId=rowActivity?.activity_id||null;
@@ -114,8 +131,9 @@ export async function accountingAction(tx:any,a:any,p:any){
    const rowVat=r.normalized?.vat_category;
    if(Number(p.route)===1&&soldVat&&VAT_CATEGORIES.includes(rowVat)&&!soldVat.includes(rowVat)&&resaleReason.length<10)fail(400,`Client does not sell ${rowVat} goods. Choose Expenditure or PPE for source row ${r.source_row}, or enter a reason of at least 10 characters to treat it as resale.`);
    const applicablePolicies=activityPolicies.filter((v:any)=>v.activity_id===rowActivityId),dated=applicablePolicies.find((v:any)=>day(v.effective_from)<=at),value=mapValue(r,p,accounts,applicablePolicies.length?dated:policy),hint=r.normalized?.mapping_suggestion;
-   const confirmedPair=p.confirm_uploaded_mapping===true&&!!hint&&Number(hint.route)===Number(value.route)&&hint.category_code===value.category_code&&String(hint.account_code)===String(value.account_code);
-   if(!clientAccountCovers(value.account_code,r)&&!confirmedPair)fail(400,`ERP account ${value.account_code} is not approved for this client and invoice date. Confirm an exact valid routing/TB code pair from the upload, or ask a Manager to add a client account mapping (it is reviewed when the journal is approved and posted).`);
+   const approvedPair=!!hint&&!!r.normalized?.routing_code&&!!r.normalized?.tb_code&&(()=>{const f=resolveRouting(approvedRouting,{module:'Purchases',routing_code:r.normalized.routing_code,item_code:String(r.normalized.tb_code).trim(),date:at});return f.status==='mapped'&&String(f.mapping.erp_account_code)===String(value.account_code);})();
+   const confirmedPair=p.confirm_uploaded_mapping===true&&!!hint&&approvedPair&&Number(hint.route)===Number(value.route)&&hint.category_code===value.category_code&&String(hint.account_code)===String(value.account_code);
+   if(!clientAccountCovers(value.account_code,r)&&!confirmedPair){if(p.confirm_uploaded_mapping===true&&hint&&!approvedPair)fail(400,`The uploaded routing code ${r.normalized?.routing_code||'(blank)'} and TB code ${r.normalized?.tb_code||'(blank)'} are a valid pair but are not approved for this client. A Manager proposes the pair in the routing map and a different Partner approves it. A valid code in a file is never approval.`);fail(400,`ERP account ${value.account_code} is not approved for this client and invoice date. Confirm an exact valid routing/TB code pair from the upload, or ask a Manager to add a client account mapping (it is reviewed when the journal is approved and posted).`);}
    return value;
   });
   const exceptionByRow=await exceptionPatches(tx,a,p,rows,pid),confirmedAt=new Date().toISOString(),updates=rows.map((r:any,i:number)=>{const details=inventoryDetails(r,p),rowActivity=activityByRow.get(r.row_id);for(const k of ['legal_category','legal_basis','evidence'])if(p[k]!==undefined)details[k]=text(p[k],2000,false);if(exceptionByRow.has(r.row_id))Object.assign(details,exceptionByRow.get(r.row_id));if(Number(p.route)===1&&resaleReason)details.resale_reason=resaleReason;if(rowActivity)details.activity_id=rowActivity.activity_id;const hint=r.normalized?.mapping_suggestion,v=values[i],matches=!!hint&&Number(hint.route)===Number(v.route)&&hint.category_code===v.category_code&&String(hint.account_code)===String(v.account_code);if(p.confirm_uploaded_mapping===true&&!matches)fail(400,'The uploaded routing and TB codes do not match every selected row. Reopen the selection and confirm only matching code sets.');if(p.confirm_uploaded_mapping===true)details.mapping_confirmation={method:'Uploaded routing and TB codes',routing_code:hint.category_code,tb_item_code:hint.account_code,confirmed_by:a.staff_id,confirmed_at:confirmedAt};else delete details.mapping_confirmation;return {row_id:r.row_id,...v,review_details:details,uploaded_hint_matches:matches,uploaded_hint:hint||null};});

@@ -41,15 +41,15 @@ test('the old long window is split in two and every entry point lands in the fil
  for(const b of ["'activity'","'chart'","'vat-cats'","'period'","'identity'","'setup-review'"])assert.match(set,new RegExp('button\\('+b),b);
  assert.doesNotMatch(set,/Payroll returns|Tax rule exceptions|routing-map-open/,'these moved to Tax & returns');
  assert.match(imp,/async function client\(id,options=\{\}\)\{if\(options\.stockSetup\)\{await loadClient\(id\);policy\(options\);return;\}openFile\(id,'setup'\);\}/);
- assert.match(imp,/b\.dataset\.clientOpen=id;b\.dataset\.clientTab=tab/);assert.match(imp,/return \{client,project,bank,chart,paintClientTab\}/);
- assert.match(imp,/\['identity','vat-cats','activity','period','partners','stock-policy'\]\.includes\(a\)&&clientData\?\.client\?\.client_id!==id\)await loadClient\(id\)/,'a button in the tab always works on this client');
+ assert.match(imp,/b\.dataset\.clientOpen=id;b\.dataset\.clientTab=tab/);assert.match(imp,/return \{client,project,bank,chart,paintClientTab(?:,resumeActivityDraft)?\}/);
+ assert.match(imp,/\['identity','vat-cats','activity','period','partners','stock-policy','stock-policy-step'\]\.includes\(a\)&&clientData\?\.client\?\.client_id!==id\)await loadClient\(id\)/,'a button in the tab always works on this client');
  assert.match(imp,/now\.dataset\.tab!==tab\|\|now\.dataset\.id!==id\)return/,'a slow answer for a tab the person has left is dropped');
 });
 
 test('the page paints the host after every render of the tab, for Managers and Partners only, and shows a failure in place',()=>{
  const p=rd('staff-pilot.mjs');
  assert.match(p,/if\(view==='clientfile'&&\(\(isLeader\(\)&&\['setup','tax'\]\.includes\(clientTab\)\)\|\|\['aml','understanding'\]\.includes\(clientTab\)\)\)void improvements\.paintClientTab\(clientTab,selectedClient\)\.catch\(/);
- assert.match(p,/staff-improvements\.mjs\?v=20261122-loc-v1/);
+ assert.match(p,/staff-improvements\.mjs\?v=20261119-drafts2-v1/);
 });
 
 test('names: the card menu says Set-up and opens the tab; the old seven-name window title is gone',()=>{

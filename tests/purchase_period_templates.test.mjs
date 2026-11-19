@@ -17,7 +17,7 @@ test('a month covers its first to last day, a week covers seven days, and bad in
 test('the purchase upload form offers a month or a week and prefills the category from the sheet',()=>{
  const s=rd('staff-standard-purchases.mjs');
  assert.match(s,/staff-purchase-period\.mjs\?v=20261118-purchperiod-v1/);assert.match(s,/period_kind/);assert.match(s,/week_start/);assert.match(s,/purchaseCategoryFromSheet/);assert.match(s,/A week/);
- assert.match(rd('staff-workspace-v6.mjs'),/staff-standard-purchases\.mjs\?v=20261118-purchperiod-v2/);
+ assert.match(rd('staff-workspace-v6.mjs'),/staff-standard-purchases\.mjs\?v=20261119-alias-v1/);
 });
 test('the sales upload form asks whether the file holds one month or more than one month',()=>{
  const s=rd('staff-period-imports.mjs');

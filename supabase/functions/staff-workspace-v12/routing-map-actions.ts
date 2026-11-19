@@ -1,9 +1,9 @@
 import {fail,text,uuid,revision} from './validation.mjs';
-import {proposalIssues,PAYROLL_CODES,payrollSide,cleanCode,MODULES} from './routing-map-rules.mjs';
+import {proposalIssues,PAYROLL_CODES,payrollSide,cleanCode,MODULES,aliasKey,aliasIssues,resolveRouting} from './routing-map-rules.mjs';
 
 // The approved routing map (build 2802, Partner approval and versions from 2803): read it, a Manager or Partner proposes mappings (one or many), a Partner who did not propose approves, and a Manager or Partner ends or withdraws them.
 // The rules for the table are in 20261114150000_client_routing_map.sql; the matching rules are in routing-map-rules.mjs. Nothing here posts anything.
-const ACTIONS=['routing_map_read','routing_map_suggestions','routing_map_suggest_propose','routing_map_copy','routing_map_propose','routing_map_approve','routing_map_end','routing_map_withdraw'];
+const ACTIONS=['routing_map_read','routing_map_suggestions','routing_map_suggest_propose','routing_map_copy','routing_map_propose','routing_map_approve','routing_map_approve_batch','routing_map_end','routing_map_withdraw','routing_map_alias_read','routing_map_alias_propose','routing_map_alias_approve','routing_map_alias_end','routing_map_alias_withdraw'];
 const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 const one=(r:any[])=>{if(!r.length)fail(403,'This is unavailable to your account.');return r[0];};
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
@@ -75,6 +75,74 @@ export async function routingMapAction(tx:any,a:any,p:any):Promise<any>{
   }
   if(!saved.length&&problems.length)fail(400,problems.slice(0,5).map((x:any)=>`Row ${x.row} (${x.routing_code||'no code'}): ${x.issues.join(' ')}`).join(' '));
   return {ok:true,saved:saved.length,problems};
+ }
+ // Build 2893: a Partner approves several drafts in one step. Maker is not checker: if the Partner proposed any selected mapping, nothing is approved and the codes are named.
+ if(p.action==='routing_map_approve_batch'){
+  if(a.category_code!=='PARTNER')fail(403,'A Partner approves a routing mapping. The Manager proposes it.');
+  const ids=[...new Set((Array.isArray(p.routing_ids)?p.routing_ids:[]).map((x:any)=>uuid(x)))];if(!ids.length||ids.length>200)fail(400,'Choose between 1 and 200 mappings.');
+  const rows=await tx`select * from erp_private.client_routing_map where client_id=${cid} and routing_id=any(${tx.array(ids)}::uuid[]) order by routing_id for update`;
+  if(rows.length!==ids.length)fail(403,'All selected mappings must belong to this client.');
+  const label=(xs:any[])=>xs.map((x:any)=>x.routing_code+(x.item_code?' / '+x.item_code:'')).slice(0,8).join(', ');
+  const notDraft=rows.filter((x:any)=>x.status!=='Draft');if(notDraft.length)fail(409,`Only drafts can be approved. Already approved or withdrawn: ${label(notDraft)}. Refresh and choose again.`);
+  const mine=rows.filter((x:any)=>x.created_by===a.staff_id);if(mine.length)fail(403,`A Partner who did not propose a mapping must approve it. You proposed: ${label(mine)}. Nothing was approved; remove these and approve the rest.`);
+  const done=await tx`update erp_private.client_routing_map set status='Active',approved_by=${a.staff_id},approved_at=now() where client_id=${cid} and routing_id=any(${tx.array(ids)}::uuid[]) and status='Draft' returning routing_id`;
+  if(done.length!==ids.length)fail(409,'Some mappings changed while approving. Nothing was approved; refresh and try again.');
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_routing_map','ROUTING_MAP_APPROVED_BATCH',${cid},${tx.json({count:done.length,routing_ids:ids})})`;
+  return {ok:true,approved:done.length};
+ }
+
+ // Client supplier aliases (build 2899, amendment F). An alias says which already-approved routing code and TB item code a supplier's text uses. It never approves a pair.
+ // A Manager or Partner proposes; a different Partner approves; an approved alias is ended on a date or withdrawn with a reason, never edited, never deleted.
+ if(p.action.startsWith('routing_map_alias_')){
+  if(p.action==='routing_map_alias_read'){
+   const list=await tx`select a.alias_id,a.party_key,a.description_key,a.party_label,a.routing_code,a.item_code,a.effective_from,a.effective_to,a.status,a.created_by,erp_private.reviewer_label(a.created_by) as created_by_name,a.approved_by,erp_private.reviewer_label(a.approved_by) as approved_by_name,a.approved_at,a.closed_reason,a.revision,c.name as account_name
+    from erp_private.client_routing_alias a left join erp_private.account_catalog c on c.code=a.item_code where a.client_id=${cid} order by a.status='Inactive',a.party_key,a.effective_from desc limit 1000`;
+   const pairs=await tx`select m.routing_code,coalesce(m.item_code,m.erp_account_code) as item_code,m.effective_from,m.effective_to from erp_private.client_routing_map m where m.client_id=${cid} and m.module='Purchases' and m.status='Active' order by m.routing_code,2`;
+   return {aliases:list,approved_pairs:pairs};
+  }
+  if(p.action==='routing_map_alias_propose'){
+   if(!isLeader(a))fail(403,'A Manager or Partner proposes an alias.');
+   const party=String(p.party??'').trim(),desc=p.description?String(p.description).trim():'',code=cleanCode(p.routing_code),item=String(p.item_code??'').trim(),from=day(p.effective_from),to=p.effective_to?day(p.effective_to):null;
+   const issues=aliasIssues({party,description:desc,routing_code:code,item_code:item,effective_from:from,effective_to:to});
+   if(issues.length)fail(400,issues.join(' '));
+   const maps=await tx`select module,routing_code,item_code,erp_account_code,side,effective_from,effective_to,status,routing_id,version from erp_private.client_routing_map where client_id=${cid} and module='Purchases' and status='Active'`;
+   const found=resolveRouting(maps,{module:'Purchases',routing_code:code,item_code:item,date:from});
+   if(found.status!=='mapped'||String(found.mapping.erp_account_code)!==item)fail(400,`Routing code ${code} with TB item code ${item} is not an approved mapping for this client on ${from}. An alias only points to a pair a Partner has already approved. Propose and approve that mapping first.`);
+   const pk=aliasKey(party),dk=desc?aliasKey(desc):null;
+   const dup=await tx`select alias_id from erp_private.client_routing_alias where client_id=${cid} and party_key=${pk} and coalesce(description_key,'')=${dk||''} and status in ('Draft','Active') and effective_from<=${to||'9999-12-31'}::date and coalesce(effective_to,'9999-12-31'::date)>=${from}::date limit 1`;
+   if(dup.length)fail(409,'A draft or approved alias already covers this supplier text on these dates.');
+   const r=await tx`insert into erp_private.client_routing_alias(client_id,party_key,description_key,party_label,routing_code,item_code,effective_from,effective_to,created_by) values(${cid},${pk},${dk},${party.slice(0,200)},${code},${item},${from},${to},${a.staff_id}) returning alias_id`;
+   return {ok:true,alias_id:r[0].alias_id,party_key:pk};
+  }
+  const al=one(await tx`select * from erp_private.client_routing_alias where alias_id=${uuid(p.alias_id)} and client_id=${cid} for update`);
+  if(String(al.revision)!==revision(p.revision))fail(409,'This alias changed. Refresh before continuing.');
+  if(p.action==='routing_map_alias_approve'){
+   if(a.category_code!=='PARTNER')fail(403,'A Partner approves an alias. A Manager proposes it.');
+   if(al.status!=='Draft')fail(409,'Only a draft alias can be approved.');
+   if(al.created_by===a.staff_id)fail(403,'A Partner who did not propose it must approve this alias.');
+   const maps=await tx`select module,routing_code,item_code,erp_account_code,side,effective_from,effective_to,status,routing_id,version from erp_private.client_routing_map where client_id=${cid} and module='Purchases' and status='Active'`;
+   const found=resolveRouting(maps,{module:'Purchases',routing_code:al.routing_code,item_code:al.item_code,date:day(al.effective_from)});
+   if(found.status!=='mapped'||String(found.mapping.erp_account_code)!==String(al.item_code))fail(409,`Routing code ${al.routing_code} with TB item code ${al.item_code} is not an approved mapping on ${day(al.effective_from)}. Approve that mapping first; an alias never approves a pair.`);
+   const r=await tx`update erp_private.client_routing_alias set status='Active',approved_by=${a.staff_id},approved_at=now() where alias_id=${al.alias_id} returning alias_id`;
+   if(!r.length)fail(403,'You cannot approve this alias.');
+   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_routing_alias','ROUTING_ALIAS_APPROVED',${al.alias_id},${tx.json({client_id:cid,party_key:al.party_key,routing_code:al.routing_code,item_code:al.item_code})})`;
+   return {ok:true};
+  }
+  const why=text(p.reason||'',500,false);if(why.trim().length<10)fail(400,'Say why (at least 10 characters).');
+  if(p.action==='routing_map_alias_end'){
+   if(!isLeader(a))fail(403,'A Manager or Partner ends an alias.');
+   if(al.status!=='Active'||al.effective_to)fail(409,'Only an approved alias without an end date can be ended.');
+   const to=day(p.effective_to);if(!/^\d{4}-\d{2}-\d{2}$/.test(to)||to<day(al.effective_from))fail(400,'Enter an end date on or after the start date.');
+   const r=await tx`update erp_private.client_routing_alias set effective_to=${to},closed_by=${a.staff_id},closed_at=now(),closed_reason=${why} where alias_id=${al.alias_id} returning alias_id`;
+   if(!r.length)fail(403,'You cannot end this alias.');
+   return {ok:true};
+  }
+  if(al.status==='Inactive')fail(409,'This alias is already withdrawn.');
+  if(al.status==='Active'&&!isLeader(a))fail(403,'A Manager or Partner withdraws an approved alias.');
+  if(!isLeader(a))fail(403,'A Manager or Partner withdraws an alias.');
+  const r=await tx`update erp_private.client_routing_alias set status='Inactive',closed_by=${a.staff_id},closed_at=now(),closed_reason=${why} where alias_id=${al.alias_id} returning alias_id`;
+  if(!r.length)fail(403,'You cannot withdraw this alias.');
+  return {ok:true};
  }
  const m=one(await tx`select * from erp_private.client_routing_map where routing_id=${uuid(p.routing_id)} and client_id=${cid} for update`);
  if(String(m.revision)!==revision(p.revision))fail(409,'This mapping changed. Refresh before continuing.');
