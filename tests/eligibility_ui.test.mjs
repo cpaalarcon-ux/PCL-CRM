@@ -4,7 +4,7 @@ const U=await import('../staff-eligibility.mjs');
 const rec=o=>({record_id:'r1',revision:'1',kind:'Technical competence',practitioner_name:'A. Fictional',state:'Recorded',status:'Recorded',authority:'ICPAK',reference:'CPD-1',valid_from:'2026-01-01',expires_on:'2027-01-01',recorded_by:'m1',recorded_by_name:'Manager',...o});
 test('the eligibility card is wired into Settings and the cache chain is bumped',()=>{
  assert.match(rd('staff-suite.mjs'),/staff-eligibility\.mjs\?v=20261116-elig-v1/);assert.match(rd('staff-suite.mjs'),/eligibility\.card\(\)/);assert.match(rd('staff-suite.mjs'),/eligibility\.handle\(action,id\)/);
- assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261119-bulk-v1/);assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/eligibility_/);assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/eligibilityAction/);
+ assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261119-review-v1/);assert.match(rd('supabase/functions/staff-workspace-v12/staff-access-control.mjs'),/eligibility_/);assert.match(rd('supabase/functions/staff-workspace-v12/index.ts'),/eligibilityAction/);
 });
 test('a service shows what it needs, what is missing and offers Verify only to a Partner',()=>{
  const s={service_code:'ADV-VAL',service_name:'Business Valuation',service_group:'Advisory & Consulting',requirements:['Independence and conflicts','Technical competence'],named_kinds:['Technical competence'],firm_readiness:{missing:['Independence and conflicts'],expiring:[]},records:[rec({})]};
