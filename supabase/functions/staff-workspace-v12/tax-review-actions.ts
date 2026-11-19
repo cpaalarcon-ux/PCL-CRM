@@ -10,6 +10,7 @@ import {one,leader,today} from './suite-actions.ts';
 import {assertSupportedPeriod} from './supported-period.ts';
 import {annualTaxLedgerControl} from './ledger-actions.ts';
 import {stockGateIssues} from './stock-vat.ts';
+import {assertSummaryViewed} from './upload-summary-gate.ts';
 import {sourceTotals,rulesStatus,rowFingerprint,appliedRateSummary} from './snapshot-rules.mjs';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
 const editor=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner must review this work.');};
@@ -293,6 +294,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
    const orig=one(await tx`select inputs from erp_private.tax_cases where case_id=${c.amends_case_id}`),adjustmentKeys=(await tx`select erp_private.tax_amendment_adjustment_keys(${c.kind}) as keys`)[0].keys as string[];
    if(!adjustmentKeys.some((k:string)=>JSON.stringify(c.inputs?.[k]??null)!==JSON.stringify(orig.inputs?.[k]??null)))fail(400,'Record at least one adjustment before submitting an amendment. An amendment with no adjustment changes nothing.');
   }
+  await assertSummaryViewed(tx,c);// Build 2901: the preparer must have opened the upload summary first.
   const s=await taxSummary(tx,c);if(s.issues.length)fail(400,s.issues.join(' '));
   await takeSnapshot(tx,a,c,s,'SUBMITTED');
   await tx`update erp_private.tax_cases set status='Submitted',result=${tx.json(s.result)} where case_id=${c.case_id}`;return {ok:true};
