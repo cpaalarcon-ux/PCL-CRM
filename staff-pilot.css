@@ -660,7 +660,7 @@ small.warn{color:#8a5a00;display:block}
 #editor.has-header-save #editForm>button[type=submit]{display:none}
 .sidebar-section-title{margin:14px 12px 4px;font-size:.75rem;font-weight:700;color:var(--sidebar-muted)}
 .import-bulk-actions{position:sticky;bottom:0;z-index:3;background:var(--paper);border-top:1px solid var(--line);padding:10px}
-.detail-return{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;background:var(--bg);padding:4px 0 8px}
+.detail-return{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-start;flex-wrap:wrap;align-items:center;gap:.35rem 1rem;background:var(--bg);padding:4px 0 8px}
 
 /* Build 2903: contextual header, focus not hidden by pinned bars, and minimum target size (WCAG 2.2 AA 2.4.11, 2.5.8). */
 .workspace-header{display:flex;flex-wrap:wrap;gap:.35rem 1rem;align-items:center;justify-content:space-between;padding:.6rem 0;margin:0 0 .75rem;border-bottom:1px solid var(--line,#dce4e8)}
@@ -680,3 +680,11 @@ input[type=checkbox],input[type=radio]{inline-size:1.5rem;block-size:1.5rem;min-
 .leave-dialog::backdrop{background:rgba(15,23,42,.5)}
 .leave-dialog h2{margin:0 0 8px;font-size:1.15rem}
 .leave-dialog .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+
+/* Build 2905: Back, the Client > Project > Period trail and the status badge share one sticky bar; focus is never scrolled under it. */
+.detail-return.has-header{border-bottom:1px solid var(--line,#dce4e8);padding-bottom:8px}
+.detail-return .workspace-header{flex:1 1 16rem;min-width:0;margin:0;padding:0;border:0;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.25rem .75rem;position:static}
+.detail-return .wh-trail{flex:1 1 10rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.detail-return .wh-status{flex:0 0 auto}
+html{scroll-padding-top:calc(var(--detail-bar-h,0px) + .5rem)}
+#content :is(input,select,textarea,button,a,summary,[tabindex]):focus{scroll-margin-block-start:max(4.5rem,calc(var(--detail-bar-h,0px) + .75rem))}
