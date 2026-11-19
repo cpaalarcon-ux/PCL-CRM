@@ -14,7 +14,7 @@ import {createTbMultiUI} from './staff-tb-multi.mjs?v=20261130-tbmulti-v1';
 import {createReportNotesUI} from './staff-report-notes.mjs?v=20261201-rnotes-v1';
 import {createPartnerEquityUI} from './staff-partner-equity.mjs?v=20261130-peq-v1';
 import {createPackExportUI} from './staff-pack-export.mjs?v=20261129-packx-v1';
-import {createPpeUI} from './staff-ppe.mjs?v=20261128-rates-v1';
+import {createPpeUI} from './staff-ppe.mjs?v=20261119-ppe-v1';
 import {gateHtml,finalAvailable,declarationsHtml} from './staff-report-gate.mjs?v=20261115-declare-v1';
 // Client working papers. All reads and mutations are authorised again by the API.
 export function createLedgerUI(ctx,{onPayrollImport}={}){

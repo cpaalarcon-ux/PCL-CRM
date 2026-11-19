@@ -71,5 +71,5 @@ test('a pack with nothing produced yet says so, and screens escape what they sho
 });
 test('the ledger offers it and wires it with a fresh cache token',()=>{
  const s=rd('staff-ledger.mjs');assert.match(s,/createReportNotesUI/);assert.match(s,/staff-report-notes\.mjs\?v=20261201-rnotes-v1/);assert.match(s,/btn\('report-notes','Report notes and packs'\)/);assert.match(s,/a==='report-notes'/);
- assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261201-rnotes-v1/);
+ assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261119-ppe-v1/);
 });
