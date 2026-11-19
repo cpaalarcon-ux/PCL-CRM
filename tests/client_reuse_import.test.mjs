@@ -66,6 +66,6 @@ test('2808: client facts import from the master workbook as unverified Import fa
 test('2808 screens: copy button and import result are wired',async()=>{
  const rd=f=>fs.readFileSync(path.resolve(import.meta.dirname,'..',f),'utf8');
  assert.match(rd('staff-routing-map.mjs'),/routing_map_copy/);assert.match(rd('staff-routing-map.mjs'),/Copy from another client/);
- assert.match(rd('staff-suite.mjs'),/Facts recorded for verification/);assert.match(rd('staff-accounting.mjs'),/staff-routing-map\.mjs\?v=20261119-setup-v1/);
+ assert.match(rd('staff-suite.mjs'),/Facts recorded for verification/);assert.match(rd('staff-accounting.mjs'),/staff-routing-map\.mjs\?v=20261119-alias-v1/);
  assert.match(rd('supabase/functions/staff-workspace-v12/master-import.ts'),/importFacts/);
 });
