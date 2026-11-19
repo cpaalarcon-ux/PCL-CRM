@@ -11,6 +11,7 @@ import {salesAmendAction} from './sales-amend-actions.ts';
 import {referenceAction} from './reference-actions.ts';
 import {staffRightsAction} from './staff-rights-actions.ts';
 import {discussionAction} from './discussion-actions.ts';
+import {discardAttachment,downloadAttachment,readAttachmentUpload,storeAttachment} from './messenger-attachments.ts';
 import {taxPeriodAction} from './tax-period-actions.ts';
 import {improvementAction} from './improvement-actions.ts';
 import {reviewQueueAction} from './review-queue.ts';
@@ -476,7 +477,9 @@ async function action(id:any,p:any){
   const policy=await policyAction(tx,a,p);if(policy!==undefined)return policy;
   const rights=await staffRightsAction(tx,a,p);if(rights!==undefined)return rights;
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
-  const discussion=await discussionAction(tx,a,p);if(discussion!==undefined)return discussion;
+  if(p.action==='discussion_attachment_discard')return discardAttachment(tx,a,p,admin.storage.from(BUCKET));
+  let discussionAreas:Promise<string[]>|undefined;
+  const discussion=await discussionAction(tx,a,p,async area=>staffAreaCanUse(a.category_code,await (discussionAreas??=restrictedAreas(tx,a.staff_id)),area));if(discussion!==undefined)return discussion;
   const periods=await taxPeriodAction(tx,a,p);if(periods!==undefined)return periods;
   const presence=await presenceAction(tx,a,p,{session_id:id.claims.session_id,activity_age_ms:id.activity_age_ms});if(presence!==undefined)return presence;
   const exported=await suiteExport(tx,a,p,admin.storage.from(BUCKET));if(exported!==undefined)return exported;
@@ -704,6 +707,16 @@ Deno.serve(async(req:Request)=>{
    const id=await identity(req);
    if(req.headers.get('x-erp-upload-kind')==='forensic'){const result=await forensicUpload(req,id);return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='incoming'){const result=await incomingUpload(req,id);return new Response(JSON.stringify(result),{headers});}
+   if(req.headers.get('x-erp-upload-kind')==='messenger'){
+    const file=await readAttachmentUpload(await req.formData()),digest=await sha(file.bytes);
+    await limit('messenger-upload:'+id.claims.sub,60);
+    const result=await scoped(id,async(tx,a)=>{
+     await requireStaffArea(tx,a,'communications');
+     await bucket();
+     return storeAttachment(tx,a,file,digest,admin.storage.from(BUCKET));
+    });
+    return new Response(JSON.stringify(result),{headers});
+   }
    if(req.headers.get('x-erp-upload-kind')==='reference'){const result=await referenceUpload(req,id);return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData(),dataset=String(form.get('dataset')||''),area=dataset==='Staff'?'staff_access':'clients';const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,area);return masterImport(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
@@ -720,6 +733,13 @@ Deno.serve(async(req:Request)=>{
   else if(p.action==='refresh_session')result=await refreshSession(req,p);
   else{
    const id=await identity(req);
+   if(p.action==='discussion_attachment_download'){
+    const file=await scoped(id,async(tx,a)=>{
+     await requireStaffArea(tx,a,'communications');
+     return downloadAttachment(tx,p,admin.storage.from(BUCKET));
+    });
+    return new Response(file.blob,{headers:{...headers,'Content-Type':file.mime,'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`}});
+   }
    if(p.action==='download'||p.action==='reference_download'||p.action==='incoming_download'||p.action==='forensic_evidence_download'){
     const file=p.action==='reference_download'?await referenceDownload(id,p):p.action==='incoming_download'?await incomingDownload(id,p):p.action==='forensic_evidence_download'?await forensicDownload(id,p):await download(id,p);const h={...headers,'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`};
     return new Response(file.blob,{headers:h});

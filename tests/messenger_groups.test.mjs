@@ -1,6 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {discussionAction}=await import('../supabase/functions/staff-workspace-v12/discussion-actions.ts');
+const {storeAttachment,downloadAttachment,readAttachmentUpload}=await import('../supabase/functions/staff-workspace-v12/messenger-attachments.ts');
 const {defaultStaffAreas,areaForStaffAction,staffAreaCanUse}=await import('../supabase/functions/staff-workspace-v12/staff-access-control.mjs');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),C=id(),P=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
@@ -93,6 +94,50 @@ test('System Administrators run logins and chat groups without seeing client wor
  dmr=await chat('ASSISTANT',{action:'discussion_messages',channel_id:dm.channel.channel_id});assert.equal(Number(dmr.read_positions.find(x=>x.staff_id===actors.ASSISTANT2.staff_id).last_sequence),dmSeq,'read by the other person');
  await assert.rejects(()=>chat('INTERN',{action:'discussion_open',kind:'Direct',staff_id:actors.ASSISTANT.staff_id}),/cannot start/);
  await assert.rejects(()=>chat('ASSISTANT',{action:'discussion_open',kind:'Direct',staff_id:actors.ASSISTANT.staff_id}),/another staff member/);
+ await t.test('attachment retries, conversation membership and ERP record permissions',async()=>{
+  const taskId=id(),docId=id(),channel_id=g.channel_id,attachment_id=id(),bytes=new TextEncoder().encode('%PDF- fictional');
+  await tx`insert into erp_private.tasks(task_id,project_id,assigned_to,task_name) values(${taskId},${P},${actors.ASSISTANT.staff_id},'Prepare fictional VAT return')`;
+  await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by)
+    values(${docId},${C},${F},${P},${taskId},'Working Papers','Fictional workbook.xlsx','qa/'||${docId}::text,100,${'d'.repeat(64)},'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',${actors.ASSISTANT.staff_id})`;
+  let writes=0;
+  const objects=new Map(),storage={
+   async upload(key,contents){writes++;if(writes===1)return {error:Error('network interrupted')};objects.set(key,contents);return {error:null};},
+   async download(key){return {data:objects.has(key)?new Blob([objects.get(key)]):null};}
+  };
+  const pdf=new FormData();
+  pdf.set('channel_id',channel_id);pdf.set('attachment_id',attachment_id);pdf.set('file',new File([bytes],'Fictional.pdf'));
+  const file=await readAttachmentUpload(pdf),digest='d'.repeat(64);
+  const upload=role=>as(role,a=>storeAttachment(tx,a,file,digest,storage));
+  const download=role=>as(role,()=>downloadAttachment(tx,{attachment_id},storage));
+  await assert.rejects(()=>upload('ADMIN'),e=>e.status===403);
+  await assert.rejects(()=>upload('ASSISTANT'),e=>e.status===502);
+  assert.equal((await upload('ASSISTANT')).attachment_id,attachment_id);
+  assert.deepEqual(await upload('ASSISTANT'),{attachment_id});
+  assert.equal(writes,2,'one failed upload, one successful upload and no write for the lost-response retry');
+  assert.equal(objects.size,1);
+  await assert.rejects(()=>download('ASSISTANT2'),e=>e.status===403);
+  const post={action:'discussion_send',channel_id,request_id:id(),body:'',attachment_ids:[attachment_id],shared_task_id:taskId};
+  await assert.rejects(()=>chat('ASSISTANT2',{...post,shared_task_id:null}),e=>e.status===409);
+  const sent=await chat('ASSISTANT',post);
+  assert.deepEqual(await chat('ASSISTANT',post),{message_id:sent.message_id,duplicate:true});
+  assert.equal((await download('ASSISTANT2')).name,'Fictional.pdf');
+  await assert.rejects(()=>download('ADMIN'),e=>e.status===403);
+  const shared={action:'discussion_shared_link',channel_id,message_id:sent.message_id};
+  assert.equal((await chat('ASSISTANT',shared)).task_id,taskId);
+  await assert.rejects(()=>chat('ASSISTANT2',shared),e=>e.status===403);
+  await assert.rejects(()=>chat('ADMIN',shared),e=>e.status===403);
+  await assert.rejects(()=>as('ASSISTANT',a=>discussionAction(tx,a,shared,area=>area!=='projects')),e=>e.status===403);
+  const thread=await chat('ASSISTANT2',{action:'discussion_messages',channel_id});
+  const received=thread.messages.find(m=>m.message_id===sent.message_id);
+  assert.equal(received.shared_kind,'task');
+  assert.equal(received.shared_title,null,'group members without project access do not receive the task title');
+  assert.equal(received.attachments[0].attachment_id,attachment_id);
+  const doc=await chat('ASSISTANT',{action:'discussion_send',channel_id,request_id:id(),shared_document_id:docId});
+  assert.equal((await chat('ASSISTANT',{...shared,message_id:doc.message_id})).document_id,docId);
+  await assert.rejects(()=>chat('ASSISTANT2',{...shared,message_id:doc.message_id}),e=>e.status===403);
+  await chat('ADMIN',{action:'discussion_group_members_set',channel_id,remove:[actors.ASSISTANT2.staff_id],add:[]});
+  await assert.rejects(()=>download('ASSISTANT2'),e=>e.status===403);
+ });
  // An administrator cannot open client work chats.
  await assert.rejects(()=>chat('ADMIN',{action:'discussion_open',project_id:P}),/not available/);
 });
