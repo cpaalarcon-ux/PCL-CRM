@@ -33,3 +33,14 @@ export function booksPack({activities=[],policies=[],categories=[],vatCategories
 
 // The set-up step "stock" is done when no active activity carries stock, or every one that does has its settings and categories.
 export const stockStepDone=pack=>!pack.stock_needed||pack.activities.filter(r=>r.needs_stock).every(r=>!r.gaps.length);
+
+// Approving a chart while stock settings are missing is allowed (never a hard block), with a reason. The reason and the missing list are kept
+// on the approved version's review note in a fixed form, so everyone who can read the chart can read the warning afterwards.
+export const PROVISIONAL_MARK='[Stock settings provisional]';
+export const PROVISIONAL_MIN=10,PROVISIONAL_MAX=500;
+export const cleanReason=v=>String(v||'').replace(/\s+/g,' ').trim();
+export function provisionalNote(note,missing,reason){return `${String(note||'').trim()}\n\n${PROVISIONAL_MARK} Reason: ${cleanReason(reason)}\nMissing: ${missing.join('; ')}`;}
+export function parseProvisional(reviewNote){
+ const m=String(reviewNote||'').match(/\n\n\[Stock settings provisional\] Reason: ([^\n]*)\nMissing: ([^\n]*)$/);
+ return m?{reason:m[1],missing:m[2].split('; ').filter(Boolean)}:null;
+}

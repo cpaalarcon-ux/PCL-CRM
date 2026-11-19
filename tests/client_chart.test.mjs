@@ -48,17 +48,27 @@ test('a client chart is proposed with exceptions cleared, independently approved
  assert.equal(r.status,'Pending review');
  const draft=r.draft;
  await assert.rejects(()=>chart('MANAGER',{action:'v3_client_chart_review',version_id:draft.version_id,revision:draft.revision,status:'Approved',review_note:'Self approval attempt'}),/different Manager or Partner/);
- // Books set-up pack: Construction carries stock, so the approver sees the gaps and must confirm they looked before approving.
+ // Books set-up pack: Construction carries stock, so the approver sees the gaps; approving with gaps needs a reason, approving without gaps needs the review tick.
  assert.equal(r.books_pack.stock_needed,true);assert.equal(r.books_pack.complete,false);
  assert.match(r.books_pack.gaps.join(' | '),/Stock update method and count frequency are not set for Construction and building works/);
  assert.match(r.books_pack.gaps.join(' | '),/No stock categories/);assert.match(r.books_pack.gaps.join(' | '),/VAT categories sold are not set/);
  const bp=await chart('ASSISTANT',{action:'v3_books_pack_read',client_id:C,effective_from:'2026-01-01'});assert.equal(bp.stock_step_done,false);
- await assert.rejects(()=>chart('PARTNER',{action:'v3_client_chart_review',version_id:draft.version_id,revision:draft.revision,status:'Approved',review_note:'Entity layer and construction pack checked.'}),/Confirm that you reviewed the Books set-up pack/);
- await chart('PARTNER',{action:'v3_client_chart_review',version_id:draft.version_id,revision:draft.revision,status:'Approved',review_note:'Entity layer and construction pack checked.',books_pack_reviewed:true});
+ // Missing stock settings never block approval: a typed reason of at least 10 characters is required, and the warning stays on the record.
+ const approve=(extra={})=>chart('PARTNER',{action:'v3_client_chart_review',version_id:draft.version_id,revision:draft.revision,status:'Approved',review_note:'Entity layer and construction pack checked.',...extra});
+ await assert.rejects(()=>approve(),/Stock settings are incomplete: Stock update method and count frequency are not set for Construction and building works/);
+ await assert.rejects(()=>approve({books_pack_reviewed:true}),/at least 10 characters/,'the review tick does not replace the reason when settings are missing');
+ await assert.rejects(()=>approve({stock_gap_reason:'too short'}),/at least 10 characters/);
+ await assert.rejects(()=>approve({stock_gap_reason:'   short   '}),/at least 10 characters/,'blank padding does not count');
+ await approve({stock_gap_reason:'Client has not sent the stock count policy yet',missing:[],stock_gaps:[]});
  const audit=(await tx`select after_values from erp_private.audit_events where action='BOOKS_PACK_REVIEWED' and record_key=${draft.version_id}`);
- assert.equal(audit.length,1,'the review of the pack is recorded');assert.ok(audit[0].after_values.gaps.length>=3,'the gaps the approver saw are kept');assert.equal(audit[0].after_values.reviewed_by,actors.PARTNER.staff_id);
- r=await chart('MANAGER',{action:'v3_client_chart_read',client_id:C,effective_from:'2026-01-01'});
+ assert.equal(audit.length,1,'the decision is recorded');
+ assert.equal(audit[0].after_values.provisional,true);assert.equal(audit[0].after_values.provisional_stock_note,'Client has not sent the stock count policy yet');
+ assert.equal(audit[0].after_values.reviewed_by,actors.PARTNER.staff_id);assert.ok(audit[0].after_values.missing.length>=3,'the server computed the missing list itself');
+ assert.match(audit[0].after_values.missing.join(' | '),/No stock categories/);
+ r=await chart('ASSISTANT',{action:'v3_client_chart_read',client_id:C,effective_from:'2026-01-01'});
  assert.equal(r.status,'Approved');
+ const pn=r.books_pack.provisional_note;assert.equal(pn.reason,'Client has not sent the stock count policy yet');assert.equal(pn.resolved,false);assert.ok(pn.missing.length>=3);assert.ok(pn.by&&pn.at,'who approved and when is shown');
+ assert.match(r.current.review_note,/\[Stock settings provisional\] Reason: Client has not sent/);
  await assert.rejects(()=>as('PARTNER',()=>tx`update erp_private.client_chart_versions set accounts=array['10000'] where version_id=${draft.version_id}`),/cannot be edited/);
  // Once the stock settings, categories and VAT categories are saved (reusing the existing tables), the pack is complete and the stock step is done.
  const act=(await tx`select activity_id from erp_private.client_activities where client_id=${C} limit 1`)[0].activity_id;
@@ -69,6 +79,28 @@ test('a client chart is proposed with exceptions cleared, independently approved
  assert.equal(done.books_pack.complete,true);assert.equal(done.stock_step_done,true);assert.equal(done.books_pack.activities[0].policy.count_frequency,'Monthly');assert.deepEqual(done.books_pack.activities[0].categories.map(x=>x.stock_class),['Cement and sand']);
  const early=await chart('ASSISTANT',{action:'v3_books_pack_read',client_id:C,effective_from:'2026-01-01'});
  assert.match(early.books_pack.gaps.join(' | '),/start on 2026-01-02, after the date this chart applies from/,'settings that start later are a named gap, not assumed');
+
+ // No gaps: a later version needs only the review tick, no reason, and carries no provisional warning.
+ await chart('MANAGER',{action:'v3_client_chart_propose',client_id:C,effective_from:'2026-03-01',extra_accounts:[{code:'21608',reason:'Client runs a site canteen subject to the levy'}]});
+ const d2=(await chart('MANAGER',{action:'v3_client_chart_read',client_id:C,effective_from:'2026-03-01'})).draft;
+ const approve2=(extra={})=>chart('PARTNER',{action:'v3_client_chart_review',version_id:d2.version_id,revision:d2.revision,status:'Approved',review_note:'Stock settings now complete; chart checked.',...extra});
+ await assert.rejects(()=>approve2(),/Confirm that you reviewed the Books set-up pack/);
+ await approve2({books_pack_reviewed:true});
+ const a2=(await tx`select after_values from erp_private.audit_events where action='BOOKS_PACK_REVIEWED' and record_key=${d2.version_id}`)[0].after_values;
+ assert.equal(a2.provisional,false);assert.deepEqual(a2.missing,[]);assert.equal(a2.provisional_stock_note,null);
+ const r3=await chart('ASSISTANT',{action:'v3_client_chart_read',client_id:C,effective_from:'2026-03-01'});
+ assert.equal(r3.books_pack.provisional_note,null);assert.doesNotMatch(r3.current.review_note,/Stock settings provisional/);
+ const r4=await chart('ASSISTANT',{action:'v3_client_chart_read',client_id:C,effective_from:'2026-01-15'});
+ assert.equal(r4.books_pack.provisional_note.reason,'Client has not sent the stock count policy yet','the earlier approved version still carries its warning for its own dates');
+
+ // A client with no stock activity is unchanged: no tick, no reason, no audit line for the pack.
+ const C2=id();await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id,legal_entity_type,entity_evidence,year_end_month,year_end_day,legal_structure,legal_subtype) values(${C2},'Fictional consultancy client',${actors.MANAGER.staff_id},'Limited company','Fictional verified incorporation',12,31,'Limited Company','Private Limited Company')`;
+ await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C2},${F})`;
+ await tx`insert into erp_private.client_activities(client_id,activity_code,is_primary,pack_code,activity_name,income_stream,effective_from,evidence,created_by) values(${C2},'consultancy',true,'Consultancy','Consultancy services','Business','2026-01-01','Fictional evidence',${actors.MANAGER.staff_id})`;
+ await chart('MANAGER',{action:'v3_client_chart_propose',client_id:C2,effective_from:'2026-01-01'});
+ const d3=(await chart('MANAGER',{action:'v3_client_chart_read',client_id:C2,effective_from:'2026-01-01'}));assert.equal(d3.books_pack.stock_needed,false);
+ await chart('PARTNER',{action:'v3_client_chart_review',version_id:d3.draft.version_id,revision:d3.draft.revision,status:'Approved',review_note:'No stock held; chart checked.'});
+ assert.equal((await tx`select 1 from erp_private.audit_events where action='BOOKS_PACK_REVIEWED' and record_key=${d3.draft.version_id}`).length,0);
 
  await requireChartAccount(tx,C,'30000','2026-02-01');
  await requireChartAccount(tx,C,'21608','2026-02-01');

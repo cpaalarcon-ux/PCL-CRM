@@ -5,7 +5,7 @@
 // choices and postings for that client are limited to it from its effective date.
 import {fail,uuid,text,choice,date,revision} from './validation.mjs';
 import {requireClassified} from './legal-structure-actions.ts';
-import {booksPack,stockStepDone} from './books-pack-rules.mjs';
+import {booksPack,stockStepDone,provisionalNote,parseProvisional,cleanReason,PROVISIONAL_MARK,PROVISIONAL_MIN,PROVISIONAL_MAX} from './books-pack-rules.mjs';
 import {chosenReviewer,mustBeAskedReviewer,reviewCandidates,notifyReviewers,notifyOutcome} from './review-queue.ts';
 
 const one=(r:any[])=>{if(!r.length)fail(403,'Record unavailable to this account.');return r[0];};
@@ -125,6 +125,15 @@ export async function booksPackFor(tx:any,clientId:string,at:string){
  return booksPack({activities,policies,categories,vatCategories:c.vat_categories_sold,at});
 }
 
+// The provisional stock warning recorded when the chart in force on a date was approved with stock settings missing (null when none, or when nothing was missing).
+// "resolved" is true when the stock settings are complete now. Read from the approved version's own review note, so every reader sees it.
+async function provisionalFor(tx:any,clientId:string,at:string,pack:any){
+ const v=(await tx`select version_id,effective_from,review_note,reviewed_at,erp_private.reviewer_label(reviewed_by) reviewed_by_name from erp_private.client_chart_versions where client_id=${clientId} and status='Approved' and effective_from<=${at} order by effective_from desc,reviewed_at desc limit 1`)[0];
+ const x=v?parseProvisional(v.review_note):null;
+ return x?{...x,version_id:v.version_id,effective_from:day(v.effective_from),by:v.reviewed_by_name||'the approver',at:day(v.reviewed_at),resolved:pack.complete}:null;
+}
+const withNote=async(tx:any,clientId:string,at:string)=>{const pack=await booksPackFor(tx,clientId,at);return {...pack,provisional_note:await provisionalFor(tx,clientId,at,pack)};};
+
 async function proposal(tx:any,clientId:string,from:string){
  const c=one(await tx`select client_id,company_name,legal_entity_type from erp_private.clients where client_id=${clientId} and deleted_at is null`);
  const packs=await clientPacks(tx,clientId,from);
@@ -143,7 +152,7 @@ export async function clientChartAction(tx:any,a:any,p:any){
  if(!['v3_client_chart_read','v3_books_pack_read','v3_client_chart_propose','v3_client_chart_check','v3_client_chart_review'].includes(p.action))return undefined;
  if(p.action==='v3_books_pack_read'){
   const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid} and deleted_at is null`);
-  const pack=await booksPackFor(tx,cid,date(p.effective_from)||new Date().toISOString().slice(0,10));
+  const pack=await withNote(tx,cid,date(p.effective_from)||new Date().toISOString().slice(0,10));
   return {books_pack:pack,stock_step_done:stockStepDone(pack)};
  }
  if(p.action==='v3_client_chart_read'){
@@ -156,7 +165,7 @@ export async function clientChartAction(tx:any,a:any,p:any){
   const currentCodes=current?new Set<string>((await tx`select accounts from erp_private.client_chart_versions where version_id=${current.version_id}`)[0]?.accounts||[]):new Set<string>();
   const drift=current?chartDrift({approved:{codes:currentCodes,entity_type:current.entity_type,packs:current.packs||[],extras:(Array.isArray(current.extra_accounts)?current.extra_accounts:[]).map((x:any)=>x.code)},proposed:prop.accounts,catalog,entityType:prop.client.legal_entity_type||'',packs:prop.packs}):null;
   const staleStatutory=current?prop.accounts.filter((x:any)=>x.statutory_tags?.length&&!currentCodes.has(x.code)).map((x:any)=>({code:x.code,name:x.name,tags:x.statutory_tags})):[];
-  return {...prop,books_pack:await booksPackFor(tx,cid,from),reviewers:await reviewCandidates(tx,cid),effective_from:from,versions,draft:versions.find((v:any)=>v.status==='Draft')||null,current:current||null,
+  return {...prop,books_pack:await withNote(tx,cid,from),reviewers:await reviewCandidates(tx,cid),effective_from:from,versions,draft:versions.find((v:any)=>v.status==='Draft')||null,current:current||null,
    status:current?(stale.length||staleStatutory.length||drift?.total?'Out of date':'Approved'):versions.some((v:any)=>v.status==='Draft')?'Pending review':'Not approved',
    stale_packs:stale,stale_statutory:staleStatutory,drift,extra_choices:catalog.filter((x:any)=>x.status==='Active'&&!x.is_legacy&&!prop.accounts.some((y:any)=>y.code===x.code)).map((x:any)=>({code:x.code,name:x.name}))};
  }
@@ -212,19 +221,27 @@ export async function clientChartAction(tx:any,a:any,p:any){
   if(!v.checked_by)fail(409,'This chart was prepared by an Assistant. A Supervisor, Manager or Partner must check it before it can be approved.');
   if(v.checked_by===a.staff_id)fail(403,'You checked this chart. A different Manager or Partner must approve it.');
  }
- let pack:any=null;
+ let pack:any=null,stockReason='';
  if(status==='Approved'){
+  // The missing list is worked out here from the saved records; a list in the request is never read.
   pack=await booksPackFor(tx,v.client_id,day(v.effective_from));
-  if(pack.acknowledgement_required&&p.books_pack_reviewed!==true)fail(400,'Confirm that you reviewed the Books set-up pack (stock settings, stock categories and VAT categories shown with the chart) before approving.');
+  if(note.includes(PROVISIONAL_MARK))fail(400,'The review note cannot contain the provisional stock marker.');
+  if(pack.gaps.length){
+   // Never a hard block: approval goes ahead with a typed reason, and the warning stays on the record.
+   stockReason=cleanReason(p.stock_gap_reason);
+   if(stockReason.length<PROVISIONAL_MIN)fail(400,`Stock settings are incomplete: ${pack.gaps.join('; ')}. You can still approve, but give a reason of at least ${PROVISIONAL_MIN} characters for approving with the stock settings provisional.`);
+   if(stockReason.length>PROVISIONAL_MAX)fail(400,`Keep the stock reason to ${PROVISIONAL_MAX} characters or fewer.`);
+  }else if(pack.acknowledgement_required&&p.books_pack_reviewed!==true)fail(400,'Confirm that you reviewed the Books set-up pack (stock settings, stock categories and VAT categories shown with the chart) before approving.');
  }
  if(status==='Approved'){
   const prop=await proposal(tx,v.client_id,day(v.effective_from)),codes=new Set(v.accounts);
   const missing=prop.exceptions.filter((e:any)=>!codes.has(e.code));
   if(missing.length)fail(409,`The client has started using accounts outside this version since it was proposed (${missing.slice(0,5).map((e:any)=>e.code).join(', ')}). Return it and propose a new version.`);
  }
- await tx`update erp_private.client_chart_versions set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where version_id=${v.version_id}`;
+ const storedNote=status==='Approved'&&pack?.gaps.length?provisionalNote(note,pack.gaps,stockReason):note;
+ await tx`update erp_private.client_chart_versions set status=${status},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${storedNote} where version_id=${v.version_id}`;
  if(pack&&pack.acknowledgement_required)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,before_values,after_values)
-  values(${a.auth_user_id},current_user,'client_chart_versions','BOOKS_PACK_REVIEWED',${v.version_id},${tx.json({})},${tx.json({as_at:pack.as_at,gaps:pack.gaps,complete:pack.complete,vat_categories_sold:pack.vat_categories_sold,stock:pack.activities.filter((r:any)=>r.needs_stock).map((r:any)=>({activity:r.activity_name,method:r.policy?.inventory_method||null,count_frequency:r.policy?.count_frequency||null,categories:r.categories.map((x:any)=>x.stock_class)})),reviewed_by:a.staff_id})})`;
+  values(${a.auth_user_id},current_user,'client_chart_versions','BOOKS_PACK_REVIEWED',${v.version_id},${tx.json({})},${tx.json({as_at:pack.as_at,gaps:pack.gaps,complete:pack.complete,missing:pack.gaps,provisional:pack.gaps.length>0,provisional_stock_note:pack.gaps.length?stockReason:null,vat_categories_sold:pack.vat_categories_sold,stock:pack.activities.filter((r:any)=>r.needs_stock).map((r:any)=>({activity:r.activity_name,method:r.policy?.inventory_method||null,count_frequency:r.policy?.count_frequency||null,categories:r.categories.map((x:any)=>x.stock_class)})),reviewed_by:a.staff_id})})`;
  await notifyOutcome(tx,v.prepared_by,v.client_id,'client chart of accounts',status,note,'outcome:chart:'+v.version_id+':'+status);
  return {ok:true,status};
 }
