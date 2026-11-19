@@ -64,7 +64,10 @@ export async function nonEtimsAction(tx:any,a:any,p:any){
  if(!String(p.action||'').startsWith('non_etims_'))return undefined;
  if(a.category_code==='INTERN')fail(403,'Interns can access assigned tasks, not purchase mapping.');
  if(p.action==='non_etims_bases'){
-  const rows=await tx`select b.*,s.full_name approver_name,(select count(*)::int from erp_private.workbook_rows r where r.review_details->>'basis_code'=b.basis_code) used from erp_private.non_etims_bases b left join erp_private.staff_members s on s.staff_id=b.approved_by order by case b.status when 'Active' then 0 when 'Testing' then 1 else 2 end,b.legal_category,b.basis_code`;
+  // Speed: the usage count used to scan every import row once per basis. It is now one grouped pass, and the mapping form (which only needs the list) asks for it to be left out.
+  const rows=p.light===true
+   ?await tx`select b.*,s.full_name approver_name,0 used from erp_private.non_etims_bases b left join erp_private.staff_members s on s.staff_id=b.approved_by order by case b.status when 'Active' then 0 when 'Testing' then 1 else 2 end,b.legal_category,b.basis_code`
+   :await tx`select b.*,s.full_name approver_name,coalesce(u.n,0)::int used from erp_private.non_etims_bases b left join erp_private.staff_members s on s.staff_id=b.approved_by left join (select r.review_details->>'basis_code' code,count(*) n from erp_private.workbook_rows r where r.review_details->>'basis_code' is not null group by 1) u on u.code=b.basis_code order by case b.status when 'Active' then 0 when 'Testing' then 1 else 2 end,b.legal_category,b.basis_code`;
   return {bases:rows.map((b:any)=>({...publicBasis(b),used:b.used})),categories:legalCategories,can_approve:isPartner(a),can_edit:['PARTNER','MANAGER'].includes(a.category_code)};
  }
  if(p.action==='non_etims_check'){

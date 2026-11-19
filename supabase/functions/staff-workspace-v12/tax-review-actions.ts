@@ -10,6 +10,7 @@ import {one,leader,today} from './suite-actions.ts';
 import {assertSupportedPeriod} from './supported-period.ts';
 import {annualTaxLedgerControl} from './ledger-actions.ts';
 import {stockGateIssues} from './stock-vat.ts';
+import {assertSummaryViewed} from './upload-summary-gate.ts';
 import {sourceTotals,rulesStatus,rowFingerprint,appliedRateSummary} from './snapshot-rules.mjs';
 const dateText=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10);
 const editor=(a:any)=>{if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner must review this work.');};
@@ -66,6 +67,10 @@ export async function taxSummary(tx:any,c:any){
  const pending_information=await pendingPurchases(tx,c.project_id,dateText(c.starts_on),dateText(c.ends_on));
  const pendingHistory=Number((await tx`select count(*)::int n from erp_private.workbook_rejections r join erp_private.workbook_batches b using(batch_id) where b.project_id=${c.project_id} and b.archived_at is null and b.period_start<=${c.ends_on} and b.period_end>=${c.starts_on} and r.raw_values ? '_pending_purchase'`)[0].n);
  const rejected=batches.reduce((s:number,b:any)=>s+b.rejected_count,0)-pendingHistory;
+ // An upload whose every row was rejected staged nothing, so removing it loses nothing. It is listed so the reviewer can remove it in one step (the same removal as the Documents list: the file, rows and history stay in Archived sources, with a reason). An upload that holds rows, or pending credit notes, is never listed.
+ const rejected_uploads=await tx`select b.batch_id,b.document_id,b.sheet_name,b.dataset,b.rejected_count,d.file_name from erp_private.workbook_batches b join erp_private.documents d on d.document_id=b.document_id
+  where b.project_id=${c.project_id} and b.archived_at is null and d.archived_at is null and d.deleted_at is null and b.period_start<=${c.ends_on} and b.period_end>=${c.starts_on} and b.rejected_count>0
+  and not exists(select 1 from erp_private.workbook_rows r where r.batch_id=b.batch_id) and not exists(select 1 from erp_private.workbook_rejections x where x.batch_id=b.batch_id and x.raw_values ? '_pending_purchase') order by b.created_at`;
  if(pending_information.total&&['VAT','Company','Individual','Partnership'].includes(c.kind)){const ag=ageingReport(pending_information.rows,new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date()));issues.push(`${pending_information.total} credit note(s) are Pending information and excluded from this working: net KES ${pending_information.net.toFixed(2)}, VAT KES ${pending_information.vat.toFixed(2)}, gross KES ${pending_information.gross.toFixed(2)}${ag.overdue.count?`; ${ag.overdue.count} older than ${ag.alert_days} days`:''}. Supply original invoice details and reupload before submitting this tax case; the totals are incomplete until then.`);}
  if(['VAT','Company','Individual','Partnership'].includes(c.kind)){
   const codes=[...new Set(rows.filter((r:any)=>r.dataset==='Non-eTIMS'&&r.review_details?.basis_code).map((r:any)=>String(r.review_details.basis_code)))];
@@ -170,7 +175,7 @@ export async function taxSummary(tx:any,c:any){
  const source_checklist=sourceChecklist({kind:c.kind,batches,bankPending:salesReview?.result?.bank_status==='Bank pending',annualBankDocLinked});
  // Build 2841: approved client-specific exceptions to the rules used here are shown beside them. They change no rate and no figure.
  const appliedKeys=new Set(applied.map((r:any)=>r.rate_key)),client_exceptions=(await tx`select exception_id,rate_key,kind,effective_from,effective_to,reason,legal_basis from erp_private.client_tax_exceptions where client_id=${project.client_id} and status='Active' and effective_from<=${c.ends_on} and coalesce(effective_to,'9999-12-31')>=${c.starts_on} order by rate_key`).filter((x:any)=>appliedKeys.has(x.rate_key)).map((x:any)=>({exception_id:x.exception_id,rate_key:x.rate_key,kind:x.kind,effective_from:dateText(x.effective_from),effective_to:x.effective_to?dateText(x.effective_to):null,reason:x.reason,legal_basis:x.legal_basis}));
- return {result,client_exceptions,source_checklist,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,unreviewed,unmapped};
+ return {result,client_exceptions,source_checklist,pending_information,issues:[...new Set(issues)],rows,batches,findings,rate,applied_rates:applied,profile,reconciliation:salesReview,source_application,source_count:batches.reduce((s:number,b:any)=>s+b.source_count,0),rejected_count:rejected,rejected_uploads,unreviewed,unmapped};
 }
 
 // Numbered, immutable computation snapshots (20261110274000_computation_snapshots.sql). The server records what the reviewer is shown at the moment of submission and again at lock;
@@ -293,6 +298,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
    const orig=one(await tx`select inputs from erp_private.tax_cases where case_id=${c.amends_case_id}`),adjustmentKeys=(await tx`select erp_private.tax_amendment_adjustment_keys(${c.kind}) as keys`)[0].keys as string[];
    if(!adjustmentKeys.some((k:string)=>JSON.stringify(c.inputs?.[k]??null)!==JSON.stringify(orig.inputs?.[k]??null)))fail(400,'Record at least one adjustment before submitting an amendment. An amendment with no adjustment changes nothing.');
   }
+  await assertSummaryViewed(tx,c);// Build 2901: the preparer must have opened the upload summary first.
   const s=await taxSummary(tx,c);if(s.issues.length)fail(400,s.issues.join(' '));
   await takeSnapshot(tx,a,c,s,'SUBMITTED');
   await tx`update erp_private.tax_cases set status='Submitted',result=${tx.json(s.result)} where case_id=${c.case_id}`;return {ok:true};

@@ -36,12 +36,12 @@ test('Review & activate is one clear step',async t=>{t.after(()=>dom.window.clos
  // 2. everything ready: one button, one press, clear success
  mode.checks=[{ok:true,label:'Current client KYC verified'},{ok:true,label:'Enhanced due diligence (if required)'},{ok:true,label:'Signed engagement letter uploaded and verified'}];
  await openReview();
- body=document.querySelector('#editorBody');assert.match(body.textContent,/Ready to activate/);
+ body=document.querySelector('#editorBody');assert.match(body.textContent,/Ready to activate/);assert.match(body.textContent,/Evidence folders are made when a service is set up for a period, not by activation/);assert.equal(/creates the tasks and evidence folders/.test(body.textContent),false,'activation does not claim to make evidence folders');
  main=body.querySelector('button[type=submit]');assert.equal(main.disabled,false);assert.equal(main.textContent,'Activate project');
  calls.length=0;await submit();
  assert.ok(calls.some(p=>p.action==='engagement_save_activate'),'one press saves and activates');
  assert.equal(calls.some(p=>p.action==='engagement_save'),false);
- assert.match(document.querySelector('#editorBody').textContent,/48 task\(s\) created/);assert.equal(document.querySelector('#editorTitle').textContent,'Project activated');
+ assert.match(document.querySelector('#editorBody').textContent,/48 task\(s\) created/);assert.match(document.querySelector('#editorBody').textContent,/Evidence folders are made when a service is set up for a period, not by activation/);assert.equal(document.querySelector('#editorTitle').textContent,'Project activated');
  // 3. save draft only is a separate, smaller choice
  await openReview();calls.length=0;document.querySelector('#engSaveDraft').click();await pause();await pause();
  assert.ok(calls.some(p=>p.action==='engagement_save'),'draft save does not activate');assert.equal(calls.some(p=>p.action==='engagement_save_activate'),false);

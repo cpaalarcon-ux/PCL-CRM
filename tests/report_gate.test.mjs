@@ -53,7 +53,7 @@ test('the checklist screen lists each check and offers the final report only whe
  assert.match(gateHtml({gate:reportGate(base())},esc),/All checks passed/);assert.equal(finalAvailable({gate:reportGate(base())}),true);
  assert.match(gateHtml(null,esc),/could not be read/);
  const ui=read('staff-ledger.mjs'),v6=read('staff-workspace-v6.mjs'),srv=read('supabase/functions/staff-workspace-v12/ledger-actions.ts');
- assert.match(ui,/ledger_report_gate/);assert.match(ui,/final:f\.get\('mode'\)==='final'/);assert.match(v6,/staff-ledger\.mjs\?v=20261119-ppe-v1/);
+ assert.match(ui,/ledger_report_gate/);assert.match(ui,/final:f\.get\('mode'\)==='final'/);assert.match(v6,/staff-ledger\.mjs\?v=20261119-fixes-v1/);
  // The server, not the screen, refuses the final report.
  assert.match(srv,/if\(final&&!g\.gate\.ready\)fail\(400,'The final report is blocked\./);
 });

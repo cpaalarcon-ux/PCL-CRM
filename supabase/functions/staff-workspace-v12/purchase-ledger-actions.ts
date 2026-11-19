@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import {fail,uuid,text,choice,date} from './validation.mjs';
 const groups=['All','Goods for resale','Construction raw materials','Other inventory','Expenditure','PPE','Unmapped'];
 const rates=['All','16%','8%','0%','Exempt','Non-eTIMS','Unconfirmed'];
+const nilVatForNonEtims=(r:any)=>r.vat_category==='Non-eTIMS'&&r.vat_amount==null?{...r,vat_amount:'0'}:r;
 export async function purchaseLedgerAction(tx:any,a:any,p:any){
  if(!['purchase_ledger_read','purchase_ledger_export'].includes(p.action))return undefined;
  if(a.category_code==='INTERN')fail(403,'Interns can access assigned tasks, not purchase ledgers.');
@@ -17,9 +18,10 @@ export async function purchaseLedgerAction(tx:any,a:any,p:any){
  and (${start}::text is null or transaction_date>=${start}) and (${end}::text is null or transaction_date<=${end})
  and concat_ws(' ',supplier,supplier_pin,invoice,narration,account_code,account_name,construction_job,stock_class) ilike ${search}
  order by transaction_date,invoice,source_row,row_id limit ${limit} offset ${p.action==='purchase_ledger_export'?0:offset}`;
+ // Non-eTIMS expenditure carries no VAT (Partner decision, 19 Nov 2026). Rows imported before the VAT column was removed have no VAT value; they are shown and totalled as nil, never as Missing. Display only: nothing stored is changed.
  const summary=await tx`select ledger_group,vat_category,account_code,account_name,count(*)::int rows,
- coalesce(sum(net_amount),0) net,coalesce(sum(vat_amount),0) vat,case when count(*) filter(where vat_amount is null)>0 then null else coalesce(sum(net_amount+vat_amount),0) end gross,
- count(*) filter(where vat_amount is null)::int missing_vat,
+ coalesce(sum(net_amount),0) net,coalesce(sum(coalesce(vat_amount,case when vat_category='Non-eTIMS' then 0 end)),0) vat,case when count(*) filter(where vat_amount is null and vat_category<>'Non-eTIMS')>0 then null else coalesce(sum(net_amount+coalesce(vat_amount,0)),0) end gross,
+ count(*) filter(where vat_amount is null and vat_category<>'Non-eTIMS')::int missing_vat,
  count(*) filter(where review_status='Pending review')::int pending_review,
  count(*) filter(where posting_status='Posted' and not has_posted_reversal)::int posted
  from erp_private.purchase_ledger_items where project_id=${pid}
@@ -31,11 +33,11 @@ export async function purchaseLedgerAction(tx:any,a:any,p:any){
  const pending_information=await pendingPurchases(tx,pid,start,end);
  const pendingNotice=pending_information.total?` ${pending_information.total} credit note(s) pending original invoice details are excluded from these figures: net KES ${pending_information.net.toFixed(2)}, VAT KES ${pending_information.vat.toFixed(2)}, gross KES ${pending_information.gross.toFixed(2)}. Pending totals cover the project/date window, before ledger, VAT and search filters. Complete them before relying on final totals.`:'';
  const disclosure='Purchase movements from classified import data. Mapping is not posting or VAT approval. These are not stock-on-hand balances. Posted accounting entries, stock issues/consumption and the approved asset register remain separate controls.'+pendingNotice;
- if(p.action==='purchase_ledger_read')return {project,pending_information,rows,summary,total,offset,page_size:200,groups,rates,disclosure};
+ if(p.action==='purchase_ledger_read')return {project,pending_information,rows:rows.map(nilVatForNonEtims),summary,total,offset,page_size:200,groups,rates,disclosure};
  if(rows.length>20000)fail(400,'Narrow the date, account or ledger filters to export at most 20,000 rows.');
  const book=new ExcelJS.Workbook(),sheet=book.addWorksheet('Purchase ledger'),heads=['Date','Supplier','PIN','Invoice / note','Original invoice','Narration','Ledger','Stock class','Construction job / site','VAT category','Net KES','VAT KES','Gross KES','Account','Account name','Review','Posting status','Posting reference','Posted reversal','First-use status','First-use date','Source batch','Source row'];
  sheet.addRow([project.project_name]);sheet.addRow([disclosure]);sheet.addRow(heads);
- for(const r of rows)sheet.addRow([r.transaction_date,r.supplier,r.supplier_pin,r.invoice,r.original_invoice,r.narration,r.ledger_group,r.stock_class,r.construction_job,r.vat_category,r.net_amount==null?null:Number(r.net_amount),r.vat_amount==null?null:Number(r.vat_amount),r.net_amount==null||r.vat_amount==null?null:Number(r.net_amount)+Number(r.vat_amount),r.account_code,r.account_name,r.review_status,r.posting_status||'Not prepared',r.posting_reference,r.has_posted_reversal?'Yes':'No',r.first_use_status,r.first_use_date,r.batch_id,r.source_row]);
+ for(const r of rows.map(nilVatForNonEtims))sheet.addRow([r.transaction_date,r.supplier,r.supplier_pin,r.invoice,r.original_invoice,r.narration,r.ledger_group,r.stock_class,r.construction_job,r.vat_category,r.net_amount==null?null:Number(r.net_amount),r.vat_amount==null?null:Number(r.vat_amount),r.net_amount==null||r.vat_amount==null?null:Number(r.net_amount)+Number(r.vat_amount),r.account_code,r.account_name,r.review_status,r.posting_status||'Not prepared',r.posting_reference,r.has_posted_reversal?'Yes':'No',r.first_use_status,r.first_use_date,r.batch_id,r.source_row]);
  sheet.eachRow((row:any,n:number)=>row.eachCell((c:any)=>{c.font={name:'Arial',size:9,bold:n===3};c.alignment={wrapText:true,vertical:'top'};if(n>3&&[11,12,13].includes(c.col))c.numFmt='#,##0.00;(#,##0.00)';}));
  sheet.columns.forEach((c:any)=>c.width=22);sheet.autoFilter={from:'A3',to:'W3'};
  const bytes=new Uint8Array(await book.xlsx.writeBuffer());let s='';for(let i=0;i<bytes.length;i+=16384)s+=String.fromCharCode(...bytes.subarray(i,i+16384));
