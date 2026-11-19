@@ -103,6 +103,7 @@ import {amlReportAction} from './aml-report-actions.ts';
 import {clientScopeAction} from './client-scope-actions.ts';
 import {clientUnderstandingAction} from './client-understanding-actions.ts';
 import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,scopeWorkspaceRecords,staffAreaCanUse} from './staff-access-control.mjs';
+import {rightsForRequest,actionRightLabel,defaultActionRights,isActionRight,filterActionWorkspace} from './staff-action-rights.mjs';
 import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode,isProposableAction} from './staff-rights-catalog.mjs';
 import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts';
 import {policiesRead,policyAction,requireAssistantEntryAuthorised} from './policy-actions.ts';
@@ -186,6 +187,14 @@ async function requireStaffRight(tx:any,a:any,action:string){
  const need=rightForAction(action);if(!need)return;
  if((await restrictedRights(tx,a.staff_id)).includes(need))fail(403,`Your access to “${rightLabel(need)}” has been switched off. Ask a Manager or Partner to restore it.`);
 }
+async function requireActionRight(tx:any,a:any,p:any,restricted?:string[]){
+ const needs=rightsForRequest(p,areaForStaffAction(p?.action));
+ if(!needs.length)return;
+ const denied=restricted??await restrictedRights(tx,a.staff_id);
+ const blocked=needs.find(code=>denied.includes(code));
+ if(blocked)fail(403,`Your access to “${actionRightLabel(blocked)}” has been switched off.`);
+}
+const accessStamp=(areas:string[],rights:string[])=>JSON.stringify([[...areas].sort(),[...rights].sort()]);
 async function requireStaffArea(tx:any,a:any,area:string){
  const denied=await restrictedAreas(tx,a.staff_id);
  if(!staffAreaCanUse(a.category_code,denied,area))deny();
@@ -256,7 +265,7 @@ async function accountLink(id:any,p:any){
  if(!SETUP_BASE)fail(503,'The site address for setup links is not configured for this environment.');
  const staffId=uuid(p.staff_id),raw=nonce(),hash=await sha(raw);
  const selected=await scoped(id,async(tx,a)=>{
-  await requireStaffArea(tx,a,'staff_access');staffAdmin(a);const s=one(await tx`select staff_id,login_id,category_code from erp_private.staff_members where staff_id=${staffId} and deleted_at is null`);
+  await requireStaffArea(tx,a,'staff_access');await requireActionRight(tx,a,p);staffAdmin(a);const s=one(await tx`select staff_id,login_id,category_code from erp_private.staff_members where staff_id=${staffId} and deleted_at is null`);
   await canManageStaffRecord(tx,a,s);
   return {staff:s,actor:a};
  });
@@ -269,6 +278,9 @@ async function accountLink(id:any,p:any){
   const adminOk=check.actor_category==='ADMIN'&&ORDINARY.includes(check.target_category);
   if((!check.allowed&&!adminOk)||!check.actor)deny();
   if(check.actor_category==='MANAGER'&&['PARTNER','MANAGER'].includes(check.target_category))deny();
+  const actor={staff_id:check.actor,category_code:check.actor_category};
+  await requireStaffArea(tx,actor,'staff_access');
+  await requireActionRight(tx,actor,p);
   await tx`update erp_private.staff_members set access_status='Pending setup',sessions_invalid_before=now() where staff_id=${staffId}`;
   await tx`update erp_private.pilot_sessions set revoked_at=now() where staff_id=${staffId}`;
   await tx`update erp_private.setup_tokens set revoked_at=now() where staff_id=${staffId} and consumed_at is null`;
@@ -290,14 +302,14 @@ async function referenceUpload(req:Request,id:any){
  if(!['application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/pdf','application/zip','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mime))fail(400,'Use DOCX, PDF, XLSX or ZIP for a private reference.');
  if(mime==='application/vnd.openxmlformats-officedocument.wordprocessingml.document'){const zip=await JSZip.loadAsync(bytes);if(!zip.file('word/document.xml'))fail(400,'This file is not a valid Word document.');}
  const digest=await sha(bytes),rid=crypto.randomUUID(),key='references/'+rid+'/'+digest+'.'+name.split('.').at(-1);let uploaded=false;
- try{return await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'settings');if(a.category_code!=='ADMIN')leader(a);const old=(await tx`select reference_id from erp_private.reference_documents where sha256=${digest}`)[0];if(old)return {...old,duplicate:true};
+ try{return await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'settings');await requireActionRight(tx,a,{action:'reference_upload'});if(a.category_code!=='ADMIN')leader(a);const old=(await tx`select reference_id from erp_private.reference_documents where sha256=${digest}`)[0];if(old)return {...old,duplicate:true};
   await bucket();const result=await admin.storage.from(BUCKET).upload(key,bytes,{contentType:mime,upsert:false});if(result.error)fail(502,'The private reference could not be stored.');uploaded=true;
   const prior=f.get('supersedes_id')?uuid(f.get('supersedes_id')):null;
   await tx`insert into erp_private.reference_documents(reference_id,title,version_label,file_name,object_key,sha256,mime_type,file_size_bytes,supersedes_id,uploaded_by) values(${rid},${text(f.get('title'),200)},${text(f.get('version_label'),80)},${name},${key},${digest},${mime},${bytes.length},${prior},${a.staff_id})`;
   await tx`insert into erp_private.reference_access_events(reference_id,actor_id,action) values(${rid},${a.staff_id},'UPLOAD')`;return {reference_id:rid};
  });}catch(e){if(uploaded)await admin.storage.from(BUCKET).remove([key]);throw e;}
 }
-async function referenceDownload(id:any,p:any){return await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'settings');if(a.category_code!=='ADMIN')leader(a);const r=one(await tx`select * from erp_private.reference_documents where reference_id=${uuid(p.reference_id)}`),file=await admin.storage.from(BUCKET).download(r.object_key);if(file.error||!file.data)fail(404,'This private reference is unavailable.');await tx`insert into erp_private.reference_access_events(reference_id,actor_id,action) values(${r.reference_id},${a.staff_id},'DOWNLOAD')`;return {blob:file.data,name:r.file_name};});}
+async function referenceDownload(id:any,p:any){return await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'settings');await requireActionRight(tx,a,p);if(a.category_code!=='ADMIN')leader(a);const r=one(await tx`select * from erp_private.reference_documents where reference_id=${uuid(p.reference_id)}`),file=await admin.storage.from(BUCKET).download(r.object_key);if(file.error||!file.data)fail(404,'This private reference is unavailable.');await tx`insert into erp_private.reference_access_events(reference_id,actor_id,action) values(${r.reference_id},${a.staff_id},'DOWNLOAD')`;return {blob:file.data,name:r.file_name};});}
 async function incomingUpload(req:Request,id:any){
  // Step 8: a staff member logs a file that arrived by WhatsApp, email, hand or post. The client may not be known yet.
  const f=await req.formData(),file=f.get('file');if(!(file instanceof File))fail(400,'Choose the file that was received.');
@@ -313,6 +325,7 @@ async function incomingUpload(req:Request,id:any){
  await bucket();let uploaded=false;
  try{return await scoped(id,async(tx,a)=>{
   await requireStaffArea(tx,a,'documents');
+  await requireActionRight(tx,a,{action:'incoming_upload'});
   if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'Only a Supervisor, Manager or Partner can log an incoming file.');
   const r=await tx`select erp_private.incoming_register(${item},${source},${f.get('sender_name')?text(f.get('sender_name'),200):null},${f.get('sender_address')?text(f.get('sender_address'),200):null},${receivedAt.toISOString()},${subject},${f.get('message_text')?text(f.get('message_text'),8000):''},${name},${key},${bytes.length},${digest},${mime},${String(f.get('is_kyc'))==='true'},${client}) r`;
   const result=await admin.storage.from(BUCKET).upload(key,bytes,{contentType:mime,upsert:false});
@@ -323,6 +336,7 @@ async function incomingUpload(req:Request,id:any){
 async function incomingDownload(id:any,p:any){
  return await scoped(id,async(tx,a)=>{
   await requireStaffArea(tx,a,'documents');
+  await requireActionRight(tx,a,p);
   const it=one(await tx`select item_id,object_key,file_name from erp_private.incoming_items where item_id=${uuid(p.item_id)}`);
   const result=await admin.storage.from(BUCKET).download(it.object_key);if(result.error||!result.data)fail(404,'The file is unavailable.');
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'incoming_items','DOWNLOAD',${it.item_id},'{}')`;
@@ -341,6 +355,7 @@ async function forensicUpload(req:Request,id:any){
  await bucket();let uploaded=false;
  try{return await scoped(id,async(tx,a)=>{
   await requireStaffArea(tx,a,'audit');
+  await requireActionRight(tx,a,{action:'forensic_evidence_upload'});
   if(!['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(a.category_code))fail(403,'Your account cannot use forensic files.');
   const r=await tx`select erp_private.forensic_evidence_register(${evidence},${caseId},${description},${source},${day},${name},${key},${bytes.length},${digest},${mime}) r`;
   const result=await admin.storage.from(BUCKET).upload(key,bytes,{contentType:mime,upsert:false});
@@ -352,6 +367,7 @@ async function forensicDownload(id:any,p:any){
  // The database function checks the list and records the download in the file's own event log.
  return await scoped(id,async(tx,a)=>{
   await requireStaffArea(tx,a,'audit');
+  await requireActionRight(tx,a,p);
   const r=one(await tx`select erp_private.forensic_evidence_file(${uuid(p.evidence_id)}) r`);
   const result=await admin.storage.from(BUCKET).download(r.r.object_key);if(result.error||!result.data)fail(404,'The file is unavailable.');
   return {blob:result.data,name:r.r.file_name};
@@ -376,6 +392,7 @@ async function upload(req:Request,id:any){
    if(!['application/pdf','image/png','image/jpeg'].includes(mime))fail(400,'Upload a PDF, PNG or JPEG for KYC evidence.');
    await requireStaffArea(tx,a,'clients');await requireAssistantEntryAuthorised(tx,a);
   }else await requireStaffArea(tx,a,'documents');
+  await requireActionRight(tx,a,{action:'upload'});
   // Read through RLS before checking relationships; never disclose another team's records.
   const project=pid?(await tx`select project_id,client_id,handling_firm_id,status from erp_private.projects where project_id=${pid} and deleted_at is null`)[0]:null;
   const task=tid?(await tx`select task_id,project_id from erp_private.tasks where task_id=${tid} and deleted_at is null`)[0]:null;
@@ -408,6 +425,7 @@ async function upload(req:Request,id:any){
 async function download(id:any,p:any){
  return await scoped(id,async(tx,a)=>{
   await requireStaffArea(tx,a,'documents');
+  await requireActionRight(tx,a,p);
   const d=one(await tx`select * from erp_private.documents where document_id=${uuid(p.document_id)} and deleted_at is null`);
   const result=await admin.storage.from(BUCKET).download(d.object_key);if(result.error||!result.data)fail(404,'The file is unavailable.');
   await tx`insert into erp_private.document_access_events(document_id,actor_auth_id,action) values(${d.document_id},${id.claims.sub},'DOWNLOAD')`;
@@ -418,6 +436,7 @@ async function action(id:any,p:any){
  if(p.action==='session_activity')return {ok:true,idle_timeout_seconds:1800,logout_policy:'30-minute inactivity or manual sign-out'};
  if(p.action==='document_archive')return scoped(id,async(tx,a)=>{
   await requireStaffArea(tx,a,'documents');
+  await requireActionRight(tx,a,p);
   const documentId=uuid(p.document_id),reason=text(p.reason,1000);
   if(p.confirmed!==true)fail(400,'Confirm that this is the wrong upload before removing it from active mapping.');
   if(reason.length<3)fail(400,'Enter why this import source is being removed from the active list.');
@@ -467,11 +486,16 @@ async function action(id:any,p:any){
    w.suite=await suiteRead(tx);
    w.policies=await policiesRead(tx);
    w.proposals=['ASSISTANT','SUPERVISOR','MANAGER','PARTNER'].includes(a.category_code)?await proposalsRead(tx):[];
-   w.me={...w.me,restricted_rights:await restrictedRights(tx,a.staff_id)};
-   return {...scopeWorkspaceRecords(filterWorkspaceAccess(w,areas),a.category_code,a.staff_id),release:'v12-uat-individual-area-access-v2'};
+   const off=await restrictedRights(tx,a.staff_id);
+   const [finance]=areas.includes('billing_wip')?await tx`select erp_private.has_capability('FINANCE') enabled`:[null];
+   w.me={...w.me,restricted_rights:off,finance_enabled:!!finance?.enabled};
+   return {...filterActionWorkspace(scopeWorkspaceRecords(filterWorkspaceAccess(w,areas),a.category_code,a.staff_id),off),release:'v12-uat-individual-area-access-v2'};
   }
+  let actorRights:Promise<string[]>|undefined;
+  const loadActorRights=()=>actorRights??=restrictedRights(tx,a.staff_id);
   const run=async(p:any):Promise<any>=>{
   const requestArea=areaForStaffAction(String(p.action||''));if(!requestArea)deny();await requireStaffArea(tx,a,requestArea);await requireStaffRight(tx,a,String(p.action||''));
+  await requireActionRight(tx,a,p,await loadActorRights());
   if(isProposableAction(String(p.action||''))&&['ASSISTANT','SUPERVISOR'].includes(a.category_code))return await createProposal(tx,a,p);
   const proposals=await proposalAction(tx,a,p,run);if(proposals!==undefined)return proposals;
   const policy=await policyAction(tx,a,p);if(policy!==undefined)return policy;
@@ -479,7 +503,11 @@ async function action(id:any,p:any){
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
   if(p.action==='discussion_attachment_discard')return discardAttachment(tx,a,p,admin.storage.from(BUCKET));
   let discussionAreas:Promise<string[]>|undefined;
-  const discussion=await discussionAction(tx,a,p,async area=>staffAreaCanUse(a.category_code,await (discussionAreas??=restrictedAreas(tx,a.staff_id)),area));if(discussion!==undefined)return discussion;
+  const discussion=await discussionAction(tx,a,p,async area=>{
+   if(!staffAreaCanUse(a.category_code,await (discussionAreas??=restrictedAreas(tx,a.staff_id)),area))return false;
+   const off=await loadActorRights();
+   return area==='projects'?!off.includes('task.view'):area==='documents'?!off.includes('files.view'):true;
+  });if(discussion!==undefined)return discussion;
   const periods=await taxPeriodAction(tx,a,p);if(periods!==undefined)return periods;
   const presence=await presenceAction(tx,a,p,{session_id:id.claims.session_id,activity_age_ms:id.activity_age_ms});if(presence!==undefined)return presence;
   const exported=await suiteExport(tx,a,p,admin.storage.from(BUCKET));if(exported!==undefined)return exported;
@@ -494,7 +522,10 @@ async function action(id:any,p:any){
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const aup=await aupAction(tx,a,p);if(aup!==undefined)return aup;
   const kra=await kraAction(tx,a,p);if(kra!==undefined)return kra;
-  const clientSupport=await clientSupportAction(tx,a,p);if(clientSupport!==undefined)return clientSupport; // before the client_ prefix handlers
+  const clientSupport=await clientSupportAction(tx,a,p,async()=>{
+   await requireStaffArea(tx,a,'billing_wip');
+   await requireActionRight(tx,a,{action:'invoice_save'},await loadActorRights());
+  });if(clientSupport!==undefined)return clientSupport; // before the client_ prefix handlers
   const physicalFile=await physicalFileAction(tx,a,p);if(physicalFile!==undefined)return physicalFile;
   const settingsHub=await settingsHubAction(tx,a,p);if(settingsHub!==undefined)return settingsHub;
   const settingsOverview=await settingsOverviewAction(tx,a,p);if(settingsOverview!==undefined)return settingsOverview;
@@ -538,7 +569,8 @@ async function action(id:any,p:any){
   const audit=await auditAction(tx,a,p,admin.storage.from(BUCKET));if(audit!==undefined)return audit;
   const extended=await workspaceAction(tx,a,p);if(extended!==undefined)return extended;
   // The review queue must come before improvementAction: that handler claims every v3_ action and rejects ones it does not know.
-  const queue=await reviewQueueAction(tx,a,p);if(queue!==undefined)return queue;
+  const queue=await reviewQueueAction(tx,a,p);
+  if(queue!==undefined)return p.action==='v3_review_queue'&&(await loadActorRights()).includes('journal.view')?{...queue,items:(queue.items||[]).filter((item:any)=>item.kind!=='journal')}:queue;
   const improvements=await improvementAction(tx,a,p,admin.storage.from(BUCKET));if(improvements!==undefined)return improvements;
   const handover=await handoverAction(tx,a,p);if(handover!==undefined)return handover;
   const team=await teamAction(tx,a,p);if(team!==undefined)return team;
@@ -559,8 +591,10 @@ async function action(id:any,p:any){
   const salesAmend=await salesAmendAction(tx,a,p);if(salesAmend!==undefined)return salesAmend;
   const legacySales=await legacySalesAction(tx,a,p,admin.storage.from(BUCKET));if(legacySales!==undefined)return legacySales;
   const purchases=await purchaseLedgerAction(tx,a,p);if(purchases!==undefined)return purchases;
-  const ledger=await ledgerAction(tx,a,p,admin.storage.from(BUCKET));if(ledger!==undefined)return ledger;
-  const workQueue=await workQueueAction(tx,a,p,admin.storage.from(BUCKET));if(workQueue!==undefined)return workQueue;
+  const ledger=await ledgerAction(tx,a,p,admin.storage.from(BUCKET));
+  if(ledger!==undefined)return p.action==='ledger_read'&&(await loadActorRights()).includes('journal.view')?{...ledger,journals:[]}:ledger;
+  const workQueue=await workQueueAction(tx,a,p,admin.storage.from(BUCKET),p.action==='work_queue'||p.action==='work_queue_decide'?await loadActorRights():[]);
+  if(workQueue!==undefined)return workQueue;
   const formDraft=await formDraftAction(tx,a,p);if(formDraft!==undefined)return formDraft;
   const accounting=await accountingAction(tx,a,p);if(accounting!==undefined)return accounting;
   const workbook=await workbookAction(tx,a,p,admin.storage.from(BUCKET));if(workbook!==undefined)return workbook;
@@ -584,8 +618,8 @@ async function action(id:any,p:any){
   if(p.action==='staff_access_read'){
    const target=one(await tx`select staff_id,full_name,category_code,revision from erp_private.staff_members where staff_id=${uuid(p.staff_id)} and deleted_at is null`);
    await canManageStaffRecord(tx,a,target);
-   const denied=await restrictedAreas(tx,target.staff_id),baseline=defaultStaffAreas(target.category_code);
-   return {staff:{staff_id:target.staff_id,full_name:target.full_name,category_code:target.category_code,revision:target.revision},default_areas:baseline,restricted_areas:denied,allowed_areas:effectiveStaffAreas(target.category_code,denied),default_rights:defaultStaffRights(target.category_code),restricted_rights:await restrictedRights(tx,target.staff_id)};
+   const denied=await restrictedAreas(tx,target.staff_id),baseline=defaultStaffAreas(target.category_code),off=await restrictedRights(tx,target.staff_id);
+   return {staff:{staff_id:target.staff_id,full_name:target.full_name,category_code:target.category_code,revision:target.revision},default_areas:baseline,restricted_areas:denied,allowed_areas:effectiveStaffAreas(target.category_code,denied),default_rights:defaultStaffRights(target.category_code),default_action_rights:defaultActionRights(target.category_code),restricted_rights:off,access_stamp:accessStamp(denied,off)};
   }
   if(p.action==='staff_access_save'){
    const target=one(await tx`select staff_id,full_name,category_code,revision from erp_private.staff_members where staff_id=${uuid(p.staff_id)} and deleted_at is null for update`);
@@ -594,12 +628,14 @@ async function action(id:any,p:any){
    if(!Array.isArray(p.allowed_areas)||p.allowed_areas.length>10||p.allowed_areas.some((x:any)=>typeof x!=='string'))fail(400,'Choose the areas available to this staff member.');
    const baseline=defaultStaffAreas(target.category_code),chosen=[...new Set(p.allowed_areas)];
    if(chosen.length!==p.allowed_areas.length||chosen.some((x:string)=>!baseline.includes(x)))fail(400,'Individual access can only narrow this role’s default areas. Change the staff role to add role-level access.');
-   const reason=text(p.reason,1000),current=await restrictedAreas(tx,target.staff_id),currentInRole=current.filter((x:string)=>baseline.includes(x)).sort(),desired=baseline.filter((x:string)=>!chosen.includes(x)).sort();
+   const reason=text(p.reason||'',1000,false),current=await restrictedAreas(tx,target.staff_id),currentInRole=current.filter((x:string)=>baseline.includes(x)).sort(),desired=baseline.filter((x:string)=>!chosen.includes(x)).sort();
    // Function rights (checkboxes under each area). Only the role's own rights can be switched off; nothing is ever added.
-   const rightsBaseline=defaultStaffRights(target.category_code),currentRights=await restrictedRights(tx,target.staff_id),currentRightsInRole=currentRights.filter((x:string)=>rightsBaseline.includes(x)).sort();
+   const rightsBaseline=[...defaultStaffRights(target.category_code),...(p.rights_version===2?defaultActionRights(target.category_code):[])];
+   const currentRights=await restrictedRights(tx,target.staff_id),currentRightsInRole=currentRights.filter((x:string)=>rightsBaseline.includes(x)).sort();
+   if(p.rights_version===2&&p.access_stamp!==accessStamp(current,currentRights))fail(409,'Access changed while this screen was open. Reopen Edit access before saving.');
    let desiredRights=currentRightsInRole;
    if(p.allowed_rights!==undefined){
-    if(!Array.isArray(p.allowed_rights)||p.allowed_rights.length>100||p.allowed_rights.some((x:any)=>typeof x!=='string'||!isRightCode(x)))fail(400,'Choose the functions available to this staff member from the list.');
+    if(!Array.isArray(p.allowed_rights)||p.allowed_rights.length>rightsBaseline.length||p.allowed_rights.some((x:any)=>typeof x!=='string'||!isRightCode(x)&&!isActionRight(x)))fail(400,'Choose the functions available to this staff member from the list.');
     const chosenRights=[...new Set<string>(p.allowed_rights)];
     if(chosenRights.some((x:string)=>!rightsBaseline.includes(x)))fail(400,'Individual access can only narrow this role’s functions. Change the staff role to add role-level access.');
     desiredRights=rightsBaseline.filter((x:string)=>!chosenRights.includes(x)).sort();
@@ -712,13 +748,14 @@ Deno.serve(async(req:Request)=>{
     await limit('messenger-upload:'+id.claims.sub,60);
     const result=await scoped(id,async(tx,a)=>{
      await requireStaffArea(tx,a,'communications');
+     await requireActionRight(tx,a,{action:'discussion_attachment_upload'});
      await bucket();
      return storeAttachment(tx,a,file,digest,admin.storage.from(BUCKET));
     });
     return new Response(JSON.stringify(result),{headers});
    }
    if(req.headers.get('x-erp-upload-kind')==='reference'){const result=await referenceUpload(req,id);return new Response(JSON.stringify(result),{headers});}
-   if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData(),dataset=String(form.get('dataset')||''),area=dataset==='Staff'?'staff_access':'clients';const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,area);return masterImport(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
+   if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData(),dataset=String(form.get('dataset')||''),area=dataset==='Staff'?'staff_access':'clients';const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,area);await requireActionRight(tx,a,{action:dataset==='Staff'?'master_staff_import':'client_master_import'});return masterImport(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
   }
   const body=await req.text();if(body.length>30000)fail(413,'The request is too large.');
@@ -736,6 +773,7 @@ Deno.serve(async(req:Request)=>{
    if(p.action==='discussion_attachment_download'){
     const file=await scoped(id,async(tx,a)=>{
      await requireStaffArea(tx,a,'communications');
+     await requireActionRight(tx,a,p);
      return downloadAttachment(tx,p,admin.storage.from(BUCKET));
     });
     return new Response(file.blob,{headers:{...headers,'Content-Type':file.mime,'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`}});

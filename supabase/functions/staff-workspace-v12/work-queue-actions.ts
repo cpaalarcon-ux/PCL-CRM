@@ -1,3 +1,4 @@
+import {canUseAction} from './staff-action-rights.mjs';
 import {fail,uuid,text} from './validation.mjs';
 import {reviewQueueAction} from './review-queue.ts';
 import {ledgerAction} from './ledger-actions.ts';
@@ -12,19 +13,20 @@ import {GROUPS,CAPS,planBatch,refusalText,noteOk,MIN_NOTE,journalCan,groupOfJour
 const ACTIONS=['work_queue','work_queue_decide'];
 const day=(v:any)=>v instanceof Date?v.toISOString():String(v||'');
 
-export async function workQueueAction(tx:any,a:any,p:any,storage:any):Promise<any>{
+export async function workQueueAction(tx:any,a:any,p:any,storage:any,off:string[]=[]):Promise<any>{
  if(!ACTIONS.includes(p.action))return undefined;
  if(['INTERN','ADMIN'].includes(a.category_code))fail(403,'Assigned accounting staff are required.');
- if(p.action==='work_queue')return await read(tx,a);
- return await decide(tx,a,p,storage);
+ if(p.action==='work_queue')return await read(tx,a,off);
+ if(!canUseAction(off,p))fail(403,'This journal action is unavailable to your account.');
+ return await decide(tx,a,p,storage,off);
 }
 
 // The journal columns are written out in each query below (the same list three times): j.journal_id, kind, reference, journal_date, status, project_id, period_id, revision, review_note, prepared_by, last_prepared_by, checked_by, updated_at, junior, total, client and project names.
 
-async function read(tx:any,a:any){
+async function read(tx:any,a:any,off:string[]){
  const me=a.staff_id,items:any[]=[];
  const toItem=(j:any,reviewing:boolean)=>{
-  const group=groupOfJournal(j,me),can=j.status==='Submitted'?journalCan(a.category_code,me,j):[];
+  const group=groupOfJournal(j,me),can=j.status==='Submitted'?journalCan(a.category_code,me,j).filter(decision=>canUseAction(off,{action:'work_queue_decide',decision})&&!off.includes(decision==='approve'||decision==='return'&&a.category_code!=='SUPERVISOR'?'acct.journal_approve':'acct.journal_check')):[];
   return {key:'journal:'+j.journal_id,kind:'journal',id:j.journal_id,group,client_id:j.client_id,client_name:j.client_name,project_id:j.project_id,period_id:j.period_id,
    title:`${j.kind==='Opening'?'Opening balances':j.kind+' journal'} · ${j.reference} · ${j.project_name}`,stage:stageOfJournal(j,me),amount:Number(j.total||0),revision:String(j.revision),
    at:day(j.updated_at),can,own:!reviewing};
@@ -32,9 +34,9 @@ async function read(tx:any,a:any){
  // My own journals: drafts and returned ones to finish, submitted ones waiting on someone else, posted ones in the last two weeks.
  const mine=await tx`select j.journal_id,j.kind,j.reference,j.journal_date,j.status,j.project_id,j.period_id,j.revision,j.review_note,j.prepared_by,j.last_prepared_by,j.checked_by,j.updated_at, erp_private.is_junior_preparer(j.prepared_by) or erp_private.is_junior_preparer(j.last_prepared_by) as junior, (select coalesce(sum(x.debit),0) from erp_private.ledger_lines x where x.journal_id=j.journal_id) as total,pr.client_id,c.company_name as client_name,pr.project_name from erp_private.ledger_journals j join erp_private.projects pr on pr.project_id=j.project_id join erp_private.clients c on c.client_id=pr.client_id
   where (j.prepared_by=${me} or j.last_prepared_by=${me}) and (j.status in ('Draft','Returned','Submitted') or (j.status='Posted' and j.updated_at>=now()-interval '14 days')) order by j.updated_at desc limit 200`;
- for(const j of mine)items.push(toItem(j,false));
+ if(!off.includes('journal.view'))for(const j of mine)items.push(toItem(j,false));
  // Journals waiting for my check or approval: submitted, and not prepared or edited by me.
- if(['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code)){
+ if(!off.includes('journal.view')&&['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code)){
   const wait=await tx`select j.journal_id,j.kind,j.reference,j.journal_date,j.status,j.project_id,j.period_id,j.revision,j.review_note,j.prepared_by,j.last_prepared_by,j.checked_by,j.updated_at, erp_private.is_junior_preparer(j.prepared_by) or erp_private.is_junior_preparer(j.last_prepared_by) as junior, (select coalesce(sum(x.debit),0) from erp_private.ledger_lines x where x.journal_id=j.journal_id) as total,pr.client_id,c.company_name as client_name,pr.project_name from erp_private.ledger_journals j join erp_private.projects pr on pr.project_id=j.project_id join erp_private.clients c on c.client_id=pr.client_id
    where j.status='Submitted' and j.prepared_by<>${me} and j.last_prepared_by<>${me} order by j.updated_at limit 200`;
   for(const j of wait){const it=toItem(j,true);if(it.can.length||a.category_code!=='SUPERVISOR')items.push(it);}
@@ -63,9 +65,10 @@ async function read(tx:any,a:any){
  return {ok:true,groups:GROUPS,counts:countGroups(items),items,min_note:MIN_NOTE,caps:CAPS};
 }
 
-async function decide(tx:any,a:any,p:any,storage:any){
+async function decide(tx:any,a:any,p:any,storage:any,off:string[]){
  const decision=String(p.decision||''),cap=(CAPS as any)[decision];
  if(!cap)fail(400,'Choose Check, Return or Approve.');
+ if(off.includes(decision==='approve'||decision==='return'&&a.category_code!=='SUPERVISOR'?'acct.journal_approve':'acct.journal_check'))fail(403,'This journal action is unavailable to your account.');
  const ids=[...new Set((Array.isArray(p.journal_ids)?p.journal_ids:[]).map((x:any)=>uuid(x)))] as string[];
  if(!ids.length||ids.length>cap)fail(400,`Choose between 1 and ${cap} journals to ${decision}.`);
  if(!noteOk(p.note))fail(400,decision==='return'?`Give the reason for returning, at least ${MIN_NOTE} characters. The preparer sees it.`:`Enter a note of at least ${MIN_NOTE} characters.`);

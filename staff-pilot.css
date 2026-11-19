@@ -745,3 +745,10 @@ input[type=checkbox],input[type=radio]{inline-size:1.5rem;block-size:1.5rem;min-
 }
 @keyframes messenger-slide{from{transform:translateX(24px);opacity:.6}to{transform:translateX(0);opacity:1}}
 @media(prefers-reduced-motion:reduce){.messenger-show-detail .messenger-detail{animation:none}}
+
+/* Staff access actions use the same hierarchy on narrow and wide screens. */
+.areaBlock > details > summary{margin-block:.5rem;cursor:pointer;color:var(--green);font-weight:600}
+.access-actions{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem 1.25rem;padding:.5rem .75rem;margin-block:.5rem;border:1px solid var(--line);border-radius:8px}
+.access-actions legend{font-weight:700;padding-inline:.25rem}
+.access-actions > label{display:flex;align-items:center;gap:.45rem;margin:0}
+.access-actions > p{flex-basis:100%;margin:0}

@@ -130,19 +130,27 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const pid=uuid(p.project_id);await financial(tx,pid,true);
   await tx`insert into erp_private.project_budgets(project_id,agreed_fee,budgeted_hours,budgeted_cost,effective_from,reason,created_by) values(${pid},${amount(p.agreed_fee)},${number(p.budgeted_hours)},${amount(p.budgeted_cost)},${day(p.effective_from)},${text(p.reason,1000)},${a.staff_id})`;return {ok:true};
  }
- if(p.action==='invoice_save'){
-  const pid=uuid(p.project_id),rid=uuid(p.request_id);await financial(tx,pid,true);const exists=await tx`select invoice_id from erp_private.invoices where request_id=${rid}`;if(exists.length)return exists[0];
+ if(p.action==='invoice_save'||p.action==='invoice_edit'){
+  const old=p.action==='invoice_edit'?one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} and deleted_at is null for update`):null;
+  const pid=old?.project_id??uuid(p.project_id),rid=old?.request_id??uuid(p.request_id);
+  await financial(tx,pid,true);
+  if(old){current(old,p);if(old.status!=='Draft')fail(400,'Only draft invoices can be edited.');}
+  else{const exists=await tx`select invoice_id from erp_private.invoices where request_id=${rid}`;if(exists.length)return exists[0];}
   const project=one(await tx`select * from erp_private.projects where project_id=${pid}`),lines=invoiceLines(p.lines),[issued,due]=range(p.invoice_date,p.due_date);
   if(issued>today())fail(400,'Invoice date cannot be in the future.');
   const taskIds=[...new Set(lines.filter((l:any)=>l.task_id).map((l:any)=>l.task_id))];
   if(taskIds.length&&(await tx`select task_id from erp_private.tasks where project_id=${pid} and task_id=any(${tx.array(taskIds)}::uuid[])`).length!==taskIds.length)fail(400,'Each invoice line task must belong to the invoice project.');
   const period=servicePeriod(p.service_from||null,p.service_to||null);
+  if(old?.recurring_fee_schedule_id&&(period.service_from!==dayOf(old.service_from)||period.service_to!==dayOf(old.service_to)))fail(400,'A recurring invoice keeps its scheduled service period.');
   if(period.service_from&&p.confirm_not_duplicate!==true){
-   const clash=await tx`select invoice_number,service_from,service_to,status from erp_private.invoices where client_id=${project.client_id} and firm_id=${project.handling_firm_id} and project_id=${pid} and status<>'Void' and deleted_at is null and service_from is not null and service_from<=${period.service_to} and service_to>=${period.service_from} limit 1`;
+   const clash=await tx`select invoice_number,service_from,service_to,status from erp_private.invoices where client_id=${project.client_id} and firm_id=${project.handling_firm_id} and project_id=${pid} and status<>'Void' and deleted_at is null and invoice_id is distinct from ${old?.invoice_id??null}::uuid and service_from is not null and service_from<=${period.service_to} and service_to>=${period.service_from} limit 1`;
    if(clash.length)fail(409,`Another ${clash[0].status==='Draft'?'draft':'invoice '+clash[0].invoice_number} already covers ${formatDay(clash[0].service_from)} to ${formatDay(clash[0].service_to)} for this client and project. If this is a different charge, tick "Not a duplicate" and save again.`);
   }
+  const description=text(p.description,500),net=round(lines.reduce((s,l)=>s+l.net,0)),vat=round(lines.reduce((s,l)=>s+l.vat,0)),reference=text(p.external_reference||'',100,false)||null;
+  if(old)return one(await tx`update erp_private.invoices set description=${description},invoice_date=${issued},due_date=${due},lines=${tx.json(lines)},net_amount=${net},vat_amount=${vat},
+   external_reference=${reference},service_from=${period.service_from},service_to=${period.service_to},service_months=${period.service_months} where invoice_id=${old.invoice_id} returning invoice_id,revision`);
   return one(await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,external_reference,service_from,service_to,service_months,created_by)
-   values(${rid},${pid},${project.client_id},${project.handling_firm_id},${text(p.description,500)},${issued},${due},${tx.json(lines)},${round(lines.reduce((s,l)=>s+l.net,0))},${round(lines.reduce((s,l)=>s+l.vat,0))},${text(p.external_reference||'',100,false)||null},${period.service_from},${period.service_to},${period.service_months},${a.staff_id}) returning invoice_id`);
+   values(${rid},${pid},${project.client_id},${project.handling_firm_id},${description},${issued},${due},${tx.json(lines)},${net},${vat},${reference},${period.service_from},${period.service_to},${period.service_months},${a.staff_id}) returning invoice_id`);
  }
  if(p.action==='invoice_post'||p.action==='invoice_void'){
   const i=one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} for update`);await financial(tx,i.project_id,true);current(i,p);
