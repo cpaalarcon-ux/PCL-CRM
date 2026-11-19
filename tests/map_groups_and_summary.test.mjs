@@ -60,7 +60,7 @@ test('the screens offer the summary, map-by-codes and a Save that waits for the 
  const rd=f=>fs.readFileSync(path.join(root,f),'utf8'),acc=rd('staff-accounting.mjs'),ne=rd('staff-non-etims.mjs');
  assert.match(acc,/btn\('upload-summary','Summary of this upload',pid\)/);assert.match(acc,/btn\('bulk-codes','Map each row to its uploaded account',pid\)/);
  assert.match(acc,/a==='bulk-codes'\)await mapByCodes\(id\);else if\(a==='bulk-unmap'\)|a==='bulk-codes'\)await mapByCodes\(id\);else if\(/,'the new button is handled before the generic bulk buttons');
- assert.match(acc,/action:'workbook_map_groups',project_id:pid,confirm_uploaded_mapping:true/);assert.match(acc,/name="confirm_uploaded_mapping" value="yes" required/,'the person ticks the confirmation; it is never ticked for them');
+ assert.match(acc,/action:'workbook_map_groups',project_id:pid,confirm_uploaded_mapping:o\.uploaded/);assert.match(acc,/Tick the confirmation first/);assert.match(acc,/name="confirm_groups" value="yes" required/,'the person ticks the confirmation; it is never ticked for them');
  assert.match(acc,/if the group is refused|if any group is refused, nothing is mapped/);assert.match(acc,/await imported\(pid\)/,'back to the same purchases list');
  assert.match(ne,/submit\.disabled=true;submit\.textContent='Loading the legal bases…'/);assert.match(ne,/ready\(\);/);
 });
