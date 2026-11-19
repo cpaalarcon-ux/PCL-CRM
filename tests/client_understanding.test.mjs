@@ -127,7 +127,7 @@ test('build 2867: wiring, access area and screen',()=>{
  assert.match(idx,/clientUnderstandingAction\(tx,a,p,admin\.storage\.from\(BUCKET\),bucket\)/);assert.match(ac,/client_understanding_\|client_pf_\|/);
  assert.match(prof,/\['understanding','Understanding the client'\]/);assert.match(prof,/understanding:\(\)=>host\('understanding'\)/);
  assert.match(imp,/staff-understanding\.mjs\?v=20261121-und-v1/);assert.match(imp,/tab==='understanding'&&host\.dataset\.id===id\)\{await understanding\.paint\(host,id\)/);
- assert.match(pilot,/\['aml','understanding'\]\.includes\(clientTab\)/);assert.match(pilot,/staff-improvements\.mjs\?v=20261122-loc-v1/);assert.match(pilot,/staff-client-profile\.mjs\?v=20261121-und-v1/);
+ assert.match(pilot,/\['aml','understanding'\]\.includes\(clientTab\)/);assert.match(pilot,/staff-improvements\.mjs\?v=20261119-stock-v1/);assert.match(pilot,/staff-client-profile\.mjs\?v=20261121-und-v1/);
  for(const a of ['client_understanding_read','client_understanding_save','client_understanding_submit','client_understanding_return','client_understanding_approve','client_pf_preview','client_pf_file'])assert.match(rd('supabase/functions/staff-workspace-v12/client-understanding-actions.ts'),new RegExp(a));
  for(const w of ['Write the understanding','Start a new version','Submit for review','Approve this version','Return to the preparer','Preview the PDF','File it in the Permanent File','out of date'])assert.ok(ui.includes(w),w);
  assert.match(ui,/document\.addEventListener\('click'/);assert.doesNotMatch(ui,/innerHTML=.*\$\{r\.message/);

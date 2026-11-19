@@ -48,10 +48,27 @@ test('a client chart is proposed with exceptions cleared, independently approved
  assert.equal(r.status,'Pending review');
  const draft=r.draft;
  await assert.rejects(()=>chart('MANAGER',{action:'v3_client_chart_review',version_id:draft.version_id,revision:draft.revision,status:'Approved',review_note:'Self approval attempt'}),/different Manager or Partner/);
- await chart('PARTNER',{action:'v3_client_chart_review',version_id:draft.version_id,revision:draft.revision,status:'Approved',review_note:'Entity layer and construction pack checked.'});
+ // Books set-up pack: Construction carries stock, so the approver sees the gaps and must confirm they looked before approving.
+ assert.equal(r.books_pack.stock_needed,true);assert.equal(r.books_pack.complete,false);
+ assert.match(r.books_pack.gaps.join(' | '),/Stock update method and count frequency are not set for Construction and building works/);
+ assert.match(r.books_pack.gaps.join(' | '),/No stock categories/);assert.match(r.books_pack.gaps.join(' | '),/VAT categories sold are not set/);
+ const bp=await chart('ASSISTANT',{action:'v3_books_pack_read',client_id:C,effective_from:'2026-01-01'});assert.equal(bp.stock_step_done,false);
+ await assert.rejects(()=>chart('PARTNER',{action:'v3_client_chart_review',version_id:draft.version_id,revision:draft.revision,status:'Approved',review_note:'Entity layer and construction pack checked.'}),/Confirm that you reviewed the Books set-up pack/);
+ await chart('PARTNER',{action:'v3_client_chart_review',version_id:draft.version_id,revision:draft.revision,status:'Approved',review_note:'Entity layer and construction pack checked.',books_pack_reviewed:true});
+ const audit=(await tx`select after_values from erp_private.audit_events where action='BOOKS_PACK_REVIEWED' and record_key=${draft.version_id}`);
+ assert.equal(audit.length,1,'the review of the pack is recorded');assert.ok(audit[0].after_values.gaps.length>=3,'the gaps the approver saw are kept');assert.equal(audit[0].after_values.reviewed_by,actors.PARTNER.staff_id);
  r=await chart('MANAGER',{action:'v3_client_chart_read',client_id:C,effective_from:'2026-01-01'});
  assert.equal(r.status,'Approved');
  await assert.rejects(()=>as('PARTNER',()=>tx`update erp_private.client_chart_versions set accounts=array['10000'] where version_id=${draft.version_id}`),/cannot be edited/);
+ // Once the stock settings, categories and VAT categories are saved (reusing the existing tables), the pack is complete and the stock step is done.
+ const act=(await tx`select activity_id from erp_private.client_activities where client_id=${C} limit 1`)[0].activity_id;
+ await as('MANAGER',a=>tx`insert into erp_private.stock_policy_versions(client_id,activity_id,inventory_method,valuation_basis,effective_from,count_frequency,evidence,configured_by) values(${C},${act},'Periodic','Weighted average','2026-01-02','Monthly','Fictional stock policy evidence',${a.staff_id})`);
+ await as('MANAGER',a=>tx`insert into erp_private.stock_categories(client_id,activity_id,inventory_use,stock_class,created_by) values(${C},${act},'Construction raw materials','Cement and sand',${a.staff_id})`);
+ await tx`update erp_private.clients set vat_categories_sold=array['16%'] where client_id=${C}`;
+ const done=await chart('ASSISTANT',{action:'v3_books_pack_read',client_id:C,effective_from:'2026-03-01'});
+ assert.equal(done.books_pack.complete,true);assert.equal(done.stock_step_done,true);assert.equal(done.books_pack.activities[0].policy.count_frequency,'Monthly');assert.deepEqual(done.books_pack.activities[0].categories.map(x=>x.stock_class),['Cement and sand']);
+ const early=await chart('ASSISTANT',{action:'v3_books_pack_read',client_id:C,effective_from:'2026-01-01'});
+ assert.match(early.books_pack.gaps.join(' | '),/start on 2026-01-02, after the date this chart applies from/,'settings that start later are a named gap, not assumed');
 
  await requireChartAccount(tx,C,'30000','2026-02-01');
  await requireChartAccount(tx,C,'21608','2026-02-01');
