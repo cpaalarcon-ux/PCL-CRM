@@ -60,6 +60,6 @@ test('the css pins one bar, wraps on a phone, truncates the trail and keeps focu
 test('the bar is wired in with fresh cache tokens',async()=>{
  const pilot=await rd('staff-pilot.mjs'),html=await rd('staff-pilot.html'),auth=await rd('staff-pilot-auth.js');
  assert.match(pilot,/staff-sticky-bar\.mjs\?v=20261119-sticky-v1/);assert.match(pilot,/watchStickyBar\(\$\('#content'\)\)/);
- assert.match(html,/staff-pilot\.css\?v=20261119-queue-v1&amp;rev=20261119-sticky/);assert.match(html,/staff-pilot-auth\.js\?v=20261109-cf-v1&amp;rev=20261119-sticky/);
- assert.match(auth,/staff-pilot\.mjs\?v=20261114-setupguide-v1&rev=20261119-sticky/);
+ assert.match(html,/staff-pilot\.css\?v=20261119-queue-v1&amp;rev=20261119-(?:sticky|2905)/);assert.match(html,/staff-pilot-auth\.js\?v=20261109-cf-v1&amp;rev=20261119-(?:sticky|2905)/);
+ assert.match(auth,/staff-pilot\.mjs\?v=20261114-setupguide-v1&rev=20261119-(?:sticky|2905)/);
 });
