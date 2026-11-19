@@ -3,6 +3,8 @@ import {guideBanner,GUIDE} from './staff-guide-text.mjs?v=20261107-annualpack-v3
 // check against other purchases and the bank. A Partner approves each basis; a Manager or Partner can add one for approval.
 // The code of a new legal basis is made from its name so it is never mistyped: NE- then the name in capitals with hyphens, at most 30 characters.
 export const basisCode=name=>{const t=String(name||'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');return t?('NE-'+t).slice(0,30).replace(/-+$/,''):'';};
+// Build 2905: the reused list of bases and the 'where Return goes' are shared by every screen that opens the register (the mapping form, the tax review, the tax rules page and the purchases panel), so they all read and clear the same copy.
+let basesCopy=null,returnToReview=null;
 export function createNonEtimsUI(ctx){
  const {$,esc,request}=ctx,d=()=>ctx.data();
  const opts=(items,value='',blank='Choose…')=>`<option value="">${esc(blank)}</option>`+items.map(([k,v])=>`<option value="${esc(k)}" ${String(k)===String(value)?'selected':''}>${esc(v)}</option>`).join('');
@@ -10,8 +12,7 @@ export function createNonEtimsUI(ctx){
  const badge=s=>`<span class="badge ${s==='Active'?'ok':s==='Retired'?'muted':'warn'}">${esc(s==='Testing'?'In testing':s==='Active'?'Approved':s)}</span>`;
 
  // Speed: the mapping form only needs the list of bases, not how often each was used, and the list changes rarely. It is asked for once a minute at most; the admin screen always reads fresh and clears this copy.
- let basesCopy=null;
- const lightBases=()=>{if(basesCopy&&Date.now()-basesCopy.at<60000)return basesCopy.promise;const promise=request({action:'non_etims_bases',light:true});basesCopy={at:Date.now(),promise};promise.catch(()=>{if(basesCopy?.promise===promise)basesCopy=null;});return promise;};
+ const lightBases=()=>{const who=d()?.me?.staff_id||'';if(basesCopy&&basesCopy.who===who&&Date.now()-basesCopy.at<60000)return basesCopy.promise;const promise=request({action:'non_etims_bases',light:true});basesCopy={at:Date.now(),promise,who};promise.catch(()=>{if(basesCopy?.promise===promise)basesCopy=null;});return promise;};
 
  /** Fills the #neException block of the mapping form. Called after the form is on screen. */
  async function exceptionFields(f,list,pid,draft){
@@ -37,7 +38,6 @@ export function createNonEtimsUI(ctx){
  }
 
  /** Partner / Manager screen: the list of bases, add, approve and retire. */
- let returnToReview=null;
  async function adminBases(onBack=returnToReview){
   returnToReview=onBack;
   const {modal,form,field,select,area,check,button,table,shortDate}=ctx;

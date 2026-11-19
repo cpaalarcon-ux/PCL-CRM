@@ -45,7 +45,7 @@ test('the header and Back wiring is in the right screens and the cache tokens ch
  assert.match(rd('staff-client-profile.mjs'),/workspaceHeader\(\{client:c\.company_name/);assert.match(v6,/workspaceHeader\(\{client:clientName\(p\.client_id\)/);assert.match(rd('staff-task-workspace.mjs'),/workspaceHeader\(\{client:!intern/);
  assert.match(pilot,/data-return-back="1"/);assert.match(pilot,/if\(b\.dataset\.returnBack\)\{goBack\(\);return;\}/);
  assert.match(pilot,/staff-return-state\.mjs\?v=20261119-nav-v1/);assert.match(pilot,/staff-task-workspace\.mjs\?v=20261119-nav-v1/);
- assert.match(pilot,/staff-workspace-v6\.mjs\?v=20261119-draft-v1&rev=20261119-(?:nav|2903)/);assert.match(pilot,/staff-client-profile\.mjs\?v=20261121-und-v1&rev=20261119-nav/);
- assert.match(rd('staff-pilot-auth.js'),/staff-pilot\.mjs\?v=20261114-setupguide-v1&rev=20261119-(?:nav|2903)/);
+ assert.match(pilot,/staff-workspace-v6\.mjs\?v=20261119-draft-v1&rev=20261119-(?:nav|2903|legal)/);assert.match(pilot,/staff-client-profile\.mjs\?v=20261121-und-v1&rev=20261119-nav/);
+ assert.match(rd('staff-pilot-auth.js'),/staff-pilot\.mjs\?v=20261114-setupguide-v1&rev=20261119-(?:nav|2903|legal)/);
  assert.match(v6,/selectProject\(id\)\{if\(selected!==id\)\{selectedPeriod='';taskFilter='All';\}selected=id;\}/);
 });
