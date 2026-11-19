@@ -2,12 +2,13 @@ let documentKind='Evidence';
 import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261119-stock-v1&rev=20261119-usability';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261119-stock-v1&rev=20261119-nav';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
-import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261121-folder-v1';
-import {clientProfile} from './staff-client-profile.mjs?v=20261121-und-v1';
+import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1';
+import {returnLabel,chooseReturn,createReturnStore} from './staff-return-state.mjs?v=20261119-nav-v1';
+import {clientProfile} from './staff-client-profile.mjs?v=20261121-und-v1&rev=20261119-nav';
 import {paintDocRequests,bindDocRequests} from './staff-doc-requests.mjs?v=20261109-dr-v1';
-import {LIFECYCLE_WORDS,lifecycleForm,isArchived} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';
+import {LIFECYCLE_WORDS,lifecycleForm,isArchived} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1&rev=20261119-nav';
 import {DEFAULT_QUERY,queryToRequest,toolbar as registerBar,pager as registerPager,rowMeta} from './staff-client-register.mjs?v=20261110-taxrole-v3';
 import {createPresenceUI} from './staff-presence.mjs?v=20261109-hol-v1';
 import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-check-v1';
@@ -21,18 +22,18 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-fixes-v1&rev=20261119-usability';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-fixes-v1&rev=20261119-nav';
 import {createMessenger} from './staff-messenger.mjs?v=20261108-nav-v1';
-import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-usability';
+import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-nav';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-queue-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {moduleLinks,GROUP_ENGAGEMENTS,GROUP_COMPLIANCE,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261121-comply-v1';
 import {statusPolicyCard} from './staff-work-ready.mjs?v=20261118-ready-v1';
-import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261119-tabs-v1';
+import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261119-tabs-v1&rev=20261119-nav';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
-import {createAuditUI} from './staff-audit.mjs?v=20261110-taxrole-v3';
+import {createAuditUI} from './staff-audit.mjs?v=20261110-taxrole-v3&rev=20261119-nav';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261118-ready-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 import {renderAccessGuide} from './staff-access-guide.mjs?v=20261106-rights-v1';
@@ -349,10 +350,12 @@ const crumbLabels={clients:'Clients',projects:'Projects & Tasks',time:'Time & At
 // One breadcrumb for every top-level area. Task workspaces and audit files draw their own deeper trail, so the shared bar stops at the area name for those.
 function paintCrumbs(){const el=$('#crumbs');if(!el)return;if(view==='home'||view==='task'||view==='clientfile'||!crumbLabels[view]){el.hidden=true;el.replaceChildren();return;}el.hidden=false;el.innerHTML=`<a href="#view=home" data-view="home">Home</a><span aria-hidden="true">/</span><span aria-current="page">${esc(crumbLabels[view])}</span>`;}
 loadMyWorkMode(globalThis.localStorage);
-function render(){bindWorkspaceSearch();const allowed=['home'];if(canArea('projects'))allowed.push('task','projects');if(canArea('clients'))allowed.push('clients','clientfile');if(canArea('time_hr'))allowed.push('time');if(canArea('time_hr')&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))allowed.push('team');if(canArea('documents'))allowed.push('documents');if(canArea('communications'))allowed.push('communications');for(const [area,target] of [['audit','audit'],['leads','leads'],['billing_wip','finance'],['staff_access','staff'],['settings','firms']])if(canArea(area))allowed.push(target);if(!allowed.includes(view))view='home';nav();paintCrumbs();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';$('#content').innerHTML=detailReturn()+({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,clientfile:renderClientProfile,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<details class="settings-fold section-space" id="taxWorkFold" name="projects-more"><summary>Tax compilation, approvals and KRA notices</summary><section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>${['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(data.me.category_code)?`<section class="card section-space" id="kraNoticesCard"><h2>KRA notices</h2><p class="muted">Log each notice KRA sends, see the verification task it creates, and clear its non-compliance flags.</p>${suite.button('kra-open','Open the KRA notice log')}</section>`:''}</details>`,audit:audit.render,team:teamUI.render,time:()=>staffAttendancePanel()+v6.time()+suite.hr(),staff,documents,firms:()=>suite.settings({access:policyCard(data,esc,shortDate)+otherPoliciesCard(data,esc,shortDate)+statusPolicyCard(statusPolicy,{esc,fmt:shortDate})+goLiveCard(data,esc),firm:holidaysUI.render()}),communications:suite.communications,finance:suite.finance}[view])();applyItemViews($('#content'),{view,storage:globalThis.localStorage});v6.bind();presence.paint();bell.paint();if(view==='time')void paintStaffAttendance();if(view==='audit')audit.enter();if(view==='home'&&!['INTERN','ADMIN'].includes(data.me.category_code))void workQueue.mount();if(view==='home'&&(isLeader()||data.me.category_code==='SUPERVISOR'))void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='clientfile'&&clientTab==='documents')void paintDocRequests({request,esc,shortDate,data:()=>data});if(view==='clientfile'&&((isLeader()&&['setup','tax'].includes(clientTab))||['aml','understanding'].includes(clientTab)))void improvements.paintClientTab(clientTab,selectedClient).catch(e=>{const h=$('#clientTabHost');if(h)h.innerHTML='<p class="error">'+esc(e.message)+'</p>';});if(view==='home'&&data.me.category_code==='PARTNER'){void v6.paintPartnerEscalations();void suite.kra.paintBanner();}if(view==='documents')void suite.incoming.paintCard();if(view==='documents')void suite.docReview.paintStates();if(view==='home'&&['PARTNER','MANAGER'].includes(data.me.category_code)){void teamUI.paintPool();void metricsUI.paint();}if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='firms')void paintStatusPolicy();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();if($('#search')){const runClientFilter=()=>{const q=($('#search').value||'').toLowerCase(),sf=$('#clientStructureFilter')?.value||'';document.querySelectorAll('[data-search]').forEach(r=>{const s=r.dataset.structure,st=clientStateFilter,stateHidden=st!=='all'&&r.dataset.state!=='all'&&!(st==='setup'&&r.dataset.incomplete!==undefined?r.dataset.incomplete==='1':r.dataset.state===st);r.hidden=!r.dataset.search.includes(q)||!!(sf&&(sf==='__missing'?s!=='':s!==sf))||stateHidden;});};bindClientChips=()=>document.querySelectorAll('[data-client-state]').forEach(b=>b.onclick=()=>{clientStateFilter=b.dataset.clientState;document.querySelectorAll('[data-client-state]').forEach(x=>{const on=x.dataset.clientState===clientStateFilter;x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});runClientFilter();});bindClientChips();runClientFilter();$('#search').oninput=runClientFilter;if(isLeader()){const el=$('#search');el.value=clientQuery.q;el.oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{const pos=el.selectionStart;clientQuery.q=el.value.trim();clientQuery.page=0;clientPage=null;render();const n=$('#search');if(n){n.focus();n.setSelectionRange(pos,pos);}},350);};runClientFilter();}if($('#clientStructureFilter'))$('#clientStructureFilter').onchange=runClientFilter;}}
+function render(){bindWorkspaceSearch();const allowed=['home'];if(canArea('projects'))allowed.push('task','projects');if(canArea('clients'))allowed.push('clients','clientfile');if(canArea('time_hr'))allowed.push('time');if(canArea('time_hr')&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))allowed.push('team');if(canArea('documents'))allowed.push('documents');if(canArea('communications'))allowed.push('communications');for(const [area,target] of [['audit','audit'],['leads','leads'],['billing_wip','finance'],['staff_access','staff'],['settings','firms']])if(canArea(area))allowed.push(target);if(!allowed.includes(view))view='home';nav();paintCrumbs();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';$('#content').innerHTML=detailReturn()+({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,clientfile:renderClientProfile,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<details class="settings-fold section-space" id="taxWorkFold" name="projects-more"><summary>Tax compilation, approvals and KRA notices</summary><section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>${['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(data.me.category_code)?`<section class="card section-space" id="kraNoticesCard"><h2>KRA notices</h2><p class="muted">Log each notice KRA sends, see the verification task it creates, and clear its non-compliance flags.</p>${suite.button('kra-open','Open the KRA notice log')}</section>`:''}</details>`,audit:audit.render,team:teamUI.render,time:()=>staffAttendancePanel()+v6.time()+suite.hr(),staff,documents,firms:()=>suite.settings({access:policyCard(data,esc,shortDate)+otherPoliciesCard(data,esc,shortDate)+statusPolicyCard(statusPolicy,{esc,fmt:shortDate})+goLiveCard(data,esc),firm:holidaysUI.render()}),communications:suite.communications,finance:suite.finance}[view])();applyItemViews($('#content'),{view,storage:globalThis.localStorage});v6.bind();presence.paint();bell.paint();if(view==='time')void paintStaffAttendance();if(view==='audit')audit.enter();if(view==='home'&&!['INTERN','ADMIN'].includes(data.me.category_code))void workQueue.mount();if(view==='home'&&(isLeader()||data.me.category_code==='SUPERVISOR'))void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='clientfile'&&clientTab==='documents')void paintDocRequests({request,esc,shortDate,data:()=>data});if(view==='clientfile'&&((isLeader()&&['setup','tax'].includes(clientTab))||['aml','understanding'].includes(clientTab)))void improvements.paintClientTab(clientTab,selectedClient).catch(e=>{const h=$('#clientTabHost');if(h)h.innerHTML='<p class="error" role="alert">'+esc(e.message)+'</p>';});if(view==='home'&&data.me.category_code==='PARTNER'){void v6.paintPartnerEscalations();void suite.kra.paintBanner();}if(view==='documents')void suite.incoming.paintCard();if(view==='documents')void suite.docReview.paintStates();if(view==='home'&&['PARTNER','MANAGER'].includes(data.me.category_code)){void teamUI.paintPool();void metricsUI.paint();}if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='firms')void paintStatusPolicy();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();if($('#search')){const runClientFilter=()=>{const q=($('#search').value||'').toLowerCase(),sf=$('#clientStructureFilter')?.value||'';document.querySelectorAll('[data-search]').forEach(r=>{const s=r.dataset.structure,st=clientStateFilter,stateHidden=st!=='all'&&r.dataset.state!=='all'&&!(st==='setup'&&r.dataset.incomplete!==undefined?r.dataset.incomplete==='1':r.dataset.state===st);r.hidden=!r.dataset.search.includes(q)||!!(sf&&(sf==='__missing'?s!=='':s!==sf))||stateHidden;});};bindClientChips=()=>document.querySelectorAll('[data-client-state]').forEach(b=>b.onclick=()=>{clientStateFilter=b.dataset.clientState;document.querySelectorAll('[data-client-state]').forEach(x=>{const on=x.dataset.clientState===clientStateFilter;x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});runClientFilter();});bindClientChips();runClientFilter();$('#search').oninput=runClientFilter;if(isLeader()){const el=$('#search');el.value=clientQuery.q;el.oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{const pos=el.selectionStart;clientQuery.q=el.value.trim();clientQuery.page=0;clientPage=null;render();const n=$('#search');if(n){n.focus();n.setSelectionRange(pos,pos);}},350);};runClientFilter();}if($('#clientStructureFilter'))$('#clientStructureFilter').onchange=runClientFilter;}}
 function detailReturn(){
+ const route=workspaceRoute(location.hash)||{};
+ if(route.returnTo&&(view==='clientfile'||view==='task'||view==='projects'&&route.id))return `<div class="detail-return"><button type="button" data-return-back="1">${esc(returnLabel(route.returnTo))}</button></div>`;
  if(view==='clientfile')return '<div class="detail-return"><button type="button" data-view="clients">Return to clients</button></div>';
- if(view==='task'||view==='projects'&&workspaceRoute(location.hash)?.id)return '<div class="detail-return"><button type="button" data-view="projects">Return to project list</button></div>';
+ if(view==='task'||view==='projects'&&route.id)return '<div class="detail-return"><button type="button" data-view="projects">Return to project list</button></div>';
  return '';
 }
 function field(name,label,value='',type='text',extra=''){return `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;}
@@ -597,6 +600,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(await audit.handle(b))return;
  if(b.dataset.openTask)navigateWorkspace('task',b.dataset.openTask);
  if(b.dataset.openProject){if($('#editor').open)$('#editor').close();navigateWorkspace('projects',b.dataset.openProject);if(b.dataset.workPeriod){v6.selectPeriod(b.dataset.workPeriod);render();}}
+ if(b.dataset.returnBack){goBack();return;}
  if(b.dataset.workspaceView)navigateWorkspace(b.dataset.workspaceView);
  if(b.dataset.dashboard==='read-alert'){await request({action:'notification_read',notification_id:b.dataset.id});await load();}
  if(b.dataset.drill)drillHome(b.dataset.drill);
@@ -689,20 +693,54 @@ if(!setupWatcher.hasSetup&&session.active)load().catch(e=>signedOut(e.message));
 async function openCommunicationHash(){const ref=new URLSearchParams(location.hash.slice(1)).get('communication');if(!ref||!data)return;history.replaceState(null,'',location.pathname+location.search);try{await suite.openReference(ref);}catch(err){notice('This communication is unavailable or your account does not have permission to view it.',true);}}
 window.addEventListener('hashchange',()=>void openCommunicationHash());
 
-function navigateWorkspace(next,id=''){
- const params=new URLSearchParams(id?{[next==='task'?'task':next==='clientfile'?'client':'project']:id}:{view:next}),hash='#'+params;
+// Smart Back: opening a task, project or client from a list remembers that list, so Back puts the person where they were.
+const returnStore=createReturnStore(globalThis.sessionStorage);
+let lastRoute=null;
+const currentRoute=()=>workspaceRoute(location.hash)||{view:'home'};
+const openerSelector=(next,id)=>{const q=globalThis.CSS?.escape?globalThis.CSS.escape(id):id;return next==='task'?`[data-task-row="${q}"],[data-open-task="${q}"],[data-task="${q}"]`:next==='clientfile'?`[data-client-open="${q}"],[data-client-view="${q}"]`:`[data-open-project="${q}"],[data-search-project="${q}"]`;};
+function captureListState(opener){return {v6:v6.getState(),clients:{query:{...clientQuery},stateFilter:clientStateFilter},scroll:{y:window.scrollY||0,content:$('#content')?.scrollTop||0},opener};}
+function restoreListState(saved){
+ if(!saved)return;
+ v6.setState(saved.v6);
+ if(saved.clients){clientQuery={...DEFAULT_QUERY(),...saved.clients.query};clientStateFilter=saved.clients.stateFilter||'all';clientPage=null;}
+}
+function restoreScroll(saved){
+ if(!saved)return;
+ const put=()=>{window.scrollTo(0,saved.scroll?.y||0);const c=$('#content');if(c)c.scrollTop=saved.scroll?.content||0;};
+ const focusOpener=()=>{if(!saved.opener)return;const el=document.querySelector(saved.opener);if(el?.focus)el.focus({preventScroll:true});};
+ requestAnimationFrame(()=>{put();focusOpener();});
+ setTimeout(()=>{put();focusOpener();},250);
+}
+function navigateWorkspace(next,id='',{back=false}={}){
+ const key=id?(next==='task'?'task':next==='clientfile'?'client':'project'):'view',params=new URLSearchParams(id?{[key]:id}:{view:next});
+ if(!back&&id&&data){
+  const cur=currentRoute(),sameProject=next==='projects'&&cur.view==='projects'&&cur.id,curDetail=cur.view==='task'||cur.view==='clientfile'||sameProject,from=chooseReturn({currentHash:location.hash,currentIsDetail:curDetail,carried:cur.returnTo?'#'+cur.returnTo:'',nextIsDetail:true});
+  if(from&&from!=='#'+key+'='+id){params.set('returnTo',from.slice(1));if(!curDetail)returnStore.save(from,captureListState(openerSelector(next,id)));}
+ }
+ const hash='#'+params;
  if(location.hash!==hash)history.pushState(null,'',location.pathname+location.search+hash);
  applyWorkspaceRoute();
 }
+function goBack(){
+ const route=currentRoute(),target=route.returnTo||(view==='clientfile'?'#view=clients':'#view=projects'),saved=returnStore.peek(target);
+ if(location.hash!==target)history.pushState(null,'',location.pathname+location.search+target);
+ applyWorkspaceRoute(false);
+ restoreListState(saved);
+ render();
+ restoreScroll(saved);
+}
 function applyWorkspaceRoute(paint=true){
  if(!data)return;const route=workspaceRoute(location.hash);if(!route)return;
+ const cameBack=lastRoute&&(lastRoute.view==='task'||lastRoute.view==='clientfile')&&lastRoute.returnTo&&lastRoute.returnTo===location.hash,saved=cameBack?returnStore.peek(location.hash):null;
+ lastRoute=route;
  view=route.view;missingProject=false;
  if(view==='task')selectedTask=route.id;
  if(view==='clientfile'){selectedClient=route.id;clientTab=pendingClientTab||'overview';pendingClientTab='';}
  const projectId=route.view==='task'?data.tasks.find(t=>t.task_id===route.id)?.project_id:route.id;
  if(projectId){const p=data.projects.find(p=>p.project_id===projectId);if(p){if(firm&&firm!==p.handling_firm_id){firm=p.handling_firm_id;$('#firmFilter').value=firm;}v6.selectProject(p.project_id);}else if(view==='projects')v6.selectProject(projectId);}
  else if(view==='projects')v6.selectProject('');
- if(paint){render();const heading=$('#taskWorkspaceTitle');if(heading)heading.focus();}
+ if(saved)restoreListState(saved);
+ if(paint){render();const heading=$('#taskWorkspaceTitle');if(heading)heading.focus();if(saved)restoreScroll(saved);}
 }
 window.addEventListener('hashchange',()=>applyWorkspaceRoute());
 document.dispatchEvent(new document.defaultView.Event('pcl-staff-pilot-ready'));

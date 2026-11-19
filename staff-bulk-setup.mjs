@@ -43,7 +43,7 @@ export function clientRows(clients,{esc=e0,search=''}={}){
  if(!list.length)return '<p class="muted">No client matches.</p>';
  return `<table id="bulkClientTable"><thead><tr><th></th><th>Client</th><th>Handling firm</th></tr></thead><tbody>${list.map(c=>{
   const firms=c.firms||[];
-  const firm=firms.length>1?`<select data-bulk-firm="${esc(c.client_id)}"><option value="">Choose</option>${firms.map(f=>`<option value="${esc(f.firm_id)}">${esc(f.legal_name)}</option>`).join('')}</select>`:firms.length===1?esc(firms[0].legal_name):'<span class="badge warn">Not linked</span>';
+  const firm=firms.length>1?`<select aria-label="Handling firm for ${esc(c.company_name||c.client_name||'this client')}" data-bulk-firm="${esc(c.client_id)}"><option value="">Choose</option>${firms.map(f=>`<option value="${esc(f.firm_id)}">${esc(f.legal_name)}</option>`).join('')}</select>`:firms.length===1?esc(firms[0].legal_name):'<span class="badge warn">Not linked</span>';
   return `<tr data-client="${esc(c.client_id)}"><td><input type="checkbox" data-bulk-pick="${esc(c.client_id)}" aria-label="Select ${esc(c.company_name)}"></td><td>${esc(c.company_name)}</td><td>${firm}</td></tr>`;}).join('')}</tbody></table>`;
 }
 // The result table of a preview or an apply: the rows that passed (or were applied) first, then the exceptions as their own list with the reason for each.

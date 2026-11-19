@@ -12,7 +12,7 @@ export function createAuditLockUI(ctx,{payload,show,onChange}){
   data=await request(payload('ledger_audit_read'));
   const st=data.state,lk=data.lock,nt=data.notes;
   const status=`<p>${BADGE[st.status]||''} <b>Statements: ${esc(data.wording)}.</b></p>`;
-  const notes=`<p>${nt.ok?`Notes approved by ${esc(nt.approved_name||'a Partner')}${nt.approved_at?' on '+esc(shortDate(nt.approved_at)):''}.`:'<span class="error">The Partner has not approved the current notes. The pack cannot be locked until they do.</span>'}</p>`;
+  const notes=`<p>${nt.ok?`Notes approved by ${esc(nt.approved_name||'a Partner')}${nt.approved_at?' on '+esc(shortDate(nt.approved_at)):''}.`:'<span class="error" role="alert">The Partner has not approved the current notes. The pack cannot be locked until they do.</span>'}</p>`;
   const lock=lk?`<section class="card section-space"><h4>Locked ${lk.mode==='External audit'?'by the external auditor’s report':'by the in-house audit'}</h4><p>Locked by ${esc(lk.locked_name||'')} on ${esc(shortDate(lk.locked_at))}${lk.sole_partner_approval?' (the firm’s only Partner, who prepared the audit file)':''}.</p><p>Report ${esc(lk.report_reference)} dated ${esc(shortDate(lk.report_date))}. Opinion: ${esc(lk.opinion)}.${lk.auditor_name?` Auditor: ${esc(lk.auditor_name)}.`:''}</p></section>`:'';
   const arr=data.arrangement?`<p>Recorded as <b>${esc(data.arrangement.mode)}</b> by ${esc(data.arrangement.set_by_name||'')}.${data.arrangement.note?' '+esc(data.arrangement.note):''}</p>`:'<p class="muted">No audit arrangement is recorded for this year.</p>';
   const act=[data.can_declare?btn('declare','Record how the year is audited'):'',data.can_lock&&st.status!=='not_audited'?btn('lock',st.mode==='External audit'?'Upload External Audit Report and Lock':st.mode==='In-house audit'?'Lock with In-house Audit':'Lock the pack'):'',data.can_end?btn('end','End the lock',lk?.lock_id):''].join('');
@@ -41,7 +41,7 @@ export function createAuditLockUI(ctx,{payload,show,onChange}){
     f=>request({...payload('ledger_audit_lock'),mode:'In-house audit',audit_file_id:f.get('audit_file_id'),report_reference:f.get('report_reference'),report_date:f.get('report_date'),opinion:f.get('opinion'),sole_partner_approval:f.has('sole')}),async()=>{notice('The pack is locked.');await open();onChange?.();});
   },
   end(id){
-   show('End the audit lock',form('<p class="error full">The statements go back to a draft. The notes can change and must be approved again before the pack is locked again.</p><label class="full">Why is the lock being ended? (at least 10 characters) <textarea name="reason" required minlength="10" maxlength="500"></textarea></label>','End the lock'),
+   show('End the audit lock',form('<p class="error full" role="alert">The statements go back to a draft. The notes can change and must be approved again before the pack is locked again.</p><label class="full">Why is the lock being ended? (at least 10 characters) <textarea name="reason" required minlength="10" maxlength="500"></textarea></label>','End the lock'),
     f=>request({...payload('ledger_audit_end'),lock_id:id,reason:f.get('reason')}),async()=>{notice('The lock has ended.');await open();onChange?.();});
   }
  };

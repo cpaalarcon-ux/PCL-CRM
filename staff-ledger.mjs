@@ -1,20 +1,20 @@
-import {createBankTotalsUI} from './staff-bank-totals.mjs?v=20261114-banktotals-v1';
+import {createBankTotalsUI} from './staff-bank-totals.mjs?v=20261114-banktotals-v1&rev=20261119-nav';
 import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261107-annualpack-v3';
 import {newState,splitView,filterItems,similarLines} from './staff-fixit-screen.mjs?v=20261111-fixit-v1';
 import {tbListHtml,deriveHtml} from './staff-year-tbs.mjs?v=20261116-yeartb-v1';
 import {sourceAmount,amountProblem,isControlRow,mappingConflict,sideNote} from './staff-tb-source-rules.mjs?v=20261121-sides-v1';
 import {createStatementVersionsUI} from './staff-statement-versions.mjs?v=20261116-fsver-v1';
 import {createPartnerSharesUI} from './staff-partner-shares.mjs?v=20261122-pshare-v1';
-import {createNotesUI} from './staff-notes.mjs?v=20261122-notes-v1';
-import {createAuditLockUI} from './staff-audit-lock.mjs?v=20261124-audit-v1';
+import {createNotesUI} from './staff-notes.mjs?v=20261122-notes-v1&rev=20261119-nav';
+import {createAuditLockUI} from './staff-audit-lock.mjs?v=20261124-audit-v1&rev=20261119-nav';
 import {createWordingUI} from './staff-wording.mjs?v=20261126-wording-v1';
 import {createPagesUI} from './staff-pages.mjs?v=20261128-pages-v1';
-import {createSchedulesUI} from './staff-schedules.mjs?v=20261129-sched-v1';
+import {createSchedulesUI} from './staff-schedules.mjs?v=20261129-sched-v1&rev=20261119-nav';
 import {createTbMultiUI} from './staff-tb-multi.mjs?v=20261130-tbmulti-v1';
 import {createReportNotesUI} from './staff-report-notes.mjs?v=20261201-rnotes-v1';
-import {createPartnerEquityUI} from './staff-partner-equity.mjs?v=20261130-peq-v1';
+import {createPartnerEquityUI} from './staff-partner-equity.mjs?v=20261130-peq-v1&rev=20261119-nav';
 import {createPackExportUI} from './staff-pack-export.mjs?v=20261129-packx-v1';
-import {createPpeUI} from './staff-ppe.mjs?v=20261119-ppe-v1';
+import {createPpeUI} from './staff-ppe.mjs?v=20261119-ppe-v1&rev=20261119-nav';
 import {gateHtml,finalAvailable,declarationsHtml} from './staff-report-gate.mjs?v=20261115-declare-v1';
 // Client working papers. All reads and mutations are authorised again by the API.
 export function createLedgerUI(ctx,{onPayrollImport}={}){
@@ -120,7 +120,7 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
  function banksBody(){
   const reg=r.bank_register||[],st=new Map((r.bank_status||[]).map(b=>[b.bank_account_id,b])),checks=(r.close_checks||[]).filter(c=>/^BANK_/.test(c.code)||['STATEMENTS','STATEMENT_TO_LEDGER'].includes(c.code));
   const stateText={'Agrees':'Agrees','Differs':'Differs','No statement':'No statement','Not used':'Not used in this period'};
-  const rows=reg.map(b=>{const s=st.get(b.bank_account_id);return [`<b>${esc(b.bank_name)}</b>${b.account_label?' '+esc(b.account_label):''}${b.account_last4?`<small>····${esc(b.account_last4)}</small>`:''}${b.status==='Closed'?` <small>closed ${esc(shortDate(b.closed_on))}</small>`:''}`,esc(b.kind),esc(b.gl_code)+`<small>${esc(b.gl_name||'')}</small>`,s?String(s.lines):'',s?kes(s.statement_net):'',s?kes(s.ledger_net):'',s?`<span class="${s.state==='Differs'||s.state==='No statement'?'error':''}">${esc(stateText[s.state]||s.state)}${s.state==='Differs'?' by '+kes(Math.abs(s.difference)):''}</span>`:'',b.status==='Active'?btn('bank-edit','Edit',b.bank_account_id):''];});
+  const rows=reg.map(b=>{const s=st.get(b.bank_account_id);return [`<b>${esc(b.bank_name)}</b>${b.account_label?' '+esc(b.account_label):''}${b.account_last4?`<small>····${esc(b.account_last4)}</small>`:''}${b.status==='Closed'?` <small>closed ${esc(shortDate(b.closed_on))}</small>`:''}`,esc(b.kind),esc(b.gl_code)+`<small>${esc(b.gl_name||'')}</small>`,s?String(s.lines):'',s?kes(s.statement_net):'',s?kes(s.ledger_net):'',s?`<span class="${s.state==='Differs'||s.state==='No statement'?'error':''}" role="alert">${esc(stateText[s.state]||s.state)}${s.state==='Differs'?' by '+kes(Math.abs(s.difference)):''}</span>`:'',b.status==='Active'?btn('bank-edit','Edit',b.bank_account_id):''];});
   return `<h3>Bank and mobile-money accounts</h3><p class="muted">Register every bank, savings and mobile-money account the client uses and link each to its own ledger account. Each statement is imported against one bank and compared with that bank's ledger account. Only the last four digits of an account number are kept. This is a working paper and posts nothing.</p>
   <div class="actions">${btn('bank-new','+ Bank account')} ${btn('bank-totals','Monthly bank totals (workbook)')}</div>
   ${reg.length?table(['Bank','Type','Ledger account','Statement lines','Statement net','Ledger net','Result',''],rows):'<p class="info">No bank accounts are registered for this client yet. Until you register them, statements are checked in total across the standard bank accounts.</p>'}
@@ -487,7 +487,7 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
     +(report.skipped.length?'<details><summary>'+report.skipped.length+' skipped row'+(report.skipped.length===1?'':'s')+'</summary><ul>'+li(report.skipped,k=>'<li>Row '+k.row+' · '+esc(k.name)+' — '+esc(k.why)+'</li>')+'</ul></details>':'')
     +(report.converted.length?'<details open><summary>'+report.converted.length+' converted row'+(report.converted.length===1?'':'s')+' (check against the source)</summary><ul>'+li(report.converted,k=>'<li>Row '+k.row+' · '+esc(k.name)+' — source '+esc(k.original)+' → '+esc(k.as)+'</li>')+'</ul></details>':'')+'</div>';
    hasProblems=report.problems.length>0;
-   host.innerHTML=rowReport+acceptBar+(openingGroups.length?'<div class="scroll"><table><thead><tr><th>Source TB account</th><th>ERP account</th><th>Mapping check</th></tr></thead><tbody>'+openingGroups.map((g,i)=>'<tr><td>'+esc(g.source_code||'—')+' · '+esc(g.source_name)+'<small>Source rows '+g.rows.join(', ')+'</small></td><td><select data-opening-target="'+i+'">'+opt(accounts.map(a=>[a.code,a.code+' · '+a.name+' · '+a.category_code]),g.account_code)+'</select></td><td><small>'+esc(g.method)+'</small><label><input type="checkbox" data-opening-confirm="'+i+'"'+(g.confirmed?' checked':'')+'> I confirmed this account meaning</label>'+(g.duplicate?'<small class="error">Duplicate source rows must be corrected in the workbook.</small>':'')+(mappingConflict(g.source_name,g.account_code)?'<small class="error" data-opening-conflict="'+i+'">'+esc(mappingConflict(g.source_name,g.account_code))+'</small>':'')+(sideOf(g)?'<small class="warn" data-opening-side="'+i+'">'+esc(sideOf(g))+'</small>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="info">No nonzero detail account rows were found. Check the source columns.</p>');
+   host.innerHTML=rowReport+acceptBar+(openingGroups.length?'<div class="scroll"><table><thead><tr><th>Source TB account</th><th>ERP account</th><th>Mapping check</th></tr></thead><tbody>'+openingGroups.map((g,i)=>'<tr><td>'+esc(g.source_code||'—')+' · '+esc(g.source_name)+'<small>Source rows '+g.rows.join(', ')+'</small></td><td><select aria-label="ERP account for source row '+(i+1)+'" data-opening-target="'+i+'">'+opt(accounts.map(a=>[a.code,a.code+' · '+a.name+' · '+a.category_code]),g.account_code)+'</select></td><td><small>'+esc(g.method)+'</small><label><input type="checkbox" data-opening-confirm="'+i+'"'+(g.confirmed?' checked':'')+'> I confirmed this account meaning</label>'+(g.duplicate?'<small class="error">Duplicate source rows must be corrected in the workbook.</small>':'')+(mappingConflict(g.source_name,g.account_code)?'<small class="error" data-opening-conflict="'+i+'">'+esc(mappingConflict(g.source_name,g.account_code))+'</small>':'')+(sideOf(g)?'<small class="warn" data-opening-side="'+i+'">'+esc(sideOf(g))+'</small>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="info">No nonzero detail account rows were found. Check the source columns.</p>');
    const acceptBtn=host.querySelector('#acceptSuggested');if(acceptBtn)acceptBtn.onclick=()=>{openingGroups.forEach((g,i)=>{if(g.suggested&&!g.confirmed&&!g.low&&!g.duplicate)openingValues.set(g.key,{account_code:g.account_code,confirmed:true});});renderOpeningAccountMappings();};
    host.querySelectorAll('[data-opening-target]').forEach(el=>el.onchange=()=>{const i=Number(el.dataset.openingTarget),g=openingGroups[i];openingValues.set(g.key,{account_code:el.value,confirmed:false});const check=host.querySelector('[data-opening-confirm="'+i+'"]');if(check)check.checked=false;saveOpeningValues();renderOpeningAccountMappings();});
    host.querySelectorAll('[data-opening-confirm]').forEach(el=>el.onchange=()=>{const i=Number(el.dataset.openingConfirm),g=openingGroups[i],target=host.querySelector('[data-opening-target="'+i+'"]');openingValues.set(g.key,{account_code:target?.value||'',confirmed:el.checked});updateImportSubmit();});
