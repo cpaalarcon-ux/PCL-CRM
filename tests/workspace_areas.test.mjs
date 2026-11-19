@@ -85,7 +85,9 @@ test('the sidebar keeps the original dark-green identity through named colour to
 test('the sidebar is built from the same permission-filtered catalog as the launcher', () => {
   assert.match(app, /by=v=>catalog\.find\(item=>item\.view===v&&canArea\(item\.area\)\)/);
   assert.match(app, /sideItems=\[\{view:'home',title:'Home',icon:'⌂',subs:\[\]\}/);
-  assert.match(app, /\$\('#sideNav'\)\.innerHTML=sideItems\.map/);
+  assert.match(app, /\$\('#sideNav'\)\.innerHTML=groupHtml\(sideItems\[0\]\)\+sections\.map/);
+  assert.match(app, /const links=sideItems\.filter\(item=>keys\.includes\(itemKey\(item\)\)\)/);
+  for(const section of ['Client work','Firm operations','Governance'])assert.ok(app.includes(section));
   assert.match(html, /<aside id="workspaceSidebar"[^>]*aria-label="Main navigation">/);
   assert.match(css, /@media\(max-width:768px\)\{[^@]*\.workspace-sidebar\{position:fixed/, 'under 768px the sidebar is a drawer');
 });
