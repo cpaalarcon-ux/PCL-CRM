@@ -57,5 +57,5 @@ test('wiring: actions routed and gated, database guards, button for leaders, bui
  assert.match(m,/FORCE ROW LEVEL SECURITY/);assert.match(m,/service_templates_submitter_guard/);assert.match(m,/practitioners>1/);assert.match(m,/cannot declare fewer practitioners/);
  const imp=rd('staff-improvements.mjs'),pilot=rd('staff-pilot.mjs');assert.match(imp,/staff-service-categories\.mjs\?v=20261116-dates-v1/);assert.match(imp,/if\(a==='categories'\)await categories\.open\(\)/);assert.match(pilot,/staff-improvements\.mjs\?v=20261119-drafts2-v1/);
  assert.ok(pilot.match(/isLeader\(\)\?'<div class="actions">'[^\n]*data-v3="categories"/),'the button is in the leaders\' row');
- assert.match(rd(fx+'release.json'),/2026-11-19\.2904/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-19\.2904"/);
+ assert.match(rd(fx+'release.json'),/2026-11-19\.2905/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-19\.2905"/);
 });
