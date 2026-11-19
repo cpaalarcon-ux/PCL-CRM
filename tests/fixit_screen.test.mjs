@@ -52,6 +52,6 @@ test('wiring: handlers, versioned imports, styles, build label',()=>{
  assert.match(ui,/staff-fixit-screen\.mjs\?v=20261111-fixit-v1/);assert.match(ui,/ledger_bank_lines_map/);assert.match(ui,/does not post to the ledger/);
  assert.doesNotMatch(ui,/bank-map-selected/,'the old tick-then-map button is replaced');
  const css=rd('staff-pilot.css');assert.match(css,/\.fx-split\{/);assert.match(css,/\.sr-only\{/);assert.match(rd('staff-pilot.html'),/staff-pilot\.css\?v=20261119-queue-v1/);
- assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261119-ppe-v1/);
+ assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261119-fixes-v1/);
  assert.match(rd('supabase/functions/staff-workspace-v12/release.json'),/2026-11-19\.2900/);assert.match(rd('staff-pilot.html'),/2026-11-19\.2900/);
 });
