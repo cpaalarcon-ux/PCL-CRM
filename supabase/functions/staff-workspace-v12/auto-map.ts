@@ -2,7 +2,7 @@ import {fail,text,uuid} from './validation.mjs';
 import {mapValue,inventoryDetails,isCost} from './accounting-rules.mjs';
 import {chartResolver} from './client-chart.ts';
 import {loadBlocks,isBlocked,HISTORY_METHOD} from './purchase-history.ts';
-import {resolveRouting,cleanCode,unmappedByCode} from './routing-map-rules.mjs';
+import {resolveRouting,resolveAlias,cleanCode,unmappedByCode} from './routing-map-rules.mjs';
 // Automatic account mapping (rule kept 17 Nov 2026). A purchase row is mapped when it is imported only if its routing code (column M) AND its TB item code (column N) exactly match a mapping
 // that a Partner approved for this client and the invoice date. Nothing else is mapped automatically: a valid pair with no approved mapping is "Suggested - Awaiting Approval" (nothing is posted;
 // a Manager proposes it and a Partner approves it), and a row missing either code goes to the exception queue. Supplier history and uploaded codes alone never map a row.
@@ -34,17 +34,33 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
  const stamp=new Date().toISOString(),updates:any[]=[],suggested=new Map<string,{routing_code:string,tb_code:string}>();
  const blocks=await loadBlocks(tx,project.client_id),notes=new Map<string,{code:string,reason:string}>(),exceptionCodes=new Map<string,string>();
  const routingMap=await tx`select module,routing_code,item_code,erp_account_code,side,effective_from,effective_to,status,routing_id,version from erp_private.client_routing_map where client_id=${project.client_id} and module='Purchases' and status='Active'`;
+ // Approved supplier aliases (amendment F): only an exact supplier text (and description) match, and only to a pair that is itself approved in the routing map on the invoice date.
+ const aliasList=await tx`select alias_id,party_key,description_key,routing_code,item_code,effective_from,effective_to,status,revision from erp_private.client_routing_alias where client_id=${project.client_id} and status='Active'`;
  for(const r of rows){
   const note=(code:string,reason:string)=>{notes.set(r.row_id,{code,reason});};
   try{
    // The firm's approval rule (14 Nov, kept 17 Nov): a row maps automatically only when its routing code AND its TB code exactly match a mapping that a Partner approved for this client
    // for the invoice date. A valid pair with no approved mapping is only a suggestion; a row missing either code is an exception. A valid TB code in a file is never approval, and supplier history never maps a row.
-   const rcode=cleanCode(r.normalized.routing_code),tb=String(r.normalized.tb_code??'').trim();
-   if(!rcode&&!tb){note('NO_CODES','Exception queue: the row has no routing code and no TB code. It needs manual review; nothing is guessed from history.');continue;}
-   if(!rcode){note('ROUTING_BLANK',`Exception queue: the row has TB code ${tb} but no routing code.`);continue;}
-   exceptionCodes.set(r.row_id,rcode);
-   if(!tb){note('TB_BLANK',`Exception queue: the row has routing code ${rcode} but no TB code.`);continue;}
-   const found=resolveRouting(routingMap,{module:'Purchases',routing_code:rcode,item_code:tb,date:String(r.normalized.date||day(r.period_start))});
+   const rcode=cleanCode(r.normalized.routing_code),tb=String(r.normalized.tb_code??'').trim(),at0=String(r.normalized.date||day(r.period_start));
+   const direct=rcode&&tb?resolveRouting(routingMap,{module:'Purchases',routing_code:rcode,item_code:tb,date:at0}):null;
+   let found:any=direct,viaAlias:any=null;
+   if(!direct||direct.status!=='mapped'){
+    // The alias route: used only when the row's own codes did not map. Any code the file does carry must agree with the alias; the pair the alias points to must be approved.
+    const al=resolveAlias(aliasList,{party:r.normalized.party,description:r.normalized.description,date:at0});
+    if(al.status==='alias'&&(!rcode||rcode===al.alias.routing_code)&&(!tb||tb===al.alias.item_code)){
+     const viaA=resolveRouting(routingMap,{module:'Purchases',routing_code:al.alias.routing_code,item_code:al.alias.item_code,date:at0});
+     if(viaA.status==='mapped'&&String(viaA.mapping.erp_account_code)===String(al.alias.item_code)){found=viaA;viaAlias=al.alias;}
+     else{note('ALIAS_PAIR_NOT_APPROVED',`An approved alias points this supplier to routing code ${al.alias.routing_code} and TB code ${al.alias.item_code}, but that pair has no approved mapping on ${at0}. An alias never approves a pair.`);continue;}
+    }
+   }
+   if(!viaAlias){
+    // The firm's approval rule (14 Nov, kept 17 Nov): a row maps automatically only when its routing code AND its TB code exactly match a mapping that a Partner approved for this client
+    // for the invoice date. A valid pair with no approved mapping is only a suggestion; a row missing either code is an exception. A valid TB code in a file is never approval, and supplier history never maps a row.
+    if(!rcode&&!tb){note('NO_CODES','Exception queue: the row has no routing code and no TB code. It needs manual review; nothing is guessed from history.');continue;}
+    if(!rcode){note('ROUTING_BLANK',`Exception queue: the row has TB code ${tb} but no routing code.`);continue;}
+    exceptionCodes.set(r.row_id,rcode);
+    if(!tb){note('TB_BLANK',`Exception queue: the row has routing code ${rcode} but no TB code.`);continue;}
+   }
    let hint:any=null,viaMap:any=null;
    if(found.status==='mapped'){
     const acct=accounts.find((x:any)=>x.code===found.mapping.erp_account_code);
@@ -79,7 +95,7 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
    const own=policies.filter((v:any)=>v.activity_id===chosen?.activity_id),dated=own.find((v:any)=>day(v.effective_from)<=at);
    const v=mapValue(r,{route,account_code:account.code},accounts,own.length?dated:policy);
    const details=inventoryDetails(r,{route,account_code:account.code});if(chosen)details.activity_id=chosen.activity_id;delete details.auto_map_note;
-   details.mapping_confirmation={method:ROUTING_METHOD,routing_code:viaMap?viaMap.routing_code:account.category_code,tb_item_code:account.code,chart_version:account.catalog_version??null,mapped_at:stamp,imported_by:a.staff_id,...(viaMap?{routing_map_id:viaMap.routing_id,routing_map_version:viaMap.version,awaiting_review:true}:{})};
+   details.mapping_confirmation={method:ROUTING_METHOD,routing_code:viaMap?viaMap.routing_code:account.category_code,tb_item_code:account.code,chart_version:account.catalog_version??null,mapped_at:stamp,imported_by:a.staff_id,...(viaMap?{routing_map_id:viaMap.routing_id,routing_map_version:viaMap.version,awaiting_review:true}:{}),...(viaAlias?{via:'alias',alias_id:viaAlias.alias_id,alias_revision:viaAlias.revision}:{})};
    updates.push({row_id:r.row_id,route:v.route,category_code:v.category_code,account_code:v.account_code,narration:v.narration,asset_details:v.asset_details,first_use_status:v.first_use_status,first_use_date:v.first_use_date,review_details:details});
   }catch(e:any){ /* Anything the manual mapping would refuse stays unmapped for staff to resolve, with the reason. */ note('MAPPING_REFUSED',String(e?.message||'The mapping rules refused this row.').slice(0,300)); }
  }
@@ -93,7 +109,7 @@ export async function autoMapRows(tx:any,a:any,project:any,scope:{batchId?:strin
  const pairs=new Map<string,{routing_code:string,tb_code:string,rows:number}>();
  for(const x of suggested.values()){const k=x.routing_code+'|'+x.tb_code,cur=pairs.get(k);pairs.set(k,{...x,rows:(cur?.rows||0)+1});}
  const suggestedIds=new Set(suggested.keys());
- return {mapped:updates.length,left_for_staff:rows.length-updates.length,suggested_awaiting_approval:suggestedIds.size,exception_queue:exceptions.filter((e:any)=>!suggestedIds.has(e.row_id)).length,suggested_pairs:[...pairs.values()].sort((x,y)=>y.rows-x.rows),reasons,exceptions:exceptions.slice(0,200),unmapped_routing_codes:unmappedByCode(exceptions),via_routing_map:updates.filter((u:any)=>u.review_details?.mapping_confirmation?.method===ROUTING_METHOD).length};
+ return {mapped:updates.length,left_for_staff:rows.length-updates.length,suggested_awaiting_approval:suggestedIds.size,exception_queue:exceptions.filter((e:any)=>!suggestedIds.has(e.row_id)).length,suggested_pairs:[...pairs.values()].sort((x,y)=>y.rows-x.rows),reasons,exceptions:exceptions.slice(0,200),unmapped_routing_codes:unmappedByCode(exceptions),via_alias:updates.filter((u:any)=>u.review_details?.mapping_confirmation?.via==='alias').length,via_routing_map:updates.filter((u:any)=>u.review_details?.mapping_confirmation?.method===ROUTING_METHOD).length};
 }
 
 export async function autoMapAction(tx:any,a:any,p:any){

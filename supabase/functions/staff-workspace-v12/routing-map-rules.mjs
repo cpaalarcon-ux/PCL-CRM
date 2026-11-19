@@ -68,3 +68,35 @@ export function routingConfirmed(confirmation,accountCode,date,maps){
  const at=day(date),m=(maps||[]).find(x=>x.routing_id===confirmation.routing_map_id);
  return !!m&&m.status==='Active'&&String(m.erp_account_code)===String(accountCode)&&String(confirmation.tb_item_code)===String(accountCode)&&day(m.effective_from)<=at&&(!m.effective_to||day(m.effective_to)>=at);
 }
+// Client supplier aliases (build 2899, amendment F to rule A). One fixed clean-up and an exact comparison; nothing fuzzy ever maps a row.
+// The clean-up: lower case, every run of spaces and punctuation becomes one space, trimmed. Two texts match only when they are identical after it.
+export const aliasKey=v=>String(v??'').toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+export function aliasIssues(p){
+ const out=[],party=aliasKey(p.party),desc=aliasKey(p.description),code=cleanCode(p.routing_code),item=String(p.item_code??'').trim();
+ if(party.length<2)out.push('Give the supplier name exactly as it is written on the invoices (at least 2 letters or digits).');
+ if(party.length>200)out.push('The supplier name is too long.');
+ if(p.description&&desc.length<2)out.push('The description, if used, needs at least 2 letters or digits.');
+ if(desc.length>300)out.push('The description is too long.');
+ if(!/^[A-Z][A-Z0-9_]{1,29}$/.test(code))out.push('The routing code must start with a letter and use letters, numbers or underscores (for example EXP01).');
+ if(!/^\d{5}$/.test(item))out.push('A TB item code has five digits.');
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(day(p.effective_from)))out.push('Enter the date the alias starts.');
+ if(p.effective_to&&day(p.effective_to)<day(p.effective_from))out.push('The end date cannot be before the start date.');
+ return out;
+}
+// Find the one approved alias for a row on its invoice date. aliases: the client's aliases (any status); only Active ones valid on the date count.
+// A description-specific alias wins over a supplier-only alias; two aliases at the same level are ambiguous and map nothing.
+// Returns {status:'alias',alias} or {status:'none'|'multiple', code, reason}.
+export function resolveAlias(aliases,{party,description,date}){
+ const pk=aliasKey(party),dk=aliasKey(description),at=day(date);
+ if(!pk)return {status:'none',code:'ALIAS_NONE',reason:'The row has no supplier name to match an alias.'};
+ const live=(aliases||[]).filter(x=>x.status==='Active'&&x.party_key===pk&&day(x.effective_from)<=at&&(!x.effective_to||day(x.effective_to)>=at));
+ if(!live.length)return {status:'none',code:'ALIAS_NONE',reason:'No approved alias covers this supplier on this date.'};
+ const specific=live.filter(x=>x.description_key&&x.description_key===dk);
+ if(specific.length===1)return {status:'alias',alias:specific[0]};
+ if(specific.length>1)return {status:'multiple',code:'ALIAS_MULTIPLE',reason:'More than one approved alias covers this supplier and description. Withdraw the extra one.'};
+ const generic=live.filter(x=>!x.description_key);
+ if(generic.length===1)return {status:'alias',alias:generic[0]};
+ if(generic.length>1)return {status:'multiple',code:'ALIAS_MULTIPLE',reason:'More than one approved alias covers this supplier. Withdraw the extra one.'};
+ return {status:'none',code:'ALIAS_NONE',reason:'This supplier has an approved alias, but not for this description.'};
+}
+export const ALIAS_NOTE_LABEL='Mapped by approved alias';
