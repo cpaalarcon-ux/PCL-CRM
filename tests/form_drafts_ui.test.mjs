@@ -69,7 +69,7 @@ test('closing with unsaved changes asks first; saved changes close without a que
  assert.deepEqual([...dlg.querySelectorAll('button')].map(b=>b.textContent),['Keep editing','Save draft and leave','Leave without saving']);
  assert.equal(dlg.getAttribute('aria-labelledby'),'leaveTitle');
  dlg.querySelector('[data-leave=stay]').click();assert.equal(await leave,false);assert.equal(t.doc.querySelector('dialog.leave-dialog'),null);
- const leave2=t.ui.confirmLeave();await wait(5);t.doc.querySelector('[data-leave=save]').click();assert.equal(await leave2,true);assert.ok(t.calls.some(c=>c.action==='form_draft_save'&&c.explicit),'Save draft and leave saved it');
+ typeInto(t,t.form.elements.reference,'J-3');const leave2=t.ui.confirmLeave();await wait(0);t.doc.querySelector('[data-leave=save]').click();assert.equal(await leave2,true);assert.ok(t.calls.some(c=>c.action==='form_draft_save'&&c.explicit),'Save draft and leave saved it');
  assert.equal(await t.ui.confirmLeave(),true,'now saved: no question');
  const t3=setup();t3.ui.attach(t3.form,spec());typeInto(t3,t3.form.elements.reference,'x');
  const p=t3.ui.confirmLeave();await wait(5);t3.doc.querySelector('[data-leave=leave]').click();assert.equal(await p,true);
@@ -122,7 +122,7 @@ test('the screens are wired: modal option, leave question, page-leave warning, s
  assert.match(pilot,/b\.dataset\.draftResume/);assert.match(pilot,/confirmDiscard/);assert.match(pilot,/kind:'client_edit',key:c\.client_id\?`client:\$\{c\.client_id\}`:'client:new'/);
  assert.match(ledger,/\{draft:journalDraft\(kind,j\)\}/);assert.match(ledger,/async function resumeDraft\(d\)/);assert.match(v6,/resumeJournalDraft:d=>ledger\.resumeDraft\(d\)/);
  assert.match(imp,/kind:'client_activity'/);assert.match(imp,/async function resumeActivityDraft/);assert.match(queue,/x\.kind==='draft'\?/);assert.match(queue,/data-draft-resume/);
- for(const f of [pilot.match(/staff-drafts\.mjs\?v=([\w-]+)/)[1],imp.match(/staff-drafts\.mjs\?v=([\w-]+)/)[1]])assert.equal(f,'20261119-draft-v1','one cache token for the new module');
- assert.match(pilot,/staff-work-queue\.mjs\?v=20261119-draft-v1/);assert.match(pilot,/staff-workspace-v6\.mjs\?v=20261119-draft-v1/);assert.match(pilot,/staff-improvements\.mjs\?v=20261119-draft-v1/);assert.match(v6,/staff-ledger\.mjs\?v=20261119-draft-v1/);
+ for(const f of [pilot.match(/staff-drafts\.mjs\?v=([\w-]+)/)[1],imp.match(/staff-drafts\.mjs\?v=([\w-]+)/)[1]])assert.equal(f,'20261119-drafts2-v1','one cache token for the new module');
+ assert.match(pilot,/staff-work-queue\.mjs\?v=20261119-draft-v1/);assert.match(pilot,/staff-workspace-v6\.mjs\?v=20261119-drafts2-v1/);assert.match(pilot,/staff-improvements\.mjs\?v=20261119-drafts2-v1/);assert.match(v6,/staff-ledger\.mjs\?v=20261119-drafts2-v1/);
  assert.match(css,/\.draft-bar\{/);assert.match(css,/\.leave-dialog\{/);
 });

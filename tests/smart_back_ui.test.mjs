@@ -17,6 +17,7 @@ test('Smart Back: filter a project by period, open a task, press Back, land on t
  await click('.task-title');
  assert.ok(location.hash.startsWith('#task='+id(5)));assert.match(location.hash,/returnTo=project%3D/);
  assert.match($('.detail-return button').textContent,/Back to the project/);
+ assert.ok($('.detail-return .workspace-header'),'the header sits in the same sticky bar as Back');assert.equal(document.querySelectorAll('#content .workspace-header').length,1);assert.equal($('.detail-return').firstElementChild.dataset.returnBack,'1','Back stays first');
  assert.match($('.workspace-header').textContent,/Fictional client/);assert.match($('.workspace-header').textContent,/Fictional VAT Project/);assert.match($('.workspace-header').textContent,/Monthly · 2026-10-01/);assert.match($('.workspace-header .status-badge').textContent,/Pending/);
  await click('[data-return-back]');
  assert.equal(location.hash,'#project='+id(3));
