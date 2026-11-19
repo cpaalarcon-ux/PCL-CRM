@@ -653,3 +653,11 @@ small.warn{color:#8a5a00;display:block}
 @media(max-width:650px){.approval-needs-action{align-items:flex-start}.approval-needs-action>strong{font-size:34px}.approval-board-actions{align-items:stretch}.approval-board-actions button{width:100%}#editor.approval-drawer{width:100vw;max-width:100vw;padding:14px 16px 10px}.approval-review-heading{align-items:flex-start;flex-direction:column}}
 
 .wq-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;margin:8px 0;border:1px solid var(--line);border-radius:8px;background:#fff;position:sticky;top:0;z-index:2}.wq-all{display:flex;gap:8px;align-items:center;margin:8px 0}.wq-pick{display:flex;align-items:center;padding-right:8px}#homeWorkQueue .items-switch button{min-height:40px}
+
+/* Keep the current screen's actions in reach while its content scrolls. */
+#editor .modal-head{position:sticky;top:0;z-index:4;background:var(--paper);gap:12px;padding-block:8px}
+.editor-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;margin-left:auto}
+#editor.has-header-save #editForm>button[type=submit]{display:none}
+.sidebar-section-title{margin:14px 12px 4px;font-size:.75rem;font-weight:700;color:var(--sidebar-muted)}
+.import-bulk-actions{position:sticky;bottom:0;z-index:3;background:var(--paper);border-top:1px solid var(--line);padding:10px}
+.detail-return{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;background:var(--bg);padding:4px 0 8px}

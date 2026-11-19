@@ -56,7 +56,7 @@ test('a bulk tax review records one decision on every selected row under the rev
 
 test('the filing pack offers a bulk review that returns to the same pack',()=>{
  const rd=f=>fs.readFileSync(path.join(root,f),'utf8'),su=rd('staff-suite.mjs'),acc=rd('staff-accounting.mjs');
- assert.match(su,/data-tax-pick=/);assert.match(su,/button\('tax-bulk','Review the selected rows together',id\)/);assert.match(su,/action:'tax_row_review_batch'/);assert.match(su,/await taxOpen\(caseId\)/,'back to the same filing pack');
+ assert.match(su,/data-tax-pick=/);assert.match(su,/button\('tax-bulk','Confirm decision',id,/);assert.match(su,/action:'tax_row_review_batch'/);assert.match(su,/reviewImportRows\(rows\.filter\(row=>selected\.has\(row\.row_id\)\),\(\)=>taxOpen\(id\)\)/,'back to the same filing pack');
  assert.match(su,/if any row cannot take this decision nothing is saved/);assert.match(su,/You cannot review rows you imported/);
  assert.match(acc,/btn\('map-suggested','Map every suggested group on this page in one save',pid\)/);assert.match(acc,/uploaded:false/,'suggested groups are never recorded as the uploaded-codes confirmation');assert.match(acc,/name="confirm_groups" value="yes" required/);assert.match(acc,/A suggestion only/);
 });

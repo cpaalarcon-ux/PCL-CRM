@@ -1,5 +1,5 @@
 // Tax rules and release checks use the same authenticated, scoped API as the workspace.
-import {createNonEtimsUI} from './staff-non-etims.mjs?v=20261119-fixes-v1';
+import {createNonEtimsUI} from './staff-non-etims.mjs?v=20261119-fixes-v1&rev=20261119-usability';
 import {profileObligationChecks} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
 import {createExciseScheduleUI} from './staff-excise-schedule.mjs?v=20261112-excise-v4';
 export function createTaxConfigUI(ctx){
@@ -79,5 +79,5 @@ export function createTaxConfigUI(ctx){
   if(action==='release-read'){await release();return true;}if(action==='release-edit'){const r=$('#editorBody')._checks.find(x=>x.check_code===id);modal(r.title,form(select('status','Testing status',['Not tested','In progress','Passed','Blocked'],r.status)+area('evidence','Test date, result, evidence location and unresolved issues',r.evidence)),f=>request({action:'release_check_save',...val(f),check_code:id,revision:r.revision}));return true;}
   return false;
  }
- return {rates,handle,kinds};
+ return {rates,handle,kinds,openLegalBases:nonEtims.adminBases};
 }

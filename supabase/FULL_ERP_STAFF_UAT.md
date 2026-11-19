@@ -200,3 +200,24 @@ The tested runtime candidate is `ae24e34220414f169ae38c10b38d8aa0f93eaf4e`; late
 For this exact runtime candidate, Cloudflare Pages deployment [128185669324](https://github.com/cpaalarcon-ux/PCL-CRM/runs/128185669324), hosted staging check [42303084254](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/42303084254), and browser UAT [42303084351](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/42303084351) passed. Browser automation recorded 496/496 automated tests and passed the Chromium sign-in, client setup, purchase mapping and return-readiness flows. The staging `staff-workspace-v12` function is active at v124 and reports build .75.
 
 These automated checks do not complete staff role-based acceptance. U71's automated release-identity portion passed; U77/U78 still require separate fictional staff accounts, direct-route denial checks, and manual desktop/tablet/mobile and keyboard checks. The end-to-end client-to-audit workflow, tax rule owner sign-offs, backup/restore evidence and Partner release decision remain open. Production remains held.
+
+
+## File 10 · Mlima approved supplier alias
+
+Use [File 10](../tests/fixtures/uat/File_10_Mlima_Approved_Supplier_Alias.csv) for the **fictional Mlima staging project** only. It follows the A–N purchases layout. Select September 2026 and 16% VAT. The six rows total KES 6,000 net, KES 960 VAT and KES 6,960 gross.
+
+1. Verify the fictional project has an approved expense routing/TB pair effective for September. Use that pair for the test alias. The conflicting pair on row 5 should stay different from the alias.
+2. As a Manager, propose an alias for **Mlima Supplies Ltd** effective **5 September 2026**. A different Partner opens **Routing map → Supplier aliases** and approves it under their own account. A draft alias must map no rows.
+3. An assigned preparer uploads File 10 as an Import Source and imports it. Compare the summary and the purchase mapping list with the outcomes below. Use fresh invoice references on a repeat so the ERP does not skip duplicates. Do not change the supplier spellings or dates.
+4. Record the build, role accounts, import reference, elapsed time from **Timing log**, and the result. Verify no tax review or journal was created. Keep the Manager and Partner evidence separate.
+
+| Invoice | Expected outcome |
+| --- | --- |
+| MLIMA-F10-01 | Mapped for review by the approved supplier alias |
+| MLIMA-F10-02 | Mapped for review after normalising case, spaces and punctuation |
+| MLIMA-F10-03 | Unmapped by the alias because the supplier name differs |
+| MLIMA-F10-04 | Aliasing leaves the conflicting uploaded codes unchanged |
+| MLIMA-F10-05 | Unmapped by the alias because it covers a different supplier |
+| MLIMA-F10-06 | Unmapped by the alias because the invoice predates 5 September |
+
+The isolated regression records the parser and role-separated mapping result. Record hosted acceptance as **Not tested** until the Manager and Partner complete the steps in staging.

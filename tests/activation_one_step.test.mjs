@@ -38,7 +38,7 @@ test('Review & activate is one clear step',async t=>{t.after(()=>dom.window.clos
  await openReview();
  body=document.querySelector('#editorBody');assert.match(body.textContent,/Ready to activate/);assert.match(body.textContent,/Evidence folders are made when a service is set up for a period, not by activation/);assert.equal(/creates the tasks and evidence folders/.test(body.textContent),false,'activation does not claim to make evidence folders');
  main=body.querySelector('button[type=submit]');assert.equal(main.disabled,false);assert.equal(main.textContent,'Activate project');
- calls.length=0;await submit();
+ calls.length=0;await click('#editorSave');await pause();
  assert.ok(calls.some(p=>p.action==='engagement_save_activate'),'one press saves and activates');
  assert.equal(calls.some(p=>p.action==='engagement_save'),false);
  assert.match(document.querySelector('#editorBody').textContent,/48 task\(s\) created/);assert.match(document.querySelector('#editorBody').textContent,/Evidence folders are made when a service is set up for a period, not by activation/);assert.equal(document.querySelector('#editorTitle').textContent,'Project activated');
@@ -46,7 +46,13 @@ test('Review & activate is one clear step',async t=>{t.after(()=>dom.window.clos
  await openReview();calls.length=0;document.querySelector('#engSaveDraft').click();await pause();await pause();
  assert.ok(calls.some(p=>p.action==='engagement_save'),'draft save does not activate');assert.equal(calls.some(p=>p.action==='engagement_save_activate'),false);
  // 4. a refusal stays visible at the top of the form and the form stays open
- mode.fail='Verify the current client KYC file before activation.';await openReview();await submit();
+ mode.fail='Verify the current client KYC file before activation.';await openReview();
+ const notes=document.querySelector('#editForm [name=notes]');
+ notes.value='Retain these review notes';
+ notes.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+ assert.equal(document.querySelector('#editor').dispatchEvent(new dom.window.Event('cancel',{cancelable:true})),false,'Escape does not discard edited fields');
+ await submit();
+ assert.equal(notes.value,'Retain these review notes','failed save retains the notes');
  const err=document.querySelector('#engActivateError');assert.equal(err.hidden,false);assert.match(err.textContent,/Verify the current client KYC/);assert.equal(document.querySelector('#editor').open,true);
  // the hidden mode returns to activate after a failed draft save
  document.querySelector('#engSaveDraft').click();await pause();await pause();assert.equal(document.querySelector('[name=save_mode]').value,'activate');

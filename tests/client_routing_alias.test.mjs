@@ -7,6 +7,8 @@ const {accountingAction}=await import('../supabase/functions/staff-workspace-v12
 const {autoMapAction}=await import('../supabase/functions/staff-workspace-v12/auto-map.ts');
 const {routingMapAction}=await import('../supabase/functions/staff-workspace-v12/routing-map-actions.ts');
 const {ROUTING_METHOD}=await import('../supabase/functions/staff-workspace-v12/auto-map.ts');
+import {readSourceSheet} from '../supabase/functions/staff-workspace-v12/source-reader.mjs';
+import {purchaseUploadProfile,purchaseUploadRows,normalizePurchaseUpload} from '../supabase/functions/staff-workspace-v12/purchase-upload.mjs';
 const {assertSupportedPeriod}=await import('../supabase/functions/staff-workspace-v12/supported-period.ts');
 const {loadCrosswalk,revenueAccount}=await import('../supabase/functions/staff-workspace-v12/sales-crosswalk.ts');
 const {firstSupportedStart}=await import('../supabase/functions/staff-workspace-v12/ledger-rules.mjs');
@@ -42,15 +44,24 @@ test('client supplier aliases: exact text only, never approve a pair, Partner ap
  const pairMap=(await rm('PARTNER',{action:'routing_map_read'})).maps.find(x=>x.routing_code==='XRT1');
  await rm('PARTNER',{action:'routing_map_approve',routing_id:pairMap.routing_id,revision:pairMap.revision});
  await rm('MANAGER',{action:'routing_map_propose',module:'Purchases',routing_code:'XRT7',item_code:a2.code,erp_account_code:a2.code,effective_from:'2026-09-01'});
- await mk('S1','Mlima Supplies Ltd','','');await mk('S2','  MLIMA   SUPPLIES, LTD. ','','');await mk('S3','Mlima Supplies Limited','','');
- await mk('S4','Mlima Supplies Ltd','XRT9',a2.code);await mk('S5','Other Trading Co','','');await mk('S6','Mlima Supplies Ltd','','','2026-08-20');
+ const fixture='File_10_Mlima_Approved_Supplier_Alias.csv';
+ const {sheet}=await readSourceSheet(fs.readFileSync(path.join(root,'tests/fixtures/uat',fixture)),fixture,null);
+ const profile=purchaseUploadProfile(sheet,true);
+ const {rows}=purchaseUploadRows(sheet,profile);
+ assert.equal(rows.length,6);
+ for(const [i,record] of rows.entries()){
+  const {raw,row,issues,pending}=normalizePurchaseUpload(record.values,'16%','2026-09-01','2026-09-30',acct);
+  assert.deepEqual(issues,[]);
+  assert.deepEqual(pending,[]);
+  await tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B},${P},${C},'Purchases',${record.source_row},${'AL-S'+(i+1)},${tx.json(raw)},${tx.json(row)})`;
+ }
  // Nothing is mapped before an alias is approved, and the supplier name alone never maps a row.
  assert.equal((await auto('ASSISTANT',{action:'workbook_auto_map'})).mapped,0);
  // Staff cannot propose; a pair that is not approved cannot be pointed at; the form's issues are named.
  await assert.rejects(()=>rm('ASSISTANT',{action:'routing_map_alias_propose',party:'Mlima Supplies Ltd',routing_code:'XRT1',item_code:a1.code,effective_from:'2026-09-01'}),/Manager or Partner proposes/);
  await assert.rejects(()=>rm('MANAGER',{action:'routing_map_alias_propose',party:'Mlima Supplies Ltd',routing_code:'XRT7',item_code:a2.code,effective_from:'2026-09-01'}),/not an approved mapping/);
  await assert.rejects(()=>rm('MANAGER',{action:'routing_map_alias_propose',party:'',routing_code:'XRT1',item_code:a1.code,effective_from:'2026-09-01'}),/supplier name/);
- const prop=await rm('MANAGER',{action:'routing_map_alias_propose',party:'Mlima Supplies Ltd',routing_code:'xrt1',item_code:a1.code,effective_from:'2026-09-01'});assert.equal(prop.party_key,'mlima supplies ltd');
+ const prop=await rm('MANAGER',{action:'routing_map_alias_propose',party:'Mlima Supplies Ltd',routing_code:'xrt1',item_code:a1.code,effective_from:'2026-09-05'});assert.equal(prop.party_key,'mlima supplies ltd');
  await assert.rejects(()=>rm('MANAGER',{action:'routing_map_alias_propose',party:'MLIMA SUPPLIES LTD.',routing_code:'XRT1',item_code:a1.code,effective_from:'2026-09-15'}),/already covers/);
  assert.equal((await auto('ASSISTANT',{action:'workbook_auto_map'})).mapped,0,'a draft alias maps nothing');
  const al=(await rm('MANAGER',{action:'routing_map_alias_read'})).aliases[0];assert.equal(al.status,'Draft');
@@ -62,6 +73,7 @@ test('client supplier aliases: exact text only, never approve a pair, Partner ap
  assert.deepEqual(await rm('PARTNER',{action:'routing_map_alias_approve',alias_id:al.alias_id,revision:al.revision}),{ok:true});
  // The approved alias maps exact text after the fixed clean-up and nothing else.
  const run=await auto('ASSISTANT',{action:'workbook_auto_map'});assert.equal(run.mapped,2);assert.equal(run.via_alias,2);assert.equal(run.via_routing_map,2);
+ assert.equal((await tx`select count(*)::int n from erp_private.ledger_journals where project_id=${P}`)[0].n,0,'mapping never posts or creates a journal');
  const s1=await get('S1');assert.equal(s1.account_code,a1.code);assert.equal(s1.review_details.mapping_confirmation.via,'alias');assert.equal(s1.review_details.mapping_confirmation.alias_id,al.alias_id);assert.equal(s1.review_details.mapping_confirmation.method,ROUTING_METHOD);
  assert.equal((await get('S2')).account_code,a1.code,'spacing, case and punctuation are cleaned up');
  assert.equal((await get('S3')).account_code,null,'a similar name never maps');
