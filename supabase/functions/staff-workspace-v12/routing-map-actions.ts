@@ -3,7 +3,7 @@ import {proposalIssues,PAYROLL_CODES,payrollSide,cleanCode,MODULES} from './rout
 
 // The approved routing map (build 2802, Partner approval and versions from 2803): read it, a Manager or Partner proposes mappings (one or many), a Partner who did not propose approves, and a Manager or Partner ends or withdraws them.
 // The rules for the table are in 20261114150000_client_routing_map.sql; the matching rules are in routing-map-rules.mjs. Nothing here posts anything.
-const ACTIONS=['routing_map_read','routing_map_suggestions','routing_map_suggest_propose','routing_map_copy','routing_map_propose','routing_map_approve','routing_map_end','routing_map_withdraw'];
+const ACTIONS=['routing_map_read','routing_map_suggestions','routing_map_suggest_propose','routing_map_copy','routing_map_propose','routing_map_approve','routing_map_approve_batch','routing_map_end','routing_map_withdraw'];
 const day=(v:any)=>v instanceof Date?v.toISOString().slice(0,10):String(v||'').slice(0,10);
 const one=(r:any[])=>{if(!r.length)fail(403,'This is unavailable to your account.');return r[0];};
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
@@ -75,6 +75,20 @@ export async function routingMapAction(tx:any,a:any,p:any):Promise<any>{
   }
   if(!saved.length&&problems.length)fail(400,problems.slice(0,5).map((x:any)=>`Row ${x.row} (${x.routing_code||'no code'}): ${x.issues.join(' ')}`).join(' '));
   return {ok:true,saved:saved.length,problems};
+ }
+ // Build 2893: a Partner approves several drafts in one step. Maker is not checker: if the Partner proposed any selected mapping, nothing is approved and the codes are named.
+ if(p.action==='routing_map_approve_batch'){
+  if(a.category_code!=='PARTNER')fail(403,'A Partner approves a routing mapping. The Manager proposes it.');
+  const ids=[...new Set((Array.isArray(p.routing_ids)?p.routing_ids:[]).map((x:any)=>uuid(x)))];if(!ids.length||ids.length>200)fail(400,'Choose between 1 and 200 mappings.');
+  const rows=await tx`select * from erp_private.client_routing_map where client_id=${cid} and routing_id=any(${tx.array(ids)}::uuid[]) order by routing_id for update`;
+  if(rows.length!==ids.length)fail(403,'All selected mappings must belong to this client.');
+  const label=(xs:any[])=>xs.map((x:any)=>x.routing_code+(x.item_code?' / '+x.item_code:'')).slice(0,8).join(', ');
+  const notDraft=rows.filter((x:any)=>x.status!=='Draft');if(notDraft.length)fail(409,`Only drafts can be approved. Already approved or withdrawn: ${label(notDraft)}. Refresh and choose again.`);
+  const mine=rows.filter((x:any)=>x.created_by===a.staff_id);if(mine.length)fail(403,`A Partner who did not propose a mapping must approve it. You proposed: ${label(mine)}. Nothing was approved; remove these and approve the rest.`);
+  const done=await tx`update erp_private.client_routing_map set status='Active',approved_by=${a.staff_id},approved_at=now() where client_id=${cid} and routing_id=any(${tx.array(ids)}::uuid[]) and status='Draft' returning routing_id`;
+  if(done.length!==ids.length)fail(409,'Some mappings changed while approving. Nothing was approved; refresh and try again.');
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_routing_map','ROUTING_MAP_APPROVED_BATCH',${cid},${tx.json({count:done.length,routing_ids:ids})})`;
+  return {ok:true,approved:done.length};
  }
  const m=one(await tx`select * from erp_private.client_routing_map where routing_id=${uuid(p.routing_id)} and client_id=${cid} for update`);
  if(String(m.revision)!==revision(p.revision))fail(409,'This mapping changed. Refresh before continuing.');

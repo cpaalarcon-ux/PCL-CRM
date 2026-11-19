@@ -56,6 +56,7 @@ import {starterConfirmAction} from './starter-confirm-actions.ts';
 import {exciseScheduleAction} from './excise-schedule-actions.ts';
 import {bankTotalsAction} from './bank-totals-actions.ts';
 import {routingMapAction} from './routing-map-actions.ts';
+import {purchaseAccountsAction} from './purchase-accounts-actions.ts';
 import {payrollRegisterAction} from './payroll-register-actions.ts';
 import {payrollReviewAction} from './payroll-review-actions.ts';
 import {payrollConfirmationAction} from './payroll-confirmation-actions.ts';
@@ -491,6 +492,7 @@ async function action(id:any,p:any){
   const exciseSchedule=await exciseScheduleAction(tx,a,p);if(exciseSchedule!==undefined)return exciseSchedule;
   const bankTotals=await bankTotalsAction(tx,a,p,admin.storage.from(BUCKET));if(bankTotals!==undefined)return bankTotals;
   const routingMap=await routingMapAction(tx,a,p);if(routingMap!==undefined)return routingMap;
+  const purchaseAccounts=await purchaseAccountsAction(tx,a,p);if(purchaseAccounts!==undefined)return purchaseAccounts;
   const payrollRegister=await payrollRegisterAction(tx,a,p);if(payrollRegister!==undefined)return payrollRegister;
   const payrollReview=await payrollReviewAction(tx,a,p);if(payrollReview!==undefined)return payrollReview;
   const payrollConfirmation=await payrollConfirmationAction(tx,a,p);if(payrollConfirmation!==undefined)return payrollConfirmation;
