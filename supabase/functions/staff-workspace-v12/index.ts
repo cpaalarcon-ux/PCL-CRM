@@ -58,6 +58,7 @@ import {bankTotalsAction} from './bank-totals-actions.ts';
 import {routingMapAction} from './routing-map-actions.ts';
 import {purchaseAccountsAction} from './purchase-accounts-actions.ts';
 import {workQueueAction} from './work-queue-actions.ts';
+import {formDraftAction} from './form-draft-actions.ts';
 import {payrollRegisterAction} from './payroll-register-actions.ts';
 import {payrollReviewAction} from './payroll-review-actions.ts';
 import {payrollConfirmationAction} from './payroll-confirmation-actions.ts';
@@ -551,6 +552,7 @@ async function action(id:any,p:any){
   const purchases=await purchaseLedgerAction(tx,a,p);if(purchases!==undefined)return purchases;
   const ledger=await ledgerAction(tx,a,p,admin.storage.from(BUCKET));if(ledger!==undefined)return ledger;
   const workQueue=await workQueueAction(tx,a,p,admin.storage.from(BUCKET));if(workQueue!==undefined)return workQueue;
+  const formDraft=await formDraftAction(tx,a,p);if(formDraft!==undefined)return formDraft;
   const accounting=await accountingAction(tx,a,p);if(accounting!==undefined)return accounting;
   const workbook=await workbookAction(tx,a,p,admin.storage.from(BUCKET));if(workbook!==undefined)return workbook;
   if(p.action==='task_status'){

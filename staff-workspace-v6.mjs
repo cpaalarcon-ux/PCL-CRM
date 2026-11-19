@@ -7,7 +7,7 @@ import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=2
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
 import {createAccountingUI} from './staff-accounting.mjs?v=20261119-fixes-v1&rev=20261119-usability';
 
-import {createLedgerUI} from './staff-ledger.mjs?v=20261119-fixes-v1';
+import {createLedgerUI} from './staff-ledger.mjs?v=20261119-draft-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
 import {mountObligationCheck} from './staff-obligation-check.mjs?v=20261115-obligation-check-v1';
 import {currentReportingMonth,nextReportingMonthStart} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
@@ -425,6 +425,6 @@ const workCards=`<div class="work-board">
   if(b.dataset.v6==='reverse-time')modal('Reverse approved time',form(`<p class="info full">The approved entry remains locked. This adds an equal negative entry for an auditable correction.</p>`+field('reason','Reason *','','text','required maxlength="2000"')),f=>request({...Object.fromEntries(f),action:'timesheet_reverse',timesheet_id:id}));
   if(b.dataset.v6==='sector')modal('Add primary sector',form(field('name','Sector name *','','text','required maxlength="100"')+select('parent_id','Parent category',d().sectors.map(s=>[s.sector_id,s.name]))),f=>request({...Object.fromEntries(f),action:'sector_save'}));
  }catch(err){notice(err.message,true);}finally{b.disabled=false;}});
- return {projects,time,bind,answerEscalation,paintHandovers,paintPartnerEscalations,paintTaskHandovers,editProject,newTask,editTime,importWorkbook,openCatalog:()=>accounting.catalog(),openLedger:id=>ledger.open(id),openOpeningImport:(id,settings)=>ledger.openOpeningImport(id,settings),openOpeningJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openPurchases:id=>imported(id),openPeriodImports:id=>periodImports.open(id),selectProject(id){if(selected!==id)selectedPeriod='';selected=id;taskFilter='All';},selectPeriod(id){selectedPeriod=id;}};
+ return {projects,time,bind,answerEscalation,paintHandovers,paintPartnerEscalations,paintTaskHandovers,editProject,newTask,editTime,importWorkbook,openCatalog:()=>accounting.catalog(),openLedger:id=>ledger.open(id),openOpeningImport:(id,settings)=>ledger.openOpeningImport(id,settings),openOpeningJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),openJournal:(id,periodId,journalId)=>ledger.openOpeningJournal(id,periodId,journalId),resumeJournalDraft:d=>ledger.resumeDraft(d),openPurchases:id=>imported(id),openPeriodImports:id=>periodImports.open(id),selectProject(id){if(selected!==id)selectedPeriod='';selected=id;taskFilter='All';},selectPeriod(id){selectedPeriod=id;}};
 }
 

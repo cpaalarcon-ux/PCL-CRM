@@ -661,3 +661,11 @@ small.warn{color:#8a5a00;display:block}
 .sidebar-section-title{margin:14px 12px 4px;font-size:.75rem;font-weight:700;color:var(--sidebar-muted)}
 .import-bulk-actions{position:sticky;bottom:0;z-index:3;background:var(--paper);border-top:1px solid var(--line);padding:10px}
 .detail-return{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;background:var(--bg);padding:4px 0 8px}
+/* Build 2903: draft status line, Save draft & return, and the leave / sign-out questions. */
+.draft-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;margin:0 0 12px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:#f1f7f4}
+.draft-status{margin:0;font-size:.92rem;color:var(--green);font-weight:600}
+.draft-status.error{color:var(--red)}
+.leave-dialog{max-width:min(460px,92vw);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+.leave-dialog::backdrop{background:rgba(15,23,42,.5)}
+.leave-dialog h2{margin:0 0 8px;font-size:1.15rem}
+.leave-dialog .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
