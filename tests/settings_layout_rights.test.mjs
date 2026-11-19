@@ -11,7 +11,7 @@ test('every Settings card sits on exactly one tab and none is dropped',()=>{
  const tabs=new Set(L.SETTINGS_TABS.map(t=>t.code));
  for(const k of keys){assert.ok(tabs.has(L.tabForCard(k)),k);assert.ok(k in L.CARD_TAB,k+' has a named tab');}
  assert.equal(L.tabForCard('aFutureCard'),'records','a card nobody placed still shows, under Records & Audit History');
- assert.match(suite,/staff-settings-layout\.mjs\?v=20261119-settings-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261119-alias-v1/);
+ assert.match(suite,/staff-settings-layout\.mjs\?v=20261119-settings-v1/);assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261119-fixes-v1/);
  assert.match(suite,/action==='settings-tab'/);
 });
 test('the page shows one tab and keeps the others in the page, hidden',()=>{
