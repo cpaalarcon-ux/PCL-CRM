@@ -80,5 +80,5 @@ test('wiring: the annual pack has the button, the cache token and the build labe
  const led=rd('staff-ledger.mjs'),v6=rd('staff-workspace-v6.mjs');
  assert.match(led,/staff-wording\.mjs\?v=20261126-wording-v1/);assert.match(led,/btn\('wording','Wording and disclosures'\)/);assert.match(led,/a==='wording'\)\{await wordScr\(\)\.open\(\);return;\}/);
  assert.match(v6,/staff-ledger\.mjs\?v=20261119-draft-v1/);
- assert.equal(JSON.parse(rd('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-19.2902');assert.match(rd('staff-pilot.html'),/data-build="2026-11-19\.2902"/);
+ assert.equal(JSON.parse(rd('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-19.2903');assert.match(rd('staff-pilot.html'),/data-build="2026-11-19\.2903"/);
 });
