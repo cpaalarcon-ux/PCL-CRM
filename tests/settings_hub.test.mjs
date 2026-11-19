@@ -1,3 +1,4 @@
+// Synthetic settings fixtures; the all-zero PIN is a test placeholder.
 // Settings hub, first slice (build 2787): the read-only list of settings sections with counts of defaults and waiting approvals.
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
@@ -58,7 +59,7 @@ test('settings_hub(): counts agree with the tables, and only Partners and Manage
  assert.equal(before.approve_tax_rates.pending,await n(`select count(*) c from erp_private.tax_rates where status='Draft'`));
  // A Draft account and a proposed bank rule raise the waiting counts by one each.
  await tx`insert into erp_private.account_catalog(code,name,account_group,route,category_code,statement,catalog_version,status) values('99991','Fictional draft account','Test',1,'EXP','P&L','test','Draft')`;
- const C=id();await tx`insert into erp_private.clients(client_id,company_name,kra_pin,primary_sector,branch_location,client_category,legal_structure,legal_subtype,legal_entity_type,owner_staff_id) values(${C},'UAT Fictional Hub Ltd','A400000009Z','Energy','Nairobi','Corporate','Limited Company','Private Limited Company','Limited company',${actors.MANAGER.staff_id})`;
+ const C=id();await tx`insert into erp_private.clients(client_id,company_name,kra_pin,primary_sector,branch_location,client_category,legal_structure,legal_subtype,legal_entity_type,owner_staff_id) values(${C},'UAT Fictional Hub Ltd','Z000000000Z','Energy','Nairobi','Corporate','Limited Company','Private Limited Company','Limited company',${actors.MANAGER.staff_id})`;
  await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C},${F})`;
  await tx`insert into erp_private.bank_mapping_rules(client_id,keyword,account_code,status,created_by) values(${C},'fictional hub keyword','99991','Proposed',${actors.MANAGER.staff_id})`;
  const after=await hub('MANAGER');
