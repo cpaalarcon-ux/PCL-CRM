@@ -1,9 +1,12 @@
-// Build 2903: rules for resumable form drafts. Pure functions, shared by the server action and its tests.
+// Build 2903: rules for resumable form drafts. Build 2904 adds the opening-balance grid, the purchase and expenditure mapping forms and time entry. Pure functions, shared by the server action and its tests.
 // A draft is a person's own unfinished form. It is never an approval, task or ledger record. Secrets are never kept.
 export const FORM_KINDS=Object.freeze({
  ledger_journal:'Journal entry',
  client_edit:'Client set-up form',
  client_activity:'Client activities form',
+ opening_balance:'Opening balances (T-structure)',
+ purchase_mapping:'Purchase and expenditure mapping',
+ time_entry:'Time entry',
 });
 export const MAX_DRAFTS_PER_PERSON=50;
 export const MAX_PAYLOAD_CHARS=60000;

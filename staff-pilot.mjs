@@ -3,7 +3,7 @@ import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
 import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNote} from './staff-upload-retry.mjs?v=20261119-upload-v1';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261119-draft-v1&rev=20261119-2903';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1&rev=20261119-2904';
 import {returnLabel,chooseReturn,createReturnStore} from './staff-return-state.mjs?v=20261119-nav-v1';
@@ -23,12 +23,13 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-draft-v1&rev=20261119-2903&access=20261119-2906';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906';
 import {createMessenger} from './staff-messenger.mjs?v=20261119-workspace';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
-import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-2903&access=20261119-2906';
+import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
-import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-draft-v1&rev=20261119-2903';
+import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905';
+import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {moduleLinks,GROUP_ENGAGEMENTS,GROUP_COMPLIANCE,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261121-comply-v1';
@@ -355,6 +356,7 @@ const crumbLabels={clients:'Clients',projects:'Projects & Tasks',time:'Time & At
 // One breadcrumb for every top-level area. Task workspaces and audit files draw their own deeper trail, so the shared bar stops at the area name for those.
 function paintCrumbs(){const el=$('#crumbs');if(!el)return;if(view==='home'||view==='task'||view==='clientfile'||!crumbLabels[view]){el.hidden=true;el.replaceChildren();return;}el.hidden=false;el.innerHTML=`<a href="#view=home" data-view="home">Home</a><span aria-hidden="true">/</span><span aria-current="page">${esc(crumbLabels[view])}</span>`;}
 loadMyWorkMode(globalThis.localStorage);
+watchStickyBar($('#content'));
 function render(){bindWorkspaceSearch();const allowed=['home'];if(canArea('projects'))allowed.push('task','projects');if(canArea('clients'))allowed.push('clients','clientfile');if(canArea('time_hr'))allowed.push('time');if(canArea('time_hr')&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))allowed.push('team');if(canArea('documents'))allowed.push('documents');if(canArea('communications'))allowed.push('communications');for(const [area,target] of [['audit','audit'],['leads','leads'],['billing_wip','finance'],['staff_access','staff'],['settings','firms']])if(canArea(area))allowed.push(target);if(!allowed.includes(view))view='home';nav();paintCrumbs();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';$('#content').innerHTML=detailReturn()+({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,clientfile:renderClientProfile,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<details class="settings-fold section-space" id="taxWorkFold" name="projects-more"><summary>Tax compilation, approvals and KRA notices</summary><section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>${['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(data.me.category_code)?`<section class="card section-space" id="kraNoticesCard"><h2>KRA notices</h2><p class="muted">Log each notice KRA sends, see the verification task it creates, and clear its non-compliance flags.</p>${suite.button('kra-open','Open the KRA notice log')}</section>`:''}</details>`,audit:audit.render,team:teamUI.render,time:()=>staffAttendancePanel()+v6.time()+suite.hr(),staff,documents,firms:()=>suite.settings({access:policyCard(data,esc,shortDate)+otherPoliciesCard(data,esc,shortDate)+statusPolicyCard(statusPolicy,{esc,fmt:shortDate})+goLiveCard(data,esc),firm:holidaysUI.render()}),communications:suite.communications,finance:suite.finance}[view])();applyItemViews($('#content'),{view,storage:globalThis.localStorage});v6.bind();presence.paint();bell.paint();if(view==='time')void paintStaffAttendance();if(view==='audit')audit.enter();if(view==='home'&&!['INTERN','ADMIN'].includes(data.me.category_code))void workQueue.mount();if(view==='home'&&(isLeader()||data.me.category_code==='SUPERVISOR'))void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='clientfile'&&clientTab==='documents')void paintDocRequests({request,esc,shortDate,data:()=>data});if(view==='clientfile'&&((isLeader()&&['setup','tax'].includes(clientTab))||['aml','understanding'].includes(clientTab)))void improvements.paintClientTab(clientTab,selectedClient).catch(e=>{const h=$('#clientTabHost');if(h)h.innerHTML='<p class="error" role="alert">'+esc(e.message)+'</p>';});if(view==='home'&&data.me.category_code==='PARTNER'){void v6.paintPartnerEscalations();void suite.kra.paintBanner();}if(view==='documents')void suite.incoming.paintCard();if(view==='documents')void suite.docReview.paintStates();if(view==='home'&&['PARTNER','MANAGER'].includes(data.me.category_code)){void teamUI.paintPool();void metricsUI.paint();}if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='firms')void paintStatusPolicy();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();if($('#search')){const runClientFilter=()=>{const q=($('#search').value||'').toLowerCase(),sf=$('#clientStructureFilter')?.value||'';document.querySelectorAll('[data-search]').forEach(r=>{const s=r.dataset.structure,st=clientStateFilter,stateHidden=st!=='all'&&r.dataset.state!=='all'&&!(st==='setup'&&r.dataset.incomplete!==undefined?r.dataset.incomplete==='1':r.dataset.state===st);r.hidden=!r.dataset.search.includes(q)||!!(sf&&(sf==='__missing'?s!=='':s!==sf))||stateHidden;});};bindClientChips=()=>document.querySelectorAll('[data-client-state]').forEach(b=>b.onclick=()=>{clientStateFilter=b.dataset.clientState;document.querySelectorAll('[data-client-state]').forEach(x=>{const on=x.dataset.clientState===clientStateFilter;x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});runClientFilter();});bindClientChips();runClientFilter();$('#search').oninput=runClientFilter;if(isLeader()){const el=$('#search');el.value=clientQuery.q;el.oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{const pos=el.selectionStart;clientQuery.q=el.value.trim();clientQuery.page=0;clientPage=null;render();const n=$('#search');if(n){n.focus();n.setSelectionRange(pos,pos);}},350);};runClientFilter();}if($('#clientStructureFilter'))$('#clientStructureFilter').onchange=runClientFilter;}}
 function detailReturn(){
  const route=workspaceRoute(location.hash)||{};
@@ -655,7 +657,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.cregPage){clientQuery.page=Math.max(0,clientQuery.page+(b.dataset.cregPage==='next'?1:-1));clientPage=null;render();return;}
  if(b.dataset.cregClear!==undefined){clientQuery=DEFAULT_QUERY();clientPage=null;render();return;}
  if(b.dataset.clientLife){const act=b.dataset.clientLife,cid=b.dataset.id,w=LIFECYCLE_WORDS[act];if(w){const c=data.clients.find(x=>x.client_id===cid);modal(w.title+(c?' · '+c.company_name:''),form(lifecycleForm(act,esc),w.verb),f=>request({action:'client_lifecycle',client_id:cid,lifecycle:act,reason:f.get('reason')}),()=>render(),{successMessage:'Client updated.'});}return;}
- if(b.dataset.client)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
+ if(b.dataset.client&&!b.dataset.myReview)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
  if(b.dataset.clientView){navigateWorkspace('clientfile',b.dataset.clientView);return;}
  if(b.dataset.clientAccounts){clientAccountReturn=null;await clientAccountSetup(b.dataset.clientAccounts,{onReturn:null});}
  if(b.dataset.clientMapEndSelected){clientAccountEndSelected(b.dataset.clientMapEndSelected);return;}
@@ -688,6 +690,9 @@ const v6=createWorkspaceUI({drafts:()=>drafts,$,esc,field,select,form,modal,requ
 // Resuming a saved draft reopens its own form. Every opener only refills what the person typed; the server checks the person's access again when the form is saved.
 drafts.register('ledger_journal',d=>v6.resumeJournalDraft(d));
 drafts.register('client_activity',d=>improvements.resumeActivityDraft(d));
+drafts.register('opening_balance',d=>v6.resumeOpeningDraft(d));
+drafts.register('purchase_mapping',d=>v6.resumeMappingDraft(d));
+drafts.register('time_entry',d=>v6.resumeTimeDraft(d));
 drafts.register('client_edit',async d=>{
  const cid=d.client_id||d.payload?.meta?.client_id||'';
  for(const [key,value] of Object.entries(d.payload?.aside||{}))if(key.startsWith(TAX_ASIDE_PREFIX))try{sessionStorage.setItem(key,value);}catch{/* the schedule is only a convenience */}

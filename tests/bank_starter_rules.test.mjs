@@ -39,6 +39,6 @@ test('wiring: action, access, button and build label',()=>{
  assert.match(rd(fx+'bank-lines.ts'),/ledger_bank_starter_copy/);assert.match(rd(fx+'ledger-actions.ts'),/'ledger_bank_starter_copy'/);
  assert.equal(rd('staff-rights-catalog.mjs'),rd(fx+'staff-rights-catalog.mjs'));assert.match(rd(fx+'staff-rights-catalog.mjs'),/'ledger_bank_starter_copy'/);
  const ui=rd('staff-ledger.mjs');assert.match(ui,/bank-starter/);assert.match(ui,/ledger_bank_starter_copy/);assert.match(ui,/Proposed<\/b> rule/);
- assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261119-draft-v1/);
+ assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261119-drafts2-v1/);
  assert.match(rd(fx+'release.json'),/2026-11-19\.2906/);assert.match(rd('staff-pilot.html'),/2026-11-19\.2906/);
 });
