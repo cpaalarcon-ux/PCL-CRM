@@ -95,7 +95,10 @@ input[type=hidden]{display:none!important}.kyc-evidence-item{display:flex;justif
 .header-tools{display:flex;align-items:center;gap:18px}#messenger{position:relative}
 .messenger-button{display:inline-flex;align-items:center;gap:6px;background:#ffffff15;color:#fff;border:1px solid #ffffff40;border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer}.messenger-button:hover,.messenger-button[aria-expanded=true]{background:#ffffff30}
 .messenger-badge{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#25d366;color:#053b1e;font-size:12px;line-height:20px;text-align:center;font-weight:700}.messenger-badge[hidden]{display:none}
-.messenger-panel{position:absolute;right:0;top:calc(100% + 12px);z-index:60;width:min(400px,94vw);height:min(600px,78vh);background:#fff;color:var(--text);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px #0f172a40;display:flex;flex-direction:column;overflow:hidden}.messenger-panel[hidden]{display:none}
+dialog.messenger-panel{position:fixed;inset:0;margin:0;padding:0;border:0;border-radius:0;width:100%;max-width:none;height:100dvh;max-height:none;overflow:hidden;background:#f8faf9;color:var(--text)}
+dialog.messenger-panel:not([open]){display:none}
+dialog.messenger-panel[open]{display:flex;flex-direction:column}
+.messenger-panel::backdrop{background:#0f172a70}
 .messenger-head{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--green);color:#fff}.messenger-title{flex:1;min-width:0}.messenger-title b,.messenger-title small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.messenger-title small{color:#cadbd1;font-size:12px}
 .messenger-icon{background:transparent;border:0;color:#fff;font-size:18px;cursor:pointer;padding:4px 8px;border-radius:8px}.messenger-icon:hover{background:#ffffff25}
 .messenger-tabs{display:flex;border-bottom:1px solid var(--line)}.messenger-tabs button{flex:1;border:0;border-bottom:3px solid transparent;background:#fff;padding:10px;cursor:pointer;font-weight:700;color:var(--muted)}.messenger-tabs button.on{color:var(--green);border-bottom-color:#25d366}
@@ -107,16 +110,21 @@ input[type=hidden]{display:none!important}.kyc-evidence-item{display:flex;justif
 .messenger-row-main{flex:1;min-width:0}.messenger-row-top,.messenger-row-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px}.messenger-row-top b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.messenger-row-top small{color:var(--muted);font-size:12px;flex:none}
 .messenger-preview{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}.messenger-unread{flex:none;min-width:20px;height:20px;border-radius:999px;background:#25d366;color:#053b1e;font-size:12px;font-weight:700;line-height:20px;text-align:center;padding:0 6px}
 .messenger-group{padding:12px 14px;border-bottom:1px solid #f1f5f9}.messenger-group small{display:block;color:var(--muted);margin-top:4px}.messenger-group button{padding:4px 10px;font-size:12px}
-.messenger-messages{flex:1;overflow-y:auto;padding:14px;background:#efeae2;display:flex;flex-direction:column;gap:6px}
+.messenger-messages{height:100%;overflow-y:auto;overscroll-behavior:contain;padding:clamp(12px,2.3vw,30px);background:#f4f7f5}
+#messengerTimeline{display:flex;flex-direction:column;gap:10px;min-width:0;max-width:1000px;margin:auto}
 .messenger-day{text-align:center;margin:8px 0}.messenger-day span{background:#fff;border-radius:8px;padding:3px 10px;font-size:12px;color:var(--muted);box-shadow:0 1px 1px #0001}
 .messenger-bubble{max-width:82%;align-self:flex-start;background:#fff;border-radius:10px 10px 10px 2px;padding:6px 10px 4px;box-shadow:0 1px 1px #0002}.messenger-bubble.own{align-self:flex-end;background:#d9fdd3;border-radius:10px 10px 2px 10px}
 .messenger-bubble p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.messenger-bubble small{display:block;text-align:right;color:var(--muted);font-size:11px}.messenger-author{display:block;font-size:12px;color:var(--navy)}
 .messenger-older{align-self:center;background:#fff;border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer}
-.messenger-composer{display:flex;gap:8px;align-items:flex-end;padding:10px;background:#f0f2f5;border-top:1px solid var(--line)}.messenger-composer textarea{flex:1;resize:none;border-radius:20px;padding:9px 14px;max-height:120px;min-height:38px;font:inherit}
+.messenger-composer{padding:12px clamp(12px,2.3vw,30px);background:white;border-top:1px solid var(--line)}
+.messenger-compose-row{display:flex;align-items:center;gap:10px}
+.messenger-compose-row textarea{flex:1;min-width:0;min-height:44px;max-height:110px;margin:0;border-radius:14px;padding:10px 12px;resize:vertical}
+.messenger-compose-row .messenger-primary,.messenger-attach{min-height:44px}
+.messenger-attach{min-width:44px;padding:6px;background:#f0f5f2;border:1px solid #dce8e0;font-size:18px}
 .messenger-note,.messenger-empty{color:var(--muted);font-size:12px;padding:10px 14px;margin:0}.messenger-error{color:var(--red);padding:0 12px}
 .messenger-groupform{display:flex;flex-direction:column;flex:1;min-height:0;gap:8px;padding:10px 12px}.messenger-groupform label{display:grid;gap:4px;font-weight:700}.messenger-groupform .messenger-scroll{border:1px solid var(--line);border-radius:10px}
 .messenger-pick{display:flex!important;gap:10px;align-items:center;padding:8px 10px;border-bottom:1px solid #f1f5f9;font-weight:400!important}.messenger-pick small{display:block;color:var(--muted)}
-@media(max-width:760px){.header-tools{gap:10px}.messenger-panel{position:fixed;left:2vw;right:2vw;top:70px;width:auto;height:calc(100vh - 90px)}}
+@media(max-width:760px){.header-tools{gap:10px}}
 .messenger-scroll{background:#f6f8f7;padding:8px 0}
 .messenger-row{font-weight:400;font-size:14px;margin:0 10px 8px;width:calc(100% - 20px);border:1px solid #e3e9e6;border-radius:12px;box-shadow:0 1px 2px #0f172a10}.messenger-row b{font-weight:700}.messenger-row:hover,.messenger-row.selected{background:#eaf4ee;border-color:#b9d6c6}
 .messenger-row-top small{font-weight:400}.messenger-who{color:var(--green);font-weight:700}.messenger-preview{font-weight:400;color:#475569}
@@ -680,3 +688,60 @@ input[type=checkbox],input[type=radio]{inline-size:1.5rem;block-size:1.5rem;min-
 .leave-dialog::backdrop{background:rgba(15,23,42,.5)}
 .leave-dialog h2{margin:0 0 8px;font-size:1.15rem}
 .leave-dialog .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+
+/* Messenger stays above the active ERP workspace and uses its own scrolling surfaces. */
+.messenger-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px clamp(12px,2.3vw,30px);background:#0b3d2e;color:#fff}
+.messenger-top h2{font-size:clamp(17px,3vw,22px);color:inherit;margin:0}
+.messenger-top>div{display:flex;align-items:center;gap:10px}
+.messenger-exit{min-height:42px;border:1px solid #ffffff70;background:transparent;color:#fff;padding:6px 14px}
+.messenger-exit:hover{background:#ffffff25}
+.messenger-global-status{padding:8px 20px;margin:0;background:#ecf5ef;color:var(--green)}
+.messenger-global-status:empty,.messenger-error:empty{display:none}
+.messenger-layout{display:grid;grid-template-columns:clamp(284px,29vw,380px) minmax(0,1fr);flex:1;min-height:0}
+.messenger-list,.messenger-detail{min-width:0;min-height:0;display:flex;flex-direction:column;background:#fff}
+.messenger-list{border-right:1px solid var(--line)}
+.messenger-detail{position:relative}
+.messenger-list .messenger-actions{align-items:center;align-content:center;min-height:70px}
+.messenger-actions input{margin:0}
+.messenger-manage{padding:8px 12px;border-bottom:1px solid var(--line)}
+.messenger-tabs button[aria-pressed=true]{border-color:var(--green);color:var(--green);background:#edf5f0}
+.messenger-detail .messenger-head{background:#fff;color:var(--green);border-bottom:1px solid var(--line);min-height:70px}
+.messenger-detail .messenger-head small{color:var(--muted)}
+.messenger-detail .messenger-icon{color:var(--green);border:1px solid #d9e4de;min-width:42px;min-height:42px}
+.messenger-detail .messenger-icon:hover{background:#edf5f0}
+.messenger-placeholder{display:grid;place-content:center;text-align:center;flex:1;padding:24px;background:#f4f7f5;color:var(--muted)}
+.messenger-thread-frame{flex:1;min-height:0;position:relative}
+.messenger-new-messages{position:absolute;bottom:12px;right:20px;background:var(--green);color:white;min-height:42px;border:0;box-shadow:0 2px 8px #0003}
+.messenger-bubble{padding:9px 13px;max-width:min(84%,680px)}
+.messenger-attachments{display:flex;flex-wrap:wrap;gap:8px;max-height:24vh;overflow:auto;margin-bottom:8px}
+.messenger-attachments:empty{display:none}
+.messenger-file-draft{display:flex;align-items:center;gap:8px;max-width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:10px;background:#f8faf9}
+.messenger-file-draft img{object-fit:cover;border-radius:6px}
+.messenger-file-draft>div{min-width:0}
+.messenger-file-draft b,.messenger-file-draft small,.messenger-file small{display:block;overflow-wrap:anywhere;text-align:left}
+.messenger-file-draft small,.messenger-file small{color:var(--muted)}
+.messenger-file-draft .messenger-error-inline{color:var(--red)}
+.messenger-file-draft button{min-height:32px;padding:4px 7px}
+.messenger-file-draft progress{display:block;width:min(180px,100%);height:8px;accent-color:var(--green)}
+.messenger-file{display:flex;align-items:center;gap:10px;text-align:left;background:#fff;border:1px solid #d6e5db;color:var(--green);margin-top:7px;max-width:100%;padding:8px;border-radius:9px}
+.messenger-file b{overflow-wrap:anywhere}
+.messenger-file-format{display:grid;flex:none;place-content:center;width:42px;height:42px;border-radius:8px;background:#e6f1e9;color:var(--green);font-size:10px;font-weight:700}
+.messenger-thumbnail{flex:0 0 auto;max-width:min(30vw,160px);object-fit:contain;background:#f2f6f3;border-radius:6px}
+.messenger-dragging .messenger-detail::after{content:"Drop files to attach";position:absolute;inset:6px;display:grid;place-items:center;pointer-events:none;border:2px dashed var(--green);color:var(--green);background:#e8f5edeb;font-size:20px;font-weight:700;border-radius:12px;z-index:7}
+.messenger-composer .messenger-error{margin:5px 0 0;padding:0}
+#messengerPanel .call-overlay{top:130px;bottom:auto}
+.messenger-panel :focus-visible{outline:2px solid #16758a;outline-offset:2px}
+@media(max-width:760px){
+ .messenger-layout{display:flex}
+ .messenger-list,.messenger-detail{flex:1}
+ .messenger-list{border:0}
+ .messenger-layout:not(.messenger-show-detail) .messenger-detail,.messenger-show-detail .messenger-list{display:none}
+ .messenger-show-detail .messenger-detail{animation:messenger-slide 160ms ease-out}
+ .messenger-top>div{gap:3px}
+ .messenger-detail .messenger-head{padding:8px;gap:5px;min-height:56px}
+ .messenger-detail .messenger-icon{min-width:36px;padding-inline:5px}
+ .messenger-bubble{max-width:92%}
+ .messenger-new-messages{right:12px}
+}
+@keyframes messenger-slide{from{transform:translateX(24px);opacity:.6}to{transform:translateX(0);opacity:1}}
+@media(prefers-reduced-motion:reduce){.messenger-show-detail .messenger-detail{animation:none}}

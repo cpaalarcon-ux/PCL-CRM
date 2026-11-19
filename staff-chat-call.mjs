@@ -51,7 +51,7 @@ export function gatherComplete(pc,ms=GATHER_MS,win=globalThis,{want=null,grace=G
  });
 }
 
-export function createCalls({request,notice,beeper=null,onChange=()=>{},win=globalThis,doc=globalThis.document}){
+export function createCalls({request,notice,beeper=null,onChange=()=>{},win=globalThis,doc=globalThis.document,host=()=>doc.body}){
  let cur=null,checking=false,endedTimer=null,overlay=null,gone=false,lastMarks=null;
  const $=sel=>overlay?.querySelector(sel);
  const initials=name=>String(name||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]?.toUpperCase()||'').join('')||'?';
@@ -60,7 +60,7 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
   if(overlay&&doc.body.contains(overlay))return;
   overlay=doc.createElement('section');overlay.id='callOverlay';overlay.className='call-overlay';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-label','Call');overlay.hidden=true;
   overlay.innerHTML='<div class="call-stage"><video id="callRemote" class="call-remote" autoplay playsinline></video><div class="call-avatar" id="callAvatar" aria-hidden="true"></div><video id="callLocal" class="call-local" autoplay playsinline muted></video></div><div class="call-info"><b id="callName"></b><span id="callStatus" role="status" aria-live="polite"></span><small id="callTimer" aria-hidden="true"></small><small id="callHint"></small></div><div class="call-buttons" id="callButtons"></div>';
-  doc.body.appendChild(overlay);
+  host().appendChild(overlay);
   overlay.addEventListener('click',e=>{const b=e.target.closest('[data-call]');if(b)void action(b.dataset.call);});
  }
  const setText=(sel,t)=>{const el=$(sel);if(el)el.textContent=t;};
@@ -303,5 +303,11 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
   overlay?.remove();overlay=null;
  }
  // levels(): how much sound is reaching the speaker through the boost path (used by the tests; 0 when the boost is off).
- return {prepare,timing:()=>({...(lastMarks||{})}),levels:()=>{const a=cur?.audio?.analyser;if(!a)return 0;const d=new Uint8Array(a.fftSize);a.getByteTimeDomainData(d);return d.reduce((m,v)=>Math.max(m,Math.abs(v-128)),0);},start,check,poke,stop,busy:()=>!!cur,ringing:()=>cur?.status==='incoming',supported:()=>callsSupported(win)};
+ function place(){
+  if(overlay&&overlay.parentNode!==host()){
+   host().appendChild(overlay);
+   for(const video of overlay.querySelectorAll('video'))if(video.srcObject)void video.play()?.catch(()=>{});
+  }
+ }
+ return {prepare,place,timing:()=>({...(lastMarks||{})}),levels:()=>{const a=cur?.audio?.analyser;if(!a)return 0;const d=new Uint8Array(a.fftSize);a.getByteTimeDomainData(d);return d.reduce((m,v)=>Math.max(m,Math.abs(v-128)),0);},start,check,poke,stop,busy:()=>!!cur,ringing:()=>cur?.status==='incoming',supported:()=>callsSupported(win)};
 }

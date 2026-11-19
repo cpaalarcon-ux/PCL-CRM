@@ -1,3 +1,4 @@
+// Synthetic UI fixtures; the sender uses a reserved example telephone number.
 // Step 8 (joined-practice review): the Incoming Review screens, the server module, wiring and the rules it must not break.
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
 import {queueView,itemView,timelineView,linksView,sizeText,settingStatus,settingValue,matchText,duplicateText,bannerText,INCOMING_NOTE,SOURCES,STATUS_TONE,MATCH_TONE,createIncomingUI,incomingCardHtml} from '../staff-incoming.mjs';
@@ -5,15 +6,15 @@ import {areaForStaffAction} from '../supabase/functions/staff-workspace-v12/staf
 const root=path.resolve(import.meta.dirname,'..'),rd=f=>fs.readFileSync(path.join(root,f),'utf8'),fx='supabase/functions/staff-workspace-v12/';
 const button=(a,l,id='',x='')=>`<button data-suite="${a}" data-id="${id}" ${x}>${l}</button>`;
 const me=c=>({category_code:c,staff_id:'me'});
-const item=(o={})=>({item_id:'i1',source_type:'WhatsApp',sender_name:'Jane <Client>',sender_address:'+254 712 345 678',received_at:'2026-11-09T09:00:00Z',subject:'Bank statement for March',message_text:'Please find the statement.\nThanks',file_name:'statement.pdf',file_size_bytes:2048,mime_type:'application/pdf',
- is_kyc:false,confidentiality:'Normal',client_id:'c1',client_name:'UAT <Fictional> Ltd',contact_id:'k1',contact_name:'Jane',match_result:'One match',match_count:1,duplicate_document_id:null,duplicate_item_id:null,status:'Received',logged_by_name:'Sam Supervisor',logged_at:'2026-11-09T09:05:00Z',
+const item=(o={})=>({item_id:'i1',source_type:'WhatsApp',sender_name:'Fictional <Sender>',sender_address:'+1 202 555 0100',received_at:'2026-11-09T09:00:00Z',subject:'Synthetic test attachment',message_text:'Synthetic body for attachment handling tests.',file_name:'statement.pdf',file_size_bytes:2048,mime_type:'application/pdf',
+ is_kyc:false,confidentiality:'Normal',client_id:'c1',client_name:'UAT <Fictional> Ltd',contact_id:'k1',contact_name:'Example Contact',match_result:'One match',match_count:1,duplicate_document_id:null,duplicate_item_id:null,status:'Received',logged_by_name:'Sam Supervisor',logged_at:'2026-11-09T09:05:00Z',
  category:null,document_id:null,decided_by_name:null,decided_at:null,decision_note:null,resolution:null,revision:1,past_retention:false,...o});
 
 test('wording helpers',()=>{
  assert.equal(sizeText(500),'500 B');assert.equal(sizeText(2048),'2.0 KB');assert.equal(sizeText(3*1048576),'3.0 MB');assert.equal(sizeText(0),'');assert.equal(sizeText(null),'');
  assert.equal(settingStatus({rule_status:'Suggested'}),'Default - not yet confirmed');assert.match(settingStatus({rule_status:'Confirmed',confirmed_at:'2026-11-10T08:00:00Z'}),/Confirmed on 2026-11-10/);
  assert.equal(settingValue({int_value:365,text_value:null}),'365 days');assert.equal(settingValue({int_value:null,text_value:'SUPERVISOR'}),'Supervisor and above');assert.equal(settingValue({int_value:null,text_value:'LEADERS_ONLY'}),'Managers and Partners only');
- assert.match(matchText(item()),/Matched to UAT <Fictional> Ltd through Jane/);assert.match(matchText(item({match_result:'Several matches',match_count:2,client_id:null})),/2 clients use this number or email/);
+ assert.match(matchText(item()),/Matched to UAT <Fictional> Ltd through Example Contact/);assert.match(matchText(item({match_result:'Several matches',match_count:2,client_id:null})),/2 clients use this number or email/);
  assert.match(matchText(item({match_result:'No match',client_id:null})),/No client contact has this number or email/);assert.match(matchText(item({match_result:'Chosen by staff'})),/Client chosen by staff: UAT/);
  assert.deepEqual(duplicateText(item()),[]);assert.equal(duplicateText(item({duplicate_document_id:'d',duplicate_item_id:'j'})).length,2);
  assert.equal(bannerText({incoming_waiting:0}),'No incoming files are waiting');assert.equal(bannerText({incoming_waiting:1,incoming_needs_review:0}),'1 incoming file waiting');assert.equal(bannerText({incoming_waiting:4,incoming_needs_review:1}),'4 incoming files waiting, 1 needs a closer look');assert.equal(bannerText({incoming_waiting:4,incoming_needs_review:2}),'4 incoming files waiting, 2 need a closer look');
@@ -24,7 +25,7 @@ test('wording helpers',()=>{
 test('queue: rows, badges, escaping, empty states',()=>{
  const r={items:[item(),item({item_id:'i2',client_id:null,client_name:null,match_result:'No match',status:'Needs Review',is_kyc:true,confidentiality:'Restricted',duplicate_item_id:'i1',subject:'ID <card>'})],counts:{incoming_waiting:2,incoming_needs_review:1}};
  const h=queueView({r,me:me('SUPERVISOR'),button,archived:false});
- assert.match(h,/id="incomingQueue"/);assert.match(h,/UAT &lt;Fictional&gt; Ltd/);assert.doesNotMatch(h,/<Fictional>/);assert.match(h,/Jane &lt;Client&gt;/);assert.match(h,/ID &lt;card&gt;/);
+ assert.match(h,/id="incomingQueue"/);assert.match(h,/UAT &lt;Fictional&gt; Ltd/);assert.doesNotMatch(h,/<Fictional>/);assert.match(h,/Fictional &lt;Sender&gt;/);assert.match(h,/ID &lt;card&gt;/);
  assert.match(h,/Not known yet/);assert.match(h,/Identity \/ KYC/);assert.match(h,/>Restricted</);assert.match(h,/>Duplicate</);
  assert.equal((h.match(/data-suite="incoming-item"/g)||[]).length,2);
  assert.match(h,/data-suite="incoming-log"/);assert.match(h,/data-suite="incoming-settings"/);assert.match(h,/2 incoming files waiting, 1 needs a closer look/);assert.match(h,/A Partner has not yet confirmed them/);
@@ -37,24 +38,24 @@ test('queue: rows, badges, escaping, empty states',()=>{
 });
 
 test('item: client choice, accept button only once a client is known, decisions',()=>{
- const cand=[{client_id:'c1',client_name:'Client <One>',contact_name:'Jane'},{client_id:'c2',client_name:'Client Two',contact_name:'Joe'}];
+ const cand=[{client_id:'c1',client_name:'Client <One>',contact_name:'Example Contact'},{client_id:'c2',client_name:'Client Two',contact_name:'Second Example Contact'}];
  const w=itemView({item:item({client_id:null,client_name:null,match_result:'Several matches',match_count:2,status:'Needs Review'}),candidates:cand,clients:[{client_id:'c1',company_name:'Client <One>'}],me:me('SUPERVISOR'),button});
  assert.match(w,/Clients that match this sender/);assert.equal((w.match(/data-suite="incoming-use-client"/g)||[]).length,2);assert.match(w,/Client &lt;One&gt;/);assert.doesNotMatch(w,/<One>/);
  assert.doesNotMatch(w,/data-suite="incoming-accept"/);assert.match(w,/Choose the client to accept this file/);
  assert.match(w,/id="incomingClient"/);assert.match(w,/data-suite="incoming-pick-client"/);
  const ok=itemView({item:item(),clients:[],me:me('SUPERVISOR'),button});
  assert.match(ok,/data-suite="incoming-accept"/);for(const r of ['Replacement requested','Rejected','Duplicate','Withdrawn'])assert.match(ok,new RegExp('data-suite="incoming-archive" data-id="'+r+'"'));
- assert.match(ok,/data-suite="incoming-file"/);assert.match(ok,/Please find the statement\./);assert.match(ok,/Mark as Restricted/);assert.match(ok,/Mark as identity \/ KYC/);
+ assert.match(ok,/data-suite="incoming-file"/);assert.match(ok,/Synthetic body for attachment handling tests\./);assert.match(ok,/Mark as Restricted/);assert.match(ok,/Mark as identity \/ KYC/);
  const dup=itemView({item:item({duplicate_document_id:'d1',status:'Needs Review'}),clients:[],me:me('MANAGER'),button});assert.match(dup,/Possible duplicate[^]*already filed for a client/);
  const restricted=itemView({item:item({confidentiality:'Restricted',is_kyc:true}),clients:[],me:me('MANAGER'),button});assert.match(restricted,/Mark as Normal/);assert.match(restricted,/Not identity \/ KYC/);
- const done=itemView({item:item({status:'Accepted and Linked',resolution:'Accepted',document_id:'doc1',decided_by_name:'Mia Manager',decided_at:'2026-11-10T07:00:00Z',category:'Correspondence',decision_note:'Checked'}),clients:[],me:me('MANAGER'),button});
- assert.match(done,/Accepted[^]*by Mia Manager on 2026-11-10[^]*Filed as Correspondence/);assert.match(done,/data-suite="incoming-links" data-id="doc1"/);assert.doesNotMatch(done,/incoming-accept|incoming-archive/);
- const gone=itemView({item:item({status:'Archived',resolution:'Replacement requested',decided_by_name:'Mia Manager',decided_at:'2026-11-10T07:00:00Z',decision_note:'Unreadable scan'}),clients:[],me:me('MANAGER'),button});
+ const done=itemView({item:item({status:'Accepted and Linked',resolution:'Accepted',document_id:'doc1',decided_by_name:'Example Reviewer',decided_at:'2026-11-10T07:00:00Z',category:'Correspondence',decision_note:'Checked'}),clients:[],me:me('MANAGER'),button});
+ assert.match(done,/Accepted[^]*by Example Reviewer on 2026-11-10[^]*Filed as Correspondence/);assert.match(done,/data-suite="incoming-links" data-id="doc1"/);assert.doesNotMatch(done,/incoming-accept|incoming-archive/);
+ const gone=itemView({item:item({status:'Archived',resolution:'Replacement requested',decided_by_name:'Example Reviewer',decided_at:'2026-11-10T07:00:00Z',decision_note:'Unreadable scan'}),clients:[],me:me('MANAGER'),button});
  assert.match(gone,/Replacement requested[^]*Unreadable scan/);assert.doesNotMatch(gone,/incoming-accept/);
 });
 
 test('timeline and links',()=>{
- const ev=[{kind:'Communication',id:'m1',at:'2026-11-09',created_at:'2026-11-09T10:00:00Z',reference:'COM/AUDB/2026/00001',channel:'WhatsApp',direction:'Incoming',sender_address:'+254712345678',title:'Statement <March>',status:'Open',documents:[{document_id:'d1',file_name:'statement.pdf',category:'Correspondence'}]},
+ const ev=[{kind:'Communication',id:'m1',at:'2026-11-09',created_at:'2026-11-09T10:00:00Z',reference:'COM/AUDB/2026/00001',channel:'WhatsApp',direction:'Incoming',sender_address:'+1 202 555 0100',title:'Statement <March>',status:'Open',documents:[{document_id:'d1',file_name:'statement.pdf',category:'Correspondence'}]},
   {kind:'Document',id:'d2',at:'2026-11-08',created_at:'2026-11-08T10:00:00Z',title:'filed.pdf',category:'Working Papers',source_type:'Upload',documents:[{document_id:'d2',file_name:'filed.pdf',category:'Working Papers'}]},
   {kind:'Communication',id:'m2',at:'2026-11-07',created_at:'x',reference:'COM/2',channel:'Internal note',direction:null,title:'Note',status:'Closed',documents:[]}];
  const h=timelineView({events:ev,button});
@@ -73,7 +74,7 @@ test('handler: only incoming- actions; requests and the accept payload',async()=
  assert.equal(await ui.handle('kra-open','x'),false);assert.equal(await ui.handle('finance-tab','x'),false);assert.equal(await ui.handle('aup-open','x'),false);
  assert.equal(await ui.handle('incoming-open'),true);assert.deepEqual(sent[0],{action:'incoming_list',archived:false});assert.match(shown,/Incoming review/);
  await ui.handle('incoming-archived');assert.deepEqual(sent.at(-1),{action:'incoming_list',archived:true});assert.match(shown,/filed and archived/);
- await ui.handle('incoming-item','i1');assert.match(shown,/Incoming file · Bank statement/);
+ await ui.handle('incoming-item','i1');assert.match(shown,/Incoming file · Synthetic test attachment/);
  await ui.handle('incoming-accept','i1');assert.deepEqual(sent.at(-1),{action:'incoming_options',client_id:'c1'});assert.match(shown,/Accept and link/);
  // The accept form sends explicit booleans, and "create a communication" is dropped when an existing communication is chosen.
  const fd=o=>new Map(Object.entries(o)),asEntries=m=>m;
@@ -121,7 +122,7 @@ test('wiring: screen imported, routed, reachable from Documents and Communicatio
  assert.match(pi,/return incomingCardHtml\(data\.me,suite\.button\)\+/);assert.match(pi,/if\(view==='documents'\)void suite\.incoming\.paintCard\(\);/);
  assert.match(pi,/'Correspondence','KRA Notices','Import Sources'\]/);assert.match(css,/\.timeline-doc\{/);
  const html=rd('staff-pilot.html'),rel=JSON.parse(rd(fx+'release.json'));
- assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-19.2903');
+ assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-19.2904');
  for(const f of ['staff-pilot.mjs','staff-suite.mjs','staff-pilot-auth.js','staff-pilot.html','staff-improvements.mjs','staff-audit.mjs','staff-audit-home.mjs','staff-audit-reports.mjs'])assert.doesNotMatch(rd(f),/20261109-kra-v1/,f+' carries the new cache-buster');
 });
 
