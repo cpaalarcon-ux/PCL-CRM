@@ -3,7 +3,7 @@ import {proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
 import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNote} from './staff-upload-retry.mjs?v=20261119-upload-v1';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261119-draft-v1&rev=20261119-2903';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1';
 import {returnLabel,chooseReturn,createReturnStore} from './staff-return-state.mjs?v=20261119-nav-v1';
@@ -23,11 +23,11 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-draft-v1&rev=20261119-legal';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2905';
 import {createMessenger} from './staff-messenger.mjs?v=20261108-nav-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
-import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-draft-v1&rev=20261119-2903';
+import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905';
 import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
@@ -676,6 +676,9 @@ const v6=createWorkspaceUI({drafts:()=>drafts,$,esc,field,select,form,modal,requ
 // Resuming a saved draft reopens its own form. Every opener only refills what the person typed; the server checks the person's access again when the form is saved.
 drafts.register('ledger_journal',d=>v6.resumeJournalDraft(d));
 drafts.register('client_activity',d=>improvements.resumeActivityDraft(d));
+drafts.register('opening_balance',d=>v6.resumeOpeningDraft(d));
+drafts.register('purchase_mapping',d=>v6.resumeMappingDraft(d));
+drafts.register('time_entry',d=>v6.resumeTimeDraft(d));
 drafts.register('client_edit',async d=>{
  const cid=d.client_id||d.payload?.meta?.client_id||'';
  for(const [key,value] of Object.entries(d.payload?.aside||{}))if(key.startsWith(TAX_ASIDE_PREFIX))try{sessionStorage.setItem(key,value);}catch{/* the schedule is only a convenience */}

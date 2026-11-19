@@ -1,4 +1,5 @@
 import {createBankTotalsUI} from './staff-bank-totals.mjs?v=20261114-banktotals-v1&rev=20261119-nav';
+import {applyFields} from './staff-drafts.mjs?v=20261119-drafts2-v1';
 import {withdrawButton,canWithdraw,bindWithdraw} from './staff-withdraw.mjs?v=20261107-annualpack-v3';
 import {newState,splitView,filterItems,similarLines} from './staff-fixit-screen.mjs?v=20261111-fixit-v1';
 import {tbListHtml,deriveHtml} from './staff-year-tbs.mjs?v=20261116-yeartb-v1';
@@ -362,7 +363,7 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
    f=>{
     const lines=[...document.querySelectorAll('[data-grid-row]')].map(tr=>({account_code:tr.dataset.gridRow,source_name:tr.dataset.name,legacy_code:'',debit:Number(tr.querySelector('[data-grid="debit"]').value)||0,credit:Number(tr.querySelector('[data-grid="credit"]').value)||0})).filter(x=>x.debit||x.credit).map(x=>({...x,source_status:f.get('confirm_grid_source')==='true'?'Confirmed':'Unverified',source_reference:f.get('evidence'),description:''}));
     return request({...payload('ledger_journal_save'),kind:'Opening',t_structure:true,journal_id:j.journal_id,revision:j.revision,reference:f.get('reference'),journal_date:f.get('journal_date'),description:'Opening balances entered in the client T-structure',evidence:f.get('evidence'),lines});
-   },x=>journalOpen(x.journal_id));
+   },x=>journalOpen(x.journal_id),{draft:openingDraft(j)});
   const num=el=>Number(el.value)||0,fmt=n=>n.toLocaleString('en-KE',{minimumFractionDigits:2,maximumFractionDigits:2});
   const update=()=>{let d=0,c=0,both=0,any=0;document.querySelectorAll('[data-grid-row]').forEach(tr=>{const a=num(tr.querySelector('[data-grid="debit"]')),b=num(tr.querySelector('[data-grid="credit"]'));d+=a;c+=b;if(a&&b)both++;if(a||b)any++;});
    const diff=Math.round((d-c)*100)/100,ok=any>0&&diff===0&&!both;$('#gridDebit').textContent=fmt(d);$('#gridCredit').textContent=fmt(c);
@@ -370,7 +371,35 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
    $('#gridDiff').className=ok?'good':'missing';const submit=$('#editForm').querySelector('button[type="submit"]');if(submit)submit.disabled=!ok;};
   document.querySelectorAll('.opening-grid input').forEach(el=>el.oninput=update);update();
  }
-// Build 2903: an unfinished journal form is kept as a private draft on the server (autosaved, resumable from the work queue). It is not a journal and posts nothing.
+// Build 2904: the opening-balance grid is kept as a private draft too. The amounts typed in the grid are saved by account code; the source confirmation is never saved, so it is ticked again at the real Save.
+ const openingDraft=j=>({kind:'opening_balance',key:`opening:${pid}:${r.period.period_id}:${j.journal_id||'new'}`,title:form=>`Opening balances · ${form.elements.reference?.value||'not yet numbered'}`,project_id:pid,skip:/^confirm_/,
+  meta:{project_id:pid,period_id:r.period.period_id,journal_id:j.journal_id||'',revision:j.revision??null},
+  collect:()=>({grid:[...document.querySelectorAll('[data-grid-row]')].map(tr=>({code:tr.dataset.gridRow,debit:tr.querySelector('[data-grid="debit"]').value,credit:tr.querySelector('[data-grid="credit"]').value})).filter(x=>x.debit!==''||x.credit!=='')})});
+ async function resumeOpeningDraft(d){
+  const m=d.payload?.meta||{};
+  await open(m.project_id||d.project_id,m.period_id||null);
+  if(!r?.period)return;
+  let existing=null,changed='';
+  if(m.journal_id){
+   await journalOpen(m.journal_id);existing=journal;
+   if(!['Draft','Returned'].includes(existing.journal.status)){notice(`This opening entry is now ${existing.journal.status}, so the draft cannot be used to change it. The draft is kept; discard it from Home when you no longer need it.`,true);return;}
+   if(m.revision!=null&&String(m.revision)!==String(existing.journal.revision))changed='This opening entry was changed after you saved the draft. Check every amount before you save.';
+  }
+  await openingGrid(existing);
+  const f=$('#editForm');if(!f)return;
+  const saved=d.payload?.fields||{};delete saved.confirm_grid_source;
+  applyFields(f,saved);
+  let missing=0;
+  for(const g of d.payload?.grid||[]){
+   const tr=document.querySelector(`[data-grid-row="${(globalThis.CSS?.escape||(x=>x))(g.code)}"]`);
+   if(!tr){missing++;continue;}
+   for(const col of ['debit','credit']){const el=tr.querySelector(`[data-grid="${col}"]`);el.value=g[col]??'';el.dispatchEvent(new Event('input',{bubbles:true}));}
+  }
+  const notes=[changed,missing?`${missing} account${missing===1?'':'s'} in the draft are no longer in this client's chart and were left out.`:''].filter(Boolean).join(' ');
+  if(notes)$('#editorNotice').textContent=notes;
+  ctx.drafts?.()?.current()?.markSaved(d.saved_at);
+ }
+ // Build 2903: an unfinished journal form is kept as a private draft on the server (autosaved, resumable from the work queue). It is not a journal and posts nothing.
  const journalDraft=(kind,j)=>({kind:'ledger_journal',key:`ledger:${pid}:${r.period.period_id}:${j.journal_id||'new-'+String(kind).toLowerCase()}`,title:form=>`${kind} journal · ${form.elements.reference?.value||'not yet numbered'}`,project_id:pid,
   meta:{project_id:pid,period_id:r.period.period_id,journal_id:j.journal_id||'',kind},
   collect:()=>({lines:[...document.querySelectorAll('[data-ledger-line]')].map(el=>Object.fromEntries([...el.querySelectorAll('[data-col]')].map(e=>[e.dataset.col,e.value])))})});
@@ -594,5 +623,5 @@ export function createLedgerUI(ctx,{onPayrollImport}={}){
   if(a==='asset-charge'){const x=asset.asset;show('Prepare book depreciation entry',form(field('reference','Entry reference *','','text','required')+field('starts_on','Charge starts *',String(r.period.starts_on).slice(0,10),'date','required')+field('ends_on','Charge ends *',r.as_of,'date','required')+area('evidence','Supported calculation and period evidence *'),'Prepare depreciation draft'),f=>request({...payload('ledger_depreciation_create'),asset_id:x.asset_id,...Object.fromEntries(f)}),z=>journalOpen(z.journal_id));$('#editForm').elements.evidence.required=true;}
  }catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;}});
  bindWithdraw(ctx,['journal','asset'],async(kind,id)=>{if(kind==='journal')await journalOpen(id);else await assetOpen(id);});
- return {open,openOpeningImport,openOpeningJournal,resumeDraft};
+ return {open,openOpeningImport,openOpeningJournal,resumeDraft,resumeOpeningDraft};
 }
