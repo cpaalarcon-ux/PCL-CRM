@@ -70,8 +70,8 @@ async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},time
  return blob?res.blob():res.json();
 }
 const measuredActions={
- workbook_preview:'Check purchase upload',
- workbook_commit:'Import purchases',
+ workbook_preview:'Check source upload',
+ workbook_commit:'Import source',
  workbook_rows:'Open purchase mapping',
  workbook_map:'Map rows',
  workbook_map_groups:'Map account groups',
