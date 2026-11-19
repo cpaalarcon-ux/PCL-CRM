@@ -25,7 +25,7 @@ export function createPartnerEquityUI(ctx,{payload,show,onChange}){
  }
  function declareForm(seed,evidence){
   const by=new Map((seed||[]).map(r=>[r.partner_name,r]));
-  const row=(p,i)=>{const s=by.get(p)||{};return `<tr><td>${esc(p)}<input type="hidden" name="p_${i}" value="${esc(p)}"></td>${FIELDS.map(f=>`<td><input name="${f[0]}_${i}" inputmode="decimal" value="${s[f[0]]===undefined?'':esc(String(s[f[0]]))}"></td>`).join('')}</tr>`;};
+  const row=(p,i)=>{const s=by.get(p)||{};return `<tr><td>${esc(p)}<input type="hidden" name="p_${i}" value="${esc(p)}"></td>${FIELDS.map(f=>`<td><input aria-label="${esc(f[1]||f[0])} for ${esc(p)}" name="${f[0]}_${i}" inputmode="decimal" value="${s[f[0]]===undefined?'':esc(String(s[f[0]]))}"></td>`).join('')}</tr>`;};
   return `<p class="info full">From the partners’ ledger or the signed prior-year accounts. Enter 0 where there is none. Do not enter the share of profit: it is worked out from the approved profit shares. A partner in deficit is entered as a negative figure.</p>
 <label class="full">What supports these balances * <textarea name="evidence" required minlength="10" maxlength="500">${esc(evidence||'')}</textarea></label>
 <input type="hidden" name="n" value="${data.partners.length}"><table class="full"><thead><tr><th>Partner</th>${FIELDS.map(f=>`<th>${esc(f[1])}</th>`).join('')}</tr></thead><tbody>${data.partners.map(row).join('')}</tbody></table>`;

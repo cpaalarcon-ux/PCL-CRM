@@ -49,7 +49,7 @@ export function routingCard(c,contacts,leader,esc){
  const read=`<p class="muted">Document requests go to <b>${esc(name(c.doc_request_contact_id)||'no one chosen')}</b>. Reports go to <b>${esc(name(c.report_delivery_contact_id)||'no one chosen')}</b>.</p>`;
  if(!leader)return `<h3>Contact routing</h3>${read}`;
  if(!mine.length)return `<h3>Contact routing</h3><p class="empty">Add a contact first, then choose who receives document requests and reports.</p>`;
- const sel=(field,cur)=>`<select name="${field}"><option value="">No one chosen</option>${mine.map(x=>`<option value="${esc(x.contact_id)}"${x.contact_id===cur?' selected':''}>${esc(x.full_name)}${x.email_address?' · '+esc(x.email_address):''}</option>`).join('')}</select>`;
+ const sel=(field,cur)=>`<select name="${field}" aria-label="${esc(String(field).replace(/_/g,' '))}"><option value="">No one chosen</option>${mine.map(x=>`<option value="${esc(x.contact_id)}"${x.contact_id===cur?' selected':''}>${esc(x.full_name)}${x.email_address?' · '+esc(x.email_address):''}</option>`).join('')}</select>`;
  return `<h3>Contact routing</h3>${read}<form data-routing-form="${esc(c.client_id)}" class="form-grid"><label>Receives document requests ${sel('doc_request_contact_id',c.doc_request_contact_id)}</label><label>Receives reports ${sel('report_delivery_contact_id',c.report_delivery_contact_id)}</label><button type="submit" class="primary full">Save routing</button></form>`;
 }
 

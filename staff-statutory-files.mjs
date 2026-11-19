@@ -20,7 +20,7 @@ export const configureKinds=blockerKinds;
 const CONFIGURE_FROM='the statutory file';
 export const configureHtml=(issues,esc)=>configureLinksHtml(issues,CONFIGURE_FROM,esc);
 export function resultPanel(x,esc){
- const issues=(x.issues||[]).length?`<div class="notice error"><b>Not ready to release</b><ul>${x.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>${configureHtml(x.issues,esc)}</div>`:'<p><span class="badge good">Ready to release</span></p>';
+ const issues=(x.issues||[]).length?`<div class="notice error" role="alert"><b>Not ready to release</b><ul>${x.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>${configureHtml(x.issues,esc)}</div>`:'<p><span class="badge good">Ready to release</span></p>';
  const rec=x.reconciliation||{},recLines=(rec.lines||[]).map(l=>`<tr><td>${esc(l.account_code)}</td><td class="num">${kes(l.expected)}</td><td class="num">${kes(l.posted)}</td><td class="num">${l.difference?`<b>${kes(l.difference)}</b>`:kes(l.difference)}</td></tr>`).join('');
  const t=Object.entries(x.totals||{}).map(([k,v])=>`<tr><td>${esc(k.replaceAll('_',' '))}</td><td class="num">${k==='employees'?esc(v):kes(v)}</td></tr>`).join('');
  const e=x.section_e?Object.entries(x.section_e).map(([k,v])=>`<tr><td>${esc(k.replaceAll('_',' '))}</td><td class="num">${/members|employees/.test(k)?esc(v):kes(v)}</td></tr>`).join(''):'';

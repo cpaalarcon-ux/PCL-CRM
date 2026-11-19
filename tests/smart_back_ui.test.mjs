@@ -1,0 +1,31 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {createRequire} from 'node:module';import {readFile} from 'node:fs/promises';
+const require=createRequire(import.meta.url),{JSDOM}=require(require.resolve('jsdom',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]})),dom=new JSDOM(await readFile(new URL('../staff-pilot.html',import.meta.url),'utf8'),{url:'https://backend-staging-foundation.pcl-crm.pages.dev/staff-pilot'});
+for(const key of ['window','document','location','history','sessionStorage','localStorage','FormData','HTMLElement'])globalThis[key]=dom.window[key];dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};dom.window.HTMLDialogElement.prototype.close=function(){this.open=false;};
+const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0'),me={staff_id:id(1),full_name:'Fictional staff',category_code:'ASSISTANT',login_id:'qa'},project={project_id:id(3),client_id:id(2),handling_firm_id:id(4),project_name:'Fictional VAT Project',service_code:'TAX-COMP',status:'Draft'},task={task_id:id(5),project_id:id(3),assigned_to:id(1),task_name:'Upload weekly purchases',description:'Use <source> evidence only',due_at:'2026-10-25T14:00Z',status:'Pending',revision:1,requires_document:true},suite=Object.fromEntries(['leads','tax_profiles','rates','staff_rates','budgets','invoices','payments','communications','contacts','compliance','owners','engagements','tax_cases','leave','attendance','credentials','reviews','tickets'].map(k=>[k,[]]));
+const doc={document_id:id(6),client_id:id(2),handling_firm_id:id(4),project_id:id(3),task_id:id(5),file_name:'Purchases.xlsx',version:1,category:'Working Papers',uploaded_at:'2026-10-24T10:00Z',file_size_bytes:10};
+const oct='00000000-0000-4000-8000-0000000000a1',sep='00000000-0000-4000-8000-0000000000a2',task2={...task,task_id:id(15),task_name:'September bank review',description:'Sept'};project.tax_master=true;
+const data={work_periods:[{work_period_id:oct,project_id:id(3),period_kind:'Monthly',starts_on:'2026-10-01',ends_on:'2026-10-31',status:'Open'},{work_period_id:sep,project_id:id(3),period_kind:'Monthly',starts_on:'2026-09-01',ends_on:'2026-09-30',status:'Open'}],work_period_tasks:[{task_id:id(5),work_period_id:oct},{task_id:id(15),work_period_id:sep}],me,firms:[{firm_id:id(4),firm_code:'QA',legal_name:'Fictional firm'}],staff:[me],staff_firms:[{staff_id:id(1),firm_id:id(4)}],clients:[{client_id:id(2),company_name:'Fictional client',missing_fields:[]}],client_firms:[{client_id:id(2),firm_id:id(4)}],projects:[project],assignments:[],candidates:[{...me,firm_id:id(4)}],tasks:[task,task2],documents:[doc,{...doc,document_id:id(7),task_id:id(8),file_name:'Other-task.pdf'}],services:[],sectors:[],schedules:[],timesheets:[],notifications:[],task_events:[],workbook_batches:[],task_procedures:[],suite};
+const calls=[];globalThis.fetch=async(url,o)=>{const p=JSON.parse(o.body);calls.push(p);if(p.action==='task_status')Object.assign(task,p,{revision:task.revision+1});const result=p.action==='login'?{access_token:'qa',refresh_token:'refresh',expires_at:Date.now()/1000+3600,session_id:'qa'}:p.action==='workspace'?data:p.action==='presence_heartbeat'?{status:'Not clocked in',server_time:'2026-10-24T14:00:00Z'}:p.action==='procedure_read'?{record:{task_id:task.task_id,project_id:project.project_id,profile:'Supporting task',stage:'Pending preparer',details:{},revision:1},events:[]}:p.action==='task_recipients'?{recipients:[{...me,category_code:'MANAGER'}]}:{ok:true};return {ok:true,json:async()=>result};};
+const pause=()=>new Promise(r=>setTimeout(r,45)),$=s=>document.querySelector(s),click=async s=>{assert.ok($(s),s);$(s).click();await pause();};await import('../staff-pilot.mjs');
+
+test('Smart Back: filter a project by period, open a task, press Back, land on the same filtered list',async t=>{t.after(()=>dom.window.close());
+ $('#loginForm [name=login_id]').value='qa';$('#loginForm [name=password]').value='testing';$('#loginForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();
+ await click('[data-view=projects]');location.hash='#project='+id(3);await pause();
+ const picker=$('#content [name=workPeriod]');assert.ok(picker,'period filter is shown');picker.value=oct;picker.dispatchEvent(new dom.window.Event('change',{bubbles:true}));await pause();
+ assert.equal($('#content [name=workPeriod]').value,oct);
+ const shown=[...document.querySelectorAll('#content .task-title')].map(x=>x.textContent);assert.ok(shown.some(x=>/Upload weekly purchases/.test(x)));assert.ok(!shown.some(x=>/September bank review/.test(x)),'only October tasks are listed');
+ await click('.task-title');
+ assert.ok(location.hash.startsWith('#task='+id(5)));assert.match(location.hash,/returnTo=project%3D/);
+ assert.match($('.detail-return button').textContent,/Back to the project/);
+ assert.match($('.workspace-header').textContent,/Fictional client/);assert.match($('.workspace-header').textContent,/Fictional VAT Project/);assert.match($('.workspace-header').textContent,/Monthly · 2026-10-01/);assert.match($('.workspace-header .status-badge').textContent,/Pending/);
+ await click('[data-return-back]');
+ assert.equal(location.hash,'#project='+id(3));
+ assert.equal($('#content [name=workPeriod]').value,oct,'the period filter is still October');
+ const again=[...document.querySelectorAll('#content .task-title')].map(x=>x.textContent);assert.ok(again.some(x=>/Upload weekly purchases/.test(x)));assert.ok(!again.some(x=>/September bank review/.test(x)));
+ assert.ok(document.activeElement?.matches?.('[data-task-row],[data-open-task],.task-title,[data-task]')||document.activeElement===document.body,'focus returns to the task that was opened, or stays on the page');
+ // the browser's own Back button gives the same result
+ await click('.task-title');history.back();await pause();
+ assert.equal($('#content [name=workPeriod]').value,oct); // an address that is not one of the app's own routes is ignored
+ location.hash='#task='+id(5)+'&returnTo=https%3A%2F%2Fevil.example';await pause();
+ assert.equal($('.detail-return button').dataset.returnBack,undefined);assert.equal($('.detail-return button').dataset.view,'projects');
+});

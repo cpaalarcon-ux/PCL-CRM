@@ -11,7 +11,7 @@ export function p9Panel(r,esc){
 }
 const cardTable=(card,columns,esc)=>`<div class="scroll"><table class="p9"><thead><tr><th>Month</th>${columns.map(c=>`<th title="${esc(c.label)}">${esc(c.letter)}</th>`).join('')}</tr></thead><tbody>${MONTHS.map((m,i)=>{const r=card.rows[i];return `<tr><td>${esc(m)}</td>${columns.map(c=>`<td class="num">${r?kes(r[c.letter]):''}</td>`).join('')}</tr>`;}).join('')}<tr><th>Total</th>${columns.map(c=>`<th class="num">${['E1','E3'].includes(c.letter)?'':kes(card.totals[c.letter])}</th>`).join('')}</tr></tbody></table></div><p><b>Total chargeable pay (Col. K):</b> ${kes(card.totals.K)} &nbsp; <b>Total tax (Col. O):</b> ${kes(card.totals.O)}</p>`;
 export function p9Result(x,esc){
- const issues=(x.issues||[]).length?`<div class="notice error"><b>Not ready to release</b><ul>${x.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul></div>`:'<p><span class="badge good">Ready to release</span></p>';
+ const issues=(x.issues||[]).length?`<div class="notice error" role="alert"><b>Not ready to release</b><ul>${x.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul></div>`:'<p><span class="badge good">Ready to release</span></p>';
  const missing=(x.coverage||[]).filter(c=>c.status==='No confirmed payroll');
  const cov=`<h4>Months</h4><div class="scroll"><table><thead><tr><th>Month</th><th>Payroll</th></tr></thead><tbody>${(x.coverage||[]).map(c=>`<tr><td>${esc(c.month)}</td><td>${esc(c.status)}</td></tr>`).join('')}</tbody></table></div>`
   +(missing.length?`<fieldset class="full"><legend>No payroll ran in these months</legend>${missing.map(c=>`<label><input type="checkbox" class="p9Empty" value="${esc(c.month)}"> ${esc(c.month)}</label>`).join(' ')}</fieldset>`:'');

@@ -2,7 +2,7 @@ import {serviceNarration,formatDay} from './invoice-narration.mjs?v=20261107-ann
 import {exceptionsNotice} from './staff-client-choices.mjs?v=20261116-choices-v1';
 import {configureLinksHtml} from './staff-configure-links.mjs?v=20261117-links-v1';
 import {sourceChecklistPanel} from './staff-source-checklist.mjs?v=20261111-srcchk-v1';
-import {createDiscussionUI} from './staff-discussion.mjs?v=20261026-v4';
+import {createDiscussionUI} from './staff-discussion.mjs?v=20261026-v4&rev=20261119-nav';
 import {communicationQr,letterDetails,letterDetailsQr} from './staff-communication-qr.mjs?v=20261104-letter-details';
 import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-taxrole-v3';
 import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-taxrole-v3';
@@ -26,14 +26,14 @@ import {SETTINGS_TABS,tabForCard,layoutView,rightsView,FOLD_TABS,fold} from './s
 import {createSettingsFrameUI} from './staff-settings-frame.mjs?v=20261118-approval-board-v1';
 import {createStatementReviewUI} from './staff-statement-review.mjs?v=20261118-approval-board-v1';
 import {createOwnerMatrixUI} from './staff-owner-matrix.mjs?v=20261117-actions-v1';
-import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261118-approval-board-v1';
+import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261118-approval-board-v1&rev=20261119-nav';
 import {createResourcesUI} from './staff-resources.mjs?v=20261118-templates-v2';
 import {createDueBacklogUI} from './staff-due-backlog.mjs?v=20261112-resources-v1';
 import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261116-whtvat-v1';
 import {createDocumentReviewUI} from './staff-document-review.mjs?v=20261110-taxrole-v3';
 import {createClientSupportUI} from './staff-client-support.mjs?v=20261111-physfile-v1';
 import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-taxrole-v3';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261119-fixes-v1&rev=20261119-usability';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261119-fixes-v1&rev=20261119-nav';
 import {defaultTaxReportingPeriod,suggestedKraDueDate} from './staff-tax-period-defaults.mjs?v=20261110-taxrole-v3';
 export function createSuiteUI(ctx){
  const {$,esc,field,select,form,modal,request,load,notice,shortDate,badge,clientName,projectName,staffName,firmName,today,empty}=ctx;

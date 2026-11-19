@@ -1,5 +1,5 @@
-import {monthsPanel,resultPanel,idsForm,downloadCsv} from './staff-statutory-files.mjs?v=20261116-choices-v1';
-import {p9Panel,p9Result,p9CardView,p9PrintHtml,downloadZip} from './staff-p9.mjs?v=20261124-p9-v1';
+import {monthsPanel,resultPanel,idsForm,downloadCsv} from './staff-statutory-files.mjs?v=20261116-choices-v1&rev=20261119-nav';
+import {p9Panel,p9Result,p9CardView,p9PrintHtml,downloadZip} from './staff-p9.mjs?v=20261124-p9-v1&rev=20261119-nav';
 // Payroll register screens (build 2804): who is on a client's payroll and what they are paid, then "Start month from register".
 // The server (payroll-register-actions.ts, payroll-register-rules.mjs) owns every rule. A month started here opens the typed payroll screen pre-filled;
 // nothing is saved, submitted or posted from this screen.
@@ -37,7 +37,7 @@ export function draftSummary(x,esc,shortDate){
  const li=(items,f)=>items.length?`<ul>${items.map(i=>`<li>${f(i)}</li>`).join('')}</ul>`:'<p class="muted">None.</p>';
  const c=x.changes||{};
  return `<p class="info full">${esc(x.note||'')}</p><p><b>${esc(x.month)}</b> · ${x.lines.length} on the payroll${x.skipped.length?` · ${x.skipped.length} skipped`:''}</p>`+
-  (x.existing_run?`<div class="info full error">A payroll for this month already exists (${esc(x.existing_run.status)}). Opening a new draft would repeat it. Open that payroll instead, or discard it first with a reason.</div>`:'')+
+  (x.existing_run?`<div class="info full error" role="alert">A payroll for this month already exists (${esc(x.existing_run.status)}). Opening a new draft would repeat it. Open that payroll instead, or discard it first with a reason.</div>`:'')+
   (x.replacing_run?`<p class="info full">The confirmed run for this month is being amended and its posted entries are reversed. The new run replaces it when it is confirmed, and the old one stays in the history.</p>`:'')+
   (x.returned_run?`<p class="info full">An earlier version of this month was returned. The new run replaces it when it is confirmed, and the returned version stays in the history. Confirm the replacement when the preview asks.</p>`:'')+
   `<h4>New staff (${(c.new_staff||[]).length})</h4>${li(c.new_staff||[],i=>`${esc(i.name)}: gross ${kes(i.gross)}${i.by?` <small>Added by ${esc(i.by)}</small>`:''}`)}`+
@@ -49,7 +49,7 @@ export function draftSummary(x,esc,shortDate){
   ((x.warnings||[]).length?`<h4>Check before saving (${x.warnings.length})</h4>${li(x.warnings,i=>`${esc(i.name)}: ${esc(i.detail)}`)}`:'')+
   ((x.missing||[]).length?`<h4>Missing details (${x.missing.length})</h4>${li(x.missing,i=>`${esc(i.name)}: ${esc(i.missing.join(', '))}`)}`:'')+
   ((x.skipped||[]).length?`<h4>Skipped</h4>${li(x.skipped,i=>`${esc(i.name)}: ${esc(i.reason)}`)}`:'')+
-  ((x.issues||[]).length?`<div class="info full error"><ul>${x.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul></div>`:'');
+  ((x.issues||[]).length?`<div class="info full error" role="alert"><ul>${x.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul></div>`:'');
 }
 export function createPayrollRegisterUI(ctx,{show,button,startManual}){
  const {$,esc,field,select,form,request,notice,shortDate,projectName}=ctx;

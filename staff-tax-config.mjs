@@ -1,7 +1,7 @@
 // Tax rules and release checks use the same authenticated, scoped API as the workspace.
 import {createNonEtimsUI} from './staff-non-etims.mjs?v=20261119-fixes-v1&rev=20261119-usability';
 import {profileObligationChecks} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
-import {createExciseScheduleUI} from './staff-excise-schedule.mjs?v=20261112-excise-v4';
+import {createExciseScheduleUI} from './staff-excise-schedule.mjs?v=20261112-excise-v4&rev=20261119-nav';
 export function createTaxConfigUI(ctx){
  const {$,esc,field,select,form,modal,request,shortDate,badge,today,table,button,area,check}=ctx,d=ctx.data,s=()=>d().suite;
  const nonEtims=createNonEtimsUI(ctx),exciseSchedule=createExciseScheduleUI(ctx);

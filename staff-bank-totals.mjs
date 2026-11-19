@@ -6,7 +6,7 @@ export const kes=v=>Number(v||0).toLocaleString('en-KE',{minimumFractionDigits:2
 const e0=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function resultView(result,{esc=e0,table}){
  if(!result)return '';
- const issues=(result.issues||[]).length?`<div class="info full error"><b>To fix in the workbook before saving</b><ul>${result.issues.slice(0,30).map(i=>`<li>${esc(i)}</li>`).join('')}</ul>${result.issues.length>30?`<p class="muted">${result.issues.length-30} more.</p>`:''}</div>`:'';
+ const issues=(result.issues||[]).length?`<div class="info full error" role="alert"><b>To fix in the workbook before saving</b><ul>${result.issues.slice(0,30).map(i=>`<li>${esc(i)}</li>`).join('')}</ul>${result.issues.length>30?`<p class="muted">${result.issues.length-30} more.</p>`:''}</div>`:'';
  const warns=(result.warnings||[]).length?`<div class="info full"><b>Check</b><ul>${result.warnings.slice(0,20).map(i=>`<li>${esc(i)}</li>`).join('')}</ul></div>`:'';
  const t=result.totals||{};
  const months=table(['Month','Statement credits','Non-trade credits','Bounced cheques','Receipt corrections','Adjusted trade collections','Finance costs'],[...(result.by_month||[]).map(m=>[esc(m.month),kes(m.credits),kes(m.non_trade),kes(m.bounced),kes(m.correction),kes(m.adjusted_trade),kes(m.finance_costs)]),['<b>Total</b>',...['credits','non_trade','bounced','correction','adjusted_trade','finance_costs'].map(k=>'<b>'+kes(t[k])+'</b>')]]);
