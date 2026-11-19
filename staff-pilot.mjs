@@ -23,10 +23,10 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2905';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906';
 import {createMessenger} from './staff-messenger.mjs?v=20261119-workspace';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
-import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal';
+import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
 import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905';
 import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
@@ -42,6 +42,7 @@ import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261118-ready-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
 import {renderAccessGuide} from './staff-access-guide.mjs?v=20261106-rights-v1';
 import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261105-check-v1';
+import {ACTION_RIGHTS,canUseAction,hasVisibleActionGroup} from './staff-action-rights.mjs?v=20261119-2906';
 import {STAFF_RIGHTS} from './staff-rights-catalog.mjs?v=20261118-approval-board-v1';
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v12';
 const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
@@ -56,7 +57,7 @@ sessionStorage.removeItem('pcl-staff-session-v2');
 let drafts=null; // the form-draft helper, created further down once the screens it reopens exist
 const session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut});
 const isLeader=()=>data&&['PARTNER','MANAGER'].includes(data.me.category_code);
-const canArea=area=>!!data&&(Array.isArray(data.me.allowed_areas)?data.me.allowed_areas:effectiveStaffAreas(data.me.category_code,data.me.restricted_areas||[])).includes(area);
+const canArea=area=>!!data&&(Array.isArray(data.me.allowed_areas)?data.me.allowed_areas:effectiveStaffAreas(data.me.category_code,data.me.restricted_areas||[])).includes(area)&&hasVisibleActionGroup(data.me.category_code,area,data.me.restricted_rights);
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const scheduleEndFor=start=>{const d=new Date(`${start}T00:00:00Z`);d.setUTCFullYear(d.getUTCFullYear()+5);d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);};
 const scheduleThrough=s=>{const start=String(s?.starts_on||today()).slice(0,10),end=String(s?.ends_on||'').slice(0,10);return !end||end===`${start.slice(0,4)}-12-31`?scheduleEndFor(start):end;};
@@ -118,7 +119,7 @@ async function request(p,{auth=true,...options}={}){
  catch(cause){error=true;session.reject(ctx,cause);if(isConnectionDrop(cause))throw Object.assign(Error(connectionDropMessage(action)),{cause,connection_dropped:true});throw cause;}
  finally{if(started!==null&&data){timingRows.unshift({action,at:new Date(),seconds:(performance.now()-started)/1000,error});if(timingRows.length>100)timingRows.length=100;}}
 }
-async function load(requestOptions={}){data=await request({action:'workspace'},requestOptions);syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();messenger.start();
+async function load(requestOptions={}){data=await request({action:'workspace'},requestOptions);syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
  $('#greeting').textContent='My workspace';$('#roleLabel').textContent=roles[data.me.category_code]+' · '+data.me.login_id;
  $('#firmFilter').innerHTML=options(data.firms.map(x=>[x.firm_id,x.firm_code+' · '+x.legal_name]),firm,'All authorised firms');
  $('.firm-picker').hidden=data.me.category_code==='INTERN';applyWorkspaceRoute(false);render();await openCommunicationHash();void presence.refresh();}
@@ -369,7 +370,7 @@ function select(name,label,items,value='',blank='Choose…'){return `<label>${la
 function firmChecks(selected=[]){return `<fieldset class="full"><legend>Authorised / handling firms *</legend>${data.firms.map(f=>`<label><input type="checkbox" name="firm_ids" value="${f.firm_id}"${selected.includes(f.firm_id)?' checked':''}>${esc(f.firm_code+' · '+f.legal_name)}</label>`).join('')||'<p>Add a firm first.</p>'}</fieldset>`;}
 let editorBack=null,editorSaveObserver=null,editorPending=false,editorEdited=false,editorRevision=0;
 function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='Saving…',pendingMessage='Saving your changes. Please wait.',successMessage='Saved successfully.',onBack=null,draft=null}={}){
- const messengerButton=$('#editorMessenger');if(messengerButton)messengerButton.hidden=!canArea('communications');
+ const messengerButton=$('#editorMessenger');if(messengerButton)messengerButton.hidden=!canArea('communications')||!canUseAction(data?.me?.restricted_rights,{action:'discussion_list'});
  const editor=$('#editor'),body=$('#editorBody'),status=$('#editorNotice'),save=$('#editorSave'),back=$('#closeEditor');
  const revision=++editorRevision;
  editorSaveObserver?.disconnect();
@@ -503,17 +504,28 @@ function revokeRightForm(grantId){
  modal('Withdraw an additional right',form(`<label class="full">Reason for withdrawing *<textarea name="reason" required minlength="3" maxlength="1000"></textarea></label>`,'Withdraw right'),f=>request({action:'staff_right_revoke',grant_id:grantId,reason:f.get('reason')}),async()=>{await additionalRights();},{refreshWorkspace:false,successMessage:'The right was withdrawn.'});
 }
 async function editStaffAccess(staffId){
- const access=await request({action:'staff_access_read',staff_id:staffId}),selected=new Set(access.allowed_areas),defaults=new Set(access.default_areas),offRights=new Set(access.restricted_rights||[]),roleRights=new Set(access.default_rights||[]);
+ const access=await request({action:'staff_access_read',staff_id:staffId}),selected=new Set(access.allowed_areas),defaults=new Set(access.default_areas),offRights=new Set(access.restricted_rights||[]),roleRights=new Set([...(access.default_rights||[]),...(access.default_action_rights||[])]);
+ const actionAreas=right=>right.code.startsWith('journal.')&&defaults.has('billing_wip')?'billing_wip':right.area;
+ const actionBlock=(items,area)=>{
+  const group=items[0].group;
+  return `<fieldset class="access-actions" data-in-area="${area.code}"><legend>${esc(group)}</legend>${items.map(r=>{
+   const enabled=roleRights.has(r.code);
+   return `<label${enabled?'':' class="muted"'}><input type="checkbox" ${enabled?`name="allowed_rights" value="${r.code}"${offRights.has(r.code)?'':' checked'}`:'disabled'}> ${esc(r.label)}${enabled?'':' · Not part of this role'}</label>`;
+  }).join('')}${items[0].area!==area.code?'<p class="muted">Journal access is scoped by Projects &amp; tasks and its assignments.</p>':''}</fieldset>`;
+ };
+
  const areaBlock=area=>{
   const inRole=defaults.has(area.code),rights=STAFF_RIGHTS.filter(r=>r.area===area.code);
   const head=inRole?`<label><input type="checkbox" name="allowed_areas" value="${area.code}"${selected.has(area.code)?' checked':''} data-area="${area.code}"> <b>${esc(area.label)}</b></label>`:`<label class="muted"><input type="checkbox" disabled> <b>${esc(area.label)}</b> · Not included in this role</label>`;
+  const actions=ACTION_RIGHTS.filter(r=>actionAreas(r)===area.code);
+  const granular=[...new Set(actions.map(r=>r.group))].map(g=>actionBlock(actions.filter(r=>r.group===g),area)).join('');
   const groups=[...new Set(rights.map(r=>r.group))].map(g=>{
    const items=rights.filter(r=>r.group===g);
    return `<div class="rightGroup" data-group="${esc(g)}"><p class="muted"><b>${esc(g)}</b>${inRole?` · <button type="button" class="link" data-all="${area.code}|${esc(g)}|1">Tick all</button> · <button type="button" class="link" data-all="${area.code}|${esc(g)}|0">Untick all</button>`:''}</p>${items.map(r=>roleRights.has(r.code)&&inRole?`<label><input type="checkbox" name="allowed_rights" value="${r.code}" data-in-area="${area.code}"${offRights.has(r.code)?'':' checked'}> ${esc(r.label)}</label>`:`<label class="muted"><input type="checkbox" disabled> ${esc(r.label)} · Not part of this role</label>`).join('')}</div>`;
   }).join('');
-  return `<fieldset class="full areaBlock">${head}${groups?`<div class="rightsList">${groups}</div>`:''}</fieldset>`;
+  return `<fieldset class="full areaBlock">${head}<details><summary>Actions in ${esc(area.label)}</summary><div class="rightsList">${granular}${groups?`<details><summary>Existing function controls</summary>${groups}</details>`:''}</div></details></fieldset>`;
  };
- modal(`Edit access · ${esc(access.staff.full_name)}`,form(`<p class="info full"><b>Role:</b> ${esc(roles[access.staff.category_code])}. Tick what this person can use. An unticked area hides everything under it. Functions listed under an area can be switched off one by one. You can restore anything the role includes.</p>${STAFF_ACCESS_AREAS.map(areaBlock).join('')}<p class="muted full">Ticking only narrows the role’s access. It never adds access, and never lets a person approve their own work: the checker/approver chain, firm and project assignment and independent-review rules still apply. Restrictions stay active until an authorised Manager or Partner restores access. Money-handling rights are given under Additional rights. Changes are enforced by the server and recorded in the audit log. Functions not yet listed here are controlled by the area.</p><label class="full">Reason for change<textarea name="reason" minlength="3" maxlength="1000" placeholder="Required when changing access; for example, remove KYC verification after a role change"></textarea></label>`,'Save access'),f=>request({action:'staff_access_save',staff_id:staffId,revision:access.staff.revision,allowed_areas:f.getAll('allowed_areas'),allowed_rights:f.getAll('allowed_rights'),reason:f.get('reason')}),async result=>{await load();notice(result.changed?'Staff access updated. The change is active now.':'No access changes were needed.');});
+ modal(`Edit access · ${esc(access.staff.full_name)}`,form(`<p class="info full"><b>Role:</b> ${esc(roles[access.staff.category_code])}. Expand an area to see its actions. View is required for the other actions in that section. You can restore access the role already includes.</p>${STAFF_ACCESS_AREAS.map(areaBlock).join('')}<p class="muted full">Untick an action to switch it off for this staff member. The checker and approver chain, firm and project assignment, and existing independent-review rules still apply. Restrictions stay active until an authorised Manager or Partner restores access. Money-handling rights are given under Additional rights. Changes are enforced by the server and recorded in the audit log. The area and existing function controls also apply.</p><label class="full">Reason for change<textarea name="reason" minlength="3" maxlength="1000" placeholder="Required when changing access; for example, remove KYC verification after a role change"></textarea></label>`,'Save access'),f=>request({action:'staff_access_save',staff_id:staffId,revision:access.staff.revision,...(access.access_stamp?{rights_version:2,access_stamp:access.access_stamp}:{}),allowed_areas:f.getAll('allowed_areas'),allowed_rights:f.getAll('allowed_rights'),reason:f.get('reason')}),async result=>{await load();notice(result.changed?'Staff access updated. The change is active now.':'No access changes were needed.');});
  const formEl=$('#editForm');
  formEl.addEventListener('click',e=>{const b=e.target.closest('button[data-all]');if(!b)return;const [area,group,on]=b.dataset.all.split('|');formEl.querySelectorAll(`.rightGroup[data-group="${CSS.escape(group)}"] input[name="allowed_rights"][data-in-area="${area}"]`).forEach(c=>{c.checked=on==='1';});});
 }
@@ -645,7 +657,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.cregPage){clientQuery.page=Math.max(0,clientQuery.page+(b.dataset.cregPage==='next'?1:-1));clientPage=null;render();return;}
  if(b.dataset.cregClear!==undefined){clientQuery=DEFAULT_QUERY();clientPage=null;render();return;}
  if(b.dataset.clientLife){const act=b.dataset.clientLife,cid=b.dataset.id,w=LIFECYCLE_WORDS[act];if(w){const c=data.clients.find(x=>x.client_id===cid);modal(w.title+(c?' · '+c.company_name:''),form(lifecycleForm(act,esc),w.verb),f=>request({action:'client_lifecycle',client_id:cid,lifecycle:act,reason:f.get('reason')}),()=>render(),{successMessage:'Client updated.'});}return;}
- if(b.dataset.client)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
+ if(b.dataset.client&&!b.dataset.myReview)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
  if(b.dataset.clientView){navigateWorkspace('clientfile',b.dataset.clientView);return;}
  if(b.dataset.clientAccounts){clientAccountReturn=null;await clientAccountSetup(b.dataset.clientAccounts,{onReturn:null});}
  if(b.dataset.clientMapEndSelected){clientAccountEndSelected(b.dataset.clientMapEndSelected);return;}
@@ -658,7 +670,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.rightGrant!==undefined)grantRightForm();
  if(b.dataset.rightRevoke)revokeRightForm(b.dataset.rightRevoke);
  if(b.dataset.task)navigateWorkspace('task',b.dataset.task);
- if(b.dataset.taskEdit){const t=data.tasks.find(x=>x.task_id===b.dataset.taskEdit);if(t)editTask(t);}
+ if(b.dataset.taskEdit&&canUseAction(data.me.restricted_rights,{action:'task_status'})){const t=data.tasks.find(x=>x.task_id===b.dataset.taskEdit);if(t)editTask(t);}
  if(b.dataset.documentKind){documentKind=b.dataset.documentKind;render();}
  if(b.dataset.archiveSource)removeImportSource(b.dataset.archiveSource);
  if(b.hasAttribute('data-new-source'))upload({category:'Import Sources',excelOnly:true});

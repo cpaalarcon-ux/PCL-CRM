@@ -42,5 +42,5 @@ test('wiring: UI shows pointers only, and the scoring is labelled a default',()=
  assert.match(ui,/Confirm and allocate/);assert.match(ui,/ledger_receipt_allocate/);
  const src=rd('supabase/functions/staff-workspace-v12/receipt-match-rules.mjs');assert.doesNotMatch(src,/insert|update /i);assert.match(src,/not tax or accounting rules/);
  assert.match(rd('staff-workspace-v6.mjs'),/staff-ledger\.mjs\?v=20261119-drafts2-v1/);
- assert.match(rd('supabase/functions/staff-workspace-v12/release.json'),/2026-11-19\.2905/);assert.match(rd('staff-pilot.html'),/2026-11-19\.2905/);
+ assert.match(rd('supabase/functions/staff-workspace-v12/release.json'),/2026-11-19\.2906/);assert.match(rd('staff-pilot.html'),/2026-11-19\.2906/);
 });

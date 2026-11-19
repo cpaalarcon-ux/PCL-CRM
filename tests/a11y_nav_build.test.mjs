@@ -46,6 +46,6 @@ test('the header and Back wiring is in the right screens and the cache tokens ch
  assert.match(pilot,/data-return-back="1"/);assert.match(pilot,/if\(b\.dataset\.returnBack\)\{goBack\(\);return;\}/);
  assert.match(pilot,/staff-return-state\.mjs\?v=20261119-nav-v1/);assert.match(pilot,/staff-task-workspace\.mjs\?v=20261119-nav-v1/);
  assert.match(pilot,/staff-workspace-v6\.mjs\?v=20261119-drafts2-v1/);assert.match(pilot,/staff-client-profile\.mjs\?v=20261121-und-v1&rev=20261119-nav/);
- assert.match(rd('staff-pilot-auth.js'),/staff-pilot\.mjs\?v=20261114-setupguide-v1&rev=20261119-(?:nav|2903|2904|sticky|legal|2905)/);
+ assert.match(rd('staff-pilot-auth.js'),/staff-pilot\.mjs\?v=20261114-setupguide-v1&rev=20261119-(?:nav|2903|2904|sticky|legal|2906)/);
  assert.match(v6,/selectProject\(id\)\{if\(selected!==id\)\{selectedPeriod='';taskFilter='All';\}selected=id;\}/);
 });

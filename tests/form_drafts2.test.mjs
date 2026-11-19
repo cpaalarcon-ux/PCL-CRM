@@ -43,7 +43,7 @@ test('2904 wiring: each form passes a draft to its modal, resumes by refilling, 
 
 test('2904 tokens: the changed modules carry the new cache token',()=>{
  assert.match(rd('staff-pilot.mjs'),/staff-improvements\.mjs\?v=20261119-drafts2-v1/);
- assert.match(rd('staff-pilot-auth.js'),/rev=20261119-(?:2904|2905)/);
+ assert.match(rd('staff-pilot-auth.js'),/rev=20261119-(?:2904|2905|2906)/);
 });
 
 test('2904 the confirmation ticks are never saved in a draft, and a submit clears the draft',async()=>{
