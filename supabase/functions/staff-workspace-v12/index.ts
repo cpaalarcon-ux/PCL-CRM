@@ -1,6 +1,8 @@
 import JSZip from 'jszip';
 import release from './release.json' with {type:'json'};
 import {periodImportAction} from './period-import-actions.ts';
+import {findRetriedUpload,bankRemovalFacts} from './upload-safety.ts';
+import {bankRemoval,bankRemovalMessage} from './upload-safety-rules.mjs';
 import {withholdingAction} from './withholding-actions.ts';
 import {orphanCreditAction} from './orphan-credit-actions.ts';
 import {nonEtimsAction} from './non-etims-actions.ts';
@@ -385,6 +387,8 @@ async function upload(req:Request,id:any){
   const [allow]=await tx`select erp_private.document_allowed(${cid}::uuid,${firm}::uuid,${pid}::uuid,${tid}::uuid,${cat},true) as allowed`;
   if(!allow.allowed)deny();
   if(tid&&(await tx`select stage from erp_private.task_procedures where task_id=${tid}`)[0]?.stage==='Closed')fail(400,'This task is closed. Use a separate correction task for additional evidence.');
+  // Build 2903: the same person sending the same file to the same place within minutes is a retry (the first reply was lost). Hand back the stored file; never store a second copy.
+  {const again=await findRetriedUpload(tx,a,{client_id:cid,project_id:pid,task_id:tid,category:cat,sha256:digest});if(again)return {ok:true,document_id:again.document_id,already_uploaded:true};}
   // Build 2862: file it in the task's evidence folder, or the client's KYC / Permanent File folder. Other uploads keep their usual path.
   {let prefix:string|null=null;
    if(tid){prefix=(await tx`select path_prefix from erp_private.evidence_folders where task_id=${tid}`)[0]?.path_prefix||null;}
@@ -428,6 +432,8 @@ async function action(id:any,p:any){
    count(r.row_id) filter(where r.row_id is not null and erp_private.row_locks_upload(r))::int as protected_rows
    from erp_private.workbook_batches b left join erp_private.workbook_rows r using(batch_id) where b.document_id=${documentId} and b.archived_at is null`);
   const protectedImports=Number((await tx`select count(*)::int n from erp_private.period_imports where document_id=${documentId} and status<>'Discarded'`)[0].n),openingJournals=await tx`select status from erp_private.ledger_journals where source_snapshot->>'document_id'=${documentId}::text`,protectedOpeningEntries=openingJournals.filter((x:any)=>['Submitted','Posted'].includes(x.status)).length;
+  // Build 2903: a bank statement can be removed only before anything from it is mapped, matched, reviewed, posted or locked. No controlled-correction route for statements in use.
+  {const bank=await bankRemovalFacts(tx,documentId,doc.file_name);if(bank){const verdict=bankRemoval(bank);if(!verdict.allowed)fail(409,bankRemovalMessage(verdict));}}
   // An opening draft (Draft or Returned) does not lock its source: the corrected upload replaces it. Once submitted, the reviewer returns it first.
   if(openingJournals.some((x:any)=>x.status==='Submitted'))fail(409,'This opening TB is waiting for independent review. Ask the reviewer to return it, then remove the upload and upload the corrected TB.');
   const manager=['PARTNER','MANAGER'].includes(a.category_code);

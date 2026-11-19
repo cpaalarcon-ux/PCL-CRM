@@ -2,6 +2,8 @@ import {fail,text,uuid,revision} from './validation.mjs';
 import {periodImportAction} from './period-import-actions.ts';
 import {withdrawAction} from './withdraw-actions.ts';
 import {importPlan,uploadPlan} from './delete-redo-rules.mjs';
+import {bankRemovalFacts} from './upload-safety.ts';
+import {bankRemoval} from './upload-safety-rules.mjs';
 // "Delete and redo" (build 2806). One plan and one apply for a mistaken summary or payroll run. The plan says what is possible for this person right now and
 // who must do the rest. Apply reuses the existing withdraw, return and discard actions, so the same database rules, locks and audit apply. Nothing is deleted.
 // Uploads (workbooks) get a plan here; the removal itself stays the existing document_archive action.
@@ -37,7 +39,10 @@ export async function deleteRedoAction(tx:any,a:any,p:any){
   const imports=Number((await tx`select count(*)::int n from erp_private.period_imports where document_id=${documentId} and status<>'Discarded'`)[0].n);
   const opening=await tx`select status from erp_private.ledger_journals where source_snapshot->>'document_id'=${documentId}::text`;
   const plan=uploadPlan({rows:counts.rows,protected_rows:counts.locked,imports,journals:opening.filter((x:any)=>['Submitted','Posted'].includes(x.status)).length,opening_submitted:opening.filter((x:any)=>x.status==='Submitted').length,uploaded_by:doc.uploaded_by},me);
-  return {target:'upload',document_id:documentId,file_name:doc.file_name,rows:counts.rows,plan};
+  // Build 2903: a bank statement shows exactly what would be archived, and is refused once anything from it is in use.
+  const bankFacts=await bankRemovalFacts(tx,documentId,doc.file_name),bank=bankFacts?bankRemoval(bankFacts):null;
+  if(bank&&!bank.allowed){plan.can_apply=false;plan.apply=null;plan.controlled=false;plan.blockers=[...(plan.blockers||[]),...bank.reasons];plan.steps=bank.instead;}
+  return {target:'upload',document_id:documentId,file_name:doc.file_name,rows:counts.rows,plan,bank};
  }
 
  const importId=uuid(p.import_id);
