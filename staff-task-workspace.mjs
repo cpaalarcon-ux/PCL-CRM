@@ -1,17 +1,25 @@
 // Navigation and presentation use only the authenticated workspace's scoped records.
+import {safeReturnHash} from './staff-return-state.mjs?v=20261119-nav-v1';
+import {workspaceHeader} from './staff-workspace-header.mjs?v=20261119-nav-v1';
 export function workspaceRoute(hash){
  const p=new URLSearchParams(String(hash||'').replace(/^#/,''));
- if(p.has('task'))return {view:'task',id:p.get('task')||''};
- if(p.has('client'))return {view:'clientfile',id:p.get('client')||''};
- if(p.has('project'))return {view:'projects',id:p.get('project')||''};
+ const returnTo=safeReturnHash(p.get('returnTo')?'#'+p.get('returnTo'):''),back=returnTo?{returnTo}:{};
+ if(p.has('task'))return {view:'task',id:p.get('task')||'',...back};
+ if(p.has('client'))return {view:'clientfile',id:p.get('client')||'',...back};
+ if(p.has('project'))return {view:'projects',id:p.get('project')||'',...back};
  if(p.has('view'))return {view:p.get('view')||'home'};
  return null;
+}
+export function taskPeriodLabel(d,taskId){
+ const link=(d.work_period_tasks||[]).find(l=>l.task_id===taskId),w=link&&(d.work_periods||[]).find(x=>x.work_period_id===link.work_period_id);
+ return w?`${w.period_kind} · ${String(w.starts_on).slice(0,10)}`:'';
 }
 export function taskWorkspace(ctx){
  const {data:d,taskId,esc,shortDate,badge,staffName,clientName,firmName}=ctx,t=d.tasks.find(t=>t.task_id===taskId),back='<button type="button" data-view="projects">Back to projects & tasks</button>';
  if(!t)return `<section class="card"><h2>Task workspace unavailable</h2><p>This task is not available in your current workspace. Refresh or ask your Manager to check your assignment.</p>${back}</section>`;
  const p=d.projects.find(p=>p.project_id===t.project_id),intern=d.me.category_code==='INTERN',own=t.assigned_to===d.me.staff_id,editor=['PARTNER','MANAGER','SUPERVISOR'].includes(d.me.category_code),canUpload=!intern&&!['Completed','Cancelled'].includes(t.status)&&p&&d.clients.some(c=>c.client_id===p.client_id)&&(own||editor),open=!['Completed','Cancelled'].includes(t.status),procedure=d.task_procedures?.find(w=>w.task_id===t.task_id),files=d.documents.filter(f=>f.task_id===t.task_id),time=d.timesheets.filter(x=>x.task_id===t.task_id),events=d.task_events.filter(x=>x.task_id===t.task_id),cases=(d.suite?.tax_cases||[]).filter(x=>x.project_id===t.project_id),projectLink=p?`<a href="#project=${p.project_id}" data-open-project="${p.project_id}">${esc(p.project_name)}</a>`:'Assigned project',stamp=v=>new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',dateStyle:'medium',timeStyle:'short'}).format(new Date(v));
  return `<div class="workspace-breadcrumb" role="navigation" aria-label="Task breadcrumb"><a href="#view=projects" data-workspace-view="projects">Projects & tasks</a><span aria-hidden="true">/</span>${projectLink}<span aria-hidden="true">/</span><span aria-current="page">Task workspace</span></div>
+ ${workspaceHeader({client:!intern&&p?clientName(p.client_id):'',project:p?.project_name||'',period:taskPeriodLabel(d,t.task_id),status:procedure&&procedure.profile!=='Supporting task'?procedure.stage:t.status,esc})}
  <section class="card task-workspace" aria-labelledby="taskWorkspaceTitle"><div class="section-head"><div><span class="eyebrow">TASK WORKSPACE</span><h2 id="taskWorkspaceTitle" tabindex="-1">${esc(t.task_name)}</h2></div>${badge(procedure&&procedure.profile!=='Supporting task'?procedure.stage:t.status)}</div>
  <dl class="task-facts">${!intern&&p?`<div><dt>Client</dt><dd>${esc(clientName(p.client_id))}</dd></div><div><dt>Handling firm</dt><dd>${esc(firmName(p.handling_firm_id))}</dd></div>`:''}<div><dt>Assigned to</dt><dd>${esc(staffName(t.assigned_to))}</dd></div>${t.work_seconds!==undefined&&!intern?`<div><dt>Working time in progress</dt><dd>${Math.floor(t.work_seconds/3600)} h ${Math.floor(t.work_seconds%3600/60)} min <small>(Mon–Fri 08:00–17:00)</small></dd></div>`:''}<div><dt>Due date</dt><dd>${esc(shortDate(t.due_at))}</dd></div>${t.period_start?`<div><dt>Work period</dt><dd>${esc(shortDate(t.period_start))} – ${esc(shortDate(t.period_end))}</dd></div>`:''}${t.filing_date?`<div><dt>Filing date</dt><dd>${esc(shortDate(t.filing_date))}</dd></div>`:''}</dl>
  <div class="actions task-workspace-actions"><button type="button" data-task-edit="${t.task_id}">Update status</button>${editor&&open&&p?`<button type="button" data-pool="send" data-id="${t.task_id}">Send to Manager Pool</button>`:''}${['SUPERVISOR','ASSISTANT'].includes(d.me.category_code)&&open&&p?`<button type="button" data-v6="ask-manager" data-task="${t.task_id}">Ask a Manager to decide</button>`:''}${['SUPERVISOR','MANAGER','PARTNER'].includes(d.me.category_code)&&open&&p?`<button type="button" data-v6="ask-partner" data-task="${t.task_id}">Escalate to Partner</button>`:''}${canUpload?`<button type="button" class="primary" data-task-excel="${t.task_id}">Upload ${/purchases|mapping|expenditure/i.test(t.task_name)?'purchases ':''}CSV / Excel / ZIP</button><button type="button" data-task-upload="${t.task_id}">Upload PDF / evidence</button>`:''}${!intern&&p?`<button type="button" data-v6="rows" data-id="${p.project_id}">Open purchases mapping</button>`:''}${own?`<button type="button" data-v6="time" data-task-id="${t.task_id}">Log time</button>${open?`<button type="button" data-presence="timer-start" data-id="${t.task_id}">Start task timer</button>`:''}`:''}${open&&own&&!intern?`<button type="button" data-v6="handover" data-id="${t.task_id}">Hand over unfinished work</button>`:''}${open&&editor?`<button type="button" data-v6="reallocate" data-id="${t.task_id}">Reallocate</button>`:''}${open?`<button type="button" data-v6="escalate" data-id="${t.task_id}">Forward / Escalate</button>`:''}</div>

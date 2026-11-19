@@ -1,8 +1,9 @@
 // Client profile page: one place per client with six tabs. It reuses the data the workspace already loaded and the existing screens
 // (edit client, KYC and contacts, tax profile, set-up guide, projects, tasks), so access rules do not change: the server already
 // trims what each role receives. Tabs: Overview, Contacts, Projects & Tasks, Documents/KYC, Communication & Activity, Tax Obligations.
+import {workspaceHeader} from './staff-workspace-header.mjs?v=20261119-nav-v1';
 import {docRequestShell} from './staff-doc-requests.mjs?v=20261109-dr-v1';
-import {lifecycleBar,routingCard,lifecycleBadge,commAccessCard,commExternalAllowed} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1';
+import {lifecycleBar,routingCard,lifecycleBadge,commAccessCard,commExternalAllowed} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1&rev=20261119-nav';
 import {clientSpine,spineHtml} from './staff-setup-spine.mjs?v=20261118-ready-v1';
 import {gatesHtml} from './staff-work-ready.mjs?v=20261118-ready-v1';
 export const PROFILE_TABS=[['overview','Overview'],['contacts','Contacts'],['projects','Projects & Tasks'],['setup','Set-up'],['documents','Documents / KYC'],['activity','Communication & Activity'],['tax','Tax & returns'],['aml','AML scope'],['understanding','Understanding the client']];
@@ -49,5 +50,6 @@ export function clientProfile(ctx){
  }[cur]();
  const tabs=`<div class="tabs" role="tablist" aria-label="Client file sections">${shown.map(([k,l])=>`<button type="button" role="tab" id="cptab-${k}" aria-selected="${k===cur}" aria-controls="cppane" data-cprofile-tab="${k}" class="${k===cur?'on':''}">${esc(l)}</button>`).join('')}</div>`;
  return `<div class="workspace-breadcrumb" role="navigation" aria-label="Client breadcrumb"><a href="#view=clients" data-workspace-view="clients">Clients</a><span aria-hidden="true">/</span><span aria-current="page">${esc(c.company_name)}</span></div>
+ ${workspaceHeader({client:c.company_name,status:status?.label||'',esc})}
  <section class="card client-profile" aria-labelledby="clientProfileTitle"><div class="section-head"><div><span class="eyebrow">CLIENT FILE</span><h2 id="clientProfileTitle" tabindex="-1">${esc(c.company_name)}</h2>${seen?`<p class="muted">${esc([c.kra_pin||'KRA PIN missing',structureLabel?structureLabel(c,esc).replace(/<[^>]*>/g,''):''].filter(Boolean).join(' · '))}</p>`:''}</div>${status?`<span class="badge ${esc(status.tone)}" data-client-status="${id}"${status.reasons?.length?` title="${esc(status.reasons.join('. '))}"`:''}>${esc(status.label)}</span>`:''}${lifecycleBadge(c,esc)}</div>${leader?lifecycleBar(c,ctx.category,esc,shortDate):''}${tabs}<div id="cppane" role="tabpanel" aria-labelledby="cptab-${cur}" class="section-space">${pane}</div></section>`;
 }

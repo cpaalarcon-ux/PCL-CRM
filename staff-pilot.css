@@ -661,3 +661,22 @@ small.warn{color:#8a5a00;display:block}
 .sidebar-section-title{margin:14px 12px 4px;font-size:.75rem;font-weight:700;color:var(--sidebar-muted)}
 .import-bulk-actions{position:sticky;bottom:0;z-index:3;background:var(--paper);border-top:1px solid var(--line);padding:10px}
 .detail-return{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;background:var(--bg);padding:4px 0 8px}
+
+/* Build 2903: contextual header, focus not hidden by pinned bars, and minimum target size (WCAG 2.2 AA 2.4.11, 2.5.8). */
+.workspace-header{display:flex;flex-wrap:wrap;gap:.35rem 1rem;align-items:center;justify-content:space-between;padding:.6rem 0;margin:0 0 .75rem;border-bottom:1px solid var(--line,#dce4e8)}
+.wh-trail{margin:0;font-size:.95rem}.wh-sep{margin:0 .4rem;color:#475569}.wh-status{margin:0}
+.status-badge{display:inline-flex;gap:.35rem;align-items:center;padding:.2rem .6rem;border:1px solid currentColor;border-radius:999px;font-size:.85rem;font-weight:600}
+.status-badge.tone-good{color:#176635;background:#e4f4e8}.status-badge.tone-wait{color:#7a4b00;background:#fff4d6}.status-badge.tone-bad{color:#9f1c12;background:#fde8e6}.status-badge.tone-neutral{color:#334155;background:#eef2f6}
+#editor{scroll-padding-block:4.5rem 5rem}
+:is(#editor,#content) :is(input,select,textarea,button,a):focus{scroll-margin-block:4.5rem 5rem}
+button,[role=button],select,summary{min-height:24px;min-width:24px}
+input[type=checkbox],input[type=radio]{inline-size:1.5rem;block-size:1.5rem;min-inline-size:24px;min-block-size:24px}
+.period-chip,.detail-return button{min-block-size:24px}
+/* Build 2903: draft status line, Save draft & return, and the leave / sign-out questions. */
+.draft-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;margin:0 0 12px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:#f1f7f4}
+.draft-status{margin:0;font-size:.92rem;color:var(--green);font-weight:600}
+.draft-status.error{color:var(--red)}
+.leave-dialog{max-width:min(460px,92vw);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+.leave-dialog::backdrop{background:rgba(15,23,42,.5)}
+.leave-dialog h2{margin:0 0 8px;font-size:1.15rem}
+.leave-dialog .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}

@@ -14,9 +14,9 @@ export function obligationPanelHtml(result,esc=v=>String(v??'')){
   else if(r.exception_status==='Approved')action=`<span>Approved exception: ${e(esc,ex.reason)}</span>`;
   else if(r.exception_status==='Requested'){
    action=`<span>Exception awaiting approval: ${e(esc,ex.reason)}</span>`;
-   if(canDecide&&ex.requested_by!==me)action+=` <span class="actions"><input data-ob-note="${e(esc,ex.exception_id)}" placeholder="Note (needed to reject)" maxlength="500"><button type="button" data-ob-decide="Approve" data-ob-id="${e(esc,ex.exception_id)}">Approve</button><button type="button" data-ob-decide="Reject" data-ob-id="${e(esc,ex.exception_id)}">Reject</button></span>`;
+   if(canDecide&&ex.requested_by!==me)action+=` <span class="actions"><input aria-label="Note (needed to reject)" data-ob-note="${e(esc,ex.exception_id)}" placeholder="Note (needed to reject)" maxlength="500"><button type="button" data-ob-decide="Approve" data-ob-id="${e(esc,ex.exception_id)}">Approve</button><button type="button" data-ob-decide="Reject" data-ob-id="${e(esc,ex.exception_id)}">Reject</button></span>`;
    else if(canDecide)action+=' <span class="muted">You asked for this; a different Manager or Partner decides.</span>';
-  }else action=`<span class="actions"><input data-ob-reason="${e(esc,r.code)}" placeholder="Why is this task needed? (15+ characters)" maxlength="500"><button type="button" data-ob-request="${e(esc,r.code)}">Request exception</button></span>`;
+  }else action=`<span class="actions"><input aria-label="Why this task is needed" data-ob-reason="${e(esc,r.code)}" placeholder="Why is this task needed? (15+ characters)" maxlength="500"><button type="button" data-ob-request="${e(esc,r.code)}">Request exception</button></span>`;
   return `<tr><th scope="row">${e(esc,r.code)}</th><td><span class="badge ${CLASS[r.state]||'warn'}">${e(esc,r.state)}</span></td><td>${e(esc,r.reason)}</td><td>${action}</td></tr>`;
  }).join('');
  return `<table class="obligation-check"><thead><tr><th>Obligation</th><th>State</th><th>Why</th><th>Exception</th></tr></thead><tbody>${body}</tbody></table>${result.blocked?`<p class="info" role="status">${e(esc,result.blocked)}</p>`:'<p class="muted" role="status">Every selected obligation can be scheduled.</p>'}`;
