@@ -84,13 +84,15 @@ export async function taxSummary(tx:any,c:any){
   const approved=r.source_revision===r.revision&&['Eligible','Excluded','Confirmed'].includes(r.decision);
   if(!approved)unreviewed++;
   if(c.kind==='VAT'&&r.dataset!=='Bank'){
-   if(!r.vat_rate_key)issues.push(`Row ${r.source_row}: reviewer must select the VAT treatment.`);
+   // Build 2898: non-eTIMS expenditure has no VAT (Partner decision), so no VAT treatment is asked for or checked on those rows.
+   if(r.dataset==='Non-eTIMS'){/* no VAT */}
+   else if(!r.vat_rate_key)issues.push(`Row ${r.source_row}: reviewer must select the VAT treatment.`);
    else {const rr=use(r.vat_rate_key,dateText(r.normalized.date)||dateText(c.starts_on),dateText(r.normalized.date)||dateText(c.starts_on));if(rr){if(rr.tax_type!=='VAT'||rr.parameters.treatment==='Withholding')issues.push(`Row ${r.source_row}: select a supply VAT rule.`);else {const issue=vatRuleCheck(r,rr);if(issue)issues.push(`Row ${r.source_row}: ${issue}`);r.applied_rate=rr;}}}
    if(['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset)&&(!r.income_treatment||r.income_treatment==='Review'))issues.push(`Row ${r.source_row}: income-tax classification requires review.`);
   }
   if(['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset)&&(!r.route||!r.category_code||!r.account_code))unmapped++;
   if(r.dataset==='Sales'&&approved&&r.decision==='Confirmed')output+=Number(r.normalized.vat||0);
-  if(['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset)&&approved&&r.decision==='Eligible')input+=round(Number(r.normalized.vat||0)*Number(r.deductible_percentage)/100);
+  if(['Purchases','Expenditure'].includes(r.dataset)&&approved&&r.decision==='Eligible')input+=round(Number(r.normalized.vat||0)*Number(r.deductible_percentage)/100);
  }
  let result:any={},salesReview:any=null,source_application:any=null,annualLedger:any=null,rate=rules[needed[0]]||null;
  if(c.rate_id){const selected=available.find((r:any)=>r.rate_id===c.rate_id);if(!selected||testRate(selected))issues.push('The previously selected rate is unavailable or test-only. Preview and save the current applicable rules.');else if(rate&&selected.rate_id!==rate.rate_id)issues.push('The selected rate does not match the current client/period rules. Preview and save again.');}
@@ -220,7 +222,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   const cost=['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset),decision=choice(p.decision,cost?['Eligible','Excluded','Unresolved']:['Confirmed','Unresolved']),percent=decision==='Eligible'?number(p.deductible_percentage,0,100):0;
   if(decision==='Eligible'&&(!r.route||!r.category_code))fail(400,'Map the purchase before deciding eligibility.');
   if(decision==='Eligible'&&r.dataset==='Non-eTIMS'&&(!r.review_details?.legal_basis||!r.review_details?.evidence))fail(400,'Complete the non-eTIMS legal basis and evidence before an eligibility decision.');
-  const vatKey=r.dataset==='Bank'?null:text(p.vat_rate_key||'',60,false),difference=text(p.vat_difference_reason||'',2000,false),income=cost?choice(p.income_treatment||'Review',['Allowable','Disallowable','Capital','Inventory','Review']):null;
+  const noVat=r.dataset==='Bank'||r.dataset==='Non-eTIMS',vatKey=noVat?null:text(p.vat_rate_key||'',60,false),difference=noVat?'':text(p.vat_difference_reason||'',2000,false),income=cost?choice(p.income_treatment||'Review',['Allowable','Disallowable','Capital','Inventory','Review']):null;
   await tx`insert into erp_private.tax_row_reviews(row_id,project_id,source_revision,decision,deductible_percentage,reason,reviewed_by,vat_rate_key,vat_difference_reason,income_treatment) values(${r.row_id},${r.project_id},${r.revision},${decision},${percent},${text(p.reason,2000)},${a.staff_id},${vatKey},${difference},${income}) on conflict(row_id) do update set source_revision=excluded.source_revision,decision=excluded.decision,deductible_percentage=excluded.deductible_percentage,reason=excluded.reason,reviewed_by=excluded.reviewed_by,vat_rate_key=excluded.vat_rate_key,vat_difference_reason=excluded.vat_difference_reason,income_treatment=excluded.income_treatment`;return {ok:true};
  }
  // Build 2895: review several source rows with one decision. Each row goes through exactly the same checks and writes as a single row review, in one transaction (all or none). Maker is not checker:
