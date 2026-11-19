@@ -223,6 +223,28 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   const vatKey=r.dataset==='Bank'?null:text(p.vat_rate_key||'',60,false),difference=text(p.vat_difference_reason||'',2000,false),income=cost?choice(p.income_treatment||'Review',['Allowable','Disallowable','Capital','Inventory','Review']):null;
   await tx`insert into erp_private.tax_row_reviews(row_id,project_id,source_revision,decision,deductible_percentage,reason,reviewed_by,vat_rate_key,vat_difference_reason,income_treatment) values(${r.row_id},${r.project_id},${r.revision},${decision},${percent},${text(p.reason,2000)},${a.staff_id},${vatKey},${difference},${income}) on conflict(row_id) do update set source_revision=excluded.source_revision,decision=excluded.decision,deductible_percentage=excluded.deductible_percentage,reason=excluded.reason,reviewed_by=excluded.reviewed_by,vat_rate_key=excluded.vat_rate_key,vat_difference_reason=excluded.vat_difference_reason,income_treatment=excluded.income_treatment`;return {ok:true};
  }
+ // Build 2895: review several source rows with one decision. Each row goes through exactly the same checks and writes as a single row review, in one transaction (all or none). Maker is not checker:
+ // if the person pressing the button imported any selected row, nothing is reviewed and the source rows are named. The reviewer's own name is recorded on every row.
+ if(p.action==='tax_row_review_batch'){
+  editor(a);
+  const items=Array.isArray(p.rows)?p.rows:[];if(!items.length||items.length>200)fail(400,'Select between 1 and 200 rows.');
+  const ids=items.map((x:any)=>uuid(x.row_id));if(new Set(ids).size!==ids.length)fail(400,'A row was selected more than once.');
+  const rows=await tx`select r.row_id,r.source_row,r.dataset,r.project_id,b.uploaded_by from erp_private.workbook_rows r join erp_private.workbook_batches b using(batch_id) where r.row_id=any(${tx.array(ids)}::uuid[]) and b.archived_at is null`;
+  if(rows.length!==ids.length)fail(403,'All selected rows must be available to your account.');
+  if(new Set(rows.map((r:any)=>r.project_id)).size!==1)fail(400,'Select rows from one project.');
+  const mine=rows.filter((r:any)=>r.uploaded_by===a.staff_id);
+  if(mine.length)fail(403,`Another reviewer must review rows you imported. Nothing was reviewed. Rows you imported: ${mine.map((r:any)=>r.dataset+' '+r.source_row).slice(0,10).join(', ')}${mine.length>10?'…':''}. Remove them from the selection.`);
+  const cost=(r:any)=>['Purchases','Expenditure','Non-eTIMS'].includes(r.dataset);
+  if(rows.some(cost)&&rows.some((r:any)=>!cost(r)))fail(400,'Select purchase and expenditure rows together, or sales and other rows together: their decisions differ.');
+  const byId=new Map(items.map((x:any)=>[String(x.row_id),x]));
+  for(const r of [...rows].sort((x:any,y:any)=>x.source_row-y.source_row)){
+   const it:any=byId.get(String(r.row_id));
+   try{await taxAction(tx,a,{...p,action:'tax_row_review',row_id:r.row_id,revision:it.revision,rows:undefined});}
+   catch(e:any){if(e&&e.status)e.message=`Source row ${r.source_row}: ${e.message} Nothing was reviewed.`;throw e;}
+  }
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'tax_row_reviews','TAX_ROW_REVIEW_BATCH',${rows[0].project_id},${tx.json({count:rows.length,decision:p.decision,income_treatment:p.income_treatment||null,deductible_percentage:p.deductible_percentage??null})})`;
+  return {ok:true,count:rows.length};
+ }
  if(p.action==='tax_finding_add'){
   const pid=uuid(p.project_id),cid=p.case_id?uuid(p.case_id):null;if(cid)one(await tx`select case_id from erp_private.tax_cases where case_id=${cid} and project_id=${pid}`);
   await tx`insert into erp_private.tax_findings(project_id,case_id,summary,raised_by) values(${pid},${cid},${text(p.summary,2000)},${a.staff_id})`;return {ok:true};

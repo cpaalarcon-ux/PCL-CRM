@@ -10,7 +10,7 @@ const day=(v:any)=>String(v instanceof Date?v.toISOString():v).slice(0,10);
 export const descKey=(v:any)=>String(v??'').toLowerCase().replace(/[0-9]+/g,' ').replace(/[^a-z]+/g,' ').trim().replace(/\s+/g,' ');
 const usableKey=(k:string)=>k.length>=5;
 type Group={account_code:string,route:number,category_code:string,n:number,posted:number};
-export type Suggestion={account_code:string,account_name:string,route:number,category_code:string,count:number,posted:number,total:number,basis:'supplier'|'description',strength:'Strong'|'Likely',auto:boolean,key:string};
+export type Suggestion={account_code:string,account_name:string,route:number,category_code:string,count:number,posted:number,total:number,basis:'supplier'|'description'|'similar',strength:'Strong'|'Likely',auto:boolean,key:string,similarity?:number};
 // Rows already mapped for this client in the last HISTORY_MONTHS months. `posted` counts only rows whose journal was independently
 // posted and has not been reversed; only those may teach an automatic mapping. Everything else can still be suggested on screen.
 export async function loadHistory(tx:any,clientId:string,asOf:string){
@@ -35,26 +35,48 @@ export function isBlocked(blocks:any[],row:any,code:string,at:string){
  const pin=String(row.normalized?.party_pin||'').trim().toUpperCase();if(!pin)return null;
  return blocks.find((b:any)=>b.party_pin===pin&&b.account_code===code&&day(b.effective_from)<=at)||null;
 }
+// Build 2895: a description that is not identical but very close to ones mapped before (for example "Diesel fuel Jan" and "Diesel fuel Feb") is offered as a SUGGESTION with its match percentage. Dice coefficient on letter pairs,
+// at least 80 percent, from at least two earlier rows that agree on one account (80 percent of them). It is never applied automatically and never decides VAT, deductibility or posting.
+export const SIMILAR_MIN=0.8,SIMILAR_KEYS=3000;
+export function similarity(a:string,b:string){
+ if(a===b)return 1;if(a.length<2||b.length<2)return 0;
+ const grams=(t:string)=>{const m=new Map<string,number>();for(let i=0;i<t.length-1;i++){const g=t.slice(i,i+2);m.set(g,(m.get(g)||0)+1);}return m;};
+ const x=grams(a),y=grams(b);let hit=0;for(const [g,n] of x)hit+=Math.min(n,y.get(g)||0);
+ return 2*hit/((a.length-1)+(b.length-1));
+}
+export function pickSimilar(history:{byDesc:Map<string,Group[]>},row:any,memo?:Map<string,any>){
+ const key=descKey(row.normalized?.description);if(!usableKey(key))return null;
+ if(memo?.has(key))return memo.get(key);
+ const found=new Map<string,Group>();let best=0,scanned=0;
+ for(const [k,groups] of history.byDesc){
+  if(k===key)continue;if(++scanned>SIMILAR_KEYS)break;
+  const sim=similarity(key,k);if(sim<SIMILAR_MIN)continue;best=Math.max(best,sim);
+  for(const g of groups){const id=g.account_code+'|'+g.route,cur=found.get(id);if(cur){cur.n+=g.n;cur.posted+=g.posted;}else found.set(id,{...g});}
+ }
+ const list=[...found.values()],total=list.reduce((n,g)=>n+g.n,0),top=[...list].sort((x,y)=>y.n-x.n)[0];
+ const out=top&&total>=2&&top.n/total>=0.8?{group:top,total,basis:'similar' as const,similarity:Math.round(best*100)}:null;
+ memo?.set(key,out);return out;
+}
 // Pure: the dominant account for a supplier or description, or null when the history is mixed or empty.
-export function pickFromHistory(history:{byPin:Map<string,Group[]>,byDesc:Map<string,Group[]>},row:any){
+export function pickFromHistory(history:{byPin:Map<string,Group[]>,byDesc:Map<string,Group[]>},row:any,memo?:Map<string,any>){
  const pin=String(row.normalized?.party_pin||'').trim().toUpperCase(),key=descKey(row.normalized?.description);
  const tryGroups=(groups:Group[]|undefined,basis:'supplier'|'description',minCount:number)=>{
   if(!groups?.length)return null;const total=groups.reduce((s,g)=>s+g.n,0),top=[...groups].sort((x,y)=>y.n-x.n)[0];
   if(top.n<minCount||top.n/total<0.8)return null;
   return {group:top,total,basis};
  };
- return tryGroups(pin?history.byPin.get(pin):undefined,'supplier',1)||tryGroups(usableKey(key)?history.byDesc.get(key):undefined,'description',2);
+ return tryGroups(pin?history.byPin.get(pin):undefined,'supplier',1)||tryGroups(usableKey(key)?history.byDesc.get(key):undefined,'description',2)||pickSimilar(history,row,memo);
 }
 // Suggestions for the given unmapped rows, already checked against the chart and client account mappings.
 export async function suggestionsFor(tx:any,project:any,rows:any[]):Promise<Map<string,Suggestion>>{
- const out=new Map<string,Suggestion>();if(!rows.length)return out;
+ const out=new Map<string,Suggestion>(),memo=new Map<string,any>();if(!rows.length)return out;
  const asOf=new Date().toISOString().slice(0,10),history=await loadHistory(tx,project.client_id,asOf);
  if(!history.byPin.size&&!history.byDesc.size)return out;
  const accounts=await tx`select code,name,route,category_code,status,is_legacy from erp_private.account_catalog`,chartAt=await chartResolver(tx,project.client_id);
  const blocks=await loadBlocks(tx,project.client_id),blocked=(r:any,code:string,at:string)=>isBlocked(blocks,r,code,at);
  const mappings=await tx`select erp_account_code,effective_from,effective_to from erp_private.client_account_mappings where client_id=${project.client_id} and status in ('Active','Draft')`;
  for(const r of rows){
-  const pick=pickFromHistory(history,r);if(!pick)continue;
+  const pick:any=pickFromHistory(history,r,memo);if(!pick)continue;
   const g=pick.group,account=accounts.find((x:any)=>x.code===g.account_code);
   if(!account||account.status!=='Active'||account.is_legacy||Number(account.route)!==g.route)continue;
   const at=String(r.normalized?.date||day(r.period_start)).slice(0,10),chart=chartAt(at);
@@ -63,7 +85,7 @@ export async function suggestionsFor(tx:any,project:any,rows:any[]):Promise<Map<
   if(blocked(r,account.code,at))continue;
   const consistent=g.n===pick.total;
   out.set(r.row_id,{account_code:account.code,account_name:account.name,route:g.route,category_code:account.category_code,count:g.n,posted:g.posted,total:pick.total,basis:pick.basis,
-   strength:consistent&&g.n>=HISTORY_AUTO_MIN?'Strong':'Likely',
+   strength:pick.basis!=='similar'&&consistent&&g.n>=HISTORY_AUTO_MIN?'Strong':'Likely',...(pick.basis==='similar'?{similarity:pick.similarity}:{}),
    // Applied without a click only for a supplier on one expense account, three or more independently posted (and not reversed) times, on an eTIMS-backed purchase.
    auto:pick.basis==='supplier'&&consistent&&g.posted>=HISTORY_AUTO_MIN&&g.route===2&&['Purchases','Expenditure'].includes(r.dataset),
    key:`${account.code}|${g.route}|${account.category_code}`});

@@ -5,7 +5,7 @@ import {createWithholdingUI} from './staff-withholding.mjs?v=20261116-whtvat-v1'
 import {createCreditAgeingUI} from './staff-credit-ageing.mjs?v=20261107-annualpack-v3';
 import {createStandardPurchaseImportUI} from './staff-standard-purchases.mjs?v=20261118-purchperiod-v2';
 import {createPurchaseLedgerUI} from './staff-purchase-ledgers.mjs?v=20261027-aligned';
-import {createAccountingUI} from './staff-accounting.mjs?v=20261119-groups-v1';
+import {createAccountingUI} from './staff-accounting.mjs?v=20261119-bulk-v1';
 
 import {createLedgerUI} from './staff-ledger.mjs?v=20261201-rnotes-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261103-obligation-facts';
