@@ -73,7 +73,7 @@ test('one step sets up the accounts an upload uses and proposes its routing pair
 
 test('the screens offer the one-step set-up to a Manager or Partner and the bulk approval to a Partner only',()=>{
  const rd=f=>fs.readFileSync(path.join(root,f),'utf8'),acc=rd('staff-accounting.mjs'),rmap=rd('staff-routing-map.mjs');
- assert.match(acc,/leader\(\)\?`<p>\$\{btn\('setup-upload','Set up the accounts this upload uses',pid\)\}<\/p>`:''/,'the button is for Managers and Partners');
+ assert.match(acc,/\$\{leader\(\)\?' '\+btn\('setup-upload','Set up the accounts this upload uses',pid\):''\}/,'the button is for Managers and Partners');
  assert.match(acc,/action:'purchase_accounts_preview'/);assert.match(acc,/action:'purchase_accounts_save',project_id:pid,codes/);assert.match(acc,/await imported\(pid\)/,'after saving the person returns to the purchases list');
  assert.match(acc,/Nothing is mapped, approved or posted/);
  assert.match(rmap,/category_code==='PARTNER'\?\(cur\?\.maps\|\|\[\]\)\.filter\(m=>m\.status==='Draft'&&m\.created_by!==d\(\)\.me\.staff_id\)/,'only drafts the Partner did not propose are offered');
