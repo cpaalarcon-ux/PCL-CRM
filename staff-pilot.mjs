@@ -21,7 +21,7 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261118-tpl-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-setup-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261108-nav-v1';
 import {createSuiteUI} from './staff-suite.mjs?v=20261118-activate-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
