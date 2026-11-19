@@ -12,6 +12,9 @@ export function createNonEtimsUI(ctx){
  /** Fills the #neException block of the mapping form. Called after the form is on screen. */
  async function exceptionFields(f,list,pid,draft){
   const host=$('#neException');if(!host)return;
+  // Build 2894: Save stays off until the legal-basis fields are on screen, so a save pressed early cannot go through without a basis.
+  const submit=f?.querySelector?.('button[type=submit]'),label=submit?submit.textContent:'';if(submit){submit.disabled=true;submit.textContent='Loading the legal bases…';}
+  const ready=()=>{if(submit){submit.disabled=false;submit.textContent=label;}};
   try{
    const ids=list.map(x=>x.row_id).slice(0,500);
    const [{bases,categories},{duplicates,window_days:win}]=await Promise.all([request({action:'non_etims_bases'}),request({action:'non_etims_check',project_id:pid,row_ids:ids})]);
@@ -25,7 +28,8 @@ export function createNonEtimsUI(ctx){
    const cat=f.elements.legal_category,basis=f.elements.basis_code,help=$('#neBasisHelp');
    const paint=()=>{const list2=usable.filter(b=>!cat.value||b.legal_category===cat.value);basis.innerHTML=opts(list2.map(b=>[b.basis_code,b.label+(b.status==='Active'?'':' (in testing)')]),current&&list2.some(b=>b.basis_code===current)?current:basis.value);const b=usable.find(x=>x.basis_code===basis.value);help.textContent=b?`${b.guidance||''} ${b.status==='Active'?'Approved reference: '+b.legal_reference:'Not yet approved by a Partner: tax review stays blocked for rows on this basis.'}`.trim():'';};
    cat.onchange=paint;basis.onchange=()=>{const b=usable.find(x=>x.basis_code===basis.value);if(b&&cat.value!==b.legal_category)cat.value=b.legal_category;paint();};paint();
-  }catch(error){host.innerHTML=`<p class="info full">${esc(error.message||'Legal bases could not be loaded.')}</p>`;}
+   ready();
+  }catch(error){host.innerHTML=`<p class="info full">${esc(error.message||'Legal bases could not be loaded.')} Close this window and open the row again to retry; it cannot be saved without a legal basis.</p>`;}
  }
 
  /** Partner / Manager screen: the list of bases, add, approve and retire. */

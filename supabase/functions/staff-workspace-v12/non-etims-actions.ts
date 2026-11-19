@@ -32,6 +32,8 @@ export async function exceptionPatches(tx:any,a:any,p:any,rows:any[],pid:string)
  const code=String(p.basis_code||'').trim();
  if(!code){
   if(targets.length&&(String(p.legal_basis||'').trim()||String(p.evidence||'').trim()))fail(400,'Choose a legal basis from the list. Free-text legal bases are no longer accepted for non-eTIMS rows.');
+  // Build 2894: the server now refuses a non-eTIMS mapping with no legal basis. Before, only the form checked this, and a save made before the basis fields had loaded went through without one.
+  if(targets.length)fail(400,'Legal basis is required to map a non-eTIMS row. Choose a basis from the list and give the evidence.');
   return out;
  }
  if(!targets.length)fail(400,'A legal basis applies only to non-eTIMS rows.');

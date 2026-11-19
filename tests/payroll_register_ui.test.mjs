@@ -7,7 +7,7 @@ test('the payroll register is reachable from the payroll screen and starts a mon
  assert.match(ui,/staff-payroll-register\.mjs\?v=20261124-p9-v1/);assert.match(ui,/button\('register','Payroll register'\)/);assert.match(ui,/register\.isAction\(action\)/);
  assert.match(ui,/Rolled forward from the payroll register/);
  assert.match(rd('staff-workspace-v6.mjs'),/staff-period-imports\.mjs\?v=20261118-months-v1/);
- assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261119-setup-v1/);
+ assert.match(rd('staff-pilot.mjs'),/staff-workspace-v6\.mjs\?v=20261119-groups-v1/);
 });
 test('the register screen sends the server actions and never saves a payroll',()=>{
  const ui=rd('staff-payroll-register.mjs');

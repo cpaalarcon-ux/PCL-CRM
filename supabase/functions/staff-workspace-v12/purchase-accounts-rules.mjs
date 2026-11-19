@@ -28,3 +28,31 @@ export function groupUploadAccounts(rows,accounts,mappings,chartAt){
  });
 }
 export const summariseUpload=list=>({ready:list.filter(x=>x.state==='Ready').length,already:list.filter(x=>x.state==='Already set up').length,blocked:list.filter(x=>x.state==='Blocked').length,stock_needed:list.some(x=>x.route===1&&x.state!=='Blocked')});
+
+// Build 2894: the upload summary. What was mapped (by group) and what was left as a draft, with the reason and the next step for each reason. Pure.
+export const DRAFT_REASONS={
+ SUGGESTED_AWAITING_APPROVAL:{label:'Suggested - Awaiting Approval',next:'A Manager proposes the routing pair; a Partner who did not propose it approves; the next automatic mapping then maps the rows.'},
+ NO_CODES:{label:'No routing code and no TB code',next:'Add both codes in the file and replace the upload, or map the rows by hand.'},
+ ROUTING_BLANK:{label:'Routing code missing',next:'Add the routing code and replace the upload, or map the rows by hand.'},
+ TB_BLANK:{label:'TB code missing',next:'Add the TB code and replace the upload, or map the rows by hand.'},
+ CODES_INVALID:{label:'Codes are not a valid pair',next:'Correct the codes in the file, or map the rows by hand.'},
+ ROUTING_UNMAPPED:{label:'Routing code has no approved mapping',next:'A Manager proposes it; a different Partner approves it.'},
+ ROUTING_ITEM_UNMAPPED:{label:'TB code not among the approved accounts for the routing code',next:'Add an approved mapping for this TB code.'},
+ TB_CODE_UNKNOWN:{label:'TB code is not an account in the master chart',next:'Correct the code in the file.'},
+ NOT_IN_CHART:{label:'Account is not in the client approved chart',next:'Propose a chart amendment; a different Manager or Partner approves it.'},
+ NO_APPROVED_CHART:{label:'No approved client chart covers the invoice date',next:'Approve the client chart first.'},
+ ACTIVITY_REQUIRED:{label:'Business activity needed',next:'Choose the activity when mapping.'},
+ SUPPLIER_BLOCKED:{label:'A Manager stopped automatic mapping for this supplier',next:'Map the rows by hand.'},
+ MAPPING_REFUSED:{label:'The mapping rules refused the row',next:'Open the row to see why, then map it by hand.'},
+ NOT_ATTEMPTED:{label:'Not yet through automatic mapping',next:'Confirm the upload codes, or map the rows by hand.'}
+};
+export function summariseRows(rows){
+ const mapped=new Map(),draft=new Map();let net=0;
+ for(const r of rows||[]){
+  const amount=Number(r.amount||0);net+=amount;
+  if(r.account_code){const k=Number(r.route)||0,g=mapped.get(k)||{route:k,route_name:ROUTE_NAMES[k]||'Other',rows:0,net:0};g.rows++;g.net+=amount;mapped.set(k,g);continue;}
+  const code=r.note_code||'NOT_ATTEMPTED',g=draft.get(code)||{code,label:(DRAFT_REASONS[code]||{}).label||code,next:(DRAFT_REASONS[code]||{}).next||'Open the row to see why.',reason:r.note_reason||'',rows:0,net:0};g.rows++;g.net+=amount;draft.set(code,g);
+ }
+ const m=[...mapped.values()].sort((x,y)=>x.route-y.route).map(x=>({...x,net:Math.round(x.net*100)/100})),d=[...draft.values()].sort((x,y)=>y.rows-x.rows).map(x=>({...x,net:Math.round(x.net*100)/100}));
+ return {mapped:m,drafts:d,mapped_rows:m.reduce((s,x)=>s+x.rows,0),draft_rows:d.reduce((s,x)=>s+x.rows,0),net:Math.round(net*100)/100};
+}

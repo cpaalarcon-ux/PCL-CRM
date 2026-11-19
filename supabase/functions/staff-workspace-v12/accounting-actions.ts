@@ -32,7 +32,7 @@ async function calculate(tx:any,c:any,inputs:any){const source=await reconSource
  return {...source,result,deferral};
 }
 export async function accountingAction(tx:any,a:any,p:any){
- if(!String(p.action).startsWith('accounting_')&&!String(p.action).startsWith('sales_recon_')&&!['workbook_map','workbook_map_bulk','workbook_split','workbook_mapping_undo'].includes(p.action))return undefined;
+ if(!String(p.action).startsWith('accounting_')&&!String(p.action).startsWith('sales_recon_')&&!['workbook_map','workbook_map_bulk','workbook_map_groups','workbook_split','workbook_mapping_undo'].includes(p.action))return undefined;
  if(a.category_code==='INTERN'&&p.action!=='accounting_catalog')fail(403,'A staff preparer must handle purchase and tax working papers.');
  if(p.action==='accounting_catalog')return {accounts:await tx`select * from erp_private.account_catalog order by code`};
  if(p.action==='accounting_account_add'){
@@ -66,6 +66,21 @@ export async function accountingAction(tx:any,a:any,p:any){
   if((await tx`select row_id from erp_private.tax_row_reviews where row_id=${r.row_id} and source_revision=${r.revision} and decision in ('Eligible','Excluded','Confirmed')`).length)fail(400,'Independently reviewed mapping cannot be undone. Use a controlled correction.');
   const v=history.before_mapping;await tx`select set_config('erp.mapping_operation','undo',true)`;
   await tx`update erp_private.workbook_rows set route=${v.route},category_code=${v.category_code},account_code=${v.account_code},narration=${v.narration},asset_details=${v.asset_details},review_details=${tx.json(v.review_details)},first_use_status=${v.first_use_status},first_use_date=${v.first_use_date} where row_id=${r.row_id}`;return {ok:true};
+ }
+ // Build 2894: one save maps several accounts. Each group is one account with its own rows (and, for an asset, its own description and first-use date); every group runs through exactly the same checks and
+// writes as a one-account bulk mapping, in the same transaction, so either every group is mapped or none is. The "I confirm these uploaded codes" attestation is the person's and is passed through unchanged.
+ if(p.action==='workbook_map_groups'){
+  if(project.status==='Archived')fail(400,'Archived projects cannot change.');
+  const groups=Array.isArray(p.groups)?p.groups:[];if(!groups.length||groups.length>30)fail(400,'Choose between 1 and 30 account groups.');
+  const seen=new Set<string>();let total=0;
+  for(const g of groups){if(!Array.isArray(g.rows)||!g.rows.length)fail(400,'Every group needs at least one row.');for(const r of g.rows){const k=String(r.row_id);if(seen.has(k))fail(400,'A row was selected more than once.');seen.add(k);total++;}}
+  if(total>500)fail(400,'Select 1–500 rows.');
+  const done:any[]=[];let count=0;
+  for(const [i,g] of groups.entries()){
+   try{const out=await accountingAction(tx,a,{...p,...g,groups:undefined,action:'workbook_map_bulk',project_id:pid,rows:g.rows,selection_id:undefined,selection_hash:undefined,confirm_uploaded_mapping:p.confirm_uploaded_mapping===true});count+=Number(out.count||0);done.push({account_code:g.account_code,count:out.count});}
+   catch(e:any){if(e&&e.status){e.message=`Account ${g.account_code||i+1}: ${e.message} Nothing was mapped.`;}throw e;}
+  }
+  return {ok:true,count,groups:done};
  }
  if(['workbook_map','workbook_map_bulk','workbook_split','workbook_mapping_undo'].includes(p.action)){
   if(project.status==='Archived')fail(400,'Archived projects cannot change.');await tx`select pg_advisory_xact_lock(hashtextextended(${pid+':tax'},0))`;
