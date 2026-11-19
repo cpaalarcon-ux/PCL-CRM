@@ -50,7 +50,7 @@ test('Home no longer carries the reference card, and the wiring is in place',()=
  const dash=rd('staff-dashboard.mjs');assert.doesNotMatch(dash,/home-reference|QUICK REFERENCES|data-dashboard="account-catalog"/);assert.doesNotMatch(rd('staff-pilot.mjs'),/dashboard==='account-catalog'/);
  const suite=rd('staff-suite.mjs');assert.match(suite,/createResourcesUI\(ctx\)/);assert.match(suite,/resources\.handle\(action\)/);assert.match(suite,/staff-resources\.mjs\?v=20261118-templates-v2/);
  for(const f of ['staff-resources.mjs','staff-settings-cards.mjs'])assert.doesNotMatch(rd(f),/forensic|ISRS 4000/i);
- assert.match(rd('staff-pilot.mjs'),/staff-nav\.mjs\?v=20261121-comply-v1/);assert.match(rd('staff-pilot.mjs'),/staff-dashboard\.mjs\?v=20261121-coa-v1/);
- assert.equal(JSON.parse(rd('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-19.2895');assert.match(rd('staff-pilot.html'),/data-build="2026-11-19\.2895"/);
+ assert.match(rd('staff-pilot.mjs'),/staff-nav\.mjs\?v=20261121-comply-v1/);assert.match(rd('staff-pilot.mjs'),/staff-dashboard\.mjs\?v=20261119-queue-v1/);
+ assert.equal(JSON.parse(rd('supabase/functions/staff-workspace-v12/release.json')).build,'2026-11-19.2896');assert.match(rd('staff-pilot.html'),/data-build="2026-11-19\.2896"/);
  assert.equal(rd('staff-settings-hub-rules.mjs'),rd('supabase/functions/staff-workspace-v12/settings-hub-rules.mjs'),'the two copies of the hub rules agree');
 });
