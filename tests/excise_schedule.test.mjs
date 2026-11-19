@@ -143,6 +143,6 @@ test('wiring: routed, in the projects area, no forensic words, no figures seeded
  assert.match(rd(fx+'staff-access-control.mjs'),/excise_schedule_/);
  for(const f of ['supabase/migrations/20261112030000_excise_schedules.sql',fx+'excise-schedule-actions.ts',fx+'excise-schedule-rules.mjs','staff-excise-schedule.mjs'])assert.doesNotMatch(rd(f),/forensic|ISRS 4000/i);
  assert.doesNotMatch(rd('supabase/migrations/20261112030000_excise_schedules.sql'),/INSERT INTO/i);
- assert.match(rd('staff-tax-config.mjs'),/staff-excise-schedule\.mjs\?v=20261112-excise-v4/);assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261115-holders-v1/);
- assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-19.2900');assert.match(rd('staff-pilot.html'),/data-build="2026-11-19\.2900"/);
+ assert.match(rd('staff-tax-config.mjs'),/staff-excise-schedule\.mjs\?v=20261112-excise-v4/);assert.match(rd('staff-suite.mjs'),/staff-tax-config\.mjs\?v=20261119-fixes-v1/);
+ assert.equal(JSON.parse(rd(fx+'release.json')).build,'2026-11-19.2902');assert.match(rd('staff-pilot.html'),/data-build="2026-11-19\.2902"/);
 });

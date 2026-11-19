@@ -9,6 +9,10 @@ export function createNonEtimsUI(ctx){
  const money=n=>new Intl.NumberFormat('en-KE',{style:'currency',currency:'KES'}).format(Number(n||0));
  const badge=s=>`<span class="badge ${s==='Active'?'ok':s==='Retired'?'muted':'warn'}">${esc(s==='Testing'?'In testing':s==='Active'?'Approved':s)}</span>`;
 
+ // Speed: the mapping form only needs the list of bases, not how often each was used, and the list changes rarely. It is asked for once a minute at most; the admin screen always reads fresh and clears this copy.
+ let basesCopy=null;
+ const lightBases=()=>{if(basesCopy&&Date.now()-basesCopy.at<60000)return basesCopy.promise;const promise=request({action:'non_etims_bases',light:true});basesCopy={at:Date.now(),promise};promise.catch(()=>{if(basesCopy?.promise===promise)basesCopy=null;});return promise;};
+
  /** Fills the #neException block of the mapping form. Called after the form is on screen. */
  async function exceptionFields(f,list,pid,draft){
   const host=$('#neException');if(!host)return;
@@ -17,7 +21,7 @@ export function createNonEtimsUI(ctx){
   const ready=()=>{if(submit){submit.disabled=false;submit.textContent=label;}};
   try{
    const ids=list.map(x=>x.row_id).slice(0,500);
-   const [{bases,categories},{duplicates,window_days:win}]=await Promise.all([request({action:'non_etims_bases'}),request({action:'non_etims_check',project_id:pid,row_ids:ids})]);
+   const [{bases,categories},{duplicates,window_days:win}]=await Promise.all([lightBases(),request({action:'non_etims_check',project_id:pid,row_ids:ids})]);
    if(!host.isConnected||!f.contains(host))return;
    const usable=bases.filter(b=>b.status!=='Retired'),current=draft?.basis_code||(list.length===1?list[0].review_details?.basis_code:'')||'';
    const currentBasis=usable.find(b=>b.basis_code===current),category=draft?.legal_category||currentBasis?.legal_category||(list.length===1?list[0].review_details?.legal_category||list[0].normalized?.legal_category:'')||'';
@@ -37,6 +41,8 @@ export function createNonEtimsUI(ctx){
  async function adminBases(onBack=returnToReview){
   returnToReview=onBack;
   const {modal,form,field,select,area,check,button,table,shortDate}=ctx;
+  basesCopy=null;
+  modal('Non-eTIMS legal bases','<p class="muted" role="status">Loading the legal bases…</p>');
   const r=await request({action:'non_etims_bases'});
   const rows=r.bases.map(b=>[esc(b.basis_code),esc(b.label),esc(b.legal_category),badge(b.status),esc(b.legal_reference||'—'),String(b.used||0),
    [r.can_edit&&b.status==='Testing'?button('ne-edit','Edit',b.basis_id):'',r.can_approve&&b.status==='Testing'?button('ne-approve','Approve',b.basis_id):'',r.can_approve&&b.status!=='Retired'?button('ne-retire','Retire',b.basis_id):''].join(' ')]);
