@@ -12,7 +12,7 @@ const PRIORITIES=['Low','Medium','High','Urgent'];
 const one=(r:any[],m='That ticket is unavailable to your account.')=>{if(!r.length)fail(404,m);return r[0];};
 const money=(v:any)=>{const n=Number(v);if(v===''||v===null||v===undefined||!Number.isFinite(n)||n<=0||n>1e10)fail(400,'Enter the fee before VAT as an amount above zero.');return Math.round(n*100)/100;};
 
-export async function clientSupportAction(tx:any,a:any,p:any):Promise<any>{
+export async function clientSupportAction(tx:any,a:any,p:any,requireInvoiceCreate?:()=>Promise<void>):Promise<any>{
  if(!ACTIONS.includes(p.action))return undefined;
  if(['INTERN','ADMIN'].includes(a.category_code))fail(403,'Your role does not handle client support tickets.');
 
@@ -79,6 +79,7 @@ export async function clientSupportAction(tx:any,a:any,p:any):Promise<any>{
  const pr=one(await tx`select client_id,handling_firm_id from erp_private.projects where project_id=${pid} and deleted_at is null`,'That engagement is unavailable.');
  if(pr.client_id!==t.client_id||pr.handling_firm_id!==t.firm_id)fail(400,'Choose an engagement of this client and firm.');
  if(!(await tx`select 1 from erp_private.projects where project_id=${pid} and erp_private.finance_allowed(project_id,true)`).length)fail(403,'Closing a billable ticket creates a draft invoice, which needs billing rights on the engagement. Mark it "Work done" and ask someone with billing rights to close it.');
+ await requireInvoiceCreate?.();
  const lines=invoiceLines([{description:`${sv.service_name}: ${text(t.subject,200)}`,quantity:1,unit_price:fee}]);
  const dates=(await tx`select (now() at time zone 'Africa/Nairobi')::date issued,((now() at time zone 'Africa/Nairobi')::date+14) due`)[0];
  const inv=await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,external_reference,created_by)

@@ -12,6 +12,20 @@ const review=[task('r1','p2','In Review','2026-11-19T09:00:00Z',{assigned_to:'ot
 const ctx=(over={})=>({esc,shortDate:s=>String(s).slice(0,10),clientName:id=>names[id]||'?',projectName:id=>projects.find(p=>p.project_id===id)?.project_name||'?',today:T,mine,review,projects,...over});
 test.beforeEach(()=>resetMyWork());
 
+test('a client ID on a review button does not open the client editor', async()=>{
+ const source=rd('staff-pilot.mjs');
+ const review=source.split('\n').find(line=>line.includes("b.dataset.myReview==='journal'"));
+ const edit=source.split('\n').find(line=>line.includes('editClient(data.clients.find')&&line.includes('b.dataset.client'));
+ const actions=[];
+ const dispatch=new Function('b','v6','editClient','data',`return (async()=>{${review}\n${edit}})();`);
+ const v6={openJournal:(...args)=>actions.push(['journal',...args])};
+ const editClient=client=>actions.push(['client',client.client_id]);
+ const data={clients:[{client_id:'c1'}]};
+ await dispatch({dataset:{myReview:'journal',client:'c1',project:'p1',period:'fy',id:'j1'}},v6,editClient,data);
+ await dispatch({dataset:{client:'c1'}},v6,editClient,data);
+ assert.deepEqual(actions,[['journal','p1','fy','j1'],['client','c1']]);
+});
+
 test('each task lands in one column by its status; an unknown status is not hidden',()=>{
  assert.deepEqual(['Pending','In Progress','In Review','Blocked','Waiting on client','Paused','Returned','Pending manager','Some New Status'].map(s=>columnOf({status:s})),['To do','In progress','In review','Blocked or waiting','Blocked or waiting','Blocked or waiting','Blocked or waiting','Blocked or waiting','To do']);
  assert.deepEqual(COLUMNS,['To do','In progress','Blocked or waiting','In review','For my review']);
