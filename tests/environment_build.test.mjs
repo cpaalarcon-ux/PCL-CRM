@@ -63,6 +63,17 @@ test('the built site publishes only the staff app, never SQL, tests, notes or th
   assert.ok(rel.includes('staff-pilot.html') && rel.includes('staff-pilot.mjs') && rel.includes('_headers'));
 });
 
+test('staging labels and the test warning appear only on the staging workspace', () => {
+  const stagingPage = fs.readFileSync(path.join(root, 'staff-pilot.html'), 'utf8');
+  const productionPage = fs.readFileSync(path.join(root, outName, 'staff-pilot.html'), 'utf8');
+  for (const warning of [/Staging workspace/, /staff UAT/, /STAGING · UAT IN PROGRESS/, /DO NOT FILE OR SEND/i]) {
+    assert.match(stagingPage, warning);
+    assert.doesNotMatch(productionPage, warning);
+  }
+  assert.match(productionPage, /id="uatScopeNotice"[^>]*\bhidden\b/);
+  assert.match(productionPage, /Sessions end after 30 minutes of inactivity/);
+});
+
 test('every staff screen module that the app imports is in the build', () => {
   const set = new Set(reachable());
   const missing = [];

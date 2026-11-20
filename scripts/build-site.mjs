@@ -72,6 +72,9 @@ export function build({env, out, file = ''}) {
     if (TEXT.test(rel) || rel === '_headers') {
       let t = fs.readFileSync(path.join(root, rel), 'utf8');
       t = t.split(STAGING.project_ref).join(cfg.project_ref).split(STAGING.publishable_key).join(cfg.publishable_key);
+      if (env === 'production' && rel === 'staff-pilot.html') {
+        t = t.replace(/<!-- staging-only -->[\s\S]*?<!-- \/staging-only -->/g, '');
+      }
       fs.writeFileSync(to, t);
     } else fs.copyFileSync(path.join(root, rel), to);
   }
