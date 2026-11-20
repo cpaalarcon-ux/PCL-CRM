@@ -18,8 +18,13 @@ const outName = `dist-test-${process.pid}`;
 const walk = d => fs.readdirSync(d, {withFileTypes: true}).flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
 test.after(() => { fs.rmSync(path.join(root, outName), {recursive: true, force: true}); fs.rmSync(tmp, {recursive: true, force: true}); });
 
-test('the committed production file is a placeholder, so a production build cannot run by accident', () => {
-  assert.throws(() => loadEnvironment('production'), /Fill in environments\/production\.json/);
+test('the committed production file names the production project, never staging', () => {
+  const prod = loadEnvironment('production');
+  assert.equal(prod.name, 'production');
+  assert.match(prod.project_ref, /^[a-z0-9]{20}$/);
+  assert.notEqual(prod.project_ref, staging.project_ref);
+  assert.notEqual(prod.publishable_key, staging.publishable_key);
+  assert.ok(!/REPLACE_WITH/.test(JSON.stringify(prod)), 'no placeholder text is left');
 });
 
 test('a production build refuses the staging project and bad names', () => {

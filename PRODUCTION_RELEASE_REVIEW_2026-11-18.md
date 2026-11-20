@@ -1,33 +1,34 @@
 # PCL Nexus production release review
 
-**Updated 19 November 2026, Africa/Nairobi.** The proposed merge window is Friday, 20 November 2026. The Engagement Partner makes the release decision after the outstanding checks are recorded.
+**Updated 20 November 2026, 04:00 Africa/Nairobi.** The Engagement Partner makes the release decision after the outstanding checks are recorded. No production schema, secret, deployment or DNS change has been made.
 
 ## Candidate
 
 | Item | Value |
 |---|---|
 | Release PR | [Draft PR #291](https://github.com/cpaalarcon-ux/PCL-CRM/pull/291), targeting `main` |
-| Application source | `299b599530117af03d960049fedd1a6c404a3a60` on `backend/staging-foundation`, Build 2892 |
-| Main base | `c7ccf3f4e586da8060ed89eeeb2fe1b188aec088` |
-| Release size | Staging contributes 539 commits and changes 1,326 files against the current `main`. The release branch also carries review documents, deployment workflow corrections and their regression test. |
+| Application source | `469c2be83f288b593f3df6e7300f5774c4a25b21` on `backend/staging-foundation`, Build 2906 (PR #315, granular access rights), merged into this branch |
+| Main base | `ec16dc64563e7fef96d801a81f18a22d1c1878b0` (public Build 2905 changelog only), merged into this branch |
+| Release size | 562 commits and 1,383 changed files against `main`. Beyond staging, the branch carries review documents, deployment workflow corrections, their regression test and the production project reference. |
+| Changelog | The public client changelog from `main` is kept as `CHANGELOG.md` and still describes Build 2905. The Build 2906 entry needs the Partner's wording. The older internal changelog is kept unchanged as `supabase/STAGING_CHANGELOG_HISTORY.md`. |
 
-The updates after Build 2890 reconcile the staging migration ledger, simplify project activation and add the four-sheet purchases template and multi-month sales workflow. The draft keeps the Build 2892 application and migrations as tested on staging.
+Build 2906 adds per-function access switches on top of the existing area, role, record-scope and workflow checks. It narrows access only, adds no migration, and has not yet been tried on live screens by role.
 
 ## Evidence and open checks
 
 | Check | Result |
 |---|---|
-| Regression and browser UAT | **Passed** on Build 2892. All 1,751 regression tests passed and the browser UAT job passed. [Run 44382818372](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44382818372) |
-| Hosted staging smoke check | **Passed** on Build 2892. Page and server labels matched. Anonymous access to a protected action was refused and Chromium found the sign-in page ready. [Run 44382818313](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44382818313) |
-| Authenticated release acceptance | **Pending.** The hosted run skipped Assistant, Manager and Partner checks because the staging test credentials were unset. Attach sign-off from the staff tests on the agreed build, including maker-checker and role-scope results. |
-| Empty-database migration replay | **Passed for the candidate migration files.** A clean, unlinked local Supabase reset applied all 249 versions in order. The reset log order matches the candidate filenames and the live staging migration ledger. The production ledger is empty. [Run 44344081974](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44344081974) |
-| Broad release review | **In progress.** Reviewed the post-2890 scope, production deployment and build controls, first-Partner bootstrap and migration history. Staging security advisors returned two warnings and five informational findings. Full application diff sign-off, database object parity with staging, and final security and private-file isolation evidence are open. |
+| Regression, browser UAT, hosted check and staging deploy | **Passed** on `469c2be`: [Staging browser UAT](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44633565017), [Staging hosted check](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44633565002), [Staging backend deploy](https://github.com/cpaalarcon-ux/PCL-CRM/actions/runs/44633630263). These are the staging commit, not the merged release commit. They must be run again on the resulting `main` commit. |
+| Authenticated release acceptance | **Pending.** The hosted run skips Assistant, Manager and Partner checks because the staging test credentials are unset. Attach sign-off from the three role tests on Build 2906, including maker-checker and role-scope results. |
+| Empty-database migration replay | **Passed** for all 253 versions on this branch's staging commit, in order, on a disposable local Postgres with the auth schema stubbed (332 private tables, row security on every one). This is a local replay, not a Supabase reset. The production ledger is empty and no production dry-run has been performed. |
+| Production web build | **Passed locally** with `environments/production.json`: 188 files built for project `tafrrmcxrsorffkonrxq`, and no trace of the staging project, key or address in the output. |
+| Broad release review | **In progress.** Reviewed the post-2905 scope (Build 2906 rights module and server checks), the production deployment and build controls and the migration history. Full application diff sign-off, schema, function, extension and private-storage parity with staging, and final private-file isolation evidence are open. |
 | Cloudflare merge prerequisite | **Blocked.** The `pcl-crm` Pages project has automatic production deployment from `main` enabled, serves `pcl.phamalarcon.com` and publishes the repository root. Pause legacy production auto-deploy under the approved cutover plan and verify the existing deployment remains active before merging. |
-| Production launch preparations | **Open.** The separate `pcl-nexus-production` Pages project runs the isolated production build, has its Pages hostname only and still requires its public project configuration. The approved production hostname, timed database and private-file restore, and written Mumbai data-transfer decision are outstanding. |
+| Production launch preparations | **Open.** The separate `pcl-nexus-production` Pages project runs the isolated production build. The approved production hostname, the timed database and private-file restore, the written Mumbai data-transfer decision, the two production secrets in the GitHub environment and the required reviewer are outstanding or unverified from this branch. |
 
 ## Migration order
 
-Preserve the 249 applied staging migration identifiers through `20261201100000_report_notes_and_packs`. The ledger includes these 22 versions with identifiers later than 18 November 2026. The identifiers control replay order.
+Preserve the 253 applied staging migration identifiers through `20261204120000_messenger_attachments`. The ledger includes these 22 versions dated 20 November 2026 or later, and three more after them (`20261202100000_client_routing_alias`, `20261203100000_upload_summary_views`, `20261204100000_staff_form_drafts`) plus `20261204120000_messenger_attachments`. The identifiers control replay order.
 
 | Version | Migration |
 |---|---|
@@ -54,7 +55,7 @@ Preserve the 249 applied staging migration identifiers through `20261201100000_r
 | `20261130100000` | `partner_equity` |
 | `20261201100000` | `report_notes_and_packs` |
 
-Confirm the first production dry-run matches the reviewed order before applying schema. Compare the replayed schema, functions, extensions, scheduled jobs and private storage with staging. The replay used a disposable database and no production dry-run has been performed.
+Confirm the first production dry-run matches the reviewed order before applying schema. Compare the replayed schema, functions, extensions, scheduled jobs and private storage with staging. The replay used a disposable database and no production dry-run has been performed. Note: the version prefixes in the table below are the repository file versions; the staging ledger is the authority.
 
 ## Merge and launch sequence
 
