@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import release from './release.json' with {type:'json'};
+import {allowsPartnerRecoveryLink,partnerRecoveryConfig,sendPartnerRecoveryEmail} from './partner-recovery.mjs';
 import {periodImportAction} from './period-import-actions.ts';
 import {findRetriedUpload,bankRemovalFacts} from './upload-safety.ts';
 import {bankRemoval,bankRemovalMessage} from './upload-safety-rules.mjs';
@@ -119,6 +120,7 @@ const BUCKET='staff-pilot-private';
 const IS_STAGING_PROJECT=url==='https://yfjiculexbzpkvtapudk.supabase.co';
 const SITE_ORIGIN=(Deno.env.get('PCL_SITE_ORIGIN')||(IS_STAGING_PROJECT?'https://backend-staging-foundation.pcl-crm.pages.dev':'')).replace(/\/+$/,'');
 const SETUP_BASE=SITE_ORIGIN?SITE_ORIGIN+'/staff-pilot.html':'';
+const PARTNER_RECOVERY=partnerRecoveryConfig(name=>Deno.env.get(name),SITE_ORIGIN,IS_STAGING_PROJECT);
 const ORIGINS=(Deno.env.get('PCL_ALLOWED_ORIGINS')||'').split(',').map(x=>x.trim()).filter(Boolean);
 const ORIGIN_LIST:string[]|null=ORIGINS.length?ORIGINS:(IS_STAGING_PROJECT?null:[]);
 const sha=async(s:string|Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',typeof s==='string'?new TextEncoder().encode(s).buffer:new Uint8Array(s).buffer))).map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -129,9 +131,9 @@ const leader=(a:any)=>{if(!['PARTNER','MANAGER'].includes(a.category_code))deny(
 const ORDINARY=['SUPERVISOR','ASSISTANT','INTERN'];
 const staffAdmin=(a:any)=>{if(!['PARTNER','MANAGER','ADMIN'].includes(a.category_code))deny();};
 const one=(rows:any[])=>{if(!rows.length)deny();return rows[0];};
-async function limit(key:string,max=20){
+async function limit(key:string,max=20,db:any=sql){
  const hash=await sha(key);
- const [r]=await sql`insert into erp_private.auth_limits(bucket_hash,window_start,attempts) values(${hash},now(),1)
+ const [r]=await db`insert into erp_private.auth_limits(bucket_hash,window_start,attempts) values(${hash},now(),1)
  on conflict(bucket_hash) do update set attempts=case when auth_limits.window_start<now()-interval '15 minutes' then 1 else auth_limits.attempts+1 end,
  window_start=case when auth_limits.window_start<now()-interval '15 minutes' then now() else auth_limits.window_start end returning attempts`;
  if(r.attempts>max)fail(429,'Too many attempts. Wait 15 minutes before trying again.');
@@ -210,10 +212,10 @@ async function setupStatus(p:any){
  const token=text(p.token,64);
  if(!/^[a-f0-9]{64}$/.test(token))fail(400,setupLinkMessages.unavailable);
  const hash=await sha(token);await limit('setup-status:'+hash,40);
- const [row]=await sql`select t.expires_at,t.consumed_at,t.revoked_at,t.expires_at<=now() as expired,
- s.access_status,s.deleted_at,(s.contract_end_date is null or s.contract_end_date>=(now() at time zone 'Africa/Nairobi')::date) as contract_current
+ const [row]=await sql`select t.staff_id,t.issued_by,t.expires_at,t.consumed_at,t.revoked_at,t.expires_at<=now() as expired,
+ s.category_code,s.access_status,s.deleted_at,(s.contract_end_date is null or s.contract_end_date>=(now() at time zone 'Africa/Nairobi')::date) as contract_current
  from erp_private.setup_tokens t join erp_private.staff_members s on s.staff_id=t.staff_id where t.token_hash=${hash}`;
- const state=setupLinkState(row);
+ const state=allowsPartnerRecoveryLink(row,PARTNER_RECOVERY?.staffId)?setupLinkState(row):'unavailable';
  return {state,message:setupLinkMessages[state],expires_at:state==='ready'?row.expires_at:null};
 }
 async function setup(p:any){
@@ -222,10 +224,10 @@ async function setup(p:any){
  await limit('setup:'+token,8);
  const hash=await sha(token);
  await sql.begin(async tx=>{
-  const rows=await tx`select t.*,s.auth_user_id,s.login_id,s.access_status,s.contract_end_date,s.deleted_at,t.expires_at<=now() as expired,
+  const rows=await tx`select t.*,s.auth_user_id,s.login_id,s.category_code,s.access_status,s.contract_end_date,s.deleted_at,t.expires_at<=now() as expired,
   (s.contract_end_date is null or s.contract_end_date>=(now() at time zone 'Africa/Nairobi')::date) as contract_current
   from erp_private.setup_tokens t join erp_private.staff_members s on s.staff_id=t.staff_id where t.token_hash=${hash} for update of t,s`;
-  const state=setupLinkState(rows[0]);
+  const state=allowsPartnerRecoveryLink(rows[0],PARTNER_RECOVERY?.staffId)?setupLinkState(rows[0]):'unavailable';
   if(state!=='ready')fail(400,setupLinkMessages[state]);
   const s=rows[0];
   if(s.deleted_at||s.access_status==='Inactive')fail(403,'Ask the Engagement Partner to review this account.');
@@ -244,6 +246,39 @@ async function setup(p:any){
   await logAdmin(tx,userId,'PASSWORD_SETUP',s.staff_id,{method:'single_use_link'});
  });
  return {ok:true,message:'Password saved. Sign in with your staff login ID.'};
+}
+async function emailPartnerRecovery(loginId:string,config:NonNullable<typeof PARTNER_RECOVERY>){
+ const raw=nonce(),hash=await sha(raw);
+ const issued=await sql.begin(async tx=>{
+  const [owner]=await tx`select staff_id from erp_private.staff_members
+   where staff_id=${config.staffId}::uuid and lower(login_id)=${loginId} and category_code='PARTNER'
+    and access_status in ('Active','Pending setup') and deleted_at is null
+    and (contract_end_date is null or contract_end_date>=(now() at time zone 'Africa/Nairobi')::date)
+   for update`;
+  if(!owner)return false;
+  await limit('partner-email-recovery:'+owner.staff_id,3,tx);
+  await tx`insert into erp_private.setup_tokens(token_hash,staff_id,issued_by,expires_at)
+   values(${hash},${owner.staff_id},${owner.staff_id},now()+interval '15 minutes')`;
+  return true;
+ });
+ if(!issued)return;
+ try{
+  await sendPartnerRecoveryEmail(config,SETUP_BASE+'#setup='+raw);
+ }catch{
+  await sql`update erp_private.setup_tokens set revoked_at=now()
+   where token_hash=${hash} and consumed_at is null and revoked_at is null`;
+  throw new Error('Partner password recovery email failed.');
+ }
+ await logAdmin(sql,null,'PARTNER_RECOVERY_LINK_SENT',config.staffId,{expires_in_minutes:15});
+}
+function requestPartnerRecovery(p:any){
+ const loginId=login(p.login_id);
+ if(PARTNER_RECOVERY){
+  EdgeRuntime.waitUntil(emailPartnerRecovery(loginId,PARTNER_RECOVERY).catch(error=>{
+   if(!(error instanceof HttpError&&error.status===429))console.error('Partner password recovery failed.');
+  }));
+ }
+ return {ok:true};
 }
 async function signIn(p:any){
  const user=login(p.login_id);text(p.password,128);
@@ -767,10 +802,11 @@ Deno.serve(async(req:Request)=>{
   let result;
   // Public release identity: lets the website and checks confirm the server matches the page build.
   // When deployed from a pinned GitHub commit, the module URL carries that commit.
-  if(p.action==='release_info')result={function:'staff-workspace-v12',build:release.build,commit:(import.meta.url.match(/\/([0-9a-f]{40})\//)||[])[1]||null};
+  if(p.action==='release_info')result={function:'staff-workspace-v12',build:release.build,commit:(import.meta.url.match(/\/([0-9a-f]{40})\//)||[])[1]||null,partner_email_recovery:!!PARTNER_RECOVERY};
   else if(p.action==='login')result=await signIn(p);
   else if(p.action==='setup')result=await setup(p);
   else if(p.action==='setup_status')result=await setupStatus(p);
+  else if(p.action==='request_partner_recovery')result=requestPartnerRecovery(p);
   else if(p.action==='refresh_session')result=await refreshSession(req,p);
   else{
    const id=await identity(req);
