@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {stripTypeScriptTypes} from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -106,4 +107,25 @@ test('the server takes its setup-link address from settings and falls back to st
   assert.match(src, /if\(!SETUP_BASE\)fail\(503/, 'no setup link is issued without a configured address');
   const loose = src.split('\n').filter(l => l.includes('backend-staging-foundation') && !l.includes('IS_STAGING_PROJECT?'));
   assert.deepEqual(loose, [], 'no other staging address in the server');
+});
+
+test('the Edge Function applies the configured origin list before serving a preflight', () => {
+  const source = fs.readFileSync(path.join(root, 'supabase/functions/staff-workspace-v12/index.ts'), 'utf8');
+  const requestGate = source.match(/Deno\.serve\(async\(req:Request\)=>\{\n([\s\S]*?)\n try\{/);
+  assert.ok(requestGate, 'the request gate runs before the request body and database work');
+  const handlerSource = `(req, allowedOrigin, ORIGIN_LIST) => {\n${requestGate[1]}\n}`;
+  const handlePreflight = new Function(`return ${stripTypeScriptTypes(handlerSource)}`)();
+  const preflight = origin => new Request('https://example.test', {method: 'OPTIONS', headers: {origin}});
+  const productionOrigin = 'https://pclnexus.com';
+  const stagingOrigin = 'https://backend-staging-foundation.pcl-crm.pages.dev';
+
+  const production = handlePreflight(preflight(productionOrigin), allowedOrigin, [productionOrigin]);
+  assert.equal(production.status, 204);
+  assert.equal(production.headers.get('Access-Control-Allow-Origin'), productionOrigin);
+
+  const denied = handlePreflight(preflight(stagingOrigin), allowedOrigin, [productionOrigin]);
+  assert.equal(denied.status, 403);
+  assert.equal(denied.headers.get('Access-Control-Allow-Origin'), null);
+  assert.equal(handlePreflight(preflight(productionOrigin), allowedOrigin, []).status, 403);
+  assert.equal(handlePreflight(preflight(stagingOrigin), allowedOrigin, null).status, 204);
 });
