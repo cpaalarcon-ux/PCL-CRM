@@ -1,0 +1,134 @@
+// Client-type templates, service set-up (build 2810) and roll-forward (build 2811).
+// The type of client decides what the client file asks for. It never selects a service: a Supervisor, Manager or Partner chooses the service, period, scope,
+// responsible person and reviewer, previews the tasks, and only then confirms. Tasks that need a registration the client's verified profile does not show
+// are not created, and the plan says why. Every step is authorised again on the server.
+import {attachWizard,suggestPeriod,inFirm} from './staff-wizard.mjs?v=20261121-wiz-v1';
+export function createServiceSetupUI(ctx){
+ const {esc,field,select,form,modal,request,notice,shortDate}=ctx,d=()=>ctx.data();
+ const editor=()=>['PARTNER','MANAGER','SUPERVISOR'].includes(d().me?.category_code);
+ const leader=()=>['PARTNER','MANAGER'].includes(d().me?.category_code);
+ const tone={Verified:'good',Recorded:'warn',Differs:'bad',Missing:'bad','Not visible':'muted',Approved:'good',Draft:'warn',Retired:'muted',Released:'good',Waiting:'warn'};
+ const badge=s=>`<span class="badge ${tone[s]||''}">${esc(s)}</span>`;
+ const day=v=>String(v||'').slice(0,10);
+ // The part of the client master panel that shows what the client type asks for beyond the facts.
+ function clientTypeBlock(t){
+  if(!t)return '';
+  const list=(rows,empty)=>rows&&rows.length?`<ul>${rows.map(r=>`<li>${badge(r.state)} <b>${esc(r.label)}</b>${r.requirement&&r.requirement!=='Required'?' <small>('+esc(r.requirement.toLowerCase())+')</small>':''}${r.issue?`<small>${esc(r.issue)}</small>`:''}</li>`).join('')}</ul>`:`<p class="muted">${esc(empty)}</p>`;
+  return `<details open><summary><b>${esc(t.name)}</b> · what this client type asks for</summary><p class="muted">${esc(t.controls)}.${t.restricted?' Evidence, people and licences are kept by Managers and Partners.':''}</p>
+   <h4>Evidence on the KYC file</h4>${list(t.evidence,'No evidence list for this legal structure yet.')}
+   <h4>People</h4>${list(t.parties,'None asked for.')}
+   ${t.licences&&t.licences.length?`<h4>Regulator licences</h4>${list(t.licences,'')}`:''}
+   <p class="muted">Nothing here selects a service. A service is set up on purpose, from the client's page.</p></details>`;
+ }
+ // Build 2864: a period outside the engagement scope offers the override request, which goes to a Partner.
+ const scopeButton=sc=>`<button type="button" data-scope="override-request" data-client="${esc(sc.client_id)}" data-firm="${esc(sc.firm_id)}" data-from="${esc(String(sc.from_date).slice(0,10))}" data-to="${esc(String(sc.to_date).slice(0,10))}" data-reason="${esc(sc.reason)}">Request scope override</button>`;
+ // Plan preview.
+ function planView(plan){
+  const created=plan.create.length?`<ul>${plan.create.map(c=>`<li><b>${esc(c.task_name)}</b>${c.recurrence==='Once'?'':' · '+esc(c.period_start)} · due ${esc(c.due_on)} · ${c.owner_role==='REVIEWER'?'reviewer':'responsible'}${c.mandatory?'':' <small>(optional)</small>'}</li>`).join('')}</ul>`:'<p class="muted">No tasks would be created.</p>';
+  const skipped=plan.skipped.length?`<ul>${plan.skipped.map(s=>`<li>${badge(s.kind)} <b>${esc(s.task_name)}</b>: ${esc(s.reason)}</li>`).join('')}</ul>`:'';
+  const probs=plan.problems.length?`<div class="notice bad"><b>Fix before continuing</b><ul>${plan.problems.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>${plan.scope&&plan.scope.needs_override?`<p>${scopeButton(plan.scope)}</p>`:''}</div>`:'';
+  // Build 2856: the MLRO's rule for this service is always stated. A flagged, not-yet-approved case is already in the warnings below.
+  const amlLine=plan.aml&&!(plan.aml.needs_flag&&!plan.aml.cleared)?`<p class="muted">POCAMLA: ${esc(plan.aml.line)}</p>`:'';
+  const warn=amlLine+(plan.warnings.length?`<ul>${plan.warnings.map(x=>`<li class="muted">${esc(x)}</li>`).join('')}</ul>`:'');
+  const sum=plan.summary||{periods:0,tasks:plan.create.length,folders:plan.create.length};
+  const folderLine=plan.create.length?`<p data-evidence-summary>This will generate <b>${sum.periods}</b> period${sum.periods===1?'':'s'}, <b>${sum.tasks}</b> task${sum.tasks===1?'':'s'} and <b>${sum.folders}</b> evidence folder${sum.folders===1?'':'s'}.</p>`:'';
+  return `${probs}${folderLine}<p><b>${plan.create.length}</b> task${plan.create.length===1?'':'s'} would be created from <b>${esc(plan.template.name)}</b> (version ${esc(plan.template.version)})${plan.late?`, ${plan.late} already past due`:''}. ${plan.project?'Project: '+esc(plan.project.project_name)+' ('+esc(plan.project.status)+').':'A new draft project would be created, through the usual checks.'}</p>${warn}<h4>Would be created</h4>${created}${skipped?`<h4>Not created, and why</h4>${skipped}`:''}`;
+ }
+ async function open(cid){
+  const o=await request({action:'engagement_setup_options',client_id:cid});
+  const setups=await request({action:'engagement_setup_list',client_id:cid});
+  const prior=setups.setups.length?`<h4>Already set up</h4><ul>${setups.setups.map(s=>`<li>${badge(s.status)} <b>${esc(s.template_name)}</b> v${esc(s.version)}${s.template_effective_from?' (from '+esc(s.template_effective_from)+')':''} · ${esc(s.service_code)} · ${esc(day(s.period_start))} to ${esc(day(s.period_end))} · ${esc(String(s.tasks_created))} task${s.tasks_created===1?'':'s'}${s.status==='Released'&&editor()&&!setups.setups.some(o=>o.service_code===s.service_code&&day(o.period_end)>day(s.period_end))?` <button type="button" data-svc="roll" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Roll forward</button>`:''}${s.status==='Waiting'?` ${editor()?`<button type="button" data-svc="release" data-id="${esc(s.setup_id)}" data-client="${esc(cid)}">Release if ready</button>`:''}`:''}</li>`).join('')}</ul>`:'';
+  if(!o.templates.length){modal('Set up a service · '+o.client.company_name,`<p class="info full">${esc(o.note)}</p><p>No service template has been approved yet. A Partner or authorised Manager approves the firm's service templates first${leader()?' (Projects, Service templates)':''}.</p>${prior}`);return;}
+  const dtag=t=>t.effective_from||t.last_reviewed?` (version ${t.version}${t.effective_from?', from '+t.effective_from:''}${t.last_reviewed?', reviewed '+t.last_reviewed:''})`:` (version ${t.version}, no dates recorded)`;
+  const svcOptions=o.templates.flatMap(t=>t.services.map(s=>[t.template_id+'|'+s.service_code,`${s.service_name} — ${t.name}${dtag(t)}`]));
+  const firms=o.firms.map(f=>[f.firm_id,f.legal_name]);
+  const firmName=new Map(o.firms.map(f=>[f.firm_id,f.legal_name]));
+  const staff=o.staff.filter(s=>firmName.has(s.firm_id)).map(s=>[s.staff_id+'|'+s.firm_id,`${s.full_name} (${s.category_code.toLowerCase()}) · ${firmName.get(s.firm_id)}`]);
+  const projects=[['','A new draft project']].concat(o.projects.map(p=>[p.project_id,`${p.project_name} (${p.status})`]));
+  // Build 2869: the set-up is a short wizard. Defaults are suggestions the person can change; nothing is filled from a guess about scope or reviewer.
+  const today=new Date(Date.now()+3*3600000).toISOString().slice(0,10),sp=suggestPeriod(o.client.year_end_month,o.client.year_end_day,today);
+  const meOption=(d().me&&staff.find(x=>String(x[0]).startsWith(d().me.staff_id+'|')))?.[0]||'';
+  const step=(title,body)=>`<fieldset class="wz-step full" data-title="${esc(title)}">${body}</fieldset>`;
+  modal('Set up a service · '+o.client.company_name,form(`<p class="info full">${esc(o.note)}${o.client_template?' This client uses the "'+esc(o.client_template.name)+'" file template.':' This client\'s legal structure has no client-type template.'}</p>`+
+   step('Service',select('svc','Service and template *',svcOptions)+select('firm_id','Handling firm *',firms)+select('project_id','Project',projects,'')+prior)+
+   step('Period and scope',(sp?`<p class="info full" data-period-hint>Suggested from the client's year-end: the last financial year that has ended. Change it if this engagement covers another period.</p>`:'<p class="muted full">The client\'s year-end is not recorded, so no period is suggested.</p>')+field('period_start','Period starts *',sp?sp.start:'','date','required')+field('period_end','Period ends *',sp?sp.end:'','date','required')+
+    `<label class="full">Scope *<textarea name="scope" required minlength="10" maxlength="2000" placeholder="What is included, and what is not"></textarea></label>`)+
+   step('People',select('responsible','Responsible person *',staff,meOption,'Choose the responsible person…')+select('reviewer','Reviewer *',staff,'','Choose the reviewer…')+`<p class="info full">The reviewer must be a different Supervisor, Manager or Partner. People are listed with their handling firm; choose people from the firm chosen in step 1.</p>`),'Preview tasks'),
+   async f=>{const [template_id,service_code]=f.get('svc').split('|');return request({action:'engagement_setup_plan',...base(cid,f,template_id,service_code)});},
+   async r=>{await review(cid,r.plan,lastInput);},{refreshWorkspace:false,pendingLabel:'Planning…',pendingMessage:'Working out the tasks. Nothing is created yet.',successMessage:null});
+  wireSetupWizard();
+ }
+ let lastInput=null;
+ // Build 2869: step-by-step display, people limited to the chosen firm, and a reviewer who is not the responsible person.
+ function wireSetupWizard(){
+  const f=typeof document!=='undefined'?document.getElementById('editForm'):null;if(!f)return;
+  const firm=f.elements.firm_id,resp=f.elements.responsible,rev=f.elements.reviewer;
+  const limit=()=>{for(const sel of [resp,rev]){if(!sel)continue;for(const op of sel.options){const ok=inFirm(op.value,firm&&firm.value);op.hidden=!ok;op.disabled=!ok;}if(sel.selectedOptions[0]&&sel.selectedOptions[0].disabled)sel.value='';}};
+  const same=()=>{if(rev)rev.setCustomValidity(rev.value&&resp&&rev.value.split('|')[0]===resp.value.split('|')[0]?'The reviewer must be a different person from the responsible person.':'');};
+  if(firm)firm.addEventListener('change',limit);if(resp)resp.addEventListener('change',same);if(rev)rev.addEventListener('change',same);
+  limit();same();attachWizard(f);
+ }
+
+ function base(cid,f,template_id,service_code,exclusions){
+  const [responsible]=f.get('responsible').split('|'),[reviewer]=f.get('reviewer').split('|');
+  lastInput={client_id:cid,firm_id:f.get('firm_id'),template_id,service_code,project_id:f.get('project_id')||undefined,period_start:f.get('period_start'),period_end:f.get('period_end'),scope:f.get('scope'),responsible_staff:responsible,reviewer_staff:reviewer,exclusions:exclusions||[]};
+  return lastInput;
+ }
+ async function review(cid,plan,input){
+  const drop=plan.create.concat(plan.skipped.filter(s=>s.kind==='Dropped')).reduce((m,c)=>m.set(c.task_key,c),new Map());
+  const dropForm=[...drop.values()].map(c=>`<label class="full"><input type="checkbox" name="drop_${esc(c.task_key)}"${plan.skipped.some(s=>s.task_key===c.task_key&&s.kind==='Dropped')?' checked':''}> Drop <b>${esc(c.task_name)}</b>${c.mandatory?' (required: a Manager or Partner, with a reason)':''}</label>`).join('');
+  modal('Preview · tasks for this set-up',planView(plan)+(plan.problems.length?'':form(`<p class="info full">Review the tasks above. To tailor the set-up, tick any task to drop and give a reason. Then confirm.</p>${dropForm}<label class="full">Reason for dropping *<input name="reason" maxlength="300" placeholder="Only needed when you drop something"></label>`,'Create the set-up')),
+   async f=>{const ex=[...drop.keys()].filter(k=>f.get('drop_'+k)).map(k=>({task_key:k,reason:f.get('reason')||''}));
+    const payload={...input,exclusions:ex};
+    if(ex.length){const re=await request({action:'engagement_setup_plan',...payload});if(!re.ok){throw new Error(re.plan.problems[0]);}}
+    return request({action:'engagement_setup_apply',...payload,confirm:true});},
+   r=>{notice((r.aml_flag_raised?'The MLRO has been flagged for this service. ':'')+(r.released?`Set-up created: ${r.tasks_created} task${r.tasks_created===1?'':'s'} made.`:'Set-up saved. The tasks are made as soon as the project can take them: '+(r.waiting_reason||'')));},
+   {refreshWorkspace:true,pendingLabel:'Creating…',pendingMessage:'Creating the set-up.',successMessage:null});
+ }
+ async function templates(){
+  const x=await request({action:'service_template_list'});
+  const rows=x.templates.map(t=>{
+   const dl=`<small class="dates">${t.effective_from||t.last_reviewed?[t.effective_from?'From '+esc(t.effective_from):'',t.last_reviewed?'reviewed '+esc(t.last_reviewed):''].filter(Boolean).join(' · '):'No dates recorded'}</small>`;
+   const tasks=dl+`<details><summary>${t.tasks.length} tasks · ${t.services.map(s=>esc(s.service_code)).join(', ')}</summary><ul>${t.tasks.map(k=>`<li><b>${esc(k.task_name)}</b> · ${esc(k.stage)} · ${esc(k.recurrence)}${k.mandatory?'':' · optional'}${k.requires_obligation?' · needs '+esc(k.requires_obligation)+' on the verified tax profile':''}</li>`).join('')}</ul></details>`;
+   const acts=[];
+   if(t.status==='Draft'&&x.can_approve)acts.push(`<button type="button" data-svc="approve" data-id="${esc(t.template_id)}" data-rev="${esc(t.revision)}">Approve</button>`);
+   if(t.status!=='Retired'&&x.can_retire)acts.push(`<button type="button" data-svc="retire" data-id="${esc(t.template_id)}" data-rev="${esc(t.revision)}">Retire</button>`);
+   if(t.status==='Approved'&&x.can_propose)acts.push(`<button type="button" data-svc="propose" data-id="${esc(t.template_id)}">Propose a changed version</button>`);
+   return `<tr><td><b>${esc(t.name)}</b> v${esc(t.version)}<small>${esc(t.service_group)}</small>${tasks}</td><td>${badge(t.status)}<small>${t.status==='Approved'?'Approved by '+esc(t.approved_by_name||'a Partner')+(t.sole_partner_approval?' as the firm\u2019s only Partner (also the proposer)':''):t.source==='Starter'?'Starter set, not yet approved':'Proposed by '+esc(t.proposed_by_name||'staff')}</small></td><td>${acts.join(' ')}</td></tr>`;
+  }).join('');
+  modal('Service templates',`<p class="info full">${esc(x.note)}</p><div class="scroll"><table><thead><tr><th>Template</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
+  return x;
+ }
+ // Roll forward (build 2811): the next period starts from the approved template. Dates, status, evidence and approvals start again; only the open items are listed.
+ async function roll(setupId,cid){
+  const r=await request({action:'engagement_rollover_plan',from_setup_id:setupId});const plan=r.plan;
+  const carried=plan.carried&&plan.carried.length?`<h4>Open items from the last period (${plan.carried.length})</h4><ul>${plan.carried.map(c=>`<li><b>${esc(c.task_name)}</b> · was ${esc(String(c.was).toLowerCase())}${c.blocked_reason?' · '+esc(c.blocked_reason):''}</li>`).join('')}</ul><p class="muted">These come across as new pending tasks with a fresh date. Nothing they showed as done, reviewed or approved is copied.</p>`:'<p class="muted">No open items from the last period.</p>';
+  const kept=plan.kept_exclusions&&plan.kept_exclusions.length?`<p class="muted">Tasks the team dropped last time stay dropped: ${plan.kept_exclusions.map(e=>esc(e.task_key)).join(', ')}.</p>`:'';
+  modal('Roll forward · '+plan.client.company_name,`<p class="info full">Next period: <b>${esc(plan.next.period_start)}</b> to <b>${esc(plan.next.period_end)}</b>. The template, scope, responsible person and reviewer carry over; dates, evidence, status and approval start again.</p>${planView(plan)}${carried}${kept}`+
+   (plan.problems.length?'':form(`<p class="info full">Confirm to create this period's tasks. They are not made twice if you confirm again.</p>`,'Confirm roll-forward')),
+   f=>request({action:'engagement_rollover_apply',from_setup_id:setupId,confirm:true}),
+   x=>{notice(x.released?`Rolled forward: ${x.tasks_created} task${x.tasks_created===1?'':'s'} made.`:'Roll-forward saved. The tasks are made as soon as the project can take them: '+(x.waiting_reason||''));},
+   {refreshWorkspace:true,pendingLabel:'Creating…',pendingMessage:'Creating the next period.',successMessage:null});
+ }
+ async function due(){
+  const x=await request({action:'engagement_rollover_due',look_ahead_days:7});
+  const rows=x.due.length?`<ul>${x.due.map(d=>`<li><b>${esc(d.client_name)}</b> · ${esc(d.service_code)} · ended ${esc(d.period_end)} · next ${esc(d.next.start)} to ${esc(d.next.end)}${d.overdue?' '+badge('Draft').replace('Draft','overdue'):''} <button type="button" data-svc="roll" data-id="${esc(d.setup_id)}" data-client="${esc(d.client_id)}">Roll forward</button></li>`).join('')}</ul>`:'<p class="muted">Nothing is due to roll forward.</p>';
+  modal('Due to roll forward',`<p class="info full">${esc(x.note)}</p>${rows}`);
+ }
+ async function handle(a,id,ds={}){
+  if(a==='roll')return roll(id,ds.client);
+  if(a==='due')return due();
+  if(a==='setup')return open(id);
+  if(a==='templates')return templates();
+  if(a==='release'){const r=await request({action:'engagement_setup_release',setup_id:id});notice(r.released?`Released: ${r.tasks_created} task${r.tasks_created===1?'':'s'} made.`:'Still waiting: '+r.waiting_reason);return open(ds.client);}
+  if(a==='approve'){await request({action:'service_template_approve',template_id:id,revision:ds.rev});notice('Template approved.');return templates();}
+  if(a==='retire'){return modal('Retire this template',form(`<label class="full">Why? *<textarea name="reason" required minlength="5" maxlength="500"></textarea></label>`,'Retire'),f=>request({action:'service_template_retire',template_id:id,revision:ds.rev,reason:f.get('reason')}),()=>templates(),{refreshWorkspace:false,successMessage:'Template retired.'});}
+  if(a==='propose'){
+   const x=await request({action:'service_template_list'}),t=x.templates.find(y=>y.template_id===id);
+   return modal('Propose a changed version of '+t.name,form(`<p class="info full">The approved template stays as it is. This makes version ${t.version+1} as a draft for a different Partner or Manager (with the approval right) to approve. Tick any task to leave out of the new version.</p>`+t.tasks.map(k=>`<label class="full"><input type="checkbox" name="drop_${esc(k.task_key)}"> Leave out <b>${esc(k.task_name)}</b></label>`).join(''),'Propose version'),
+    f=>request({action:'service_template_propose',from_template_id:id,drop_task_keys:t.tasks.filter(k=>f.get('drop_'+k.task_key)).map(k=>k.task_key)}),()=>templates(),{refreshWorkspace:false,successMessage:'Draft version proposed. A different Partner approves it.'});
+  }
+ }
+ if(typeof document!=='undefined')document.addEventListener('click',async e=>{const b=e.target.closest?.('[data-svc]');if(!b)return;e.preventDefault();b.disabled=true;try{await handle(b.dataset.svc,b.dataset.id,{rev:b.dataset.rev,client:b.dataset.client});}catch(err){ctx.notice(err.message,true);}finally{b.disabled=false;}});
+ return {open,templates,handle,clientTypeBlock,editor,button:()=>editor()?'<button type="button" data-svc="templates">Service templates</button><button type="button" data-svc="due">Roll forward</button>':'',isAction:a=>['setup','templates','roll','due','release','approve','retire','propose'].includes(a)};
+}

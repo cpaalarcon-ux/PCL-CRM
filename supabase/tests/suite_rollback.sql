@@ -1,0 +1,30 @@
+BEGIN;
+DO $$
+DECLARE f uuid:=gen_random_uuid();c uuid:=gen_random_uuid();p uuid:=gen_random_uuid();s uuid:=gen_random_uuid();u uuid:=gen_random_uuid();sess uuid:=gen_random_uuid();i uuid:=gen_random_uuid();r uuid:=gen_random_uuid();n integer;
+BEGIN
+ INSERT INTO auth.users(id) VALUES(u);INSERT INTO auth.sessions(id,user_id) VALUES(sess,u);
+ INSERT INTO erp_private.firms(firm_id,firm_code,legal_name) VALUES(f,'S7QA','Fictional suite regression');
+ INSERT INTO erp_private.staff_members(staff_id,auth_user_id,staff_identifier,login_id,full_name,category_code,employment_type,access_status,sessions_invalid_before) VALUES(s,u,'S7QA','s7.qa','Fictional Assistant','ASSISTANT','Permanent','Active',now()-interval '1 day');
+ INSERT INTO erp_private.pilot_sessions(session_id,staff_id,expires_at) VALUES(sess,s,now()+interval '1 hour');
+ INSERT INTO erp_private.staff_firm_access(staff_id,firm_id) VALUES(s,f);
+ INSERT INTO erp_private.clients(client_id,company_name,owner_staff_id) VALUES(c,'Fictional suite client',s);
+ INSERT INTO erp_private.client_firm_links(client_id,firm_id) VALUES(c,f);
+ INSERT INTO erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) VALUES(p,c,f,'Fictional project','TAX-COMP',s);
+ INSERT INTO erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) VALUES(p,s,f,'ASSISTANT');
+ INSERT INTO erp_private.invoices(invoice_id,request_id,project_id,client_id,firm_id,invoice_number,description,invoice_date,due_date,lines,net_amount,vat_amount,status,created_by,posted_by) VALUES(i,gen_random_uuid(),p,c,f,'INV/S7QA/1','Testing invoice',current_date,current_date,'[]',100,16,'Posted',s,s);
+ INSERT INTO erp_private.staff_rates(staff_id,effective_from,effective_to,cost_rate,billable_rate,created_by) VALUES(s,current_date,current_date,100,200,s);
+ BEGIN UPDATE erp_private.invoices SET net_amount=200 WHERE invoice_id=i;RAISE EXCEPTION 'Posted amount changed';EXCEPTION WHEN check_violation THEN NULL;END;
+ BEGIN UPDATE erp_private.projects SET status='Active' WHERE project_id=p;RAISE EXCEPTION 'KYC gate bypassed';EXCEPTION WHEN check_violation THEN NULL;END;
+ INSERT INTO erp_private.tax_cases(case_id,project_id,kind,starts_on,ends_on,status,prepared_by,reviewed_by,review_snapshot) VALUES(r,p,'VAT',current_date,current_date,'Locked',s,s,'{}');
+ BEGIN UPDATE erp_private.tax_cases SET inputs='{"output":999}' WHERE case_id=r;RAISE EXCEPTION 'Locked snapshot changed';EXCEPTION WHEN check_violation THEN NULL;END;
+ IF erp_private.tax_period_open(p,current_date,current_date) THEN RAISE EXCEPTION 'Locked import period accepted';END IF;
+ PERFORM set_config('request.jwt.claims',json_build_object('sub',u,'session_id',sess)::text,true);
+ SET LOCAL ROLE erp_api;
+ SELECT count(*) INTO n FROM erp_private.invoices WHERE invoice_id=i;IF n<>0 THEN RAISE EXCEPTION 'Assistant can view finance';END IF;
+ SELECT count(*) INTO n FROM erp_private.staff_rates;IF n<>0 THEN RAISE EXCEPTION 'Assistant can view cost rates';END IF;
+ BEGIN INSERT INTO erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,created_by) VALUES(gen_random_uuid(),p,c,f,'Denied',current_date,current_date,'[]',100,0,s);RAISE EXCEPTION 'Assistant can invoice';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+ SELECT count(*) INTO n FROM erp_private.client_compliance WHERE client_id=c;IF n<>0 THEN RAISE EXCEPTION 'Assistant can view restricted KYC';END IF;
+ RESET ROLE;
+ PERFORM erp_private.run_suite_scheduler();
+END; $$;
+ROLLBACK;

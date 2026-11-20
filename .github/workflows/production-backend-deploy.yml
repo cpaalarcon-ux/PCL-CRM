@@ -1,0 +1,153 @@
+name: Production backend deploy
+
+# Deploys the PRODUCTION backend: pending database migrations and the staff-workspace-v12 Edge Function.
+# It is separate from the staging workflow and can never target the staging project.
+#
+# How to run (after the production project exists and the secrets below are added to the GitHub "production" environment):
+#   1. After an approved merge into main, manually run Staging browser UAT and Staging hosted check
+#      on main. Both must be green on the exact commit to deploy.
+#   2. Start this workflow from the Actions tab ("Run workflow"), on the main branch.
+#   3. A reviewer named on the "production" environment must approve before anything runs.
+# The web app is built separately by the production Cloudflare Pages project
+#   (build command: node scripts/build-site.mjs --env production --out dist, output directory: dist).
+#
+# Required in the "production" environment (Settings > Environments > production), with required reviewers turned on:
+#   secrets:  PROD_SUPABASE_ACCESS_TOKEN, PROD_SUPABASE_DB_PASSWORD
+#   variables: PROD_PROJECT_REF   (the 20-character reference of the production project)
+#              PROD_SITE_ORIGIN   (the web address staff use, e.g. https://pcl.phamalarcon.com; setup links start with it)
+#              PROD_ALLOWED_ORIGINS (comma-separated web addresses allowed to call the backend; normally the same address)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY TO PRODUCTION to continue'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: production-backend-deploy
+  cancel-in-progress: false
+
+env:
+  STAGING_PROJECT_REF: yfjiculexbzpkvtapudk   # used only to refuse it
+  PROJECT_REF: ${{ vars.PROD_PROJECT_REF }}
+  SUPABASE_ACCESS_TOKEN: ${{ secrets.PROD_SUPABASE_ACCESS_TOKEN }}
+  SUPABASE_DB_PASSWORD: ${{ secrets.PROD_SUPABASE_DB_PASSWORD }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Confirm the request
+        env:
+          DEPLOY_CONFIRMATION: ${{ inputs.confirm }}
+        run: |
+          [ "$DEPLOY_CONFIRMATION" = "DEPLOY TO PRODUCTION" ] || { echo "::error::Confirmation text does not match."; exit 1; }
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse anything that is not the tip of main, or that points at staging
+        run: |
+          git fetch --no-tags origin main
+          [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] \
+            || { echo "::error::Production deploys only the current tip of main."; exit 1; }
+          test -n "$SUPABASE_ACCESS_TOKEN" && test -n "$SUPABASE_DB_PASSWORD" && test -n "$PROJECT_REF" \
+            || { echo "::error::Add the production secrets and PROD_PROJECT_REF to the production environment first."; exit 1; }
+          [[ "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]] || { echo "::error::PROD_PROJECT_REF is not a project reference."; exit 1; }
+          [ "$PROJECT_REF" != "$STAGING_PROJECT_REF" ] \
+            || { echo "::error::PROD_PROJECT_REF is the staging project. Stopping."; exit 1; }
+          echo "Deploying $(git rev-parse --short HEAD) to production project $PROJECT_REF"
+
+      - name: Validate production site addresses before deployment
+        env:
+          PROD_SITE_ORIGIN: ${{ vars.PROD_SITE_ORIGIN }}
+          PROD_ALLOWED_ORIGINS: ${{ vars.PROD_ALLOWED_ORIGINS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          site="$PROD_SITE_ORIGIN"; origins="$PROD_ALLOWED_ORIGINS"
+          origin_pattern='https://[a-z0-9.-]+'
+          [[ "$site" =~ ^${origin_pattern}$ ]] || { echo "::error::PROD_SITE_ORIGIN must be an https address with no path."; exit 1; }
+          [[ "$origins" =~ ^${origin_pattern}(,${origin_pattern})*$ ]] || { echo "::error::PROD_ALLOWED_ORIGINS must contain comma-separated https addresses with no paths."; exit 1; }
+          case "$site,$origins" in *backend-staging-foundation*|*"$STAGING_PROJECT_REF"*) echo "::error::A staging address was given for production."; exit 1;; esac
+          case ",$origins," in *",$site,"*) ;; *) echo "::error::PROD_ALLOWED_ORIGINS must include PROD_SITE_ORIGIN."; exit 1;; esac
+
+      - name: Require green staging checks on this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          for wf in "Staging browser UAT" "Staging hosted check"; do
+            c=$(gh run list --repo "${{ github.repository }}" --workflow "$wf" --commit "$sha" --json conclusion --jq '[.[]|select(.conclusion=="success")]|length')
+            [ "${c:-0}" -ge 1 ] || { echo "::error::'$wf' has no successful run on $sha."; exit 1; }
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Check the release files
+        run: node --test tests/migration_history.test.mjs tests/environment_build.test.mjs tests/production_workflow.test.mjs
+
+      - name: Install Supabase CLI
+        run: |
+          npm install -g supabase@2
+          supabase --version
+
+      - name: Link the production project
+        run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Check pending migrations (dry run)
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" | tee migration-list.txt
+          supabase db push --linked --dry-run --password "$SUPABASE_DB_PASSWORD" 2>&1 | tee dry-run.txt
+          # The newest migration already applied in production. Nothing pending may be older than it.
+          last=$(grep -oE '^[[:space:]]*[0-9]{14}[[:space:]]*\|[[:space:]]*[0-9]{14}' migration-list.txt | grep -oE '[0-9]{14}$' | sort | tail -1 || true)
+          pending=$(grep -oE '[0-9]{14}_[A-Za-z0-9_]+\.sql' dry-run.txt | sort -u || true)
+          echo "Last applied: ${last:-none (new project)}"; echo "Pending: ${pending:-none}"
+          if [ -n "${last:-}" ]; then
+            for f in $pending; do
+              v=${f%%_*}
+              if [ "$v" \< "$last" ] || [ "$v" = "$last" ]; then
+                echo "::error::$f is older than the last applied production migration. Stop and reconcile by hand."; exit 1
+              fi
+            done
+          fi
+
+      - name: Apply pending migrations
+        run: supabase db push --linked --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Set the function's site address and allowed origins
+        env:
+          PROD_SITE_ORIGIN: ${{ vars.PROD_SITE_ORIGIN }}
+          PROD_ALLOWED_ORIGINS: ${{ vars.PROD_ALLOWED_ORIGINS }}
+        run: |
+          supabase secrets set PCL_SITE_ORIGIN="$PROD_SITE_ORIGIN" PCL_ALLOWED_ORIGINS="$PROD_ALLOWED_ORIGINS" --project-ref "$PROJECT_REF"
+
+      - name: Deploy staff-workspace-v12
+        # Gateway JWT verification stays off: login and setup routes are called before a session exists,
+        # and the function authenticates every protected action itself.
+        run: supabase functions deploy staff-workspace-v12 --project-ref "$PROJECT_REF" --no-verify-jwt
+
+      - name: Record deployed version
+        run: |
+          supabase functions list --project-ref "$PROJECT_REF" | tee functions.txt
+          grep -E 'staff-workspace-v12' functions.txt
+          {
+            echo "### Production backend deploy"
+            echo "- Commit: \`$(git rev-parse HEAD)\`"
+            echo "- Project: \`$PROJECT_REF\`"
+            echo "- Function: \`$(grep -E 'staff-workspace-v12' functions.txt | tr -s ' ')\`"
+            echo "- Migrations applied: $(grep -oE '[0-9]{14}_[A-Za-z0-9_]+\.sql' dry-run.txt | sort -u | tr '\n' ' ' || echo none)"
+          } >> "$GITHUB_STEP_SUMMARY"

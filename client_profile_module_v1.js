@@ -9,8 +9,21 @@
   const esc = value => clean(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const identityFields = { kraPin:"KRA PIN", legalEntityType:"Legal entity type", registrationNo:"Registration number", taxResidence:"Tax residence", physicalAddress:"Physical address", cityTown:"City / town", country:"Country", website:"Website", accountingSoftware:"Accounting software", taxObligations:"Tax obligations (source; confirm work packs separately)" };
   function pinReview(client, records = clients) {
-    return norm(client.kraPin) && records.some(other => other.id !== client.id && norm(other.kraPin) === norm(client.kraPin))
-      ? "KRA PIN shared with another client — review both records. Both clients are retained." : "";
+    const others = records.filter(other => other.id !== client.id);
+    const warnings = [];
+    const pin = norm(client.kraPin);
+    if (pin && others.some(other => norm(other.kraPin) === pin)) {
+      warnings.push("KRA PIN shared with another client — review both records. Both clients are retained.");
+    }
+    const names = [client.companyName, client.tradingName, ...(client.previousNames || [])].map(norm).filter(Boolean);
+    if (names.length && others.some(other => [other.companyName, other.tradingName, ...(other.previousNames || [])].map(norm).some(name => name && names.includes(name)))) {
+      warnings.push("A similar legal or trading name exists — check the registration number and client record before continuing.");
+    }
+    const registration = norm(client.registrationNo);
+    if (registration && others.some(other => norm(other.registrationNo) === registration)) {
+      warnings.push("Registration number matches another client record.");
+    }
+    return warnings.join(" ");
   }
   function canManage() {
     try { const role = JSON.parse(localStorage.getItem("pcl-unified-shell-preview-v1") || "{}").category || "Engagement Partner"; return ["Engagement Partner", "Manager"].includes(role); } catch (_) { return false; }
@@ -64,7 +77,20 @@
     });
     const summary=document.getElementById("clientMissingSummary");
     const existing=client.relationshipStatus === "Existing client";
-    summary.textContent=fields.length ? `${existing ? "Existing client — file and data update required" : "Draft profile"}: ${fields.length} required details missing: ${fields.map(field=>field.label).join(", ")}. Save available details and complete the missing items later.` : `${existing ? "Existing client — profile details complete." : "Profile details complete."} Document verification and engagement approvals are tracked separately.`;
+    const baseSummary=fields.length ? ((existing ? "Existing client — file and data update required" : "Draft profile") + ": " + fields.length + " required details missing: " + fields.map(field=>field.label).join(", ") + ". Save available details and complete the missing items later.") : (existing ? "Existing client — profile details complete." : "Profile details complete.") + " Document verification and engagement approvals are tracked separately.";
+    summary.replaceChildren();
+    const summaryText=document.createElement("span");
+    summaryText.textContent=[baseSummary,pinReview(client)].filter(Boolean).join(" ");
+    summary.append(summaryText);
+    if(fields.length){
+      const jump=document.createElement("button");
+      jump.type="button";jump.className="client-next-missing";jump.textContent="Go to next missing field";
+      jump.addEventListener("click",()=>{
+        const first=missing(formRecord())[0],target=first&&document.getElementById(first.id);
+        if(target){target.scrollIntoView({behavior:"smooth",block:"center"});target.focus({preventScroll:true});}
+      });
+      summary.append(document.createTextNode(" "),jump);
+    }
     summary.className=`client-profile-notice${fields.length ? " error" : ""}`;
   }
   function formRecord() {
@@ -133,8 +159,11 @@
     const index=records.findIndex(item=>item.id===editingId),original=index>=0?records[index]:null;
     if(editingId&&(!original||JSON.stringify(original)!==snapshot))return message("This client changed elsewhere. Reopen the profile before saving so existing changes are preserved.",true);
     if(original?.firmId&&record.firmId!==original.firmId)return message("The existing servicing firm cannot be reassigned here. A different engagement firm requires a separate engagement.",true);
-    const identifiers=[record.companyName,record.tradingName,record.importReference].map(norm).filter(Boolean);
-    if(records.some((item,i)=>i!==index&&[item.companyName,item.tradingName,item.importReference,...(item.previousNames||[])].map(norm).some(value=>value&&identifiers.includes(value))))return message("This name or Client Reference matches an existing client. Open that client instead of creating a duplicate.",true);
+    const otherRecords=records.filter((item,i)=>i!==index);
+    const reference=norm(record.importReference);
+    if(reference&&otherRecords.some(item=>norm(item.importReference)===reference))return message("This Client Reference already exists. Open the existing client record instead of creating a duplicate.",true);
+    const registration=norm(record.registrationNo);
+    if(registration&&otherRecords.some(item=>norm(item.registrationNo)===registration))return message("This registration number already belongs to another client record. Open that client or ask a Manager to review the match.",true);
     if(record.smeAuditExempt&&(record.pieStatus||["Financial Services","Public Sector"].includes(record.primarySector)))return message("An SME exemption cannot override a PIE or high-risk sector audit requirement. Refer this decision to the Engagement Partner.",true);
     const before=original?JSON.parse(JSON.stringify(original)):null;
     record=stamp({...original,...record,id:original?.id||record.id,createdAt:original?.createdAt||record.createdAt,importReference:original?.importReference||record.importReference||crypto.randomUUID(),contact:{...original?.contact,...record.contact},taxProfile:record.taxProfile?{...original?.taxProfile,...record.taxProfile}:original?.taxProfile||null,tasks:original?.tasks||[],eqrCompleted:original?.eqrCompleted||false,reportSigned:original?.reportSigned||false,updatedAt:new Date().toISOString()});
@@ -200,7 +229,7 @@
     document.getElementById("clientList")?.addEventListener("click",event=>{const button=event.target.closest("[data-edit-client]");if(button)openEditor(button.dataset.editClient);});
     updateFieldState();decorate();
   }
-  const style=document.createElement("style");style.textContent='.client-name-edit{border:0;background:none;color:#07523c;font:inherit;font-weight:700;padding:0;text-align:left;text-decoration:underline;text-underline-offset:3px}.client-name-edit:disabled{color:inherit;text-decoration:none;cursor:default}.client-completeness{margin:10px 0;padding:10px;border:1px solid #c8dfd0;border-radius:7px;background:#f4fbf6}.client-completeness.incomplete,.client-profile-notice.error{background:#fff3f3;border-color:#db9e9e;color:#8d2020}.client-missing-badge{display:inline-block;margin:5px 6px 0 0;padding:3px 7px;border:1px solid #d58d8d;border-radius:5px;color:#8d2020;background:#fff;font-size:12px}.client-field-missing{border:2px solid #b42318!important;background:#fff5f5!important}.client-missing-label{display:block;color:#a51e1e;font-size:11px;margin-top:4px}.client-profile-notice{margin:10px 0;padding:12px;border:1px solid #cad8cf;border-radius:7px;font-size:12px}.client-profile-notice:empty{display:none}';document.head.append(style);
+  const style=document.createElement("style");style.textContent='.client-name-edit{border:0;background:none;color:#07523c;font:inherit;font-weight:700;padding:0;text-align:left;text-decoration:underline;text-underline-offset:3px}.client-name-edit:disabled{color:inherit;text-decoration:none;cursor:default}.client-completeness{margin:10px 0;padding:10px;border:1px solid #c8dfd0;border-radius:7px;background:#f4fbf6}.client-completeness.incomplete,.client-profile-notice.error{background:#fff3f3;border-color:#db9e9e;color:#8d2020}.client-missing-badge{display:inline-block;margin:5px 6px 0 0;padding:3px 7px;border:1px solid #d58d8d;border-radius:5px;color:#8d2020;background:#fff;font-size:12px}.client-field-missing{border:2px solid #b42318!important;background:#fff5f5!important}.client-missing-label{display:block;color:#a51e1e;font-size:11px;margin-top:4px}.client-profile-notice{margin:10px 0;padding:12px;border:1px solid #cad8cf;border-radius:7px;font-size:12px}.client-profile-notice:empty{display:none}.client-next-missing{margin-left:8px;padding:5px 9px;border:1px solid #9bbbab;border-radius:5px;background:#fff;color:#07523c;font-weight:700;cursor:pointer}';document.head.append(style);
   document.addEventListener("change",()=>{document.querySelectorAll("[data-edit-client]").forEach(button=>button.disabled=!canManage());});
   window.pclClientProfiles={canManage,missing,stamp,refresh,openEditor};
 })();

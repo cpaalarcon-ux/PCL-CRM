@@ -1,0 +1,7 @@
+Type of purchases,Supplier PIN,Supplier name,Invoice date,Invoice number,Description,Customs entry number,Net amount,VAT amount,Gross amount,Original invoice number,Original invoice date,ERP routing code,ERP TB item code
+Local,P999990010A,Mlima Supplies Ltd,2026-09-10,MLIMA-F10-01,Fictional office supplies,,1000,160,1160,,,,
+Local,P999990010A,"  MLIMA   SUPPLIES, LTD. ",2026-09-10,MLIMA-F10-02,Fictional office supplies,,1000,160,1160,,,,
+Local,P999990010A,Mlima Supplies Limited,2026-09-10,MLIMA-F10-03,Fictional office supplies,,1000,160,1160,,,,
+Local,P999990010A,Mlima Supplies Ltd,2026-09-10,MLIMA-F10-04,Fictional office supplies,,1000,160,1160,,,XRT9,61030
+Local,P999990011A,Other Trading Co,2026-09-10,MLIMA-F10-05,Fictional office supplies,,1000,160,1160,,,,
+Local,P999990010A,Mlima Supplies Ltd,2026-09-01,MLIMA-F10-06,Fictional office supplies,,1000,160,1160,,,,

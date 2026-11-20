@@ -1,0 +1,38 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
+import {approveChart} from './helpers/chart-and-posting.mjs';
+import {mapAllAccounts} from './helpers/client-mappings.mjs';
+const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
+const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
+const {purchaseAccountsAction}=await import('../supabase/functions/staff-workspace-v12/purchase-accounts-actions.ts');
+const {summariseRows}=await import('../supabase/functions/staff-workspace-v12/purchase-accounts-rules.mjs');
+const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),C=id(),P=id(),D=id(),B=id(),actors={};
+const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
+async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}
+const acc=(role,p)=>as(role,a=>accountingAction(tx,a,{project_id:P,...p})),sum=(role,p)=>as(role,a=>purchaseAccountsAction(tx,a,{project_id:P,action:'purchase_accounts_summary',...p}));
+test('build 2898 (amendment H): confirming an uploaded code pair maps a row only when the pair is approved for the client',async t=>{
+ t.after(()=>db.close());
+ await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create table auth.sessions(id uuid primary key,user_id uuid references auth.users);create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb) $$;create function auth.uid() returns uuid language sql stable as $$ select (auth.jwt()->>'sub')::uuid $$;`);
+ for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.readFileSync(root+'/supabase/migrations/'+f,'utf8').replace('CREATE EXTENSION IF NOT EXISTS pg_cron;','').replace(/SELECT cron.schedule[^\n]+/g,'');await db.exec(q);}
+ await tx`insert into erp_private.firms(firm_id,firm_code,legal_name) values(${F},'MGQA','Fictional groups firm')`;
+ for(const role of ['PARTNER','MANAGER','ASSISTANT']){const a=actors[role]={staff_id:id(),auth_user_id:id(),session:id(),category_code:role};await tx`insert into auth.users(id) values(${a.auth_user_id})`;await tx`insert into auth.sessions(id,user_id) values(${a.session},${a.auth_user_id})`;await tx`insert into erp_private.staff_members(staff_id,auth_user_id,staff_identifier,login_id,full_name,category_code,employment_type,contract_end_date,access_status,sessions_invalid_before) values(${a.staff_id},${a.auth_user_id},${role},${role.toLowerCase()},${'Fictional '+role},${role},'Permanent','2027-12-31','Active',now()-interval '1 day')`;await tx`insert into erp_private.pilot_sessions(session_id,staff_id,expires_at) values(${a.session},${a.staff_id},now()+interval '1 hour')`;await tx`insert into erp_private.staff_firm_access(staff_id,firm_id,scope) values(${a.staff_id},${F},'Assigned')`;}
+ await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id) values(${C},'Fictional Mlima Groups',${actors.MANAGER.staff_id})`;await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C},${F})`;
+ await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${P},${C},${F},'Fictional groups project','TAX-COMP',${actors.MANAGER.staff_id})`;
+ for(const role of Object.keys(actors))await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors[role].staff_id},${F},${role})`;
+ await approveChart(tx,{C,prepared:actors.MANAGER.staff_id,reviewed:actors.PARTNER.staff_id});
+ await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${D},${C},${F},${P},'Import Sources','Fictional.xlsx',${'qa/'+D},100,${'a'.repeat(64)},'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',${actors.ASSISTANT.staff_id})`;
+ await tx`insert into erp_private.workbook_batches(batch_id,project_id,document_id,sheet_name,header_row,dataset,period_start,period_end,column_map,source_count,new_count,duplicate_count,rejected_count,uploaded_by) values(${B},${P},${D},'Purchases',1,'Purchases','2026-01-01','2026-01-31','{}',8,8,0,0,${actors.ASSISTANT.staff_id})`;
+ const exp=await tx`select code,category_code from erp_private.account_catalog where route=2 and status='Active' and not is_legacy and code::int>=51000 and code::int<60000 order by code limit 2`,[e1,e2]=exp,ppe=(await tx`select code,category_code from erp_private.account_catalog where route=3 and status='Active' and not is_legacy order by code limit 1`)[0];
+ let n=0;const mk=(key,acct,route,dataset='Purchases',extra={})=>tx`insert into erp_private.workbook_rows(batch_id,project_id,client_id,dataset,source_row,row_key,raw_values,normalized) values(${B},${P},${C},${dataset},${++n},${'MG-'+key},'{}',${tx.json({date:'2026-01-10',amount:1000,vat:160,invoice:'MG-'+key,party:'Fictional supplier',party_pin:'P000000001A',description:'Fictional '+key,vat_category:'16%',mapping_suggestion:{route,category_code:acct.category_code,account_code:acct.code},...extra})}) returning row_id,revision`.then(r=>({row_id:r[0].row_id,revision:r[0].revision}));
+ const e3=(await tx`select code,category_code from erp_private.account_catalog where route=2 and status='Active' and not is_legacy and code::int>=51000 and code::int<60000 order by code desc limit 1`)[0];
+ const row=await mk('H1',e3,2,'Purchases',{routing_code:e3.category_code,tb_code:e3.code});
+ // This client has no client accounts set up, so only the uploaded pair could map the row.
+ const group=[{route:2,account_code:e3.code,rows:[row]}];
+ // A valid pair that no Partner approved never maps, even when the preparer confirms the codes.
+ await assert.rejects(()=>acc('ASSISTANT',{action:'workbook_map_groups',confirm_uploaded_mapping:true,groups:group}),/valid pair but are not approved for this client.*A valid code in a file is never approval/);
+ assert.equal((await tx`select account_code from erp_private.workbook_rows where row_id=${row.row_id}`)[0].account_code,null,'the row stays unmapped');
+ // Once a Manager proposed it and a different Partner approved it in the routing map, the same confirmation maps the row.
+ const rid=(await as('MANAGER',a=>tx`insert into erp_private.client_routing_map(client_id,module,routing_code,item_code,erp_account_code,effective_from,created_by) values(${C},'Purchases',${e3.category_code},${e3.code},${e3.code},'2026-01-01',${a.staff_id}) returning routing_id`))[0].routing_id;
+ await as('PARTNER',a=>tx`update erp_private.client_routing_map set status='Active',approved_by=${a.staff_id},approved_at=now() where routing_id=${rid}`);
+ const ok=await acc('ASSISTANT',{action:'workbook_map_groups',confirm_uploaded_mapping:true,groups:group});assert.equal(ok.count,1);
+ assert.equal((await tx`select account_code from erp_private.workbook_rows where row_id=${row.row_id}`)[0].account_code,e3.code);
+});
