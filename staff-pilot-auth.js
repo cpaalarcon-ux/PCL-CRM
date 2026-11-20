@@ -8,6 +8,7 @@
   const setupForm = $('#setupForm');
   const loginButton = loginForm?.querySelector('button[type="submit"]');
   const retryButton = $('#retryWorkspace');
+  const recoveryButton = $('#requestPartnerRecovery');
   const setupButton = setupForm?.querySelector('button[type="submit"]');
   if (!loginForm || !setupForm || !loginButton) return;
 
@@ -179,6 +180,24 @@
     }
   });
 
+  recoveryButton?.addEventListener('click', async () => {
+    const loginId = loginForm.elements.namedItem('login_id').value.trim();
+    if (!loginId) {
+      notice('Enter your staff login ID first.', true);
+      loginForm.elements.namedItem('login_id').focus();
+      return;
+    }
+    recoveryButton.disabled = true;
+    try {
+      await send({ action: 'request_partner_recovery', login_id: loginId }, { timeoutMs: 10000 });
+      notice('If email recovery is enabled for this login ID, check your inbox for a setup link. For other accounts, contact your Engagement Partner.');
+    } catch (error) {
+      notice(error.message, true);
+    } finally {
+      recoveryButton.disabled = false;
+    }
+  });
+
   $('#checkSetup')?.addEventListener('click', () => void checkSetupLink());
   $('#backToSignIn')?.addEventListener('click', () => {
     setupToken = null;
@@ -246,6 +265,7 @@
   async function checkRelease() {
     try {
       const result = await send({ action: 'release_info' }, { timeoutMs: 10000 });
+      if (recoveryButton) recoveryButton.hidden = result?.partner_email_recovery !== true;
       const pageBuild = document.documentElement.dataset.build || '';
       document.documentElement.dataset.serverBuild = result?.build || '';
       if (result?.build && pageBuild && result.build !== pageBuild) {

@@ -29,7 +29,7 @@ const server = http.createServer((req, res) => {
   try {
     const page = await browser.newPage();
     const errors = [];
-    let mainRequested = false, releaseChecks = 0, serverBuild = '';
+    let mainRequested = false, releaseChecks = 0, serverBuild = '', emailRecoveryEnabled = false;
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/staff-pilot.mjs*', route => {
       mainRequested = true;
@@ -39,7 +39,12 @@ const server = http.createServer((req, res) => {
       const payload = route.request().postDataJSON() || {};
       if (payload.action === 'release_info') {
         releaseChecks += 1;
-        await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' }, body: JSON.stringify({ function: 'staff-workspace-v12', build: serverBuild, commit: null }) });
+        await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' }, body: JSON.stringify({ function: 'staff-workspace-v12', build: serverBuild, commit: null, partner_email_recovery: emailRecoveryEnabled }) });
+        return;
+      }
+      if (payload.action === 'request_partner_recovery') {
+        assert.deepEqual(payload, { action: 'request_partner_recovery', login_id: 'fictional-test-user' });
+        await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' }, body: JSON.stringify({ ok: true }) });
         return;
       }
       assert.equal(payload.action, 'login');
@@ -63,7 +68,9 @@ const server = http.createServer((req, res) => {
     await page.locator('#releaseCheck').waitFor({ state: 'visible' });
     assert.match(await page.locator('#releaseCheck').textContent(), /ERP server is build 2000-01-01\.1/);
     assert.equal(await page.locator('#loginForm button[type="submit"]').isDisabled(), false, 'a release mismatch warns but never blocks sign-in');
+    assert.equal(await page.getByRole('button', { name: 'Forgot password?' }).isVisible(), false);
     serverBuild = await page.evaluate(() => document.documentElement.dataset.build);
+    emailRecoveryEnabled = true;
     await page.goto(`http://127.0.0.1:${server.address().port}/staff-pilot`);
     await page.waitForFunction(() => document.documentElement.dataset.serverBuild);
     assert.equal(await page.locator('#releaseCheck').isVisible(), false, 'matching builds show no warning');
@@ -75,6 +82,9 @@ const server = http.createServer((req, res) => {
 
     await page.fill('[name="login_id"]', 'fictional-test-user');
     await page.fill('#loginForm [name="password"]', 'fictional-test-password');
+    await page.getByRole('button', { name: 'Forgot password?' }).click();
+    await page.getByText('If email recovery is enabled for this login ID', { exact: false }).waitFor();
+    assert.equal(mainRequested, false, 'requesting recovery must not open the ERP workspace');
     await signIn.click();
     await page.getByText('Your sign-in is saved, but the workspace screens did not load.', { exact: false }).waitFor({ state: 'visible' });
     assert.equal(mainRequested, true, 'the ERP module should load only after authentication succeeds');
