@@ -141,7 +141,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const old=p.action==='invoice_edit'?one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} and deleted_at is null for update`):null;
   const pid=old?.project_id??uuid(p.project_id),rid=old?.request_id??uuid(p.request_id);
   await financial(tx,pid,true);
-  if(old){current(old,p);if(old.status!=='Draft')fail(400,'Only draft invoices can be edited.');if(old.review_stage!=='Draft')fail(400,'This invoice has been submitted for checking. Return it to Draft before editing it.');}
+  if(old){current(old,p);if(old.status!=='Draft')fail(400,'Only draft invoices can be edited.');if((old.review_stage||'Draft')!=='Draft')fail(400,'This invoice has been submitted for checking. Return it to Draft before editing it.');}
   else{const exists=await tx`select invoice_id from erp_private.invoices where request_id=${rid}`;if(exists.length)return exists[0];}
   const project=one(await tx`select * from erp_private.projects where project_id=${pid}`),lines=invoiceLines(p.lines),[issued,due]=range(p.invoice_date,p.due_date);
   if(issued>today())fail(400,'Invoice date cannot be in the future.');

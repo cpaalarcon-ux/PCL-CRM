@@ -71,7 +71,7 @@ test('Invoices: rights, Edge actions and screen carry the same workflow',()=>{
  assert.ok(canUseAction(['invoice.post'],{action:'invoice_check'},'billing_wip'),'checking is a separate right');
  const edge=rd(fx+'suite-actions.ts');
  assert.match(edge,/if\(i\.review_stage!=='Checked'\)fail\(400,'Submit the invoice and have it checked before posting it\.'\)/);
- assert.match(edge,/if\(old\.review_stage!=='Draft'\)fail\(400,'This invoice has been submitted for checking/);
+ assert.match(edge,/if\(\(old\.review_stage\|\|'Draft'\)!=='Draft'\)fail\(400,'This invoice has been submitted for checking/);
  assert.match(edge,/selfReview\(a,\[i\.submitted_by\],p,'check'\)/);
  assert.match(edge,/selfReview\(a,\[i\.created_by,i\.submitted_by\],p,'post'\)/);
  assert.match(edge,/a\.category_code==='PARTNER'&&why\.length>=10/);
