@@ -36,6 +36,7 @@ import {purchaseLedgerAction} from './purchase-ledger-actions.ts';
 import {taxConfigAction} from './tax-config-actions.ts';
 import {readWorkspace} from './workspace-read.ts';
 import {setupLinkState,setupLinkMessages} from './setup-link-rules.mjs';
+import {managerResetTargets} from './manager-reset-targets.mjs';
 import {leadAction} from './lead-actions.ts';
 import {workspaceAction} from './workspace-actions.ts';
 import {workbookAction} from './workbook-actions.ts';
@@ -104,7 +105,7 @@ import {amlReportAction} from './aml-report-actions.ts';
 import {clientScopeAction} from './client-scope-actions.ts';
 import {clientUnderstandingAction} from './client-understanding-actions.ts';
 import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,scopeWorkspaceRecords,staffAreaCanUse} from './staff-access-control.mjs';
-import {rightsForRequest,actionRightLabel,defaultActionRights,isActionRight,filterActionWorkspace} from './staff-action-rights.mjs';
+import {rightsForRequest,actionRightLabel,defaultActionRights,isActionRight,filterActionWorkspace,canUseAction} from './staff-action-rights.mjs';
 import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode,isProposableAction} from './staff-rights-catalog.mjs';
 import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts';
 import {policiesRead,policyAction,requireAssistantEntryAuthorised} from './policy-actions.ts';
@@ -208,6 +209,20 @@ async function canManageStaffRecord(tx:any,a:any,target:any){
  if(!scope?.allowed)deny();
  if(a.category_code==='MANAGER'&&['PARTNER','MANAGER'].includes(target.category_code))deny();
 }
+async function credentialLinkState(tx:any,row:any){
+ if(!allowsPartnerRecoveryLink(row,PARTNER_RECOVERY?.staffId))return 'unavailable';
+ const state=setupLinkState(row);
+ if(state!=='ready'||!['MANAGER','PARTNER'].includes(row.category_code)||!row.issued_by||row.issued_by===row.staff_id)return state;
+ // A delegated link must never reset a Partner account after a promotion.
+ const [issuer]=await tx`select staff_id,category_code from erp_private.staff_members
+  where staff_id=${row.issued_by} and access_status='Active' and deleted_at is null
+  and (contract_end_date is null or contract_end_date>=(now() at time zone 'Africa/Nairobi')::date)`;
+ if(issuer?.category_code==='PARTNER')return state;
+ if(issuer?.category_code!=='MANAGER'||row.category_code!=='MANAGER')return 'unavailable';
+ const allowed=staffAreaCanUse(issuer.category_code,await restrictedAreas(tx,issuer.staff_id),'staff_access')
+  &&canUseAction(await restrictedRights(tx,issuer.staff_id),{action:'account_link'},'staff_access');
+ return allowed&&(await managerResetTargets(tx,issuer.staff_id,row.staff_id)).length?state:'unavailable';
+}
 async function setupStatus(p:any){
  const token=text(p.token,64);
  if(!/^[a-f0-9]{64}$/.test(token))fail(400,setupLinkMessages.unavailable);
@@ -215,7 +230,7 @@ async function setupStatus(p:any){
  const [row]=await sql`select t.staff_id,t.issued_by,t.expires_at,t.consumed_at,t.revoked_at,t.expires_at<=now() as expired,
  s.category_code,s.access_status,s.deleted_at,(s.contract_end_date is null or s.contract_end_date>=(now() at time zone 'Africa/Nairobi')::date) as contract_current
  from erp_private.setup_tokens t join erp_private.staff_members s on s.staff_id=t.staff_id where t.token_hash=${hash}`;
- const state=allowsPartnerRecoveryLink(row,PARTNER_RECOVERY?.staffId)?setupLinkState(row):'unavailable';
+ const state=await credentialLinkState(sql,row);
  return {state,message:setupLinkMessages[state],expires_at:state==='ready'?row.expires_at:null};
 }
 async function setup(p:any){
@@ -224,10 +239,15 @@ async function setup(p:any){
  await limit('setup:'+token,8);
  const hash=await sha(token);
  await sql.begin(async tx=>{
+  const [link]=await tx`select staff_id,issued_by from erp_private.setup_tokens where token_hash=${hash}`;
+  if(!link)fail(400,setupLinkMessages.unavailable);
+  // Serialize with issuance and staff changes before locking the token.
+  const staffIds=link.issued_by?[link.staff_id,link.issued_by]:[link.staff_id];
+  await tx`select staff_id from erp_private.staff_members where staff_id=any(${staffIds}::uuid[]) order by staff_id for update`;
   const rows=await tx`select t.*,s.auth_user_id,s.login_id,s.category_code,s.access_status,s.contract_end_date,s.deleted_at,t.expires_at<=now() as expired,
   (s.contract_end_date is null or s.contract_end_date>=(now() at time zone 'Africa/Nairobi')::date) as contract_current
-  from erp_private.setup_tokens t join erp_private.staff_members s on s.staff_id=t.staff_id where t.token_hash=${hash} for update of t,s`;
-  const state=allowsPartnerRecoveryLink(rows[0],PARTNER_RECOVERY?.staffId)?setupLinkState(rows[0]):'unavailable';
+  from erp_private.setup_tokens t join erp_private.staff_members s on s.staff_id=t.staff_id where t.token_hash=${hash} for update of t`;
+  const state=await credentialLinkState(tx,rows[0]);
   if(state!=='ready')fail(400,setupLinkMessages[state]);
   const s=rows[0];
   if(s.deleted_at||s.access_status==='Inactive')fail(403,'Ask the Engagement Partner to review this account.');
@@ -299,31 +319,39 @@ async function signIn(p:any){
 async function accountLink(id:any,p:any){
  if(!SETUP_BASE)fail(503,'The site address for setup links is not configured for this environment.');
  const staffId=uuid(p.staff_id),raw=nonce(),hash=await sha(raw);
- const selected=await scoped(id,async(tx,a)=>{
-  await requireStaffArea(tx,a,'staff_access');await requireActionRight(tx,a,p);staffAdmin(a);const s=one(await tx`select staff_id,login_id,category_code from erp_private.staff_members where staff_id=${staffId} and deleted_at is null`);
-  await canManageStaffRecord(tx,a,s);
-  return {staff:s,actor:a};
- });
- const validity=await sql.begin(async tx=>{
-  // Recheck the actor under the row lock so revocation cannot race credential issuance.
-  await tx`select staff_id from erp_private.staff_members where staff_id in (${selected.actor.staff_id},${staffId}) order by staff_id for update`;
+ return await sql.begin(async tx=>{
   await tx`select set_config('request.jwt.claims',${JSON.stringify(id.claims)},true)`;
-  const [check]=await tx`select erp_private.manages(${staffId}::uuid) as allowed,(erp_private.actor()).staff_id as actor,
-   (erp_private.actor()).category_code as actor_category,(select category_code from erp_private.staff_members where staff_id=${staffId}) as target_category`;
-  const adminOk=check.actor_category==='ADMIN'&&ORDINARY.includes(check.target_category);
-  if((!check.allowed&&!adminOk)||!check.actor)deny();
-  if(check.actor_category==='MANAGER'&&['PARTNER','MANAGER'].includes(check.target_category))deny();
-  const actor={staff_id:check.actor,category_code:check.actor_category};
+  const [sessionActor]=await tx`select (erp_private.actor()).staff_id as staff_id`;
+  if(!sessionActor?.staff_id)deny();
+  await tx`select staff_id from erp_private.staff_members where staff_id in (${sessionActor.staff_id},${staffId}) order by staff_id for update`;
+  const [actor]=await tx`select (erp_private.actor()).*`;
+  if(actor?.staff_id!==sessionActor.staff_id)deny();
+  staffAdmin(actor);
   await requireStaffArea(tx,actor,'staff_access');
   await requireActionRight(tx,actor,p);
+  const staff=one(await tx`select staff_id,login_id,category_code from erp_private.staff_members where staff_id=${staffId} and deleted_at is null`);
+  if(staff.staff_id===actor.staff_id)fail(403,'Ask another authorised Manager or Engagement Partner to reset your password.');
+  const peerReset=actor.category_code==='MANAGER'&&staff.category_code==='MANAGER';
+  if(peerReset){
+   if(!(await managerResetTargets(tx,actor.staff_id,staffId)).length)deny();
+  }else await canManageStaffRecord(tx,actor,staff);
   await tx`update erp_private.staff_members set access_status='Pending setup',sessions_invalid_before=now() where staff_id=${staffId}`;
   await tx`update erp_private.pilot_sessions set revoked_at=now() where staff_id=${staffId}`;
   await tx`update erp_private.setup_tokens set revoked_at=now() where staff_id=${staffId} and consumed_at is null`;
-  const [validity]=await tx`insert into erp_private.setup_tokens(token_hash,staff_id,issued_by,expires_at) values(${hash},${staffId},${selected.actor.staff_id},now()+interval '24 hours') returning created_at,expires_at`;
-  await logAdmin(tx,id.claims.sub,'SETUP_LINK_ISSUED',staffId,{expires_in_hours:24});
-  return validity;
+  const [validity]=await tx`insert into erp_private.setup_tokens(token_hash,staff_id,issued_by,expires_at) values(${hash},${staffId},${actor.staff_id},now()+interval '24 hours') returning created_at,expires_at`;
+  await logAdmin(tx,id.claims.sub,'SETUP_LINK_ISSUED',staffId,{expires_in_hours:24,...(peerReset?{method:'manager_peer_reset',issued_by_staff_id:actor.staff_id}:{})});
+  return {login_id:staff.login_id,setup_url:SETUP_BASE+'#setup='+raw,expires_in_hours:24,created_at:validity.created_at,expires_at:validity.expires_at};
  });
- return {login_id:selected.staff.login_id,setup_url:SETUP_BASE+'#setup='+raw,expires_in_hours:24,created_at:validity.created_at,expires_at:validity.expires_at};
+}
+async function managerPasswordResetTargets(id:any,p:any){
+ return await sql.begin(async tx=>{
+  await tx`select set_config('request.jwt.claims',${JSON.stringify(id.claims)},true)`;
+  const [actor]=await tx`select (erp_private.actor()).*`;
+  if(actor?.category_code!=='MANAGER')deny();
+  await requireStaffArea(tx,actor,'staff_access');
+  await requireActionRight(tx,actor,p);
+  return {targets:await managerResetTargets(tx,actor.staff_id)};
+ });
 }
 async function bucket(){
  const r=await admin.storage.getBucket(BUCKET);
@@ -504,6 +532,7 @@ async function action(id:any,p:any){
   return {ok:true,archived_at:archived.archived_at,archived_batches:counts.batch_count,retained_rows:counts.row_count,protected_rows:counts.protected_rows,protected_imports:protectedImports,protected_opening_entries:protectedOpeningEntries};
  });
  if(p.action==='account_link')return accountLink(id,p);
+ if(p.action==='manager_password_reset_targets')return managerPasswordResetTargets(id,p);
  if(p.action==='logout'){
   await sql`update erp_private.pilot_sessions set revoked_at=now() where session_id=${id.claims.session_id}::uuid`;
   await admin.auth.admin.signOut(id.jwt,'local');return {ok:true};
