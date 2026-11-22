@@ -15,6 +15,7 @@ import {createPresenceUI} from './staff-presence.mjs?v=20261109-hol-v1';
 import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-check-v1';
 import {setMyWork,loadMyWorkMode} from './staff-my-work.mjs?v=20261121-coa-v1';
 import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261119-queue-v1';
+import {createLoadQueue} from './staff-load-queue.mjs?v=20261205-load-queue';
 import {createLeadsUI} from './staff-leads.mjs?v=20261108-nav-v1';
 import {createTeamUI} from './staff-team.mjs?v=20261109-vs-v1';
 import {DEFAULT as VS_DEFAULT,hasPicker,pickerOptions,targetOf,attendanceTitle,teamTitle,narrowTasks,attendanceCards} from './staff-view-staff.mjs?v=20261109-vs-v1';
@@ -119,7 +120,8 @@ async function request(p,{auth=true,...options}={}){
  catch(cause){error=true;session.reject(ctx,cause);if(isConnectionDrop(cause))throw Object.assign(Error(connectionDropMessage(action)),{cause,connection_dropped:true});throw cause;}
  finally{if(started!==null&&data){timingRows.unshift({action,at:new Date(),seconds:(performance.now()-started)/1000,error});if(timingRows.length>100)timingRows.length=100;}}
 }
-async function load(requestOptions={}){data=await request({action:'workspace'},requestOptions);syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
+const load=createLoadQueue(options=>loadNow(options));
+async function loadNow(requestOptions={}){data=await request({action:'workspace'},requestOptions);syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
  $('#greeting').textContent='My workspace';$('#roleLabel').textContent=roles[data.me.category_code]+' · '+data.me.login_id;
  $('#firmFilter').innerHTML=options(data.firms.map(x=>[x.firm_id,x.firm_code+' · '+x.legal_name]),firm,'All authorised firms');
  $('.firm-picker').hidden=data.me.category_code==='INTERN';applyWorkspaceRoute(false);render();await openCommunicationHash();void presence.refresh();}
@@ -432,8 +434,8 @@ function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='
    await drafts?.current()?.submitted();
    editor.close();
    body.replaceChildren();
-   if(refreshWorkspace)await load();
    notice(successMessage);
+   if(refreshWorkspace)await load();
    if(afterSave&&revision===editorRevision)await afterSave(result);
   }catch(err){
    if($('#editForm')===form&&editor.open)status.textContent=applyServerError(form,err.message).notice;
