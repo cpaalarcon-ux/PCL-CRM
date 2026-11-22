@@ -79,5 +79,5 @@ test('Invoices: rights, Edge actions and screen carry the same workflow',()=>{
  assert.match(ui,/button\('invoice-submit','Submit for check'/);assert.match(ui,/review_stage==='Submitted'\?button\('invoice-check'/);
  assert.match(ui,/review_stage==='Checked'\?button\('invoice-post','Post'/);
  assert.ok(!/status==='Draft'\?button\('invoice-post'/.test(ui),'Post no longer shows on every draft');
- assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261206-invoice-review/);
+ assert.match(rd('staff-pilot.mjs'),/staff-suite\.mjs\?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review/);
 });
