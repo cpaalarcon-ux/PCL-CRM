@@ -826,8 +826,9 @@ Deno.serve(async(req:Request)=>{
    if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData(),dataset=String(form.get('dataset')||''),area=dataset==='Staff'?'staff_access':'clients';const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,area);await requireActionRight(tx,a,{action:dataset==='Staff'?'master_staff_import':'client_master_import'});return masterImport(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
   }
-  const body=await req.text();if(body.length>30000)fail(413,'The request is too large.');
+  const body=await req.text();if(body.length>60000)fail(413,'The request is too large.');
   let p;try{p=JSON.parse(body);}catch{fail(400,'Invalid request.');}if(!p||typeof p!=='object')fail(400,'Invalid request.');
+  if(body.length>30000&&p.action!=='settings_approval_batch_approve')fail(413,'The request is too large.');
   let result;
   // Public release identity: lets the website and checks confirm the server matches the page build.
   // When deployed from a pinned GitHub commit, the module URL carries that commit.

@@ -25,9 +25,9 @@ import {createTaxRolesUI} from './staff-tax-roles.mjs?v=20261112-resources-v1';
 import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
 import {SETTINGS_TABS,tabForCard,layoutView,rightsView,FOLD_TABS,fold} from './staff-settings-layout.mjs?v=20261119-settings-v1';
 import {createSettingsFrameUI} from './staff-settings-frame.mjs?v=20261118-approval-board-v1';
-import {createStatementReviewUI} from './staff-statement-review.mjs?v=20261118-approval-board-v1';
+import {createStatementReviewUI} from './staff-statement-review.mjs?v=20261118-approval-board-v1&bulk=20261122-v1';
 import {createOwnerMatrixUI} from './staff-owner-matrix.mjs?v=20261117-actions-v1';
-import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261118-approval-board-v1&rev=20261119-nav&review=20261122-v1';
+import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261118-approval-board-v1&rev=20261119-nav&review=20261122-v1&bulk=20261122-v1';
 import {createResourcesUI} from './staff-resources.mjs?v=20261118-templates-v2';
 import {createDueBacklogUI} from './staff-due-backlog.mjs?v=20261112-resources-v1';
 import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261116-whtvat-v1';
@@ -71,7 +71,7 @@ export function createSuiteUI(ctx){
  const settingsHub=createSettingsHubUI(hubCtx);
  const stmtReview=createStatementReviewUI(ctx);
  const ownerMatrix=createOwnerMatrixUI({...ctx,hubRefresh:()=>{settingsHub.refresh();}});
- const myApprovals=createMyApprovalsUI({...ctx,openSection,canEditTax:()=>canUseAction(d().me.restricted_rights,{action:'rate_save'},'settings'),openTaxRule:taxConfig.openReviewRule});
+ const myApprovals=createMyApprovalsUI({...ctx,openSection,canEditTax:()=>canUseAction(d().me.restricted_rights,{action:'rate_save'},'settings'),openTaxRule:taxConfig.openReviewRule,openStatementReview:stmtReview.open});
  // Where an Open button goes (build 2839): a Settings tab, the grouped statement-line review, or the area that holds the setting.
  const AREA_NAMES={projects:'Projects & tasks',clients:'Clients',documents:'Documents',audit:'Audit & assurance'};
  function openSection(o,s){

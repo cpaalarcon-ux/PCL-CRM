@@ -23,10 +23,10 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&bulk=20261122-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261119-workspace';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
-import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&review=20261122-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&review=20261122-v1&bulk=20261122-v1';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
 import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905';
 import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
@@ -745,7 +745,7 @@ async function uploadMessenger(attachment,channelId,options){
  }catch(error){session.reject(sessionContext,error);throw error;}
 }
 const messenger=createMessenger({esc,request,notice,uploadMessenger,openTask:id=>navigateWorkspace('task',id),data:()=>data});
-const suite=createSuiteUI({upload,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openTask:id=>navigateWorkspace('task',id),navigate:next=>navigateWorkspace(next),currentHash:()=>location.hash,goHash:h=>{history.pushState(null,'',location.pathname+location.search+h);applyWorkspaceRoute();}});
+const suite=createSuiteUI({upload,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openChartAccount:(code,options)=>v6.openCatalog(code,options),openTask:id=>navigateWorkspace('task',id),navigate:next=>navigateWorkspace(next),currentHash:()=>location.hash,goHash:h=>{history.pushState(null,'',location.pathname+location.search+h);applyWorkspaceRoute();}});
 bindProposals({$,esc,field,form,modal,request,load,notice,data:()=>data});
 bindPolicies({esc,form,modal,request,data:()=>data});
 bindDocRequests({esc,form,field,select,modal,request,data:()=>data,notice,shortDate,today,load});

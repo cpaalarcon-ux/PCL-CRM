@@ -114,26 +114,40 @@ test('My Approvals filters and views',()=>{
  assert.match(MA.recordsView([],{}),/No records match/);
 });
 
-test('Quick review drawer shows item details and requires an explicit review confirmation',()=>{
- const groups=[{key:'approve_tax_rates',items:[{id:'rate-1',revision:4,label:'VAT standard',code:'KE_VAT_STANDARD',kind:'VAT',effective_from:'2026-01-01',legal_citation:'Value Added Tax Act',source_url:'https://example.test/law',eligible:true}]}];
- const selected=new Map([['approve_tax_rates',new Set(['rate-1'])]]);
- const v=MA.drawerView(groups,selected);
- assert.match(v,/data-ap-selectall/);assert.match(v,/data-ap-item="approve_tax_rates\|rate-1" checked/);assert.match(v,/data-ap-confirm/);
- assert.match(v,/I confirm that I completed each applicable review above/);assert.match(v,/statutory basis, eligibility conditions and effective dates/);
- assert.match(v,/Value Added Tax Act/);assert.match(v,/Open official source/);
+test('Quick review groups records, compares figures and lists the exact batch at confirmation',()=>{
+ const groups=[{key:'approve_tax_rates',items:[{id:'rate-1',revision:4,label:'VAT standard',code:'KE_VAT_STANDARD',kind:'VAT',
+  effective_from:'2026-01-01',effective_to:'2026-12-31',legal_citation:'Value Added Tax Act',source_url:'https://example.test/law',
+  eligible:true,parameters:{rate:16},comparison:{effective_from:'2025-01-01',parameters:{rate:14}}}]}];
+ const v=MA.drawerView(groups,new Map());
+ assert.match(v,/data-ap-section-select/);
+ assert.match(v,/VAT · 2026-01-01 to 2026-12-31/);
+ assert.match(v,/data-ap-item="approve_tax_rates\|rate-1"\s+>/);
+ assert.match(v,/Proposed figures[\s\S]*16[\s\S]*Approved figures[\s\S]*14/);
+ assert.match(v,/Value Added Tax Act/);
+ assert.match(v,/Open official source/);
+ const preview=MA.batchPreviewView(groups);
+ assert.match(preview,/KE_VAT_STANDARD/);
+ assert.match(preview,/I confirm that I completed each applicable review above/);
+ assert.match(preview,/statutory basis, eligibility conditions and effective dates/);
 });
 
-test('Quick review identifies the blocked rule and returns to the same selection after edit',async t=>{
+test('Bulk review starts empty, selects eligible rows by group, and preserves selection through editing',async t=>{
  const dom=new JSDOM('<dialog id="editor"><button id="closeEditor"></button><div id="editorBody"></div></dialog>');
  globalThis.document=dom.window.document;
  t.after(()=>{delete globalThis.document;dom.window.close();});
- const first={id:'nita',code:'KE_NITA',label:'Employer industrial training levy',revision:1,eligible:true,source_issue:'Enter the official source.'};
- const second={id:'other',code:'KE_OTHER',label:'Other draft',revision:1,eligible:true};
- let edit;
+ const blocked={id:'nita',code:'KE_NITA',label:'Employer industrial training levy',revision:1,kind:'Levy',eligible:false,source_issue:'Enter the official source.'};
+ const first={id:'first',code:'KE_FIRST',label:'First draft',revision:1,kind:'Levy',eligible:true};
+ const second={id:'second',code:'KE_SECOND',label:'Second draft',revision:1,kind:'VAT',eligible:true};
+ let edit,checked=false;
  const ui=MA.createMyApprovalsUI({
   request:async p=>{
-   if(p.action==='settings_approval_items_read')return {groups:[{key:'approve_tax_rates',items:[{...first},{...second}]}]};
-   if(p.action==='settings_approval_batch_approve')throw Object.assign(Error('Enter the official source.'),{status:400,approval_item:{queue_key:'approve_tax_rates',id:first.id}});
+   if(p.action==='settings_approval_items_read')return {groups:[{key:'approve_tax_rates',items:[blocked,first,second]}]};
+   if(p.preview_only){assert.deepEqual(p.selections,[{queue_key:'approve_tax_rates',items:[{id:first.id,revision:first.revision}]}]);checked=true;
+    return {groups:[{key:'approve_tax_rates',items:[first]}],review_version:'preview-token'};}
+   if(p.review_confirmed){
+    assert.equal(p.review_version,'preview-token');
+    return {total:1,batch_id:'batch-reference',approved_by:'Reviewer',approved_at:'2026-11-22T13:00:00Z',groups:[{key:'approve_tax_rates',items:[first]}]};
+   }
    return {queues:[],records:[],actionGroups:[]};
   },
   modal:(_title,html)=>{document.getElementById('editorBody').innerHTML=html;},
@@ -141,27 +155,36 @@ test('Quick review identifies the blocked rule and returns to the same selection
   openTaxRule:(id,options)=>{edit={id,...options};document.getElementById('editorBody').replaceChildren();}
  });
  const $=selector=>document.querySelector(selector);
- const confirm=()=>{$('[data-ap-confirm]').checked=true;};
+ const check=input=>{input.checked=true;input.dispatchEvent(new dom.window.Event('change',{bubbles:true}));};
  await ui.handle('ap-review','approve_tax_rates');
- confirm();
- await ui.handle('ap-approve-selected');
- assert.match($('#apBatchError').textContent,/KE_NITA · Employer industrial training levy/);
+ assert.equal($('[data-ap-item]:checked'),null);
  assert.equal($('[data-ap-item="approve_tax_rates|nita"]').disabled,true);
- assert.equal($('[data-ap-item="approve_tax_rates|other"]').checked,true);
+ check($('[data-ap-section-select]'));
+ assert.equal($('[data-ap-item="approve_tax_rates|first"]').checked,true);
+ assert.equal($('[data-ap-item="approve_tax_rates|second"]').checked,false);
  await ui.handle('ap-rate-open','nita');
  assert.equal(edit.id,'nita');
  assert.equal(edit.focusSource,true);
  edit.onBack();
- assert.equal($('[data-ap-item="approve_tax_rates|other"]').checked,true);
+ assert.equal($('[data-ap-item="approve_tax_rates|first"]').checked,true);
  await ui.handle('ap-rate-open','nita');
- first.revision=2;
- first.source_issue=null;
+ blocked.revision=2;
+ blocked.source_issue=null;
+ blocked.eligible=true;
  await edit.afterSave();
  assert.equal($('[data-ap-item="approve_tax_rates|nita"]').checked,false);
  assert.equal($('[data-ap-item="approve_tax_rates|nita"]').disabled,false);
- assert.equal($('[data-ap-item="approve_tax_rates|other"]').checked,true);
- assert.equal($('[data-ap-confirm]').checked,false);
  assert.equal(document.activeElement.getAttribute('data-id'),'nita');
+ await ui.handle('ap-preview-selected');
+ assert.equal(checked,true);
+ assert.equal($('[data-ap-confirm]').checked,false);
+ await ui.handle('ap-approve-selected');
+ assert.equal($('#editorBody').textContent.includes('batch-reference'),false);
+ check($('[data-ap-confirm]'));
+ await ui.handle('ap-approve-selected');
+ assert.match($('#editorBody').textContent,/batch-reference/);
+ assert.match($('#editorBody').textContent,/Reviewer/);
+ assert.match($('#editorBody').textContent,/KE_FIRST/);
 });
 
 test('a timed-out approval requires a fresh list before retrying',async t=>{
@@ -171,26 +194,29 @@ test('a timed-out approval requires a fresh list before retrying',async t=>{
  let attempts=0,items=[{id:'r1',label:'First rule',revision:1,eligible:true}];
  const ui=MA.createMyApprovalsUI({
   request:async p=>{
-   if(p.action==='settings_approval_items_read')return {groups:[{key:'approve_tax_rates',items}]};
+   const groups=[{key:'approve_tax_rates',items}];
+   if(p.action==='settings_approval_items_read')return {groups};
+   if(p.preview_only)return {groups,review_version:'preview-token'};
    attempts++;
    throw Object.assign(Error('The request failed.'),{status:504});
   },
   modal:(_title,html)=>{document.getElementById('editorBody').innerHTML=html;},
   render(){},notice(){}
  });
+ const check=selector=>{const input=document.querySelector(selector);input.checked=true;input.dispatchEvent(new dom.window.Event('change',{bubbles:true}));};
  await ui.handle('ap-review','approve_tax_rates');
- const confirm=()=>{const input=document.querySelector('[data-ap-confirm]');input.checked=true;input.dispatchEvent(new dom.window.Event('change',{bubbles:true}));};
- confirm();
+ check('[data-ap-item]');
+ await ui.handle('ap-preview-selected');
+ check('[data-ap-confirm]');
  await ui.handle('ap-approve-selected');
  assert.match(document.getElementById('apBatchError').textContent,/timed out/);
- confirm();
- assert.equal(document.querySelector('[data-suite="ap-approve-selected"]').disabled,true);
- await ui.handle('ap-approve-selected');
+ assert.equal(document.querySelector('[data-suite="ap-preview-selected"]').disabled,true);
+ await ui.handle('ap-preview-selected');
  assert.equal(attempts,1);
  items=[];
  await ui.handle('ap-review-reload');
  assert.equal(document.getElementById('apBatchError'),null);
- assert.equal(document.getElementById('apSelectedCount').textContent,'0');
+ assert.match(document.getElementById('apSelectionStatus').textContent,/^0 selected/);
 });
 
 test('Owner Matrix view and diff: only changed rows are sent; Managers cannot confirm',()=>{

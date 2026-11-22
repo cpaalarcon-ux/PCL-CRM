@@ -57,7 +57,7 @@ async function decideMaps(tx:any,a:any,ids:string[],approve:boolean,note:string)
 
 // Every Draft mapping with what the review needs to classify it (build 2839). Reads only; the rules are in statement-review-rules.mjs.
 async function reviewRows(tx:any){
- return await tx`select m.map_id,m.account_code,c.name account_name,c.statement account_statement,c.status account_status,c.is_legacy,m.line_code,l.label line_label,l.statement line_statement,m.effective_from,m.reason,m.proposed_by,erp_private.staff_name(m.proposed_by) proposed_by_name,
+ return await tx`select m.map_id,m.account_code,c.name account_name,c.statement account_statement,c.status account_status,c.revision account_revision,c.is_legacy,m.line_code,l.label line_label,l.statement line_statement,m.effective_from,m.reason,m.proposed_by,erp_private.staff_name(m.proposed_by) proposed_by_name,
    o.line_code open_line_code,o.effective_from open_from,(select count(*) from erp_private.account_statement_map d where d.account_code=m.account_code and d.status='Draft')::int drafts
   from erp_private.account_statement_map m join erp_private.account_catalog c on c.code=m.account_code join erp_private.statement_lines l on l.line_code=m.line_code
   left join erp_private.account_statement_map o on o.account_code=m.account_code and o.status='Approved' and o.effective_to is null
@@ -72,10 +72,20 @@ export async function statementMapAction(tx:any,a:any,p:any){
   if(a.category_code!=='PARTNER')fail(403,'Only a Partner can approve a statement-line mapping.');
   const note=text(p.review_note??'',500,false),rows=await reviewRows(tx);let ids:string[];
   if(p.scope==='group'){
-   ids=(Array.isArray(p.map_ids)?p.map_ids:[]).map(uuid);const c=checkGroupIds(ids,rows);if(!c.ok)fail(409,c.message);
-   const selected=new Set(ids);
-   const own=rows.find((r:any)=>selected.has(r.map_id)&&r.proposed_by===a.staff_id);
-   if(own)fail(403,`Account ${own.account_code} must be approved by a Partner other than its proposer.`);
+   ids=(Array.isArray(p.map_ids)?p.map_ids:[]).map(uuid);
+   const c=checkGroupIds(ids,rows);
+   const mappingFailure=(status:number,message:string,id?:string)=>{
+    try{fail(status,message);}catch(error:any){throw Object.assign(error,id?{approval_item:{queue_key:'approve_statement_lines',id}}:{});}
+   };
+   if(!c.ok)mappingFailure(409,c.message,c.id);
+   const byId=new Map<string,any>(rows.map((r:any)=>[r.map_id,r]));
+   for(const [i,id] of ids.entries()){
+    const row=byId.get(id);
+    if(row.proposed_by===a.staff_id)
+     mappingFailure(403,`Account ${row.account_code} must be approved by a Partner other than its proposer.`,id);
+    if(p.map_revisions&&String(row.account_revision)!==String(p.map_revisions[i]))
+     mappingFailure(409,`Account ${row.account_code} changed during review. Reload Quick review.`,id);
+   }
    // A consistent mapping has no open approved mapping to end. Update the
    // selected drafts together and let the existing guards and audit trigger run per row.
    const changed=await tx`update erp_private.account_statement_map m

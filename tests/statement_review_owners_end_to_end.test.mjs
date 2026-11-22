@@ -102,7 +102,16 @@ test('grouped statement-line review, Owner Matrix and My Approvals through the r
  await assert.rejects(own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_chart',items:[{id:first.id,revision:first.revision},{id:second.id,revision:999}]}]}),/This record changed\. Refresh before saving/);
  assert.equal((await tx`select count(*)::int n from erp_private.approval_batches`)[0].n,0,'failed batches leave no audit record');
  assert.equal((await tx`select count(*)::int n from erp_private.account_catalog where code in ('99976','99977') and status='Draft'`)[0].n,2,'a stale item rolls back the earlier item in the same batch');
- const chartDone=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_chart',items:[{id:first.id,revision:first.revision}]}]});
+ const chartSelection=[{queue_key:'approve_chart',items:[{id:first.id,revision:first.revision}]}];
+ const preview=await own('PARTNER',{action:'settings_approval_batch_approve',preview_only:true,selections:chartSelection});
+ assert.match(preview.review_version,/^[a-f0-9]{64}$/);
+ assert.equal(preview.groups[0].items[0].code,first.id);
+ assert.equal((await tx`select count(*)::int n from erp_private.approval_batches`)[0].n,0,'preview changes nothing');
+ await assert.rejects(own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,review_version:'wrong',selections:chartSelection}),/details changed/);
+ const chartDone=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,review_version:preview.review_version,selections:chartSelection});
+ assert.equal(chartDone.approved_by,'Fictional PARTNER');
+ assert(chartDone.approved_at);
+ assert.equal(chartDone.groups[0].items[0].code,first.id);
  assert.equal(chartDone.total,1);
  const approved=(await tx`select status,approved_by,approved_at from erp_private.account_catalog where code='99976'`)[0];
  assert.equal(approved.status,'Active');assert.equal(approved.approved_by,actors.PARTNER.staff_id);assert(approved.approved_at);
@@ -115,9 +124,13 @@ test('grouped statement-line review, Owner Matrix and My Approvals through the r
  assert.equal(otherPartner.total,1,'a different Partner can approve the proposal');
 
  const mapGroup=(await own('PARTNER',{action:'settings_approval_items_read',queue_keys:['approve_statement_lines']})).groups[0];
- const mapItem=mapGroup.items.find(g=>g.eligible&&g.items.length)?.items[0];
+ const mapItem=mapGroup.items.flatMap(g=>g.items).find(x=>x.eligible);
  assert(mapItem,'a consistent statement-line item is available for the grouped path');
- const mapDone=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_statement_lines',items:[{id:mapItem.id,revision:null}]}]});
+ const selection=[{queue_key:'approve_statement_lines',items:[{id:mapItem.id,revision:mapItem.revision}]}];
+ const mappingPreview=await own('PARTNER',{action:'settings_approval_batch_approve',preview_only:true,selections:selection});
+ assert(mappingPreview.groups[0].items[0].statement_line);
+ await assert.rejects(own('PARTNER',{action:'settings_approval_batch_approve',preview_only:true,selections:[{queue_key:'approve_statement_lines',items:[{id:mapItem.id,revision:0}]}]}),/changed after you opened/);
+ const mapDone=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,review_version:mappingPreview.review_version,selections:selection});
  assert.equal(mapDone.total,1);
  assert.equal((await tx`select count(*)::int n from erp_private.approval_batches`)[0].n,3,'each successful typed group has one batch audit row');
  assert.equal((await tx`select count(*)::int n from erp_private.approval_batches where review_confirmed`)[0].n,3,'all successful batches retain the reviewer confirmation');

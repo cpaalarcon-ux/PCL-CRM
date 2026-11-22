@@ -30,13 +30,13 @@ export const kindOf=r=>r.open_line_code&&r.open_line_code===r.line_code?'unchang
 export function classify(r){
  const reasons=reasonsFor(r),kind=kindOf(r);
  return {map_id:r.map_id,account_code:r.account_code,account_name:r.account_name,line_code:r.line_code,line_label:r.line_label,line_statement:r.line_statement,effective_from:iso(r.effective_from),
-  seeded:!r.proposed_by,proposed_by:r.proposed_by_name||null,reason:r.reason||null,kind,
+  seeded:!r.proposed_by,proposed_by:r.proposed_by_name||null,proposed_by_id:r.proposed_by||null,revision:r.account_revision??null,reason:r.reason||null,kind,
   reasons:kind==='unchanged'?[]:reasons.map(c=>({code:c,text:REASONS[c].text,blocks:REASONS[c].blocks})),
   replaces:r.open_line_code?{line_code:r.open_line_code,from:iso(r.open_from)}:null,blocked:reasons.some(c=>REASONS[c].blocks)};
 }
 export function buildReview(rows){
  const items=(rows||[]).map(classify),groups=new Map();
- for(const i of items){if(i.kind!=='consistent')continue;if(!groups.has(i.line_code))groups.set(i.line_code,{line_code:i.line_code,label:i.line_label,statement:i.line_statement,accounts:[]});groups.get(i.line_code).accounts.push({map_id:i.map_id,account_code:i.account_code,account_name:i.account_name,effective_from:i.effective_from,seeded:i.seeded});}
+ for(const i of items){if(i.kind!=='consistent')continue;if(!groups.has(i.line_code))groups.set(i.line_code,{line_code:i.line_code,label:i.line_label,statement:i.line_statement,accounts:[]});groups.get(i.line_code).accounts.push({map_id:i.map_id,account_code:i.account_code,account_name:i.account_name,effective_from:i.effective_from,seeded:i.seeded,proposed_by:i.proposed_by,proposed_by_id:i.proposed_by_id,revision:i.revision});}
  const g=[...groups.values()].map(x=>({...x,count:x.accounts.length}));
  const ex=items.filter(i=>i.kind==='exception'),un=items.filter(i=>i.kind==='unchanged');
  return {summary:{total:items.length,consistent:items.filter(i=>i.kind==='consistent').length,unchanged:un.length,exceptions:ex.length,blocked:ex.filter(i=>i.blocked).length},groups:g,unchanged:un,exceptions:ex,max_batch:MAX_BATCH};
@@ -47,7 +47,7 @@ export function checkGroupIds(ids,rows){
  if(!Array.isArray(ids)||!ids.length)return {ok:false,message:'Choose at least one group to approve.'};
  if(ids.length>MAX_BATCH)return {ok:false,message:`Approve at most ${MAX_BATCH} mappings at a time.`};
  if(new Set(ids).size!==ids.length)return {ok:false,message:'A mapping was selected more than once. Refresh and try again.'};
- for(const id of ids){const r=by.get(id);if(!r)return {ok:false,message:'A selected mapping is no longer waiting. Refresh the review.'};if(kindOf(r)!=='consistent')return {ok:false,message:`Account ${r.account_code} is no longer in the consistent group. Refresh the review and decide it on its own.`};}
+ for(const id of ids){const r=by.get(id);if(!r)return {ok:false,id,message:'A selected mapping is no longer waiting. Refresh the review.'};if(kindOf(r)!=='consistent')return {ok:false,id,message:`Account ${r.account_code} is no longer in the consistent group. Refresh the review and decide it on its own.`};}
  return {ok:true};
 }
 // One exception: a reason is always required, and a blocking reason cannot be approved at all.
