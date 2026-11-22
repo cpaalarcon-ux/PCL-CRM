@@ -12,6 +12,9 @@ const groups=[
   view:['invoice_pdf','billing_by_task'], create:['invoice_save'], edit:['invoice_edit'],
   submit:['invoice_submit'], review:['invoice_check'], post:['invoice_post'], void:['invoice_void'], etims:['invoice_etims_record'],
  }],
+ ['creditnote','billing_wip','Credit notes on firm invoices',leaders,{
+  view:['credit_note_pdf'], create:['credit_note_save'], submit:['credit_note_submit'], approve:['credit_note_issue','credit_note_return'], void:['credit_note_void'], etims:['credit_note_etims_record'],
+ },{approve:['PARTNER'],void:['PARTNER']}],
  ['receipt','billing_wip','Receipts and advances',leaders,{
   view:[], create:['payment_add','advance_receive'], apply:['advance_apply'], reverse:['payment_reverse'], move:['advance_refund','advance_transfer'],
  }],

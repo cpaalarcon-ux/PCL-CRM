@@ -34,6 +34,26 @@ export const FIRM_VAT_RATE=16;
 // Fee lines carry 16% VAT and nothing else. Disbursements (money paid out for the client and recharged) carry no VAT.
 // A rate sent by the caller is never trusted: anything other than the line type's own rate is refused.
 export function invoiceLines(lines){if(!Array.isArray(lines)||!lines.length||lines.length>50)fail(400,'Add between 1 and 50 invoice lines.');return lines.map(l=>{const type=String(l.line_type||'Fee').trim(),line_type=type.toLowerCase()==='disbursement'?'Disbursement':type.toLowerCase()==='fee'?'Fee':fail(400,'Choose Fee or Disbursement for each invoice line.'),disbursement=line_type==='Disbursement',sent=l.vat_rate!==undefined&&l.vat_rate!==null&&l.vat_rate!=='',includes_vat=l.includes_vat===true||l.includes_vat==='true'||l.includes_vat==='on'||l.includes_vat==='1';if(sent&&Number(l.vat_rate)!==(disbursement?0:FIRM_VAT_RATE))fail(400,disbursement?DISBURSEMENT_POLICY:VAT_POLICY);if(disbursement&&includes_vat)fail(400,DISBURSEMENT_POLICY);const vat_rate=disbursement?0:FIRM_VAT_RATE,quantity=number(l.quantity,.01,1e6),unit_price=amount(l.unit_price),entered=round(quantity*unit_price),net=includes_vat?round(entered/(1+vat_rate/100)):entered,vat=includes_vat?round(entered-net):round(net*vat_rate/100);const link=l.task_id?{task_id:uuid(l.task_id)}:{},milestone=text(l.milestone||'',120,false);return {description:text(l.description,300),line_type,quantity,unit_price,vat_rate,...(includes_vat?{includes_vat:true}:{}),net,vat,total:round(net+vat),...link,...(milestone?{milestone}:{})};});}
+// Credit note lines. Each credited line points at a line of the posted invoice (by position) and carries a net amount no larger than what is still
+// uncredited on that line after the firm's other credit notes (draft, submitted or issued). VAT follows the invoice line's rate; a line credited in full
+// takes the invoice line's exact VAT so rounding never leaves a cent behind.
+export const CREDIT_REASONS=['Billing error','Service not delivered','Fee agreed down','Duplicate invoice','Other'];
+export function creditNoteLines(invoiceLineList,otherLineSets,requested){
+ const orig=Array.isArray(invoiceLineList)?invoiceLineList:[],used=new Map();
+ for(const set of otherLineSets||[])for(const l of (Array.isArray(set)?set:[])){const u=used.get(l.line_no)||{net:0,vat:0};used.set(l.line_no,{net:round(u.net+Number(l.net)),vat:round(u.vat+Number(l.vat))});}
+ if(!Array.isArray(requested)||!requested.length||requested.length>50)fail(400,'Choose at least one invoice line to credit.');
+ const seen=new Set();
+ return requested.map(r=>{
+  const n=Number(r.line_no);if(!Number.isInteger(n)||n<0||n>=orig.length)fail(400,'Choose lines from the invoice.');
+  if(seen.has(n))fail(400,'Each invoice line can be credited once on a credit note.');seen.add(n);
+  const o=orig[n],u=used.get(n)||{net:0,vat:0},remainNet=round(Number(o.net)-u.net),remainVat=round(Number(o.vat)-u.vat);
+  const full=r.full===true||r.full==='true',net=full?remainNet:amount(r.net);
+  if(!(net>0))fail(400,remainNet>0?'Enter an amount above zero for each credited line.':`Line ${n+1} is already fully credited.`);
+  if(net>remainNet)fail(400,`Line ${n+1} can be credited by at most ${remainNet.toFixed(2)} (before VAT) after earlier credit notes.`);
+  const vat=net===remainNet?remainVat:Math.min(round(net*Number(o.vat_rate||0)/100),remainVat);
+  return {line_no:n,description:text(String(o.description||'Invoice line'),300),line_type:o.line_type||'Fee',vat_rate:Number(o.vat_rate||0),net,vat,total:round(net+vat)};
+ });
+}
 export const addMonthsAnchored=(iso,months)=>{const [y,m,d]=iso.split('-').map(Number),monthIndex=y*12+(m-1)+months,year=Math.floor(monthIndex/12),month=((monthIndex%12)+12)%12,day=Math.min(d,new Date(Date.UTC(year,month+1,0)).getUTCDate());return new Date(Date.UTC(year,month,day)).toISOString().slice(0,10);};
 export function recurringFeePeriods(startsOn,endsOn,frequency,through,limit=120){
  const start=day(startsOn),end=endsOn?day(endsOn):null,cutoff=day(through),step=({Monthly:1,Quarterly:3,Annually:12})[frequency];
