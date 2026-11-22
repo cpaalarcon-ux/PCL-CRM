@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {JSDOM} from 'jsdom';
 const fx='../supabase/functions/staff-workspace-v12/';
 const R=await import(fx+'statement-review-rules.mjs');
 const O=await import(fx+'settings-owner-rules.mjs');
@@ -120,6 +121,76 @@ test('Quick review drawer shows item details and requires an explicit review con
  assert.match(v,/data-ap-selectall/);assert.match(v,/data-ap-item="approve_tax_rates\|rate-1" checked/);assert.match(v,/data-ap-confirm/);
  assert.match(v,/I confirm that I completed each applicable review above/);assert.match(v,/statutory basis, eligibility conditions and effective dates/);
  assert.match(v,/Value Added Tax Act/);assert.match(v,/Open official source/);
+});
+
+test('Quick review identifies the blocked rule and returns to the same selection after edit',async t=>{
+ const dom=new JSDOM('<dialog id="editor"><button id="closeEditor"></button><div id="editorBody"></div></dialog>');
+ globalThis.document=dom.window.document;
+ t.after(()=>{delete globalThis.document;dom.window.close();});
+ const first={id:'nita',code:'KE_NITA',label:'Employer industrial training levy',revision:1,eligible:true,source_issue:'Enter the official source.'};
+ const second={id:'other',code:'KE_OTHER',label:'Other draft',revision:1,eligible:true};
+ let edit;
+ const ui=MA.createMyApprovalsUI({
+  request:async p=>{
+   if(p.action==='settings_approval_items_read')return {groups:[{key:'approve_tax_rates',items:[{...first},{...second}]}]};
+   if(p.action==='settings_approval_batch_approve')throw Object.assign(Error('Enter the official source.'),{status:400,approval_item:{queue_key:'approve_tax_rates',id:first.id}});
+   return {queues:[],records:[],actionGroups:[]};
+  },
+  modal:(_title,html)=>{document.getElementById('editorBody').innerHTML=html;},
+  render(){},notice(){},
+  openTaxRule:(id,options)=>{edit={id,...options};document.getElementById('editorBody').replaceChildren();}
+ });
+ const $=selector=>document.querySelector(selector);
+ const confirm=()=>{$('[data-ap-confirm]').checked=true;};
+ await ui.handle('ap-review','approve_tax_rates');
+ confirm();
+ await ui.handle('ap-approve-selected');
+ assert.match($('#apBatchError').textContent,/KE_NITA · Employer industrial training levy/);
+ assert.equal($('[data-ap-item="approve_tax_rates|nita"]').disabled,true);
+ assert.equal($('[data-ap-item="approve_tax_rates|other"]').checked,true);
+ await ui.handle('ap-rate-open','nita');
+ assert.equal(edit.id,'nita');
+ assert.equal(edit.focusSource,true);
+ edit.onBack();
+ assert.equal($('[data-ap-item="approve_tax_rates|other"]').checked,true);
+ await ui.handle('ap-rate-open','nita');
+ first.revision=2;
+ first.source_issue=null;
+ await edit.afterSave();
+ assert.equal($('[data-ap-item="approve_tax_rates|nita"]').checked,false);
+ assert.equal($('[data-ap-item="approve_tax_rates|nita"]').disabled,false);
+ assert.equal($('[data-ap-item="approve_tax_rates|other"]').checked,true);
+ assert.equal($('[data-ap-confirm]').checked,false);
+ assert.equal(document.activeElement.getAttribute('data-id'),'nita');
+});
+
+test('a timed-out approval requires a fresh list before retrying',async t=>{
+ const dom=new JSDOM('<dialog id="editor"><button id="closeEditor"></button><div id="editorBody"></div></dialog>');
+ globalThis.document=dom.window.document;
+ t.after(()=>{delete globalThis.document;dom.window.close();});
+ let attempts=0,items=[{id:'r1',label:'First rule',revision:1,eligible:true}];
+ const ui=MA.createMyApprovalsUI({
+  request:async p=>{
+   if(p.action==='settings_approval_items_read')return {groups:[{key:'approve_tax_rates',items}]};
+   attempts++;
+   throw Object.assign(Error('The request failed.'),{status:504});
+  },
+  modal:(_title,html)=>{document.getElementById('editorBody').innerHTML=html;},
+  render(){},notice(){}
+ });
+ await ui.handle('ap-review','approve_tax_rates');
+ const confirm=()=>{const input=document.querySelector('[data-ap-confirm]');input.checked=true;input.dispatchEvent(new dom.window.Event('change',{bubbles:true}));};
+ confirm();
+ await ui.handle('ap-approve-selected');
+ assert.match(document.getElementById('apBatchError').textContent,/timed out/);
+ confirm();
+ assert.equal(document.querySelector('[data-suite="ap-approve-selected"]').disabled,true);
+ await ui.handle('ap-approve-selected');
+ assert.equal(attempts,1);
+ items=[];
+ await ui.handle('ap-review-reload');
+ assert.equal(document.getElementById('apBatchError'),null);
+ assert.equal(document.getElementById('apSelectedCount').textContent,'0');
 });
 
 test('Owner Matrix view and diff: only changed rows are sent; Managers cannot confirm',()=>{

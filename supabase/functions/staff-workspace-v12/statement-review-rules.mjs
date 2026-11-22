@@ -12,7 +12,7 @@ export const REASONS={
  statement_unknown:{blocks:false,text:'The account has no recognised statement type, so its line cannot be checked.'},
  replaces_open:{blocks:false,text:'Approving ends the account\'s current approved line.'}
 };
-const iso=v=>v==null?'':String(v).slice(0,10);
+const iso=v=>v==null?'':(v instanceof Date?v.toISOString():String(v)).slice(0,10);
 export function reasonsFor(r){
  const out=[];
  if(r.account_status!=='Active')out.push('account_draft');

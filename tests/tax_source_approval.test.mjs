@@ -15,6 +15,9 @@ test('secondary, malformed and lookalike sources cannot support formal approval'
  assert.match(taxSourceIssue('https://kra.go.ke.example.com/tax','VAT Act section 5'),/official/);
  assert.match(taxSourceIssue('http://www.kra.go.ke/tax','VAT Act section 5'),/official/);
  assert.match(taxSourceIssue('https://www.kra.go.ke:8443/tax','VAT Act section 5'),/official/);
+ assert.match(taxSourceIssue('https://www.kra.go.ke:443/tax',legalNote),/official/);
+ assert.match(taxSourceIssue('https://www.nita.go.ke/levy',legalNote),/official/);
+ assert.match(taxSourceIssue('https://www.kra.go.ke/tax','VAT Act section 5'),/Act, section, Legal Notice/);
  assert.match(taxSourceIssue('https://www.kra.go.ke/tax','Rate is 16 percent'),/Act, section, Legal Notice/);
 });
 

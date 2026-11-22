@@ -835,6 +835,6 @@ Deno.serve(async(req:Request)=>{
   if(['23505','23514','42501','P0001'].includes(e.code)&&/PL\/pgSQL function erp_private\./.test(String(e.where||''))&&typeof e.message==='string'&&e.message.length<400)message=e.message;
   // Do not log passwords, setup tokens, JWTs, file contents or SQL parameters.
   if(status===500)console.error('staff-pilot request failed',{code:e.code||'INTERNAL',type:e.name||'Error'});
-  return new Response(JSON.stringify({error:message}),{status,headers});
+  return new Response(JSON.stringify({error:message,...(status<500&&e.approval_item?{approval_item:e.approval_item}:{})}),{status,headers});
  }
 });

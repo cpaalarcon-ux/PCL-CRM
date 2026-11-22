@@ -5,7 +5,7 @@ import {settingsHubAction,openOwners} from './settings-hub-actions.ts';
 import {taxConfigAction} from './tax-config-actions.ts';
 import {accountingAction} from './accounting-actions.ts';
 import {statementMapAction} from './annual-pack.ts';
-import {testRate,rateApprovalIssue} from './tax-registry.mjs';
+import {testRate,rateApprovalIssue,taxSourceIssue} from './tax-registry.mjs';
 
 // Settings owners and the approval task board. Owners only describe responsibility; the typed settings handlers remain the final authority for every approval.
 const READERS=['PARTNER','MANAGER'];
@@ -32,7 +32,7 @@ async function approvalGroups(tx:any,a:any,canTax:boolean,details=false){
  const proposerById=new Map(proposers.map((x:any)=>[String(x.map_id),x.proposed_by?String(x.proposed_by):null]));
  const ownConsistentCount=review.groups.reduce((n:number,g:any)=>n+g.accounts.filter((x:any)=>proposerById.get(String(x.map_id))===String(a.staff_id)).length,0);
  const cards:any[]=[
-  {key:'approve_tax_rates',title:'Tax rates awaiting legal approval',type:'tax_rate',waiting_count:rates.length,items:rates.map((r:any)=>{const reason=!canTax?'Only the assigned Tax Manager or an Engagement Partner can approve tax rules.':taxBlock(r,a.staff_id);return {id:String(r.rate_id),revision:r.revision,label:r.label,code:r.rate_key,kind:r.tax_type,effective_from:iso(r.effective_from)?.slice(0,10),effective_to:iso(r.effective_to)?.slice(0,10),parameters:r.parameters||{},source_url:r.source_url||'',source_note:r.source_note||'',legal_citation:r.legal_citation||'',legal_review_status:r.legal_review_status||'',legal_review_reference:r.legal_review_reference||'',prepared_by:r.prepared_by||'Starter rule',eligible:!reason,reason};})},
+  {key:'approve_tax_rates',title:'Tax rates awaiting legal approval',type:'tax_rate',waiting_count:rates.length,items:rates.map((r:any)=>{const source_issue=taxSourceIssue(r.source_url,r.source_note),reason=!canTax?'Only the assigned Tax Manager or an Engagement Partner can approve tax rules.':taxBlock(r,a.staff_id);return {id:String(r.rate_id),revision:r.revision,label:r.label,code:r.rate_key,kind:r.tax_type,effective_from:iso(r.effective_from)?.slice(0,10),effective_to:iso(r.effective_to)?.slice(0,10),parameters:r.parameters||{},source_url:r.source_url||'',source_note:r.source_note||'',source_issue,legal_citation:r.legal_citation||'',legal_review_status:r.legal_review_status||'',legal_review_reference:r.legal_review_reference||'',prepared_by:r.prepared_by||'Starter rule',eligible:!reason,reason};})},
   {key:'approve_chart',title:'Chart of accounts additions',type:'chart_account',waiting_count:chart.length,items:chart.map((r:any)=>{const reason=denied.has('acct.setup')?'Your chart-account approval right is switched off.':a.category_code!=='PARTNER'?'Partner approval is required.':!r.proposed_by?'The proposer could not be identified for this draft. Record a new proposal before approval.':String(r.proposed_by)===String(a.staff_id)?'The person who proposed this account cannot approve it.':'';return {id:r.code,revision:r.revision,label:r.name,code:r.code,kind:r.account_group,route:r.route,category_code:r.category_code,statement:r.statement,tax_note:r.tax_note||'',evidence:r.evidence||'',notes:r.notes||'',prepared_by:r.prepared_by||'Unknown proposer',eligible:!reason,reason};})},
   {key:'approve_statement_lines',title:'Consistent statement-line mappings',type:'statement_map',waiting_count:Number(review.summary?.total||0),review_actionable_count:a.category_code==='PARTNER'&&!denied.has('fs.map')?Math.max(0,Number(review.summary?.total||0)-ownConsistentCount):0,blocked_note:denied.has('fs.map')?'Your statement-line mapping approval right is switched off.':a.category_code!=='PARTNER'?'Only a Partner may approve statement-line mappings.':'Exceptions, unchanged mappings and mappings you proposed are outside the grouped approval path.',items:review.groups.map((g:any)=>{const own=g.accounts.some((x:any)=>proposerById.get(String(x.map_id))===String(a.staff_id));const reason=denied.has('fs.map')?'Your statement-line mapping approval right is switched off.':a.category_code!=='PARTNER'?'Only a Partner may approve statement-line mappings.':own?'A Partner cannot approve mappings they proposed.':'';return {group_id:g.line_code,label:g.label,kind:g.statement,eligible:!reason,reason,items:g.accounts.map((x:any)=>({id:String(x.map_id),label:x.account_name,code:x.account_code,effective_from:x.effective_from,origin:x.seeded?'Starter mapping':'Proposed mapping',revision:null}))};})}
  ];
@@ -96,12 +96,22 @@ export async function settingsOwnerAction(tx:any,a:any,p:any):Promise<any>{
   for(const group of selections){
    if(group.queue_key==='approve_tax_rates'){
     const ids=[];
-    for(const item of group.items){const rateId=uuid(item.id);await taxConfigAction(tx,a,{action:'rate_approve',rate_id:rateId,revision:revision(item.revision),confirm_legal_basis:true});ids.push(rateId);}
+    for(const item of group.items){
+     const rateId=uuid(item.id);
+     try{await taxConfigAction(tx,a,{action:'rate_approve',rate_id:rateId,revision:revision(item.revision),confirm_legal_basis:true});}
+     catch(error){throw Object.assign(error,{approval_item:{queue_key:group.queue_key,id:rateId}});}
+     ids.push(rateId);
+    }
     counts[group.queue_key]=ids.length;auditRows.push({record_type:BULK_TYPES[group.queue_key],ids});
    }else if(group.queue_key==='approve_chart'){
     await requireBulkRight(tx,a,'acct.setup');
     const ids=[];
-    for(const item of group.items){const code=String(item.id);if(!/^\d{5}$/.test(code))fail(400,'A chart code is invalid. Refresh the dashboard.');await accountingAction(tx,a,{action:'accounting_account_approve',code,revision:revision(item.revision)});ids.push(code);}
+    for(const item of group.items){
+     const code=String(item.id);if(!/^\d{5}$/.test(code))fail(400,'A chart code is invalid. Refresh the dashboard.');
+     try{await accountingAction(tx,a,{action:'accounting_account_approve',code,revision:revision(item.revision)});}
+     catch(error){throw Object.assign(error,{approval_item:{queue_key:group.queue_key,id:code}});}
+     ids.push(code);
+    }
     counts[group.queue_key]=ids.length;auditRows.push({record_type:BULK_TYPES[group.queue_key],ids});
    }else{
     await requireBulkRight(tx,a,'fs.map');
