@@ -15,7 +15,7 @@ import {createPresenceUI} from './staff-presence.mjs?v=20261109-hol-v1';
 import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-check-v1';
 import {setMyWork,loadMyWorkMode} from './staff-my-work.mjs?v=20261121-coa-v1';
 import {renderDashboard,drillHome} from './staff-dashboard.mjs?v=20261119-queue-v1';
-import {createLeadsUI} from './staff-leads.mjs?v=20261108-nav-v1';
+import {createLeadsUI} from './staff-leads.mjs?v=20261205-leads-staff';
 import {createTeamUI} from './staff-team.mjs?v=20261109-vs-v1';
 import {DEFAULT as VS_DEFAULT,hasPicker,pickerOptions,targetOf,attendanceTitle,teamTitle,narrowTasks,attendanceCards} from './staff-view-staff.mjs?v=20261109-vs-v1';
 import {createHolidaysUI} from './staff-holidays.mjs?v=20261109-rev-v1';
@@ -730,7 +730,7 @@ const teamUI=createTeamUI({esc,request,notice,badge,modal,form,load,view:()=>vie
 const holidaysUI=createHolidaysUI({esc,request,notice,modal,form,field,data:()=>data,render});
 const metricsUI=createMetricsUI({esc,request});
 const bell=createBell({esc,request,notice,shortDate,load,openTask:id=>navigateWorkspace('task',id),data:()=>data});
-const leads=createLeadsUI({esc,field,select,form,modal,request,notice,badge,shortDate,firmName,clientName,today,data:()=>data,firm:()=>firm,render});
+const leads=createLeadsUI({esc,field,select,form,modal,request,notice,badge,shortDate,firmName,clientName,today,data:()=>data,firm:()=>firm,canConvert:()=>isLeader(),canEdit:()=>data&&data.me.category_code!=='ASSISTANT',render});
 async function uploadMessenger(attachment,channelId,options){
  const form=new FormData();
  form.set('file',attachment.file);
