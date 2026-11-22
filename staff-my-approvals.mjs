@@ -77,7 +77,7 @@ function reviewRow(group,i,selected,{esc,canEditTax}){
   ${i.legal_review_status?`<span>Legal review · ${esc(i.legal_review_status)}${i.legal_review_reference?` · ${esc(i.legal_review_reference)}`:''}</span>`:''}
   ${i.source_note?`<span>${esc(i.source_note)}</span>`:''}
   ${/^https:\/\//i.test(i.source_url||'')?`<a href="${esc(i.source_url)}" target="_blank" rel="noopener noreferrer">${i.source_issue?'Open recorded source':'Open official source'}</a>`:''}
-  ${i.source_issue&&i.source_issue!==i.reason?`<span class="error">${esc(i.source_issue)}</span>`:''}`:'';
+  ${i.source_issue&&i.source_issue!==i.reason?`<span class="error" role="alert">${esc(i.source_issue)}</span>`:''}`:'';
  return `<article data-approval-item="${esc(key)}" class="approval-review-item ${i.eligible?'':'is-blocked'}">
   <label><input type="checkbox" data-ap-item="${esc(key)}" ${selected.has(String(i.id))&&i.eligible?'checked':''} ${i.eligible?'':'disabled'}><b>${esc(label)}</b></label>
   <div class="approval-item-detail">${period(i)?`<span>${esc(period(i))}</span>`:''}
@@ -88,7 +88,7 @@ function reviewRow(group,i,selected,{esc,canEditTax}){
   ${i.evidence?`<span>Evidence · ${esc(i.evidence)}</span>`:''}
   ${i.notes?`<span>Proposal notes · ${esc(i.notes)}</span>`:''}
   ${taxEvidence}
-  ${i.reason?`<span class="error">${esc(i.reason)}</span>`:''}${action?`<div>${action}</div>`:''}</div></article>`;
+  ${i.reason?`<span class="error" role="alert">${esc(i.reason)}</span>`:''}${action?`<div>${action}</div>`:''}</div></article>`;
 }
 function mappingExceptions(g,esc){
  if(g.key!=='approve_statement_lines'||!g.blocked_count)return '';

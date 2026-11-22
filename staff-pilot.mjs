@@ -371,7 +371,7 @@ function field(name,label,value='',type='text',extra=''){return `<label>${label}
 function select(name,label,items,value='',blank='Choose…'){return `<label>${label}<select name="${name}">${options(items,value,blank)}</select></label>`;}
 function firmChecks(selected=[]){return `<fieldset class="full"><legend>Authorised / handling firms *</legend>${data.firms.map(f=>`<label><input type="checkbox" name="firm_ids" value="${f.firm_id}"${selected.includes(f.firm_id)?' checked':''}>${esc(f.firm_code+' · '+f.legal_name)}</label>`).join('')||'<p>Add a firm first.</p>'}</fieldset>`;}
 let editorBack=null,editorSaveObserver=null,editorPending=false,editorEdited=false,editorRevision=0;
-function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='Saving…',pendingMessage='Saving your changes. Please wait.',successMessage='Saved successfully.',onBack=null,backLabel='Return to list',draft=null}={}){
+function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='Saving…',pendingMessage='Saving your changes. Please wait.',successMessage='Saved successfully.',backLabel='Return to list',onBack=null,draft=null}={}){
  const messengerButton=$('#editorMessenger');if(messengerButton)messengerButton.hidden=!canArea('communications')||!canUseAction(data?.me?.restricted_rights,{action:'discussion_list'});
  const editor=$('#editor'),body=$('#editorBody'),status=$('#editorNotice'),save=$('#editorSave'),back=$('#closeEditor');
  const revision=++editorRevision;
