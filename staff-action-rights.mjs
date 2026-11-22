@@ -35,7 +35,7 @@ const groups=[
  ['messenger','communications','Messenger',office,{view:['discussion_list','discussion_messages','discussion_open','discussion_candidates','discussion_read','discussion_group_overview','discussion_shared_link','discussion_attachment_download','discussion_call_config','discussion_call_get','discussion_call_pending'],create:['discussion_send','discussion_attachment_upload','discussion_attachment_discard','discussion_call_start','discussion_call_answer','discussion_call_end'],manage:['discussion_staff_directory','discussion_group_create','discussion_group_members_set']},{manage:['ADMIN']}],
  ['letters','communications','Client communications',staff,{view:['communication_resolve','communication_qr','communication_letter_pdf','client_timeline'],create:['communication_save'],edit:[],post:['communication_issue']}],
  ['audit','audit','Audit files',staff,{view:['audit_workspace','audit_tb_lines'],create:['audit_file_save','audit_lead_create','audit_report_draft'],edit:['audit_workpaper_save','audit_tb_import','audit_tb_map','audit_materiality_save','audit_risk_save','audit_adjustment_save','audit_population_save','audit_completion_save'],submit:['audit_report_submit','audit_workpaper_submit','audit_adjustment_submit','audit_population_submit'],review:['audit_materiality_approve','audit_report_review','audit_workpaper_review','audit_adjustment_review','audit_population_review','audit_completion_review','audit_tb_confirm']}],
- ['lead','leads','Leads and pipeline',leaders,{view:[],create:['lead_save'],edit:[],approve:['lead_convert']}],
+ ['lead','leads','Leads and pipeline',staff,{view:[],create:['lead_save'],edit:[],approve:['lead_convert']},{edit:[...leaders,'SUPERVISOR'],approve:leaders}],
  ['staff','staff_access','Staff accounts', [...leaders,'ADMIN'],{view:[],create:['staff_save','master_staff_import'],edit:['staff_disable'],setup:['account_link','manager_password_reset_targets']}],
  ['access','staff_access','Access settings',[...leaders,'ADMIN'],{view:['staff_access_read'],edit:['staff_access_save'],grant:['staff_right_grant','staff_right_revoke']},{grant:partner}],
  ['settings','settings','Settings and approvals',[...leaders,'ADMIN'],{view:['settings_hub_read','settings_approvals_read','settings_approval_items_read'],edit:['sector_save','firm_save','rate_save'],approve:['settings_approval_batch_approve','rate_approve']},{approve:leaders}],
@@ -70,7 +70,7 @@ const otherAreas=[
  ['clientops','clients','Other client functions',staff],['projectops','projects','Other project functions',team],
  ['hrops','time_hr','Other time and HR functions',team],['docops','documents','Other document functions',team],
  ['commsops','communications','Other communications functions',office],['financeops','billing_wip','Other finance functions',leaders],
- ['auditops','audit','Other audit functions',staff],['leadops','leads','Other lead functions',leaders],
+ ['auditops','audit','Other audit functions',staff],['leadops','leads','Other lead functions',staff],
  ['staffops','staff_access','Other staff administration functions',[...leaders,'ADMIN']],
  ['settingops','settings','Other settings functions',[...leaders,'ADMIN']],
 ];

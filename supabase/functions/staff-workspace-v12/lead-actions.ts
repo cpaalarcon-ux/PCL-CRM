@@ -2,7 +2,8 @@ import {fail,text,uuid,choice,date,revision,branches} from './validation.mjs';
 import {one,leader} from './suite-actions.ts';
 export async function leadAction(tx:any,a:any,p:any):Promise<any>{
  if(!['lead_save','lead_convert'].includes(p.action))return undefined;
- leader(a);
+ if(p.action==='lead_convert')leader(a);else if(!['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(a.category_code))fail(403,'Your role cannot work on leads.');
+ if(p.lead_id&&a.category_code==='ASSISTANT')fail(403,'An Assistant adds leads. A Supervisor, Manager or Partner updates them.');
  const old=p.lead_id?one(await tx`select * from erp_private.leads where lead_id=${uuid(p.lead_id)} for update`):null;
  if(p.action==='lead_convert'&&old?.stage==='Converted')return {client_id:old.client_id,already_converted:true};
  if(old&&String(old.revision)!==revision(p.revision))fail(409,'This lead changed. Refresh before saving.');
