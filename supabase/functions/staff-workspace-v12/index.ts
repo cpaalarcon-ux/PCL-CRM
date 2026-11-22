@@ -19,6 +19,8 @@ import {reviewQueueAction} from './review-queue.ts';
 import {handoverAction} from './handover-actions.ts';
 import {teamAction} from './team-actions.ts';
 import {holidayAction} from './holiday-actions.ts';
+import {workloadAction} from './workload-actions.ts';
+import {clientVaultAction,clientVaultAccess} from './client-vault-actions.ts';
 import {clientLifecycleAction} from './client-lifecycle-actions.ts';
 import {kycProposalAction} from './kyc-upload-actions.ts';
 import {viewStaffAction} from './view-staff-actions.ts';
@@ -554,6 +556,7 @@ async function action(id:any,p:any){
    const off=await restrictedRights(tx,a.staff_id);
    const [finance]=areas.includes('billing_wip')?await tx`select erp_private.has_capability('FINANCE') enabled`:[null];
    w.me={...w.me,restricted_rights:off,finance_enabled:!!finance?.enabled};
+   w.client_vault_access=await clientVaultAccess(tx,a.staff_id,areas,off);
    return {...filterActionWorkspace(scopeWorkspaceRecords(filterWorkspaceAccess(w,areas),a.category_code,a.staff_id),off),release:'v12-uat-individual-area-access-v2'};
   }
   let actorRights:Promise<string[]>|undefined;
@@ -563,6 +566,8 @@ async function action(id:any,p:any){
   await requireActionRight(tx,a,p,await loadActorRights());
   if(isProposableAction(String(p.action||''))&&['ASSISTANT','SUPERVISOR'].includes(a.category_code))return await createProposal(tx,a,p);
   const proposals=await proposalAction(tx,a,p,run);if(proposals!==undefined)return proposals;
+  const workload=await workloadAction(tx,a,p);if(workload!==undefined)return workload;
+  const vault=await clientVaultAction(tx,a,p);if(vault!==undefined)return vault;
   const policy=await policyAction(tx,a,p);if(policy!==undefined)return policy;
   const rights=await staffRightsAction(tx,a,p);if(rights!==undefined)return rights;
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
@@ -851,7 +856,7 @@ Deno.serve(async(req:Request)=>{
  }catch(e:any){
   let status=e instanceof HttpError?e.status:500,message=e instanceof HttpError?e.message:'The request could not be completed. Try again or ask your Manager.';
   if(e.code==='42501'){status=403;message='This record or action is not available to your account.';}
-  if(e.code==='40001'){status=409;message='This task changed. Refresh it before forwarding or escalating.';}
+  if(e.code==='40001'){status=409;message='This record changed. Refresh before trying again.';}
   if(e.code==='23505'){status=409;message='This record already exists. Open the existing record to update it.';}
   if(['23514','23503','22P02'].includes(e.code)){status=400;message='Check the required fields, firm and project assignments.';}
   // Messages raised by the ERP's own database guards are written for staff; show them instead of the generic text.
