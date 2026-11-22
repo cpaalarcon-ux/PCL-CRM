@@ -15,7 +15,7 @@ export const STAFF_ACCESS_AREAS = Object.freeze([
 
 const AREA_CODES=STAFF_ACCESS_AREAS.map(x=>x.code);
 const LEADER_AREAS=['clients','projects','time_hr','documents','communications','billing_wip','audit','leads','staff_access','settings'];
-const TEAM_AREAS=['clients','projects','time_hr','documents','communications','audit'];
+const TEAM_AREAS=['clients','projects','time_hr','documents','communications','audit','leads'];
 const INTERN_AREAS=['projects','time_hr','documents','communications'];
 // System Administrators run logins, chat groups and system settings (sectors, private reference documents, go-live readiness).
 // They see no client, project, document, ledger or finance area, and cannot approve anything.
