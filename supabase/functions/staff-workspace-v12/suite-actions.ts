@@ -27,6 +27,13 @@ const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Part
 const dayOf=(v:any)=>day(v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10));
 export const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const current=(old:any,p:any)=>{if(String(old.revision)!==revision(p.revision))fail(409,'This record changed. Refresh it before saving.');};
+// The person who prepared an invoice cannot check or post it. A Partner may do so only with a recorded reason (at least 10 characters).
+function selfReview(a:any,preparers:any[],p:any,step:string){
+ if(!preparers.includes(a.staff_id))return '';
+ const why=String(p.override_reason??'').trim();
+ if(a.category_code==='PARTNER'&&why.length>=10)return why.slice(0,1000);
+ fail(403,step==='check'?'The person who submitted an invoice cannot check it. Ask another Manager or Partner.':'The person who prepared an invoice cannot post it. Ask another Manager or Partner with the Post right.'+(a.category_code==='PARTNER'?' A Partner may continue by giving a reason of at least 10 characters.':''));
+}
 async function financial(tx:any,pid:string,write=false){one(await tx`select project_id from erp_private.projects where project_id=${pid} and erp_private.finance_allowed(project_id,${write})`);}
 export async function nextNumber(tx:any,firm:string,kind:string,date:string){const year=Number(date.slice(0,4));const f=one(await tx`select firm_code,invoice_prefix,invoice_numbering from erp_private.firms where firm_id=${firm}`);
  // A firm numbered continuously (INV/ACL/00323) keeps one running sequence, stored under year 0; otherwise the count restarts each year.
@@ -134,7 +141,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const old=p.action==='invoice_edit'?one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} and deleted_at is null for update`):null;
   const pid=old?.project_id??uuid(p.project_id),rid=old?.request_id??uuid(p.request_id);
   await financial(tx,pid,true);
-  if(old){current(old,p);if(old.status!=='Draft')fail(400,'Only draft invoices can be edited.');}
+  if(old){current(old,p);if(old.status!=='Draft')fail(400,'Only draft invoices can be edited.');if((old.review_stage||'Draft')!=='Draft')fail(400,'This invoice has been submitted for checking. Return it to Draft before editing it.');}
   else{const exists=await tx`select invoice_id from erp_private.invoices where request_id=${rid}`;if(exists.length)return exists[0];}
   const project=one(await tx`select * from erp_private.projects where project_id=${pid}`),lines=invoiceLines(p.lines),[issued,due]=range(p.invoice_date,p.due_date);
   if(issued>today())fail(400,'Invoice date cannot be in the future.');
@@ -152,9 +159,28 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   return one(await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,external_reference,service_from,service_to,service_months,created_by)
    values(${rid},${pid},${project.client_id},${project.handling_firm_id},${description},${issued},${due},${tx.json(lines)},${net},${vat},${reference},${period.service_from},${period.service_to},${period.service_months},${a.staff_id}) returning invoice_id`);
  }
+ if(p.action==='invoice_submit'||p.action==='invoice_check'){
+  const i=one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} and deleted_at is null for update`);await financial(tx,i.project_id,true);current(i,p);
+  if(i.status!=='Draft')fail(400,'Only draft invoices go through checking.');
+  if(p.action==='invoice_submit'){
+   if(i.review_stage!=='Draft')fail(400,'This invoice has already been submitted.');
+   await tx`update erp_private.invoices set review_stage='Submitted',submitted_by=${a.staff_id},submitted_at=now(),checked_by=null,checked_at=null,return_note=null,review_override_reason=null where invoice_id=${i.invoice_id}`;return {ok:true,stage:'Submitted'};
+  }
+  const decision=choice(p.decision,['pass','return']);
+  if(decision==='return'){
+   if(i.review_stage==='Draft')fail(400,'This invoice has not been submitted.');
+   const note=text(p.note,1000).trim();if(note.length<3)fail(400,'Give a reason for returning the invoice.');
+   await tx`update erp_private.invoices set review_stage='Draft',return_note=${note},checked_by=null,checked_at=null where invoice_id=${i.invoice_id}`;return {ok:true,stage:'Draft'};
+  }
+  if(i.review_stage!=='Submitted')fail(400,i.review_stage==='Checked'?'This invoice has already been checked.':'Submit the invoice before it is checked.');
+  const why=selfReview(a,[i.submitted_by],p,'check');
+  await tx`update erp_private.invoices set review_stage='Checked',checked_by=${a.staff_id},checked_at=now(),review_override_reason=${why||null} where invoice_id=${i.invoice_id}`;
+  if(why)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'invoices','INVOICE_SELF_REVIEW_OVERRIDE',${i.invoice_id},${tx.json({step:'check',reason:why})})`;
+  return {ok:true,stage:'Checked'};
+ }
  if(p.action==='invoice_post'||p.action==='invoice_void'){
   const i=one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} for update`);await financial(tx,i.project_id,true);current(i,p);
-  if(p.action==='invoice_post'){if(i.status!=='Draft')fail(400,'Only draft invoices can be posted.');if(one(await tx`select status from erp_private.projects where project_id=${i.project_id}`).status!=='Active')fail(400,'Activate the verified engagement before posting its invoice.');if(!(await tx`select erp_private.project_letter_ok(${i.project_id}::uuid) as ok`)[0].ok)fail(400,'Billing is locked: this project has no verified, current signed engagement letter. Upload and verify it under Review and activate, then post the invoice.');const ref=await nextNumber(tx,i.firm_id,'INV',i.invoice_date.toISOString().slice(0,10));const bf=await broughtForward(tx,i);await tx`update erp_private.invoices set status='Posted',invoice_number=${ref},brought_forward=${bf},posted_by=${a.staff_id},posted_at=now() where invoice_id=${i.invoice_id}`;return {ok:true,invoice_number:ref,brought_forward:bf};}
+  if(p.action==='invoice_post'){if(i.status!=='Draft')fail(400,'Only draft invoices can be posted.');if(i.review_stage!=='Checked')fail(400,'Submit the invoice and have it checked before posting it.');const why=selfReview(a,[i.created_by,i.submitted_by],p,'post');if(one(await tx`select status from erp_private.projects where project_id=${i.project_id}`).status!=='Active')fail(400,'Activate the verified engagement before posting its invoice.');if(!(await tx`select erp_private.project_letter_ok(${i.project_id}::uuid) as ok`)[0].ok)fail(400,'Billing is locked: this project has no verified, current signed engagement letter. Upload and verify it under Review and activate, then post the invoice.');const ref=await nextNumber(tx,i.firm_id,'INV',i.invoice_date.toISOString().slice(0,10));const bf=await broughtForward(tx,i);await tx`update erp_private.invoices set status='Posted',invoice_number=${ref},brought_forward=${bf},posted_by=${a.staff_id},posted_at=now(),review_override_reason=${why||i.review_override_reason} where invoice_id=${i.invoice_id}`;if(why)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'invoices','INVOICE_SELF_REVIEW_OVERRIDE',${i.invoice_id},${tx.json({step:'post',reason:why,invoice_number:ref})})`;return {ok:true,invoice_number:ref,brought_forward:bf};}
   if(i.status==='Void')fail(400,'This invoice is already void.');const total=one(await tx`select coalesce(sum(amount),0) paid from erp_private.payments where invoice_id=${i.invoice_id}`);if(Number(total.paid)!==0)fail(400,'Reverse allocated payments before voiding this invoice.');
   await tx`update erp_private.invoices set status='Void',void_reason=${text(p.reason,1000)} where invoice_id=${i.invoice_id}`;return {ok:true};
  }

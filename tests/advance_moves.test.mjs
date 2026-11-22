@@ -23,7 +23,7 @@ test('advances can be refunded or moved to another firm, and posted invoices car
  await tx`insert into erp_private.tasks(task_id,project_id,assigned_to,task_name) values(${T},${P},${actors.ASSISTANT.staff_id},'Fictional filing task')`;
  await tx`insert into erp_private.tasks(task_id,project_id,assigned_to,task_name) values(${T2},${P2},${actors.ASSISTANT.staff_id},'Other firm task')`;
  const draft=async(project,line,when='2026-10-01')=>(await act('PARTNER',{action:'invoice_save',project_id:project,request_id:id(),description:'Fictional fee',invoice_date:when,due_date:'2026-10-31',lines:[line]})).invoice_id;
- const post=async inv=>(await act('PARTNER',{action:'invoice_post',invoice_id:inv,revision:1})).invoice_number;
+ const post=async inv=>{const rev=async()=>(await tx`select revision from erp_private.invoices where invoice_id=${inv}`)[0].revision,o={override_reason:'Fictional test: one Partner prepares, checks and posts'};await act('PARTNER',{action:'invoice_submit',invoice_id:inv,revision:await rev()});await act('PARTNER',{action:'invoice_check',decision:'pass',invoice_id:inv,revision:await rev(),...o});return (await act('PARTNER',{action:'invoice_post',invoice_id:inv,revision:await rev(),...o})).invoice_number;};
  const invA=await draft(P,{description:'Return filing',quantity:1,unit_price:10000,vat_rate:16}),numA=await post(invA);
  const invA2=await draft(P,{description:'Second fee',quantity:1,unit_price:1000,vat_rate:16});
  const invB=await draft(P2,{description:'Advisory',quantity:1,unit_price:5000,vat_rate:0,line_type:'Disbursement'}),numB=await post(invB);

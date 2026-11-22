@@ -10,7 +10,7 @@ const key=(group,operation)=>group+'.'+operation;
 const groups=[
  ['invoice','billing_wip','Invoices',leaders,{
   view:['invoice_pdf','billing_by_task'], create:['invoice_save'], edit:['invoice_edit'],
-  post:['invoice_post'], void:['invoice_void'], etims:['invoice_etims_record'],
+  submit:['invoice_submit'], review:['invoice_check'], post:['invoice_post'], void:['invoice_void'], etims:['invoice_etims_record'],
  }],
  ['receipt','billing_wip','Receipts and advances',leaders,{
   view:[], create:['payment_add','advance_receive'], apply:['advance_apply'], reverse:['payment_reverse'], move:['advance_refund','advance_transfer'],
