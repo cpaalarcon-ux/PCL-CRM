@@ -40,7 +40,7 @@ import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligation
 import {createAuditUI} from './staff-audit.mjs?v=20261110-taxrole-v3&rev=20261119-nav';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261118-ready-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
-import {renderAccessGuide} from './staff-access-guide.mjs?v=20261106-rights-v1';
+import {renderAccessGuide} from './staff-access-guide.mjs?v=20261106-rights-v1&reset=20261122-v1';
 import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261105-check-v1';
 import {ACTION_RIGHTS,canUseAction,hasVisibleActionGroup} from './staff-action-rights.mjs?v=20261119-2906';
 import {STAFF_RIGHTS} from './staff-rights-catalog.mjs?v=20261118-approval-board-v1';
@@ -340,7 +340,9 @@ function projectActions(){const off=new Set(data.me.restricted_rights||[]),leade
  if(leader)buttons.push('<button class="primary" data-new="task">+ Assign task</button>');
  return buttons.length?`<div class="actions">${buttons.join('')}</div>`:'';}
 function projects(){const f=filtered();return `<div class="card"><div class="section-head"><h2>Projects & assigned tasks</h2>${projectActions()}</div><p class="muted">One workspace across authorised firms. Each project retains its handling firm. A Supervisor proposes a project as a Draft; a Manager or Partner activates it and releases its tasks.</p>${f.projects.length?`<div class="scroll"><table><thead><tr><th>Project</th><th>Client</th><th>Handling firm</th><th>Status</th></tr></thead><tbody>${f.projects.map(p=>`<tr><td>${esc(p.project_name)}</td><td>${esc(clientName(p.client_id))}</td><td>${esc(firmName(p.handling_firm_id))}</td><td>${badge(p.status)}${p.status==='Draft'?'<small class="muted"> Proposed: waits for a Manager or Partner to activate</small>':''}</td></tr>`).join('')}</tbody></table></div>`:''}<h3 class="section-space">Tasks</h3>${taskRows(f.tasks)}</div>`;}
-function staff(){const counts=Object.entries(roles).map(([code,label])=>`<span class="badge">${esc(label)} · ${data.staff.filter(s=>s.category_code===code).length}</span>`).join(' ');return `${renderAccessGuide(data.me.category_code,esc)}<div class="card"><div class="section-head"><h2>Staff roster & access</h2><div class="actions"><button class="primary" data-new="staff">+ Add staff</button>${suite.button('import-staff','Import staff from Excel')}${data.me.category_code==='PARTNER'?'<button data-extra-rights>Additional rights</button>':''}</div></div><p class="muted">Assign one ERP role to each person in their profile; any number of staff can share a role. A Partner can assign all roles. A Manager can assign team roles to their direct reports. Use Edit access to restrict individual ERP areas within that person’s role.</p><div class="actions section-space">${counts}</div><div class="scroll staff-roster"><table data-views="ERP role"><thead><tr><th>Staff / login ID</th><th>ERP role</th><th>Employment</th><th>Account</th><th>ERP areas</th><th>Actions</th></tr></thead><tbody>${data.staff.map(s=>{const restricted=s.restricted_areas||[];return `<tr><td>${s.staff_id===data.me.staff_id?esc(s.full_name):`<button class="link" data-staff="${s.staff_id}" title="Edit staff profile and ERP role">${esc(s.full_name)}</button>`}<small>${esc(s.staff_identifier)} · ${esc(s.login_id)}</small></td><td>${esc(roles[s.category_code])}</td><td>${esc(s.employment_type)}<small>${s.contract_end_date?'Ends '+esc(shortDate(s.contract_end_date)):''}</small></td><td>${badge(s.access_status)}</td><td>${restricted.length?`<span class="badge warn">Custom · ${restricted.length} restricted</span><small>${esc(restricted.map(code=>STAFF_ACCESS_AREAS.find(x=>x.code===code)?.label||code).join(', '))}</small>`:'Role defaults'}</td><td>${s.staff_id!==data.me.staff_id?`<div class="actions"><button data-rights="${s.staff_id}">Edit access</button><details class="cc-more cc-more-wide"><summary aria-label="More actions for ${esc(s.full_name)}" title="More actions"><span aria-hidden="true">More ▾</span></summary><div class="cc-menu" role="menu" aria-label="More actions for ${esc(s.full_name)}"><button type="button" data-link="${s.staff_id}">${s.access_status==='Active'?'Reset password':'Generate login link'}</button><button type="button" class="danger" data-disable="${s.staff_id}">Disable access</button></div></details></div>`:'Your account'}</td></tr>`;}).join('')}</tbody></table></div></div>`;}
+function staff(){
+ const managerReset=data.me.category_code==='MANAGER'&&canUseAction(data.me.restricted_rights,{action:'manager_password_reset_targets'},'staff_access');
+ const counts=Object.entries(roles).map(([code,label])=>`<span class="badge">${esc(label)} · ${data.staff.filter(s=>s.category_code===code).length}</span>`).join(' ');return `${renderAccessGuide(data.me.category_code,esc)}<div class="card"><div class="section-head"><h2>Staff roster & access</h2><div class="actions"><button class="primary" data-new="staff">+ Add staff</button>${suite.button('import-staff','Import staff from Excel')}${managerReset?'<button type="button" data-manager-password-reset>Reset a manager’s password</button>':''}${data.me.category_code==='PARTNER'?'<button data-extra-rights>Additional rights</button>':''}</div></div><p class="muted">Assign one ERP role to each person in their profile; any number of staff can share a role. A Partner can assign all roles. A Manager can assign team roles to their direct reports. Use Edit access to restrict individual ERP areas within that person’s role.</p><div class="actions section-space">${counts}</div><div class="scroll staff-roster"><table data-views="ERP role"><thead><tr><th>Staff / login ID</th><th>ERP role</th><th>Employment</th><th>Account</th><th>ERP areas</th><th>Actions</th></tr></thead><tbody>${data.staff.map(s=>{const restricted=s.restricted_areas||[];return `<tr><td>${s.staff_id===data.me.staff_id?esc(s.full_name):`<button class="link" data-staff="${s.staff_id}" title="Edit staff profile and ERP role">${esc(s.full_name)}</button>`}<small>${esc(s.staff_identifier)} · ${esc(s.login_id)}</small></td><td>${esc(roles[s.category_code])}</td><td>${esc(s.employment_type)}<small>${s.contract_end_date?'Ends '+esc(shortDate(s.contract_end_date)):''}</small></td><td>${badge(s.access_status)}</td><td>${restricted.length?`<span class="badge warn">Custom · ${restricted.length} restricted</span><small>${esc(restricted.map(code=>STAFF_ACCESS_AREAS.find(x=>x.code===code)?.label||code).join(', '))}</small>`:'Role defaults'}</td><td>${s.staff_id!==data.me.staff_id?`<div class="actions"><button data-rights="${s.staff_id}">Edit access</button><details class="cc-more cc-more-wide"><summary aria-label="More actions for ${esc(s.full_name)}" title="More actions"><span aria-hidden="true">More ▾</span></summary><div class="cc-menu" role="menu" aria-label="More actions for ${esc(s.full_name)}"><button type="button" data-link="${s.staff_id}">${s.access_status==='Active'?'Reset password':'Generate login link'}</button><button type="button" class="danger" data-disable="${s.staff_id}">Disable access</button></div></details></div>`:'Your account'}</td></tr>`;}).join('')}</tbody></table></div></div>`;}
 function documents(){
  const batchDocs=new Set((data.workbook_batches||[]).map(b=>b.document_id)),isImport=d=>d.is_import_source||d.category==='Import Sources'||batchDocs.has(d.document_id),archivedView=documentKind==='Archived sources';
  const rows=filtered().documents.filter(d=>archivedView?!!d.archived_at:!d.archived_at&&(isImport(d)===(documentKind==='Import Sources')));
@@ -567,9 +569,26 @@ function upload(preset={}){
  if(preset.excelOnly)formEl.elements.file.accept='.csv,.xlsx,.zip';
  if(preset.task_id){for(const el of Object.values(controls))el.disabled=true;formEl.elements.category.disabled=true;$('#uploadScopeHint').textContent='Client, firm, project and task are linked to this workspace. '+(preset.excelOnly?'Choose CSV, Excel or ZIP; source review opens after upload.':'Upload supporting PDF or other permitted evidence.');}
 }
-async function credentials(id){
- const s=data.staff.find(x=>x.staff_id===id);
- modal('Generate private login link',`<p>Generate a fresh 24-hour setup link for <b>${esc(s.full_name)}</b> (${esc(s.login_id)})?</p><p class="info">The 24 hours start when you generate the link. Earlier setup links and existing ERP sessions stop working. Share only the newest link with this staff member.</p><button id="confirmLink" class="primary">Confirm & generate link</button>`);
+async function chooseManagerPasswordReset(){
+ const {targets}=await request({action:'manager_password_reset_targets'});
+ const title='Reset a manager’s password';
+ if(!targets.length){
+  modal(title,'<p>No other manager with an existing account is available in your authorised firms. Ask an Engagement Partner for help.</p>');
+  return;
+ }
+ modal(title,`<label>Manager<select id="managerResetTarget">${options(targets.map(m=>[m.staff_id,m.full_name]),'','Choose a manager…')}</select></label><div class="actions"><button type="button" id="continueManagerReset" class="primary" disabled>Continue</button></div>`);
+ const target=$('#managerResetTarget'),next=$('#continueManagerReset');
+ target.onchange=()=>{next.disabled=!target.value;};
+ next.onclick=()=>{
+  const manager=targets.find(m=>m.staff_id===target.value);
+  if(manager)void credentials(manager.staff_id,manager);
+ };
+}
+async function credentials(id,manager=null){
+ const s=manager||data.staff.find(x=>x.staff_id===id);
+ if(!s)return;
+ const reset=manager||s.access_status==='Active';
+ modal(reset?'Reset password':'Generate private login link',`<p>Generate a private ${reset?'password reset':'setup'} link for <b>${esc(s.full_name)}</b>${s.login_id?' ('+esc(s.login_id)+')':''}?</p><p class="info">The link lasts 24 hours. Generating it signs this staff member out and invalidates earlier links. Share the new link privately so they can set their own password.</p><button id="confirmLink" class="primary">Confirm & generate link</button>`);
  $('#confirmLink').onclick=async e=>{e.target.disabled=true;try{
   const r=await request({action:'account_link',staff_id:id}),expires=setupExpiryText(r.expires_at);
   $('#editorBody').innerHTML=`<p><b>Login ID:</b> ${esc(r.login_id)}</p><p><b>Valid until:</b> ${esc(expires)} (24 hours from generation)</p><label>Newest private setup link<textarea class="setup-link" id="privateLink" readonly>${esc(r.setup_url)}</textarea></label><button id="copyLink" class="primary">Copy login ID & newest link</button><p class="muted">Use once to save a password. Opening the link does not use it. Earlier links will not work, and this link will not be shown again after you close this dialog.</p>`;
@@ -667,6 +686,11 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.openingState){const c=data.clients.find(x=>x.client_id===b.dataset.openingState);if(c)openingBalanceState(c,b.dataset.openingStatus);}
  if(b.dataset.staff)editStaff(data.staff.find(x=>x.staff_id===b.dataset.staff));
  if(b.dataset.rights)await editStaffAccess(b.dataset.rights);
+ if(b.hasAttribute('data-manager-password-reset')){
+  b.disabled=true;
+  try{await chooseManagerPasswordReset();}catch(error){notice(error.message,true);}finally{b.disabled=false;}
+  return;
+ }
  if(b.dataset.extraRights!==undefined)await additionalRights();
  if(b.dataset.rightGrant!==undefined)grantRightForm();
  if(b.dataset.rightRevoke)revokeRightForm(b.dataset.rightRevoke);
