@@ -99,7 +99,7 @@ import {masterImport} from './master-import.ts';
 import {applyLegalStructure,requireRightChart,classifyClientsAction} from './legal-structure-actions.ts';
 import { createClient } from 'supabase';
 import postgres from 'postgres';
-import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
+import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
 import {clientFilingPrefix} from './engagement-setup-rules.mjs';
 import {amlReportAction} from './aml-report-actions.ts';
 import {clientScopeAction} from './client-scope-actions.ts';
@@ -108,6 +108,7 @@ import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspace
 import {rightsForRequest,actionRightLabel,defaultActionRights,isActionRight,filterActionWorkspace,canUseAction} from './staff-action-rights.mjs';
 import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode,isProposableAction} from './staff-rights-catalog.mjs';
 import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts';
+import {handlingFirmIds,readClientEntry} from './client-entry.ts';
 import {policiesRead,policyAction,requireAssistantEntryAuthorised} from './policy-actions.ts';
 
 const url=Deno.env.get('SUPABASE_URL')!;
@@ -732,13 +733,7 @@ async function action(id:any,p:any){
   if(p.action==='client_save'){
    const cid=p.client_id?uuid(p.client_id):crypto.randomUUID();
    if(p.purchase_setup)fail(409,'Business activities are maintained in Client setup as a dated multi-select batch. Save the client first, then preview and submit the activity change for independent review.');
-   const name=text(p.company_name,200),pin=p.kra_pin?text(p.kra_pin,11).toUpperCase():null;
-   const [uatScope]=await tx`select erp_private.uat_scope_enabled() enabled`,isUatFixture=!!uatScope.enabled&&/^UAT Fictional\b/i.test(name);
-   if(uatScope.enabled&&!p.client_id&&!isUatFixture)fail(400,'This staging workspace accepts fictional test clients only. Start the company name with “UAT Fictional”.');
-   if(pin&&!/^[A-Z][0-9]{9}[A-Z]$/.test(pin))fail(400,'Check the KRA PIN format.');
-   const sector=p.primary_sector?text(p.primary_sector,100):null,branch=p.branch_location?choice(p.branch_location,branches):null;
-   if(sector&&!(await tx`select sector_id from erp_private.sectors where name=${sector} and deleted_at is null`).length)fail(400,'Choose a saved sector, or add it with Add sector before saving this client.');
-   const cat=p.legal_structure?null:p.client_category?choice(p.client_category,['Corporate','Non-Profit','Public Entity','Individual']):null;
+   const {name,pin,sector,branch,cat,isUatFixture}=await readClientEntry(tx,p);
    if(p.client_id){
     const rev=revision(p.revision);
     const rows=await tx`update erp_private.clients set company_name=${name},kra_pin=${pin},primary_sector=${sector},branch_location=${branch},client_category=coalesce(${cat},client_category)
@@ -747,8 +742,7 @@ async function action(id:any,p:any){
    }else await tx`insert into erp_private.clients(client_id,company_name,kra_pin,primary_sector,branch_location,client_category,record_status,owner_staff_id,is_uat_fixture)
     values(${cid},${name},${pin},${sector},${branch},${cat},'Existing',${a.staff_id},${isUatFixture})`;
    await applyLegalStructure(tx,a,cid,p,!p.client_id);
-   const firms=Array.isArray(p.firm_ids)?p.firm_ids.map(uuid):[];if(!firms.length)fail(400,'Select at least one handling firm.');
-   for(const firm of firms){
+   for(const firm of handlingFirmIds(p)){
     const [allowed]=await tx`select erp_private.firm_allowed(${firm}::uuid) as ok`;if(!allowed.ok)deny();
     await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${cid},${firm}) on conflict do nothing`;
    }
