@@ -41,7 +41,7 @@ test('view, create, edit, post and reverse can be restricted independently',()=>
  assert.ok(!canUseAction(['journal.post'],{action:'ledger_journal_review',status:'Posted'}));
  assert.ok(!canUseAction(['journal.view'],p('ledger_account_read')));
  assert.ok(hasVisibleActionGroup('PARTNER','billing_wip',['invoice.view']));
- assert.ok(!hasVisibleActionGroup('PARTNER','billing_wip',['invoice.view','receipt.view','fee.view','wip.view','statement.view']));
+ assert.ok(!hasVisibleActionGroup('PARTNER','billing_wip',['invoice.view','creditnote.view','receipt.view','fee.view','wip.view','statement.view']));
 });
 
 test('remaining actions are mapped to their workflow or to the controlled functions in their area',()=>{

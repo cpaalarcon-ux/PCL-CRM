@@ -44,7 +44,7 @@ const PREFIX_AREAS=[
   [/^(?:presence_|view_staff_|timer_|clock$|attendance_|leave_|roster_|performance_|credential_|timesheet_)/,'time_hr'],
   [/^(?:document_|doc_request_|physical_file_|incoming_|evidence_|upload$|download$|master_preview$|master_import$)/,'documents'],
   [/^(?:concern_|sar_|discussion_|communication_|ticket_|client_support_|notification_read$|client_timeline$)/,'communications'],
-  [/^(?:client_card_wip$|invoice_|payment_|advance_|billing_|fee_schedule_|budget_|wip_report$|statement$|staff_rate_|metrics_)/,'billing_wip'],
+  [/^(?:client_card_wip$|invoice_|credit_note_|payment_|advance_|billing_|fee_schedule_|budget_|wip_report$|statement$|staff_rate_|metrics_)/,'billing_wip'],
 ];
 
 export function areaForStaffAction(action){
@@ -79,7 +79,7 @@ export function filterWorkspaceAccess(workspace,areas){
   const s={...(w.suite||{})};
   if(!allowed.has('leads'))s.leads=[];
   if(!allowed.has('clients'))for(const key of ['tax_profiles','contacts','compliance','owners','kyc_evidence','kyc_changes','engagements'])s[key]=[];
-  if(!allowed.has('billing_wip'))for(const key of ['rates','staff_rates','budgets','recurring_fees','invoices','payments'])s[key]=[];
+  if(!allowed.has('billing_wip'))for(const key of ['rates','staff_rates','budgets','recurring_fees','invoices','payments','credit_notes'])s[key]=[];
   if(!allowed.has('settings'))s.rates=[];
   if(!allowed.has('projects'))s.tax_cases=[];
   if(!allowed.has('communications'))for(const key of ['communications','tickets'])s[key]=[];

@@ -40,7 +40,8 @@ test('The invoice PDF carries the Alarcon-style layout, and drafts are watermark
  const noLogo=await invoicePdf({...base,logo:null,etims:{etims_invoice_no:'ETIMS-1',etims_issued_on:'2026-11-01',qr_url:'https://etims.example.test/v/1'}},PDFLib);assert.ok(text(noLogo).includes('eTIMS invoice no: ETIMS-1'));
  const many=await invoicePdf({...base,invoice:{...base.invoice,lines:rules.invoiceLines(Array.from({length:50},(_,n)=>({description:'Line '+(n+1)+' '+'long wording '.repeat(8),quantity:1,unit_price:100,vat_rate:0,line_type:'Disbursement'}))),net_amount:5000,vat_amount:0}},PDFLib);
  assert.ok((await PDFLib.PDFDocument.load(many)).getPageCount()>1,'long invoices flow onto more pages');assert.ok(text(many).includes('Total Amount Due'));
- assert.deepEqual(invoiceTotals({net_amount:100,vat_amount:16,paid_amount:20,brought_forward:30}),{net:100,vat:16,total:116,paid:20,brought_forward:30,due:126});
+ assert.deepEqual(invoiceTotals({net_amount:100,vat_amount:16,paid_amount:20,brought_forward:30}),{net:100,vat:16,total:116,paid:20,credited:0,brought_forward:30,due:126});
+ assert.deepEqual(invoiceTotals({net_amount:100,vat_amount:16,paid_amount:20,credited_amount:58,brought_forward:30}),{net:100,vat:16,total:116,paid:20,credited:58,brought_forward:30,due:68},'an issued credit note lowers the amount due');
 });
 
 test('Invoices: period, duplicate warning, continuous numbering, balance brought forward, recurring narration and the PDF download',async t=>{
