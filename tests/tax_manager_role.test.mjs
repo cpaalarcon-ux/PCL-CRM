@@ -26,7 +26,7 @@ test('Tax Manager role gate and annual due_month_offset rules',async t=>{
  const cfg=(role,p)=>as(role,a=>taxConfigAction(tx,a,p));
  const day=d=>d instanceof Date?d.toISOString().slice(0,10):d;
  const lead=role=>q(role,`select erp_private.tax_rules_approver() ok`).then(r=>r[0].ok);
- const vat=async(key)=>(await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by) values(${key},'VAT','Staging rule for the role check','2040-01-01','2040-12-31','{"rate":16,"treatment":"Standard"}','https://www.kra.go.ke/individual/filing-paying/types-of-taxes/value-added-tax','VAT Act, section 5. Staging check of the role gate.',${M}) returning rate_id`)[0].rate_id;
+ const vat=async(key,proposer=M)=>(await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by) values(${key},'VAT','Staging rule for the role check','2040-01-01','2040-12-31','{"rate":16,"treatment":"Standard"}','https://www.kra.go.ke/individual/filing-paying/types-of-taxes/value-added-tax','VAT Act, section 5. Staging check of the role gate.',${proposer}) returning rate_id`)[0].rate_id;
  const approve=(role,rate)=>as(role,()=>db.query(`update erp_private.tax_rates set status='Approved',approved_by=$2,approved_at=now(),partner_source_verified_on=current_date where rate_id=$1`,[rate,actors[role].staff_id]));
  // ======================== A. Role-based Tax Manager =============================================================================================================
  const R=await vat('KE_FICT_ROLE1');
@@ -60,7 +60,7 @@ test('Tax Manager role gate and annual due_month_offset rules',async t=>{
  await approve('MANAGER2',R);
  assert.equal((await tx`select status,approved_by from erp_private.tax_rates where rate_id=${R}`)[0].approved_by,M2,'approved by the assigned Tax Manager');
  // the Tax Manager cannot approve a rule they prepared
- const R2=await vat('KE_FICT_ROLE2');await tx`update erp_private.tax_rates set created_by=${M2} where rate_id=${R2}`;
+ const R2=await vat('KE_FICT_ROLE2',M2);
  await assert.rejects(approve('MANAGER2',R2),/cannot confirm or approve/);
  // 5. Ending the assignment, switching the permission off, or a deleted engagement removes the ability
  const R3=await vat('KE_FICT_ROLE3');

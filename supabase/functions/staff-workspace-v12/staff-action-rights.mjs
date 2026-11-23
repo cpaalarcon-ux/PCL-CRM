@@ -43,7 +43,7 @@ const groups=[
  ['lead','leads','Leads and pipeline',staff,{view:[],create:['lead_save'],edit:[],approve:['lead_convert']},{edit:[...leaders,'SUPERVISOR'],approve:leaders}],
  ['staff','staff_access','Staff accounts', [...leaders,'ADMIN'],{view:[],create:['staff_save','master_staff_import'],edit:['staff_disable'],setup:['account_link','manager_password_reset_targets']}],
  ['access','staff_access','Access settings',[...leaders,'ADMIN'],{view:['staff_access_read'],edit:['staff_access_save'],grant:['staff_right_grant','staff_right_revoke']},{grant:partner}],
- ['settings','settings','Settings and approvals',[...leaders,'ADMIN'],{view:['settings_hub_read','settings_approvals_read','settings_approval_items_read'],edit:['sector_save','firm_save','rate_save'],approve:['settings_approval_batch_approve','rate_approve']},{approve:leaders}],
+ ['settings','settings','Settings and approvals',[...leaders,'ADMIN'],{view:['settings_hub_read','settings_approvals_read','settings_approval_items_read','settings_starter_proposals_read'],edit:['sector_save','firm_save','rate_save','settings_starter_propose'],approve:['settings_approval_batch_approve','rate_approve']},{approve:leaders}],
 ];
 
 // Route families cover the existing submodules that expose multiple screens and RPCs.

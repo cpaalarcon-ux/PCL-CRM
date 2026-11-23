@@ -26,10 +26,10 @@ import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261119-workspace';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
-import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261209-bulk';
+import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
 import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905';
 import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
@@ -77,7 +77,7 @@ async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},time
  try{if(controller)timer=setTimeout(()=>controller.abort(),timeoutMs);res=await fetch(API,{method:'POST',headers,body:file?p:JSON.stringify(p),cache:'no-store',referrerPolicy:'no-referrer',signal:controller?.signal});}
  catch(error){if(controller&&error?.name==='AbortError')throw Error('The sign-in service did not respond in time. Check your connection and try again.');if(controller&&error instanceof TypeError)throw Error('Could not reach the sign-in service. Check your connection and reload the page.');throw error;}
  finally{if(timer)clearTimeout(timer);}
- if(!res.ok){const e=await res.json().catch(()=>({}));throw Object.assign(Error(e.error||'The request failed.'),{status:res.status});}
+ if(!res.ok){const e=await res.json().catch(()=>({}));throw Object.assign(Error(e.error||'The request failed.'),{status:res.status,approval_item:e.approval_item});}
  return blob?res.blob():res.json();
 }
 const measuredActions={
@@ -397,7 +397,7 @@ function field(name,label,value='',type='text',extra=''){return `<label>${label}
 function select(name,label,items,value='',blank='Choose…'){return `<label>${label}<select name="${name}">${options(items,value,blank)}</select></label>`;}
 function firmChecks(selected=[]){return `<fieldset class="full"><legend>Authorised / handling firms *</legend>${data.firms.map(f=>`<label><input type="checkbox" name="firm_ids" value="${f.firm_id}"${selected.includes(f.firm_id)?' checked':''}>${esc(f.firm_code+' · '+f.legal_name)}</label>`).join('')||'<p>Add a firm first.</p>'}</fieldset>`;}
 let editorBack=null,editorSaveObserver=null,editorPending=false,editorEdited=false,editorRevision=0;
-function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='Saving…',pendingMessage='Saving your changes. Please wait.',successMessage='Saved successfully.',onBack=null,draft=null}={}){
+function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='Saving…',pendingMessage='Saving your changes. Please wait.',successMessage='Saved successfully.',backLabel='Return to list',onBack=null,draft=null}={}){
  const messengerButton=$('#editorMessenger');if(messengerButton)messengerButton.hidden=!canArea('communications')||!canUseAction(data?.me?.restricted_rights,{action:'discussion_list'});
  const editor=$('#editor'),body=$('#editorBody'),status=$('#editorNotice'),save=$('#editorSave'),back=$('#closeEditor');
  const revision=++editorRevision;
@@ -405,7 +405,8 @@ function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='
  editorBack=onBack;
  editorPending=false;
  editorEdited=false;
- editor.classList.remove('accounting-drawer','ledger-dialog','discussion-dialog','mapping-workspace');
+ editor.classList.remove('accounting-drawer','ledger-dialog','discussion-dialog','mapping-workspace','approval-drawer');
+ back.textContent=backLabel;
  $('#editorTitle').textContent=title;
  status.textContent='';
  body.innerHTML=html;
@@ -635,10 +636,10 @@ $('#closeEditor').onclick=async()=>{
  await closeEditorNow();
 };
 $('#editor').addEventListener('cancel',event=>{
- if(!editorPending&&!editorEdited)return;
+ if(!editorPending&&!editorEdited&&!editorBack)return;
  event.preventDefault();
- if(editorPending||!drafts)return;
- void (async()=>{if(await drafts.confirmLeave())await closeEditorNow();})();
+ if(editorPending)return;
+ void (async()=>{if(!editorEdited||!drafts||await drafts.confirmLeave())await closeEditorNow();})();
 });
 // Closing the tab or leaving the page with an unsaved form open triggers the browser's own warning.
 globalThis.addEventListener?.('beforeunload',event=>{
@@ -777,7 +778,7 @@ async function uploadMessenger(attachment,channelId,options){
  }catch(error){session.reject(sessionContext,error);throw error;}
 }
 const messenger=createMessenger({esc,request,notice,uploadMessenger,openTask:id=>navigateWorkspace('task',id),data:()=>data});
-const suite=createSuiteUI({upload,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openTask:id=>navigateWorkspace('task',id),navigate:next=>navigateWorkspace(next),currentHash:()=>location.hash,goHash:h=>{history.pushState(null,'',location.pathname+location.search+h);applyWorkspaceRoute();}});
+const suite=createSuiteUI({upload,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openChartAccount:(code,options)=>v6.openCatalog(code,options),openTask:id=>navigateWorkspace('task',id),navigate:next=>navigateWorkspace(next),currentHash:()=>location.hash,goHash:h=>{history.pushState(null,'',location.pathname+location.search+h);applyWorkspaceRoute();}});
 bindProposals({esc,field,select,options,form,modal,request,load,notice,data:()=>data,currentFirm:()=>firm});
 bindPolicies({esc,form,modal,request,data:()=>data});
 bindDocRequests({esc,form,field,select,modal,request,data:()=>data,notice,shortDate,today,load});
