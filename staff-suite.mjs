@@ -27,7 +27,7 @@ import {SETTINGS_TABS,tabForCard,layoutView,rightsView,FOLD_TABS,fold} from './s
 import {createSettingsFrameUI} from './staff-settings-frame.mjs?v=20261118-approval-board-v1';
 import {createStatementReviewUI} from './staff-statement-review.mjs?v=20261118-approval-board-v1';
 import {createOwnerMatrixUI} from './staff-owner-matrix.mjs?v=20261117-actions-v1';
-import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261118-approval-board-v1&rev=20261119-nav';
+import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261118-approval-board-v1&rev=20261119-nav&bf=20261209-bulk';
 import {createResourcesUI} from './staff-resources.mjs?v=20261118-templates-v2';
 import {createDueBacklogUI} from './staff-due-backlog.mjs?v=20261112-resources-v1';
 import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261116-whtvat-v1';
@@ -313,7 +313,7 @@ export function createSuiteUI(ctx){
   if(await dueBacklog.handle(action,id))return;
   if(await resources.handle(action))return;
   if(await credits.handle(action,id))return;
-  if(await frame.handle(action,id))return;if(await settingsHub.handle(action,id))return;if(await myApprovals.handle(action,id)){if(action==='ap-approve-selected'){frame.refresh();ctx.render();}return;}if(await ownerMatrix.handle(action,id))return;if(await stmtReview.handle(action,id))return;if(action==='settings-tab'){settingsTab=id;if(id==='overview'){frame.refresh();myApprovals.refresh();}ctx.render();return;}if(action==='finance-tab'){financeTab=id;ctx.render();return;}if(action==='comms-tab'){commsTab=id;ctx.render();return;}if(action==='hr-tab'){timeTab=id;ctx.render();return;}
+  if(await frame.handle(action,id))return;if(await settingsHub.handle(action,id))return;if(await myApprovals.handle(action,id)){if(action==='ap-approve-selected'&&myApprovals.approved()){frame.refresh();ctx.render();}return;}if(await ownerMatrix.handle(action,id))return;if(await stmtReview.handle(action,id))return;if(action==='settings-tab'){settingsTab=id;if(id==='overview'){frame.refresh();myApprovals.refresh();}ctx.render();return;}if(action==='finance-tab'){financeTab=id;ctx.render();return;}if(action==='comms-tab'){commsTab=id;ctx.render();return;}if(action==='hr-tab'){timeTab=id;ctx.render();return;}
   if(action==='remove-invoice-line'){if($('#invoiceLines').children.length>1)b.closest('[data-invoice-line]').remove();invoiceTotals();return;}
   if(action==='add-line'){$('#invoiceLines').insertAdjacentHTML('beforeend',lineInputs());invoiceTotals();return;}if(action==='add-employee'){$('#employeeRows').insertAdjacentHTML('beforeend',employeeInputs());return;}if(action==='add-partner'){$('#partnerRows').insertAdjacentHTML('beforeend',partnerInputs());return;}if(action==='print'){window.print();return;}
   if(action==='add-band'){$('#bands').insertAdjacentHTML('beforeend',bandInputs());return;}if(action==='remove-band'){b.closest('[data-band-row]').remove();return;}
