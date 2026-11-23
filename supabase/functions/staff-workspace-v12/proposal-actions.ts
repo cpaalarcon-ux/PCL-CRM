@@ -1,6 +1,8 @@
 import {fail,text,uuid} from './validation.mjs';
 import {isProposableAction} from './staff-rights-catalog.mjs';
 import {requireAssistantEntryAuthorised} from './policy-actions.ts';
+import {handlingFirmIds,readClientEntry} from './client-entry.ts';
+import {validateNewClientStructure} from './legal-structure-actions.ts';
 const deny=():never=>fail(403,'You do not have access to this action.');
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 const canCheck=(a:any)=>['SUPERVISOR','MANAGER','PARTNER'].includes(a.category_code);
@@ -32,6 +34,13 @@ export async function createProposal(tx:any,a:any,p:any){
  if(JSON.stringify(payload).length>MAX_PAYLOAD)fail(413,'This entry is too large to propose.');
  let clientId:string|null=null;
  if(p.client_id){clientId=uuid(p.client_id);if(!(await tx`select client_id from erp_private.clients where client_id=${clientId}`).length)fail(403,'This record is not available to your account.');}
+ if(action==='client_save'&&!clientId){
+  await readClientEntry(tx,p);
+  const firms=[...new Set(handlingFirmIds(p).map(id=>id.toLowerCase()))];
+  const allowed=await tx`select firm_id from erp_private.firms where firm_id=any(${firms}::uuid[]) and is_active and deleted_at is null and erp_private.firm_allowed(firm_id)`;
+  if(allowed.length!==firms.length)fail(403,'Choose a handling firm that your account can access.');
+  await validateNewClientStructure(tx,p);
+ }
  const summary=proposalSummary(action,p);
  const [row]=await tx`insert into erp_private.change_proposals(client_id,action,summary,payload,reason,proposed_by,proposed_role)
   values(${clientId},${action},${summary},${tx.json(payload)},${reason||null},${a.staff_id},${a.category_code}) returning proposal_id,status`;
