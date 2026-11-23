@@ -38,13 +38,15 @@ export function obligationWorkIssue(profile,code){
  if(code==='VAT'&&profile.regime==='TOT'&&(profile.vat_taxable_supplies_status!=='CONFIRMED'||profile.vat_taxable_supplies_12m==null||!profile.vat_threshold_checked_on||!profile.vat_threshold_evidence_reference))return 'Check, date and support the rolling 12-month taxable-supplies figure; VAT and TOT may coexist.';
  return null;
 }
-const officialTaxSourceRoots=['kenyalaw.org','kra.go.ke','nssf.or.ke','nita.or.ke','nita.go.ke','epra.go.ke','parliament.go.ke','treasury.go.ke','sha.go.ke'];
+// Match approved_rule_guard so the review queue does not select a source the database will reject.
+const officialTaxSourceRoots=['kenyalaw.org','kra.go.ke','nssf.or.ke','nita.or.ke','epra.go.ke','parliament.go.ke','treasury.go.ke','sha.go.ke'];
 export function taxSourceIssue(sourceUrl,sourceNote){
- let url;try{url=new URL(String(sourceUrl||''));}catch{return 'Link an official Kenya Law, KRA, Gazette or competent regulator source before approval.';}
- const host=url.hostname.toLowerCase();
- if(url.protocol!=='https:'||url.username||url.password||url.port||!officialTaxSourceRoots.some(root=>host===root||host.endsWith('.'+root)))
+ const raw=String(sourceUrl||''),host=raw.match(/^https:\/\/([a-z0-9.-]+)(?:\/|$)/i)?.[1].toLowerCase();
+ if(!raw.trim())return 'Link an official Kenya Law, KRA, Gazette or competent regulator source before approval.';
+ if(!host||!officialTaxSourceRoots.some(root=>host===root||host.endsWith('.'+root)))
   return 'Rate approval requires an HTTPS official source hosted by Kenya Law, KRA, the Gazette or a competent regulator; secondary research links can support testing only.';
- if(!/\b(?:act|section|s\.|legal notice|ln\b|regulation|schedule|gazette|court order|judgment)\b/i.test(String(sourceNote||'')))
+ const note=String(sourceNote||'').trim();
+ if(note.length<20||!/\b(?:act|sections?|legal notices?|ln|regulations?|schedules?|gazette|court order|judgment)\b/i.test(note))
   return 'Add the applicable Act, section, Legal Notice, regulation, Schedule or Gazette citation to the source note.';
  return null;
 }

@@ -78,6 +78,27 @@ test('handler: only kra- actions, and a click on the banner asks for the critica
  await ui.handle('kra-flags','ALL');assert.deepEqual(sent[1],{action:'kra_flags'});
 });
 
+test('a KRA settings edit returns to the task and flag list, then to Settings',async()=>{
+ const sent=[];let current,returned=false;
+ const ui=createKraUI({
+  data:()=>({me:me('PARTNER')}),button,field:()=>'',form:html=>html,
+  modal:(title,html,save,afterSave,options)=>{current={title,html,save,afterSave,options};},
+  request:async p=>{sent.push(p);return {settings:[{setting_key:'urgent_days',label:'Urgent flag days',int_value:3,rule_status:'Suggested',revision:1}]};}
+ });
+ await ui.openSettings(()=>{returned=true;},{backLabel:'Return to Settings'});
+ assert.equal(current.title,'Task and flag settings');
+ assert.match(current.html,/Urgent flag days/);
+ await ui.handle('kra-setting-set','urgent_days');
+ assert.equal(current.options.backLabel,'Return to Task and flag settings');
+ await current.save(new Map([['value','2']]));
+ assert.deepEqual(sent.at(-1),{action:'kra_setting_set',setting_key:'urgent_days',revision:1,value:'2'});
+ await current.afterSave();
+ assert.equal(current.title,'Task and flag settings');
+ assert.equal(current.options.backLabel,'Return to Settings');
+ current.options.onBack();
+ assert.equal(returned,true);
+});
+
 test('server: every action is routed, mapped to an access area, and checks the same rules as the database',()=>{
  const ts=rd(fx+'kra-actions.ts'),idx=rd(fx+'index.ts');
  const actions=[...ts.matchAll(/p\.action==='(kra_[a-z_]+)'/g)].map(m=>m[1]);
@@ -94,7 +115,7 @@ test('server: every action is routed, mapped to an access area, and checks the s
 });
 test('wiring: screen is imported, routed, reachable from Projects and from the Partner Home page',()=>{
  const su=rd('staff-suite.mjs'),pi=rd('staff-pilot.mjs'),dash=rd('staff-dashboard.mjs'),css=rd('staff-pilot.css');
- assert.match(su,/import \{createKraUI\} from '\.\/staff-kra\.mjs\?v=20261111-kraprog-v1'/);
+ assert.match(su,/import \{createKraUI\} from '\.\/staff-kra\.mjs\?v=20261111-kraprog-v1&review=20261122-v1'/);
  assert.match(su,/const kra=createKraUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await kra\.handle\(action,id\)\)return;/);assert.match(su,/return \{[^}]*openReference,kra,incoming(,forensic)?(,deadlines)?\}/);
  assert.match(pi,/id="kraNoticesCard"[^]*suite\.button\('kra-open','Open the KRA notice log'\)/);
  assert.match(pi,/data\.me\.category_code==='PARTNER'\)\{void v6\.paintPartnerEscalations\(\);void suite\.kra\.paintBanner\(\);\}/);
