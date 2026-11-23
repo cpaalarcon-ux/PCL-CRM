@@ -43,9 +43,9 @@ import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligation
 import {createAuditUI} from './staff-audit.mjs?v=20261110-taxrole-v3&rev=20261119-nav';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261118-ready-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
-import {renderAccessGuide} from './staff-access-guide.mjs?v=20261106-rights-v1&reset=20261122-v1';
+import {renderAccessGuide,categoryProfileBlock} from './staff-access-guide.mjs?v=20261106-rights-v1&reset=20261122-v1&cat=20261209-profile';
 import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261105-check-v1';
-import {ACTION_RIGHTS,canUseAction,hasVisibleActionGroup} from './staff-action-rights.mjs?v=20261122-workload-v1';
+import {ACTION_RIGHTS,canUseAction,hasVisibleActionGroup} from './staff-action-rights.mjs?v=20261122-workload-v1&rf=20261209-review-floor';
 import {STAFF_RIGHTS} from './staff-rights-catalog.mjs?v=20261118-approval-board-v1';
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v12';
 const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
@@ -516,7 +516,7 @@ async function editStaffAccess(staffId){
   const group=items[0].group;
   return `<fieldset class="access-actions" data-in-area="${area.code}"><legend>${esc(group)}</legend>${items.map(r=>{
    const enabled=roleRights.has(r.code);
-   return `<label${enabled?'':' class="muted"'}><input type="checkbox" ${enabled?`name="allowed_rights" value="${r.code}"${offRights.has(r.code)?'':' checked'}`:'disabled'}> ${esc(r.label)}${enabled?'':' · Not part of this role'}</label>`;
+   return `<label${enabled?'':' class="muted"'}><input type="checkbox" ${enabled?`name="allowed_rights" value="${r.code}"${offRights.has(r.code)?'':' checked'}`:'disabled'}> ${esc(r.label)}${enabled?'':r.code.endsWith('.review')?' · Reserved for Supervisors, Managers and Partners':' · Not part of this role'}</label>`;
   }).join('')}${items[0].area!==area.code?'<p class="muted">Journal access is scoped by Projects &amp; tasks and its assignments.</p>':''}</fieldset>`;
  };
 
@@ -531,7 +531,7 @@ async function editStaffAccess(staffId){
   }).join('');
   return `<fieldset class="full areaBlock">${head}<details><summary>Actions in ${esc(area.label)}</summary><div class="rightsList">${granular}${groups?`<details><summary>Existing function controls</summary>${groups}</details>`:''}</div></details></fieldset>`;
  };
- modal(`Edit access · ${esc(access.staff.full_name)}`,form(`<p class="info full"><b>Role:</b> ${esc(roles[access.staff.category_code])}. Expand an area to see its actions. View is required for the other actions in that section. You can restore access the role already includes.</p>${STAFF_ACCESS_AREAS.map(areaBlock).join('')}<p class="muted full">Untick an action to switch it off for this staff member. The checker and approver chain, firm and project assignment, and existing independent-review rules still apply. Restrictions stay active until an authorised Manager or Partner restores access. Money-handling rights are given under Additional rights. Changes are enforced by the server and recorded in the audit log. The area and existing function controls also apply.</p><label class="full">Reason for change<textarea name="reason" minlength="3" maxlength="1000" placeholder="Required when changing access; for example, remove KYC verification after a role change"></textarea></label>`,'Save access'),f=>request({action:'staff_access_save',staff_id:staffId,revision:access.staff.revision,...(access.access_stamp?{rights_version:2,access_stamp:access.access_stamp}:{}),allowed_areas:f.getAll('allowed_areas'),allowed_rights:f.getAll('allowed_rights'),reason:f.get('reason')}),async result=>{await load();notice(result.changed?'Staff access updated. The change is active now.':'No access changes were needed.');});
+ modal(`Edit access · ${esc(access.staff.full_name)}`,form(`<p class="info full"><b>Role:</b> ${esc(roles[access.staff.category_code])}. Expand an area to see its actions. View is required for the other actions in that section. You can restore access the role already includes.</p>${categoryProfileBlock(access.staff.category_code,esc,roles[access.staff.category_code])}${STAFF_ACCESS_AREAS.map(areaBlock).join('')}<p class="muted full">Untick an action to switch it off for this staff member. The checker and approver chain, firm and project assignment, and existing independent-review rules still apply. Restrictions stay active until an authorised Manager or Partner restores access. Money-handling rights are given under Additional rights. Changes are enforced by the server and recorded in the audit log. The area and existing function controls also apply.</p><label class="full">Reason for change<textarea name="reason" minlength="3" maxlength="1000" placeholder="Required when changing access; for example, remove KYC verification after a role change"></textarea></label>`,'Save access'),f=>request({action:'staff_access_save',staff_id:staffId,revision:access.staff.revision,...(access.access_stamp?{rights_version:2,access_stamp:access.access_stamp}:{}),allowed_areas:f.getAll('allowed_areas'),allowed_rights:f.getAll('allowed_rights'),reason:f.get('reason')}),async result=>{await load();notice(result.changed?'Staff access updated. The change is active now.':'No access changes were needed.');});
  const formEl=$('#editForm');
  formEl.addEventListener('click',e=>{const b=e.target.closest('button[data-all]');if(!b)return;const [area,group,on]=b.dataset.all.split('|');formEl.querySelectorAll(`.rightGroup[data-group="${CSS.escape(group)}"] input[name="allowed_rights"][data-in-area="${area}"]`).forEach(c=>{c.checked=on==='1';});});
 }

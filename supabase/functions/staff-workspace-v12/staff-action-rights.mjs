@@ -80,7 +80,7 @@ const otherAreas=[
  ['settingops','settings','Other settings functions',[...leaders,'ADMIN']],
 ];
 const operationOf=action=>{
- if(/_(?:approve|confirm|verify|decide|issue|post|lock|file|activate|review|reject|resolve|sign|close|finalize|release|supersede)$/.test(action))return 'review';
+ if(/_(?:approve|confirm|verify|decide|issue|post|lock|file|activate|review|reject|resolve|sign|close|finalize|release|supersede|check|return)$/.test(action))return 'review';
  if(/_(?:submit|propose|send|request)$/.test(action))return 'submit';
  if(/_(?:read|list|get|page|queue|preview|template|options|menu|report|directory|search|export|download|overview|catalog|candidates|summary|backlog|impact|checklist)$/.test(action))return 'view';
  if(/_(?:add|new|create|record|import|upload|start|receive|open|raise|generate|copy)$/.test(action))return 'create';
@@ -93,8 +93,12 @@ const captions={
  generate:'Generate invoice drafts',grant:'Grant / revoke',manage:'Manage groups',setup:'Issue setup link',
 };
 
+// Check / return is a reviewer's function: the independent check is never given to the person who prepares work. Unless a group says otherwise,
+// only Supervisors, Managers and Partners hold it by default. Submitting work for review is a separate right that preparers keep.
+const reviewers=[...leaders,'SUPERVISOR'];
+const defaultRoles=(operation,roles)=>operation==='review'?roles.filter(role=>reviewers.includes(role)):roles;
 const rightRows=(group,area,label,roles,actions,defaults={})=>
- Object.entries(actions).map(([operation,routes])=>({code:key(group,operation),area,group:label,label:captions[operation],roles:defaults[operation]||roles,routes,view:key(group,'view')}));
+ Object.entries(actions).map(([operation,routes])=>({code:key(group,operation),area,group:label,label:captions[operation],roles:defaults[operation]||defaultRoles(operation,roles),routes,view:key(group,'view')}));
 const familyActions={view:[],create:[],edit:[],submit:[],review:[]};
 const rights=new Map(groups.flatMap(args=>rightRows(...args)).map(r=>[r.code,r]));
 for(const [code,area,label,roles] of [...families,...otherAreas]){
