@@ -35,24 +35,36 @@ export async function statementMapRead(tx:any){
 }
 
 // Approve or reject the selected Draft mappings, one by one, recording the reviewer on every row (builds 2825, 2839).
+// A decision on many mappings is made in a fixed number of statements, however many are selected. It used to lock, read and update one mapping at a time,
+// about four round trips each, so approving a group of a few hundred ran for minutes and was cancelled by the database. The same rules apply to every
+// mapping, in the order selected, and the whole decision is still one transaction: a single failure changes nothing.
 async function decideMaps(tx:any,a:any,ids:string[],approve:boolean,note:string){
-  let done=0;
+  const status=approve?'Approved':'Rejected';
+  if(!ids.length)return {reviewed:0,status};
+  if(new Set(ids).size!==ids.length)fail(400,'A mapping was selected more than once.');
+  const rows=await tx`select * from erp_private.account_statement_map where map_id=any(${ids}::uuid[]) order by map_id for update`;
+  const byId=new Map(rows.map((r:any)=>[r.map_id,r]));
   for(const id of ids){
-   const m=(await tx`select * from erp_private.account_statement_map where map_id=${id} for update`)[0];
+   const m:any=byId.get(id);
    if(!m)fail(404,'A selected mapping no longer exists.');
    if(m.status!=='Draft')fail(409,'A selected mapping has already been reviewed. Refresh the list.');
    if(approve&&m.proposed_by&&m.proposed_by===a.staff_id)fail(403,'A mapping must be approved by a Partner other than the person who proposed it. The proposer can withdraw it by rejecting it.');
-   if(approve){
-    const open=(await tx`select map_id,effective_from from erp_private.account_statement_map where account_code=${m.account_code} and status='Approved' and effective_to is null for update`)[0];
-    if(open){
-     if(day(m.effective_from)<=day(open.effective_from))fail(409,`Account ${m.account_code}: the new line must start after the current one.`);
-     await tx`update erp_private.account_statement_map set effective_to=${addDays(day(m.effective_from),-1)} where map_id=${open.map_id}`;
-    }
-    await tx`update erp_private.account_statement_map set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note||null} where map_id=${id}`;
-   }else await tx`update erp_private.account_statement_map set status='Rejected',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where map_id=${id}`;
-   done++;
   }
-  return {reviewed:done,status:approve?'Approved':'Rejected'};
+  if(approve){
+   const codes=[...new Set(rows.map((r:any)=>r.account_code))];
+   const open=await tx`select map_id,account_code,effective_from from erp_private.account_statement_map where account_code=any(${codes}::text[]) and status='Approved' and effective_to is null order by map_id for update`;
+   const openBy=new Map(open.map((o:any)=>[o.account_code,o]));
+   const closeIds:string[]=[],closeTo:string[]=[];
+   for(const id of ids){
+    const m:any=byId.get(id),o:any=openBy.get(m.account_code);
+    if(!o)continue;
+    if(day(m.effective_from)<=day(o.effective_from))fail(409,`Account ${m.account_code}: the new line must start after the current one.`);
+    closeIds.push(o.map_id);closeTo.push(addDays(day(m.effective_from),-1));
+   }
+   if(closeIds.length)await tx`update erp_private.account_statement_map o set effective_to=c.to_date from (select unnest(${closeIds}::uuid[]) as map_id,unnest(${closeTo}::date[]) as to_date) c where o.map_id=c.map_id`;
+   await tx`update erp_private.account_statement_map set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note||null} where map_id=any(${ids}::uuid[])`;
+  }else await tx`update erp_private.account_statement_map set status='Rejected',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note} where map_id=any(${ids}::uuid[])`;
+  return {reviewed:ids.length,status};
 }
 
 // Every Draft mapping with what the review needs to classify it (build 2839). Reads only; the rules are in statement-review-rules.mjs.

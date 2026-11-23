@@ -60,6 +60,19 @@ test('grouped statement-line review, Owner Matrix and My Approvals through the r
  await assert.rejects(map('PARTNER',{action:'ledger_statement_map_review_approve',scope:'one',map_id:moved.map_id,review_note:'Fictional reason of my own'}),/different than the person|other than the person who proposed/);
  const mv=await map('PARTNER2',{action:'ledger_statement_map_review_approve',scope:'one',map_id:moved.map_id,review_note:'Fictional second Partner approves'});assert.equal(mv.reviewed,1);
 
+ // the replaced mapping was closed and the account still has exactly one open mapping
+ const openFor=(await tx`select count(*)::int n from erp_private.account_statement_map where account_code=${acct} and status='Approved' and effective_to is null`)[0].n;assert.equal(openFor,1,'the account keeps one open mapping after a replacement');
+ // one request approves every remaining consistent mapping, and a bad item in the same request changes nothing
+ const r3=await map('PARTNER',{action:'ledger_statement_map_review_read'});
+ const bulkIds=r3.groups.slice(0,-1).flatMap(x=>x.accounts.map(a=>a.map_id));assert(r3.groups.length>1&&bulkIds.length>150,'a large batch is available, and one group is left for the later approvals test ('+bulkIds.length+')');
+ const draftBulk=(await tx`select count(*)::int n from erp_private.account_statement_map where status='Draft'`)[0].n;
+ await assert.rejects(map('PARTNER',{action:'ledger_statement_map_review_approve',scope:'group',map_ids:[...bulkIds,ids[0]]}),/no longer waiting|no longer in the consistent group/);
+ assert.equal((await tx`select count(*)::int n from erp_private.account_statement_map where status='Draft'`)[0].n,draftBulk,'a failed large batch changes nothing');
+ const t0=Date.now();const bulk=await map('PARTNER',{action:'ledger_statement_map_review_approve',scope:'group',map_ids:bulkIds,review_note:'Fictional bulk review'});const took=Date.now()-t0;
+ assert.equal(bulk.reviewed,bulkIds.length);assert(took<15000,'a large batch finishes in seconds, not minutes ('+took+' ms)');
+ assert.equal((await tx`select count(*)::int n from erp_private.account_statement_map where map_id=any(${tx.array(bulkIds)}::uuid[]) and status='Approved' and reviewed_by=${actors.PARTNER.staff_id} and review_note='Fictional bulk review'`)[0].n,bulkIds.length,'every mapping carries the reviewer and note');
+ assert.equal((await tx`select count(*)::int n from (select account_code from erp_private.account_statement_map where status='Approved' and effective_to is null group by 1 having count(*)>1) x`)[0].n,0,'no account has two open mappings');
+
  // ---- Owner Matrix ----
  await assert.rejects(own('SUPERVISOR',{action:'settings_owners_read'}),/Managers and Partners/);
  const m0=await own('MANAGER',{action:'settings_owners_read'});assert.equal(m0.can_confirm,false);assert.equal(m0.confirmed,0);assert.equal(m0.rows.length,21);
@@ -121,4 +134,12 @@ test('grouped statement-line review, Owner Matrix and My Approvals through the r
  assert.equal(mapDone.total,1);
  assert.equal((await tx`select count(*)::int n from erp_private.approval_batches`)[0].n,3,'each successful typed group has one batch audit row');
  assert.equal((await tx`select count(*)::int n from erp_private.approval_batches where review_confirmed`)[0].n,3,'all successful batches retain the reviewer confirmation');
+});
+test('reviewing mappings uses a fixed number of queries however many are selected',()=>{
+ const src=fs.readFileSync(root+'/supabase/functions/staff-workspace-v12/annual-pack.ts','utf8');
+ const start=src.indexOf('async function decideMaps('),end=src.indexOf('\nasync function',start+10);
+ const body=src.slice(start,end<0?undefined:end);assert(start>=0&&body.length>100,'decideMaps found');
+ assert(((body.match(/await tx`/g)||[]).length)<=6,'a handful of set-based queries');
+ assert.doesNotMatch(body,/for\s*\([^)]*\)\s*\{[^}]*await tx`/,'no query inside a loop');
+ assert.doesNotMatch(body,/\.map\(\s*async/,'no per-item async work');
 });
