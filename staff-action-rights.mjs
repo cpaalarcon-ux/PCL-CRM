@@ -29,6 +29,7 @@ const groups=[
  },{review:[...leaders,'SUPERVISOR'],post:leaders,reverse:leaders}],
  ['client','clients','Client records',staff,{view:['client_register_page'],create:['client_save','client_master_import'],edit:['client_classify_save','v3_identity_save']}],
  ['clientvault','clients','KRA credential vault',staff,{view:['client_vault_list','client_vault_reveal'],edit:['client_vault_update','client_vault_permissions']},{edit:leaders}],
+ ['clientonboard','clients','Client onboarding allocation',leaders,{view:['client_onboarding_alloc_read','client_onboarding_alloc_clients'],edit:['client_onboarding_alloc_assign','client_onboarding_alloc_remove']}],
  ['contacts','clients','Client contacts',staff,{view:[],create:['contact_save']}],
  ['kycfile','clients','KYC and ownership',staff,{view:[],edit:['compliance_save','compliance_evidence_save','compliance_evidence_remove','owner_add','party_add','party_end','group_profile_save'],review:['compliance_verify'],approve:['edd_approve']},{review:leaders,approve:partner}],
  ['project','projects','Projects',team,{view:[],create:['project_save'],edit:[],post:['engagement_save_activate','engagement_activate']},{create:[...leaders,'SUPERVISOR'],edit:[...leaders,'SUPERVISOR'],post:leaders}],
