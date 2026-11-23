@@ -2,7 +2,7 @@ import {letterPdf,letterDetails} from './letter-pdf.mjs';
 import {invoicePdf,invoiceTotals} from './invoice-pdf.mjs';
 import {automaticBreakMinutes,lateClockIn} from './attendance-rules.mjs';
 import {fail,text,uuid,choice,date,revision} from './validation.mjs';
-import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,FIRM_VAT_RATE,VAT_POLICY,busySeason,weekdays,round,recurringFeePeriods,servicePeriod,serviceNarration,formatDay} from './suite-rules.mjs';
+import {number,amount,day,range,safeUrl,rateParameters,invoiceLines,FIRM_VAT_RATE,VAT_POLICY,busySeason,weekdays,round,recurringFeePeriods,servicePeriod,serviceNarration,formatDay,creditNoteLines,CREDIT_REASONS} from './suite-rules.mjs';
 // pdf-lib is supplied by index.ts so modules loaded in tests do not need it.
 let PDFLib:any=null;export function setPdfLib(lib:any){PDFLib=lib;}export const pdfLib=()=>PDFLib;
 const roleLabels:any={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Supervisor',ASSISTANT:'Assistant',INTERN:'Intern'};
@@ -27,6 +27,14 @@ const partner=(a:any)=>{if(a.category_code!=='PARTNER')fail(403,'Engagement Part
 const dayOf=(v:any)=>day(v instanceof Date?v.toISOString().slice(0,10):String(v).slice(0,10));
 export const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const current=(old:any,p:any)=>{if(String(old.revision)!==revision(p.revision))fail(409,'This record changed. Refresh it before saving.');};
+// The person who prepared an invoice cannot check or post it. A Partner may do so only with a recorded reason (at least 10 characters).
+function selfReview(a:any,preparers:any[],p:any,step:string){
+ if(!preparers.includes(a.staff_id))return '';
+ const why=String(p.override_reason??'').trim();
+ if(a.category_code==='PARTNER'&&why.length>=10)return why.slice(0,1000);
+ const base=step==='check'?'The person who submitted an invoice cannot check it. Ask another Manager or Partner.':step==='issue'?'The person who prepared a credit note cannot issue it. Ask another Partner.':'The person who prepared an invoice cannot post it. Ask another Manager or Partner with the Post right.';
+ fail(403,base+(a.category_code==='PARTNER'?' A Partner may continue by giving a reason of at least 10 characters.':''));
+}
 async function financial(tx:any,pid:string,write=false){one(await tx`select project_id from erp_private.projects where project_id=${pid} and erp_private.finance_allowed(project_id,${write})`);}
 export async function nextNumber(tx:any,firm:string,kind:string,date:string){const year=Number(date.slice(0,4));const f=one(await tx`select firm_code,invoice_prefix,invoice_numbering from erp_private.firms where firm_id=${firm}`);
  // A firm numbered continuously (INV/ACL/00323) keeps one running sequence, stored under year 0; otherwise the count restarts each year.
@@ -37,7 +45,7 @@ export async function nextNumber(tx:any,firm:string,kind:string,date:string){con
 }
 // Unpaid balance of the client's earlier posted invoices from the same firm: the "balance brought forward" on a new invoice.
 export async function broughtForward(tx:any,i:any){
- const r=(await tx`select coalesce(sum(greatest(x.total_amount-coalesce((select sum(p.amount) from erp_private.payments p where p.invoice_id=x.invoice_id),0),0)),0) as bf
+ const r=(await tx`select coalesce(sum(greatest(x.total_amount-coalesce((select sum(p.amount) from erp_private.payments p where p.invoice_id=x.invoice_id),0)-erp_private.invoice_credited(x.invoice_id),0)),0) as bf
   from erp_private.invoices x where x.client_id=${i.client_id} and x.firm_id=${i.firm_id} and x.status='Posted' and x.deleted_at is null and x.invoice_id<>${i.invoice_id}`)[0];
  return round(Number(r?.bf||0));
 }
@@ -48,8 +56,9 @@ export async function suiteRead(tx:any){const [r]=await tx`select jsonb_build_ob
  'staff_rates',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.staff_rates order by effective_from desc limit 1000)x),
  'budgets',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.project_budgets order by effective_from desc limit 1000)x),
  'recurring_fees',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.recurring_fee_schedules order by starts_on desc limit 1000)x),
- 'invoices',(select coalesce(jsonb_agg(x),'[]') from (select i.*,coalesce((select sum(p.amount) from erp_private.payments p where p.invoice_id=i.invoice_id),0) as paid_amount,(select to_jsonb(e)-'project_id'-'firm_id' from erp_private.invoice_etims e where e.invoice_id=i.invoice_id) as etims from erp_private.invoices i where deleted_at is null order by invoice_date desc limit 1000)x),
+ 'invoices',(select coalesce(jsonb_agg(x),'[]') from (select i.*,coalesce((select sum(p.amount) from erp_private.payments p where p.invoice_id=i.invoice_id),0) as paid_amount,erp_private.invoice_credited(i.invoice_id) as credited_amount,(select to_jsonb(e)-'project_id'-'firm_id' from erp_private.invoice_etims e where e.invoice_id=i.invoice_id) as etims from erp_private.invoices i where deleted_at is null order by invoice_date desc limit 1000)x),
  'payments',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.payments order by payment_date desc limit 1000)x),
+ 'credit_notes',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.invoice_credit_notes where deleted_at is null order by credit_date desc,created_at desc limit 1000)x),
  'advance_movements',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.advance_movements order by movement_date desc,created_at desc limit 1000)x),
  'advances',(select coalesce(jsonb_agg(x),'[]') from (select a.*,erp_private.advance_balance(a.advance_id) as balance from erp_private.client_advances a order by a.received_date desc,a.created_at desc limit 1000)x),
  'communications',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.communications where deleted_at is null order by communication_date desc limit 500)x),
@@ -134,7 +143,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const old=p.action==='invoice_edit'?one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} and deleted_at is null for update`):null;
   const pid=old?.project_id??uuid(p.project_id),rid=old?.request_id??uuid(p.request_id);
   await financial(tx,pid,true);
-  if(old){current(old,p);if(old.status!=='Draft')fail(400,'Only draft invoices can be edited.');}
+  if(old){current(old,p);if(old.status!=='Draft')fail(400,'Only draft invoices can be edited.');if((old.review_stage||'Draft')!=='Draft')fail(400,'This invoice has been submitted for checking. Return it to Draft before editing it.');}
   else{const exists=await tx`select invoice_id from erp_private.invoices where request_id=${rid}`;if(exists.length)return exists[0];}
   const project=one(await tx`select * from erp_private.projects where project_id=${pid}`),lines=invoiceLines(p.lines),[issued,due]=range(p.invoice_date,p.due_date);
   if(issued>today())fail(400,'Invoice date cannot be in the future.');
@@ -152,10 +161,29 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   return one(await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,external_reference,service_from,service_to,service_months,created_by)
    values(${rid},${pid},${project.client_id},${project.handling_firm_id},${description},${issued},${due},${tx.json(lines)},${net},${vat},${reference},${period.service_from},${period.service_to},${period.service_months},${a.staff_id}) returning invoice_id`);
  }
+ if(p.action==='invoice_submit'||p.action==='invoice_check'){
+  const i=one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} and deleted_at is null for update`);await financial(tx,i.project_id,true);current(i,p);
+  if(i.status!=='Draft')fail(400,'Only draft invoices go through checking.');
+  if(p.action==='invoice_submit'){
+   if(i.review_stage!=='Draft')fail(400,'This invoice has already been submitted.');
+   await tx`update erp_private.invoices set review_stage='Submitted',submitted_by=${a.staff_id},submitted_at=now(),checked_by=null,checked_at=null,return_note=null,review_override_reason=null where invoice_id=${i.invoice_id}`;return {ok:true,stage:'Submitted'};
+  }
+  const decision=choice(p.decision,['pass','return']);
+  if(decision==='return'){
+   if(i.review_stage==='Draft')fail(400,'This invoice has not been submitted.');
+   const note=text(p.note,1000).trim();if(note.length<3)fail(400,'Give a reason for returning the invoice.');
+   await tx`update erp_private.invoices set review_stage='Draft',return_note=${note},checked_by=null,checked_at=null where invoice_id=${i.invoice_id}`;return {ok:true,stage:'Draft'};
+  }
+  if(i.review_stage!=='Submitted')fail(400,i.review_stage==='Checked'?'This invoice has already been checked.':'Submit the invoice before it is checked.');
+  const why=selfReview(a,[i.submitted_by],p,'check');
+  await tx`update erp_private.invoices set review_stage='Checked',checked_by=${a.staff_id},checked_at=now(),review_override_reason=${why||null} where invoice_id=${i.invoice_id}`;
+  if(why)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'invoices','INVOICE_SELF_REVIEW_OVERRIDE',${i.invoice_id},${tx.json({step:'check',reason:why})})`;
+  return {ok:true,stage:'Checked'};
+ }
  if(p.action==='invoice_post'||p.action==='invoice_void'){
   const i=one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} for update`);await financial(tx,i.project_id,true);current(i,p);
-  if(p.action==='invoice_post'){if(i.status!=='Draft')fail(400,'Only draft invoices can be posted.');if(one(await tx`select status from erp_private.projects where project_id=${i.project_id}`).status!=='Active')fail(400,'Activate the verified engagement before posting its invoice.');if(!(await tx`select erp_private.project_letter_ok(${i.project_id}::uuid) as ok`)[0].ok)fail(400,'Billing is locked: this project has no verified, current signed engagement letter. Upload and verify it under Review and activate, then post the invoice.');const ref=await nextNumber(tx,i.firm_id,'INV',i.invoice_date.toISOString().slice(0,10));const bf=await broughtForward(tx,i);await tx`update erp_private.invoices set status='Posted',invoice_number=${ref},brought_forward=${bf},posted_by=${a.staff_id},posted_at=now() where invoice_id=${i.invoice_id}`;return {ok:true,invoice_number:ref,brought_forward:bf};}
-  if(i.status==='Void')fail(400,'This invoice is already void.');const total=one(await tx`select coalesce(sum(amount),0) paid from erp_private.payments where invoice_id=${i.invoice_id}`);if(Number(total.paid)!==0)fail(400,'Reverse allocated payments before voiding this invoice.');
+  if(p.action==='invoice_post'){if(i.status!=='Draft')fail(400,'Only draft invoices can be posted.');if(i.review_stage!=='Checked')fail(400,'Submit the invoice and have it checked before posting it.');const why=selfReview(a,[i.created_by,i.submitted_by],p,'post');if(one(await tx`select status from erp_private.projects where project_id=${i.project_id}`).status!=='Active')fail(400,'Activate the verified engagement before posting its invoice.');if(!(await tx`select erp_private.project_letter_ok(${i.project_id}::uuid) as ok`)[0].ok)fail(400,'Billing is locked: this project has no verified, current signed engagement letter. Upload and verify it under Review and activate, then post the invoice.');const ref=await nextNumber(tx,i.firm_id,'INV',i.invoice_date.toISOString().slice(0,10));const bf=await broughtForward(tx,i);await tx`update erp_private.invoices set status='Posted',invoice_number=${ref},brought_forward=${bf},posted_by=${a.staff_id},posted_at=now(),review_override_reason=${why||i.review_override_reason} where invoice_id=${i.invoice_id}`;if(why)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'invoices','INVOICE_SELF_REVIEW_OVERRIDE',${i.invoice_id},${tx.json({step:'post',reason:why,invoice_number:ref})})`;return {ok:true,invoice_number:ref,brought_forward:bf};}
+  if(i.status==='Void')fail(400,'This invoice is already void.');const total=one(await tx`select coalesce(sum(amount),0) paid from erp_private.payments where invoice_id=${i.invoice_id}`);if(Number(total.paid)!==0)fail(400,'Reverse allocated payments before voiding this invoice.');if(Number(one(await tx`select erp_private.invoice_credited(${i.invoice_id}) as c`).c)>0)fail(400,'This invoice has an issued credit note. Void the credit note before voiding the invoice.');
   await tx`update erp_private.invoices set status='Void',void_reason=${text(p.reason,1000)} where invoice_id=${i.invoice_id}`;return {ok:true};
  }
  if(p.action==='advance_receive'){
@@ -195,6 +223,65 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
    values(${rid},${adv.advance_id},${adv.client_id},${adv.firm_id},'Transfer',${value},${when},${voucher},${reference},${reason},${next.advance_id},${a.staff_id}) returning movement_id,voucher_number`);
   return {...mv,to_advance_id:next.advance_id,to_receipt_number:next.receipt_number};
  }
+ if(p.action==='credit_note_save'){
+  const old=p.credit_note_id?one(await tx`select * from erp_private.invoice_credit_notes where credit_note_id=${uuid(p.credit_note_id)} and deleted_at is null for update`):null;
+  const inv=one(await tx`select * from erp_private.invoices where invoice_id=${old?old.invoice_id:uuid(p.invoice_id)} and deleted_at is null for update`);
+  await financial(tx,inv.project_id,true);
+  const rid=old?old.request_id:uuid(p.request_id);
+  if(old){current(old,p);if(old.status!=='Draft')fail(400,'Only a draft credit note can be edited. Return a submitted one to Draft first.');}
+  else{const exists=await tx`select credit_note_id from erp_private.invoice_credit_notes where request_id=${rid}`;if(exists.length)return exists[0];}
+  if(inv.status!=='Posted')fail(400,'Only a posted invoice can be credited.');
+  const reason_code=choice(p.reason_code,CREDIT_REASONS),reason=text(p.reason,1000).trim();if(reason.length<5)fail(400,'Give the reason for the credit note.');
+  const credit_date=p.credit_date?day(p.credit_date):today();if(credit_date>today())fail(400,'The credit note date cannot be in the future.');if(credit_date<dayOf(inv.invoice_date))fail(400,'The credit note date cannot be before the invoice date.');
+  const others=await tx`select lines from erp_private.invoice_credit_notes where invoice_id=${inv.invoice_id} and status in ('Draft','Submitted','Issued') and deleted_at is null and credit_note_id is distinct from ${old?old.credit_note_id:null}`;
+  const lines=creditNoteLines(inv.lines,others.map((r:any)=>r.lines),p.lines),net=round(lines.reduce((t:number,l:any)=>t+l.net,0)),vat=round(lines.reduce((t:number,l:any)=>t+l.vat,0));
+  if(old)return one(await tx`update erp_private.invoice_credit_notes set reason_code=${reason_code},reason=${reason},credit_date=${credit_date},lines=${tx.json(lines)},net_amount=${net},vat_amount=${vat},return_note=null where credit_note_id=${old.credit_note_id} returning credit_note_id,revision`);
+  return one(await tx`insert into erp_private.invoice_credit_notes(request_id,invoice_id,project_id,client_id,firm_id,reason_code,reason,credit_date,lines,net_amount,vat_amount,prepared_by) values(${rid},${inv.invoice_id},${inv.project_id},${inv.client_id},${inv.firm_id},${reason_code},${reason},${credit_date},${tx.json(lines)},${net},${vat},${a.staff_id}) returning credit_note_id,revision`);
+ }
+ if(['credit_note_submit','credit_note_return','credit_note_issue','credit_note_void','credit_note_etims_record'].includes(p.action)){
+  const c=one(await tx`select * from erp_private.invoice_credit_notes where credit_note_id=${uuid(p.credit_note_id)} and deleted_at is null for update`);await financial(tx,c.project_id,true);current(c,p);
+  if(p.action==='credit_note_submit'){
+   if(c.status!=='Draft')fail(400,'Only a draft credit note can be submitted.');
+   await tx`update erp_private.invoice_credit_notes set status='Submitted',submitted_at=now(),return_note=null where credit_note_id=${c.credit_note_id}`;return {ok:true,status:'Submitted'};
+  }
+  if(p.action==='credit_note_return'){
+   partner(a);if(c.status!=='Submitted')fail(400,'Only a submitted credit note can be returned.');
+   const note=text(p.note,1000).trim();if(note.length<3)fail(400,'Give a reason for returning the credit note.');
+   await tx`update erp_private.invoice_credit_notes set status='Draft',return_note=${note} where credit_note_id=${c.credit_note_id}`;return {ok:true,status:'Draft'};
+  }
+  if(p.action==='credit_note_issue'){
+   partner(a);if(c.status!=='Submitted')fail(400,'Submit the credit note before it is issued.');
+   const why=selfReview(a,[c.prepared_by],p,'issue'),inv=one(await tx`select * from erp_private.invoices where invoice_id=${c.invoice_id} for update`);
+   if(inv.status!=='Posted')fail(400,'Only a posted invoice can be credited.');
+   const paid=Number(one(await tx`select coalesce(sum(amount),0) paid from erp_private.payments where invoice_id=${inv.invoice_id}`).paid),credited=Number(one(await tx`select erp_private.invoice_credited(${inv.invoice_id}) as c`).c),owed=round(Number(inv.total_amount)-paid-credited);
+   if(Number(c.total_amount)>owed)fail(400,`This credit note is ${Number(c.total_amount).toFixed(2)} but the client still owes ${owed.toFixed(2)} on the invoice. Reverse or refund the payment first, or reduce the credit note.`);
+   const ref=await nextNumber(tx,c.firm_id,'CN',dayOf(c.credit_date));
+   await tx`update erp_private.invoice_credit_notes set status='Issued',credit_note_number=${ref},issued_by=${a.staff_id},issued_at=now(),review_override_reason=${why||null} where credit_note_id=${c.credit_note_id}`;
+   if(why)await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'invoice_credit_notes','CREDIT_NOTE_SELF_REVIEW_OVERRIDE',${c.credit_note_id},${tx.json({reason:why,credit_note_number:ref})})`;
+   return {ok:true,credit_note_number:ref};
+  }
+  if(p.action==='credit_note_void'){
+   partner(a);if(c.status==='Void')fail(400,'This credit note is already void.');
+   const why=text(p.reason,1000).trim();if(why.length<5)fail(400,'Give the reason for voiding the credit note.');
+   await tx`update erp_private.invoice_credit_notes set status='Void',void_reason=${why},voided_by=${a.staff_id},voided_at=now() where credit_note_id=${c.credit_note_id}`;return {ok:true};
+  }
+  if(c.status!=='Issued')fail(400,'Record the eTIMS reference on an issued credit note.');
+  if(c.etims_credit_note_no)fail(400,'An eTIMS reference is already recorded for this credit note. It cannot be changed.');
+  const no=text(p.etims_credit_note_no,100).trim();if(!no)fail(400,'Enter the credit note number shown on eTIMS.');
+  const issued=day(p.etims_issued_on);if(issued>today())fail(400,'The eTIMS issue date cannot be in the future.');if(issued<dayOf(c.credit_date))fail(400,'The eTIMS issue date cannot be before the credit note date.');
+  if((await tx`select 1 from erp_private.invoice_credit_notes where firm_id=${c.firm_id} and etims_credit_note_no=${no}`).length)fail(400,'That eTIMS credit note number is already recorded against another credit note of this firm.');
+  await tx`update erp_private.invoice_credit_notes set etims_credit_note_no=${no},etims_issued_on=${issued},etims_recorded_by=${a.staff_id} where credit_note_id=${c.credit_note_id}`;return {ok:true};
+ }
+ if(p.action==='credit_note_pdf'){
+  const c=one(await tx`select * from erp_private.invoice_credit_notes where credit_note_id=${uuid(p.credit_note_id)} and deleted_at is null`);await financial(tx,c.project_id,false);
+  if(c.status==='Void')fail(400,'A void credit note has no PDF.');if(!PDFLib)fail(500,'PDF generation is not available.');
+  const inv=one(await tx`select invoice_number from erp_private.invoices where invoice_id=${c.invoice_id}`),firm=one(await tx`select legal_name,kra_pin,phone,email,physical_address,payment_instructions from erp_private.firms where firm_id=${c.firm_id}`),client=one(await tx`select company_name,kra_pin from erp_private.clients where client_id=${c.client_id}`);
+  const contact=(await tx`select full_name from erp_private.client_contacts where client_id=${c.client_id} and role_in_decision='Billing Contact' order by created_at limit 1`)[0],logoRow=(await tx`select mime_type,data_base64 from erp_private.firm_logos where firm_id=${c.firm_id}`)[0];
+  const bytes=await invoicePdf({firm,client:{name:client.company_name,pin:client.kra_pin,attention:contact?.full_name?'Attn: '+contact.full_name:''},etims:c.etims_credit_note_no?{etims_invoice_no:c.etims_credit_note_no,qr_url:null,etims_issued_on:c.etims_issued_on}:null,logo:logoRow?{mime_type:logoRow.mime_type,bytes:Uint8Array.from(atob(logoRow.data_base64),ch=>ch.charCodeAt(0))}:null,credit:{against:inv.invoice_number},invoice:{...c,invoice_number:c.credit_note_number,invoice_date:c.credit_date,due_date:null,status:c.status==='Issued'?'Posted':'Draft',description:c.reason,paid_amount:0,brought_forward:0}},PDFLib);
+  let b='';for(let k=0;k<bytes.length;k+=16384)b+=String.fromCharCode(...bytes.subarray(k,k+16384));
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'invoice_credit_notes','CREDIT_NOTE_PDF',${c.credit_note_id},${tx.json({status:c.status,credit_note_number:c.credit_note_number})})`;
+  return {file_name:(c.credit_note_number?String(c.credit_note_number).replace(/[^A-Za-z0-9]+/g,'_'):'Draft_credit_note_'+String(c.credit_note_id).slice(0,8))+'.pdf',mime_type:'application/pdf',base64:btoa(b)};
+ }
  if(p.action==='invoice_pdf'){
   const i=one(await tx`select * from erp_private.invoices where invoice_id=${uuid(p.invoice_id)} and deleted_at is null`);await financial(tx,i.project_id,false);
   if(i.status==='Void')fail(400,'A void invoice has no PDF.');
@@ -202,13 +289,13 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const firm=one(await tx`select legal_name,kra_pin,phone,email,physical_address,payment_instructions from erp_private.firms where firm_id=${i.firm_id}`),client=one(await tx`select company_name,kra_pin from erp_private.clients where client_id=${i.client_id}`);
   const contact=(await tx`select full_name from erp_private.client_contacts where client_id=${i.client_id} and role_in_decision='Billing Contact' order by created_at limit 1`)[0],logoRow=(await tx`select mime_type,data_base64 from erp_private.firm_logos where firm_id=${i.firm_id}`)[0];
   const etims=(await tx`select etims_invoice_no,qr_url,etims_issued_on from erp_private.invoice_etims where invoice_id=${i.invoice_id}`)[0]||null;
-  const paid=Number((await tx`select coalesce(sum(amount),0) paid from erp_private.payments where invoice_id=${i.invoice_id}`)[0].paid);
+  const paid=Number((await tx`select coalesce(sum(amount),0) paid from erp_private.payments where invoice_id=${i.invoice_id}`)[0].paid),credited=Number((await tx`select erp_private.invoice_credited(${i.invoice_id}) as c`)[0].c);
   // An issued invoice shows the balance fixed when it was posted; a draft shows today's balance as a preview.
   const bf=i.status==='Posted'&&i.brought_forward!=null?Number(i.brought_forward):await broughtForward(tx,i);
-  const bytes=await invoicePdf({firm,client:{name:client.company_name,pin:client.kra_pin,attention:contact?.full_name?'Attn: '+contact.full_name:''},etims,logo:logoRow?{mime_type:logoRow.mime_type,bytes:Uint8Array.from(atob(logoRow.data_base64),c=>c.charCodeAt(0))}:null,invoice:{...i,paid_amount:paid,brought_forward:bf}},PDFLib);
+  const bytes=await invoicePdf({firm,client:{name:client.company_name,pin:client.kra_pin,attention:contact?.full_name?'Attn: '+contact.full_name:''},etims,logo:logoRow?{mime_type:logoRow.mime_type,bytes:Uint8Array.from(atob(logoRow.data_base64),c=>c.charCodeAt(0))}:null,invoice:{...i,paid_amount:paid,credited_amount:credited,brought_forward:bf}},PDFLib);
   let b='';for(let k=0;k<bytes.length;k+=16384)b+=String.fromCharCode(...bytes.subarray(k,k+16384));
   await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'invoices','INVOICE_PDF',${i.invoice_id},${tx.json({status:i.status,invoice_number:i.invoice_number})})`;
-  return {file_name:(i.invoice_number?String(i.invoice_number).replace(/[^A-Za-z0-9]+/g,'_'):'Draft_invoice_'+String(i.invoice_id).slice(0,8))+'.pdf',mime_type:'application/pdf',base64:btoa(b),totals:invoiceTotals({...i,paid_amount:paid,brought_forward:bf})};
+  return {file_name:(i.invoice_number?String(i.invoice_number).replace(/[^A-Za-z0-9]+/g,'_'):'Draft_invoice_'+String(i.invoice_id).slice(0,8))+'.pdf',mime_type:'application/pdf',base64:btoa(b),totals:invoiceTotals({...i,paid_amount:paid,credited_amount:credited,brought_forward:bf})};
  }
  if(p.action==='firm_logo_set'){
   partner(a);const fid=uuid(p.firm_id);one(await tx`select firm_id from erp_private.firms where firm_id=${fid} and deleted_at is null`);
@@ -237,7 +324,7 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const adv=p.action==='advance_apply'?one(await tx`select * from erp_private.client_advances where advance_id=${uuid(p.advance_id)}`):null;
   const i=one(await tx`select * from erp_private.invoices where invoice_id=${old?.invoice_id||uuid(p.invoice_id)} for update`);await financial(tx,i.project_id,true);
   if(i.status!=='Posted')fail(400,'Record payments against a posted invoice.');const when=day(p.payment_date||(adv?today():''));if(when>today()||when<i.invoice_date.toISOString().slice(0,10))fail(400,'Payment date must be on or after invoice date and not in the future.');
-  const paid=Number(one(await tx`select coalesce(sum(amount),0) paid from erp_private.payments where invoice_id=${i.invoice_id}`).paid),balance=round(Number(i.total_amount)-paid);
+  const paid=Number(one(await tx`select coalesce(sum(amount),0) paid from erp_private.payments where invoice_id=${i.invoice_id}`).paid),balance=round(Number(i.total_amount)-paid-Number(one(await tx`select erp_private.invoice_credited(${i.invoice_id}) as c`).c));
   let left=0;
   if(adv){
    if(adv.client_id!==i.client_id||adv.firm_id!==i.firm_id)fail(400,'An advance can only be applied to an invoice issued by the firm that received it.');
@@ -257,10 +344,10 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='statement'){
   leader(a);const cid=uuid(p.client_id),[from,to]=range(p.starts_on,p.ends_on),combine=p.combine===true||p.combine==='true',firm=!combine&&p.firm_id?uuid(p.firm_id):null;one(await tx`select client_id from erp_private.clients where client_id=${cid}`);
   const names=new Map((await tx`select firm_id,firm_code,legal_name from erp_private.firms`).map((f:any)=>[f.firm_id,f]));
-  const invoices=await tx`select invoice_date as date,invoice_number as reference,firm_id,description,total_amount as debit,0::numeric as credit from erp_private.invoices where client_id=${cid} and status='Posted' and invoice_date<=${to} and (${firm}::uuid is null or firm_id=${firm})`,payments=await tx`select p.payment_date as date,p.receipt_number as reference,p.firm_id,p.method||' / '||p.reference as description,0::numeric as debit,p.amount as credit from erp_private.payments p join erp_private.invoices i using(invoice_id) where p.client_id=${cid} and i.status='Posted' and p.payment_date<=${to} and (${firm}::uuid is null or p.firm_id=${firm})`;
+  const invoices=await tx`select invoice_date as date,invoice_number as reference,firm_id,description,total_amount as debit,0::numeric as credit from erp_private.invoices where client_id=${cid} and status='Posted' and invoice_date<=${to} and (${firm}::uuid is null or firm_id=${firm})`,payments=await tx`select p.payment_date as date,p.receipt_number as reference,p.firm_id,p.method||' / '||p.reference as description,0::numeric as debit,p.amount as credit from erp_private.payments p join erp_private.invoices i using(invoice_id) where p.client_id=${cid} and i.status='Posted' and p.payment_date<=${to} and (${firm}::uuid is null or p.firm_id=${firm})`,creditNotes=await tx`select credit_date as date,credit_note_number as reference,firm_id,'Credit note: '||reason as description,0::numeric as debit,total_amount as credit from erp_private.invoice_credit_notes where client_id=${cid} and status='Issued' and deleted_at is null and credit_date<=${to} and (${firm}::uuid is null or firm_id=${firm})`;
   const advances=(await tx`select a.advance_id,a.firm_id,a.project_id,a.receipt_number,a.received_date,a.method,a.reference,a.amount,a.purpose,round(a.amount-coalesce((select sum(p.amount) from erp_private.payments p where p.advance_id=a.advance_id and p.payment_date<=${to}),0)-coalesce((select sum(m.amount) from erp_private.advance_movements m where m.advance_id=a.advance_id and m.movement_date<=${to}),0),2) as balance from erp_private.client_advances a where a.client_id=${cid} and a.received_date<=${to} and (${firm}::uuid is null or a.firm_id=${firm}) order by a.received_date,a.receipt_number`).map((x:any)=>({...x,firm_code:names.get(x.firm_id)?.firm_code||''}));
   const iso=(d:any)=>d instanceof Date?d.toISOString().slice(0,10):String(d).slice(0,10);
-  const all=[...invoices,...payments].map((r:any)=>({...r,firm_code:names.get(r.firm_id)?.firm_code||''})).sort((a:any,b:any)=>String(a.date).localeCompare(String(b.date))||a.reference.localeCompare(b.reference));
+  const all=[...invoices,...payments,...creditNotes].map((r:any)=>({...r,firm_code:names.get(r.firm_id)?.firm_code||''})).sort((a:any,b:any)=>String(a.date).localeCompare(String(b.date))||a.reference.localeCompare(b.reference));
   const section=(list:any[])=>{let bal=round(list.filter(r=>iso(r.date)<from).reduce((s,r)=>s+Number(r.debit)-Number(r.credit),0));const opening=bal;const rows=list.filter(r=>iso(r.date)>=from).map(r=>{bal=round(bal+Number(r.debit)-Number(r.credit));return {...r,balance:bal};});return {opening,closing:bal,rows,invoiced:round(rows.reduce((s,r)=>s+Number(r.debit),0)),paid:round(rows.reduce((s,r)=>s+Number(r.credit),0))};};
   const whole=section(all),firmIds=[...new Set([...all.map((r:any)=>r.firm_id),...advances.map((x:any)=>x.firm_id)])];
   const firms=combine?firmIds.map((id:any)=>{const f=names.get(id),sec=section(all.filter((r:any)=>r.firm_id===id)),held=round(advances.filter((x:any)=>x.firm_id===id).reduce((s:number,x:any)=>s+Number(x.balance),0));return {firm_id:id,firm_code:f?.firm_code||'',legal_name:f?.legal_name||'',opening:sec.opening,invoiced:sec.invoiced,paid:sec.paid,closing:sec.closing,advances_held:held,net_after_advances:round(sec.closing-held)};}).sort((x:any,y:any)=>x.firm_code.localeCompare(y.firm_code)):[];
@@ -269,11 +356,12 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
  }
  if(p.action==='wip_report'){
   leader(a);return {rows:await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,b.agreed_fee,b.budgeted_hours,b.budgeted_cost,
-   coalesce(t.hours,0) actual_hours,case when coalesce(t.missing_rates,0)=0 then coalesce(t.cost,0) end actual_cost,coalesce(t.missing_rates,0) missing_rates,coalesce(i.billed,0) total_billed,coalesce(pay.paid,0) total_paid,coalesce(adv.held,0) advance_held
+   coalesce(t.hours,0) actual_hours,case when coalesce(t.missing_rates,0)=0 then coalesce(t.cost,0) end actual_cost,coalesce(t.missing_rates,0) missing_rates,coalesce(i.billed,0)-coalesce(cn.credited,0) total_billed,coalesce(pay.paid,0) total_paid,coalesce(adv.held,0) advance_held
    from erp_private.projects p left join lateral (select * from erp_private.project_budgets b where b.project_id=p.project_id and effective_from<=current_date order by effective_from desc limit 1)b on true
    left join lateral (select sum(t.hours) hours,sum(t.hours*r.cost_rate) cost,count(*) filter(where r.rate_id is null) missing_rates from erp_private.timesheets t left join erp_private.staff_rates r on r.staff_id=t.staff_id and t.work_date between r.effective_from and r.effective_to where t.project_id=p.project_id and t.status='Approved')t on true
    left join lateral(select sum(net_amount) billed from erp_private.invoices i where i.project_id=p.project_id and i.status='Posted')i on true
    left join lateral(select sum(amount) paid from erp_private.payments x where x.project_id=p.project_id)pay on true
+   left join lateral(select sum(net_amount) credited from erp_private.invoice_credit_notes c where c.project_id=p.project_id and c.status='Issued' and c.deleted_at is null)cn on true
    left join lateral(select sum(erp_private.advance_balance(a.advance_id)) held from erp_private.client_advances a where a.project_id=p.project_id)adv on true where erp_private.finance_allowed(p.project_id) order by p.project_name`};
  }
  if(p.action==='billing_by_task'){

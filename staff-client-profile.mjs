@@ -1,6 +1,4 @@
-// Client profile page: one place per client with six tabs. It reuses the data the workspace already loaded and the existing screens
-// (edit client, KYC and contacts, tax profile, set-up guide, projects, tasks), so access rules do not change: the server already
-// trims what each role receives. Tabs: Overview, Contacts, Projects & Tasks, Documents/KYC, Communication & Activity, Tax Obligations.
+// Client profile tabs reuse scoped workspace records. Credential details are fetched only when KRA access opens.
 import {workspaceHeader} from './staff-workspace-header.mjs?v=20261119-nav-v1';
 import {docRequestShell} from './staff-doc-requests.mjs?v=20261109-dr-v1';
 import {lifecycleBar,routingCard,lifecycleBadge,commAccessCard,commExternalAllowed} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1&rev=20261119-nav';
@@ -15,7 +13,9 @@ export function clientProfile(ctx){
  if(!c)return `<section class="card"><h2>Client unavailable</h2><p>This client is not available in your current workspace. Refresh, or ask your Manager to check your assignment.</p>${back}</section>`;
  const id=esc(c.client_id),suite=d.suite||{},seen=!!c.details_visible;
  // Build 2848: the Set-up tab is for Managers and Partners (it holds the set-up screens that used to sit behind a card menu item).
- const shown=PROFILE_TABS.filter(([k])=>(k!=='setup'||leader)&&(!['aml','understanding'].includes(k)||!['INTERN','ADMIN'].includes(ctx.category||''))),cur=shown.some(([k])=>k===tab)?tab:'overview';
+ const shown=PROFILE_TABS.filter(([k])=>(k!=='setup'||leader)&&(!['aml','understanding'].includes(k)||!['INTERN','ADMIN'].includes(ctx.category||'')));
+ if(d.client_vault_access?.includes(clientId))shown.splice(shown.findIndex(([k])=>k==='tax')+1,0,['credentials','KRA access']);
+ const cur=shown.some(([k])=>k===tab)?tab:'overview';
  const host=name=>`<div id="clientTabHost" class="section-space" data-tab="${name}" data-id="${id}"><p class="muted">Loading…</p></div>`;
  const btn=(attrs,label,cls='')=>`<button type="button" class="${cls}" ${attrs}>${esc(label)}</button>`;
  const projects=d.projects.filter(p=>p.client_id===c.client_id),pids=new Set(projects.map(p=>p.project_id));
@@ -40,6 +40,7 @@ export function clientProfile(ctx){
    const items=[...comms,...kyc].sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,60);
    return `<div class="section-space">${commAccessCard(c,role,esc)}</div>`+(items.length?items.map(i=>`<div class="task"><div><b>${esc(i.kind)}</b> · ${esc(i.text)}<small>${esc(shortDate(i.at))} · ${esc(i.note)}</small></div></div>`).join(''):'<p class="empty">No communication or changes recorded for this client yet.</p>');
   },
+  credentials:()=>host('credentials'),
   aml:()=>host('aml'),
   understanding:()=>host('understanding'),
   setup:()=>`<p class="muted">Everything that sets this client up for work, in one place: legal identity, activities, chart of accounts, VAT categories, reporting periods and stock. The steps and the Healthy checks are on the Overview.</p>${leader?host('setup'):''}`,
