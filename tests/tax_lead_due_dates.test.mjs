@@ -23,6 +23,7 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  const proj=async(client,svc,status='Active',owner=M,master=false)=>{const p=id();await db.exec('alter table erp_private.projects disable trigger user');await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,status,owner_staff_id,tax_master) values(${p},${client},${F},${'UAT '+svc},${svc},${status},${owner},${master})`;await db.exec('alter table erp_private.projects enable trigger user');return p;};
  const M3=actors.MANAGER2.staff_id,SUP=actors.SUPERVISOR.staff_id,AST=actors.ASSISTANT.staff_id;
  const Z=await mk('UAT Fictional Tax Lead Client Ltd','A400000040Z'),PJ=await proj(Z,'TAX-KRA');
+ await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${PJ},${actors.SUPERVISOR.staff_id},${F},'SUPERVISOR')`;
  const rights=(role,p)=>as(role,a=>staffRightsAction(tx,a,p));
  const tax=(role,p)=>as(role,a=>taxAction(tx,a,p));
  const cfg=(role,p)=>as(role,a=>taxConfigAction(tx,a,p));
