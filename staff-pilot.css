@@ -769,3 +769,17 @@ html{scroll-padding-top:calc(var(--detail-bar-h,0px) + .5rem)}
 .access-actions legend{font-weight:700;padding-inline:.25rem}
 .access-actions > label{display:flex;align-items:center;gap:.45rem;margin:0}
 .access-actions > p{flex-basis:100%;margin:0}
+
+.workload-actions {
+ position: sticky;
+ bottom: 0;
+ z-index: 2;
+ padding: .75rem;
+ background: var(--paper, #fff);
+ border: 1px solid var(--line, #d7e1de);
+ border-radius: .5rem;
+}
+.vault-value {
+ white-space: pre-wrap;
+ overflow-wrap: anywhere;
+}

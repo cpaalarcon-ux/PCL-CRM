@@ -19,6 +19,8 @@ import {reviewQueueAction} from './review-queue.ts';
 import {handoverAction} from './handover-actions.ts';
 import {teamAction} from './team-actions.ts';
 import {holidayAction} from './holiday-actions.ts';
+import {workloadAction} from './workload-actions.ts';
+import {clientVaultAction,clientVaultAccess} from './client-vault-actions.ts';
 import {clientLifecycleAction} from './client-lifecycle-actions.ts';
 import {kycProposalAction} from './kyc-upload-actions.ts';
 import {viewStaffAction} from './view-staff-actions.ts';
@@ -57,6 +59,7 @@ import {physicalFileAction,setPhysicalPdfLib} from './physical-file-actions.ts';
 import {settingsHubAction} from './settings-hub-actions.ts';
 import {settingsOverviewAction} from './settings-overview-actions.ts';
 import {settingsOwnerAction} from './settings-owner-actions.ts';
+import {settingsStarterProposalAction} from './settings-starter-proposals.ts';
 import {starterConfirmAction} from './starter-confirm-actions.ts';
 import {exciseScheduleAction} from './excise-schedule-actions.ts';
 import {bankTotalsAction} from './bank-totals-actions.ts';
@@ -99,15 +102,17 @@ import {masterImport} from './master-import.ts';
 import {applyLegalStructure,requireRightChart,classifyClientsAction} from './legal-structure-actions.ts';
 import { createClient } from 'supabase';
 import postgres from 'postgres';
-import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,branches,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
+import { HttpError,fail,text,uuid,choice,date,password,login,revision,staffInput,fileType,allowedOrigin,sectors,statuses,documentObjectKey,assertDocumentLinks } from './validation.mjs';
 import {clientFilingPrefix} from './engagement-setup-rules.mjs';
 import {amlReportAction} from './aml-report-actions.ts';
 import {clientScopeAction} from './client-scope-actions.ts';
+import {clientOnboardingAllocationAction} from './client-onboarding-allocation-actions.ts';
 import {clientUnderstandingAction} from './client-understanding-actions.ts';
 import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,scopeWorkspaceRecords,staffAreaCanUse} from './staff-access-control.mjs';
 import {rightsForRequest,actionRightLabel,defaultActionRights,isActionRight,filterActionWorkspace,canUseAction} from './staff-action-rights.mjs';
 import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode,isProposableAction} from './staff-rights-catalog.mjs';
 import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts';
+import {handlingFirmIds,readClientEntry} from './client-entry.ts';
 import {policiesRead,policyAction,requireAssistantEntryAuthorised} from './policy-actions.ts';
 
 const url=Deno.env.get('SUPABASE_URL')!;
@@ -553,6 +558,7 @@ async function action(id:any,p:any){
    const off=await restrictedRights(tx,a.staff_id);
    const [finance]=areas.includes('billing_wip')?await tx`select erp_private.has_capability('FINANCE') enabled`:[null];
    w.me={...w.me,restricted_rights:off,finance_enabled:!!finance?.enabled};
+   w.client_vault_access=await clientVaultAccess(tx,a.staff_id,areas,off);
    return {...filterActionWorkspace(scopeWorkspaceRecords(filterWorkspaceAccess(w,areas),a.category_code,a.staff_id),off),release:'v12-uat-individual-area-access-v2'};
   }
   let actorRights:Promise<string[]>|undefined;
@@ -562,6 +568,8 @@ async function action(id:any,p:any){
   await requireActionRight(tx,a,p,await loadActorRights());
   if(isProposableAction(String(p.action||''))&&['ASSISTANT','SUPERVISOR'].includes(a.category_code))return await createProposal(tx,a,p);
   const proposals=await proposalAction(tx,a,p,run);if(proposals!==undefined)return proposals;
+  const workload=await workloadAction(tx,a,p);if(workload!==undefined)return workload;
+  const vault=await clientVaultAction(tx,a,p);if(vault!==undefined)return vault;
   const policy=await policyAction(tx,a,p);if(policy!==undefined)return policy;
   const rights=await staffRightsAction(tx,a,p);if(rights!==undefined)return rights;
   const reference=await referenceAction(tx,a,p);if(reference!==undefined)return reference;
@@ -593,6 +601,7 @@ async function action(id:any,p:any){
   const physicalFile=await physicalFileAction(tx,a,p);if(physicalFile!==undefined)return physicalFile;
   const settingsHub=await settingsHubAction(tx,a,p);if(settingsHub!==undefined)return settingsHub;
   const settingsOverview=await settingsOverviewAction(tx,a,p);if(settingsOverview!==undefined)return settingsOverview;
+  const settingsProposal=await settingsStarterProposalAction(tx,a,p);if(settingsProposal!==undefined)return settingsProposal;
   const settingsOwner=await settingsOwnerAction(tx,a,p);if(settingsOwner!==undefined)return settingsOwner;
   const starterConfirm=await starterConfirmAction(tx,a,p);if(starterConfirm!==undefined)return starterConfirm;
   const exciseSchedule=await exciseScheduleAction(tx,a,p);if(exciseSchedule!==undefined)return exciseSchedule;
@@ -607,7 +616,7 @@ async function action(id:any,p:any){
   const deleteRedo=await deleteRedoAction(tx,a,p);if(deleteRedo!==undefined)return deleteRedo;
   const clientMaster=await clientMasterAction(tx,a,p);if(clientMaster!==undefined)return clientMaster;
   const aml=await amlAction(tx,a,p);if(aml!==undefined)return aml;
-  const clientScope=await clientScopeAction(tx,a,p);if(clientScope!==undefined)return clientScope;const amlReport=await amlReportAction(tx,a,p);if(amlReport!==undefined)return amlReport;const understanding=await clientUnderstandingAction(tx,a,p,admin.storage.from(BUCKET),bucket);if(understanding!==undefined)return understanding;
+  const clientScope=await clientScopeAction(tx,a,p);if(clientScope!==undefined)return clientScope;const onboardingAlloc=await clientOnboardingAllocationAction(tx,a,p);if(onboardingAlloc!==undefined)return onboardingAlloc;const amlReport=await amlReportAction(tx,a,p);if(amlReport!==undefined)return amlReport;const understanding=await clientUnderstandingAction(tx,a,p,admin.storage.from(BUCKET),bucket);if(understanding!==undefined)return understanding;
   const setupReview=await clientSetupReviewAction(tx,a,p);if(setupReview!==undefined)return setupReview;
   const clientChoices=await clientChoicesAction(tx,a,p);if(clientChoices!==undefined)return clientChoices;
   const bulkSetup=await bulkSetupAction(tx,a,p);if(bulkSetup!==undefined)return bulkSetup;
@@ -732,13 +741,7 @@ async function action(id:any,p:any){
   if(p.action==='client_save'){
    const cid=p.client_id?uuid(p.client_id):crypto.randomUUID();
    if(p.purchase_setup)fail(409,'Business activities are maintained in Client setup as a dated multi-select batch. Save the client first, then preview and submit the activity change for independent review.');
-   const name=text(p.company_name,200),pin=p.kra_pin?text(p.kra_pin,11).toUpperCase():null;
-   const [uatScope]=await tx`select erp_private.uat_scope_enabled() enabled`,isUatFixture=!!uatScope.enabled&&/^UAT Fictional\b/i.test(name);
-   if(uatScope.enabled&&!p.client_id&&!isUatFixture)fail(400,'This staging workspace accepts fictional test clients only. Start the company name with “UAT Fictional”.');
-   if(pin&&!/^[A-Z][0-9]{9}[A-Z]$/.test(pin))fail(400,'Check the KRA PIN format.');
-   const sector=p.primary_sector?text(p.primary_sector,100):null,branch=p.branch_location?choice(p.branch_location,branches):null;
-   if(sector&&!(await tx`select sector_id from erp_private.sectors where name=${sector} and deleted_at is null`).length)fail(400,'Choose a saved sector, or add it with Add sector before saving this client.');
-   const cat=p.legal_structure?null:p.client_category?choice(p.client_category,['Corporate','Non-Profit','Public Entity','Individual']):null;
+   const {name,pin,sector,branch,cat,isUatFixture}=await readClientEntry(tx,p);
    if(p.client_id){
     const rev=revision(p.revision);
     const rows=await tx`update erp_private.clients set company_name=${name},kra_pin=${pin},primary_sector=${sector},branch_location=${branch},client_category=coalesce(${cat},client_category)
@@ -747,8 +750,7 @@ async function action(id:any,p:any){
    }else await tx`insert into erp_private.clients(client_id,company_name,kra_pin,primary_sector,branch_location,client_category,record_status,owner_staff_id,is_uat_fixture)
     values(${cid},${name},${pin},${sector},${branch},${cat},'Existing',${a.staff_id},${isUatFixture})`;
    await applyLegalStructure(tx,a,cid,p,!p.client_id);
-   const firms=Array.isArray(p.firm_ids)?p.firm_ids.map(uuid):[];if(!firms.length)fail(400,'Select at least one handling firm.');
-   for(const firm of firms){
+   for(const firm of handlingFirmIds(p)){
     const [allowed]=await tx`select erp_private.firm_allowed(${firm}::uuid) as ok`;if(!allowed.ok)deny();
     await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${cid},${firm}) on conflict do nothing`;
    }
@@ -858,7 +860,7 @@ Deno.serve(async(req:Request)=>{
  }catch(e:any){
   let status=e instanceof HttpError?e.status:500,message=e instanceof HttpError?e.message:'The request could not be completed. Try again or ask your Manager.';
   if(e.code==='42501'){status=403;message='This record or action is not available to your account.';}
-  if(e.code==='40001'){status=409;message='This task changed. Refresh it before forwarding or escalating.';}
+  if(e.code==='40001'){status=409;message='This record changed. Refresh before trying again.';}
   if(e.code==='23505'){status=409;message='This record already exists. Open the existing record to update it.';}
   if(['23514','23503','22P02'].includes(e.code)){status=400;message='Check the required fields, firm and project assignments.';}
   // Messages raised by the ERP's own database guards are written for staff; show them instead of the generic text.

@@ -34,6 +34,23 @@ function reviewSections(group){
  }
  return [...sections.values()];
 }
+const STARTER_TITLES={tax_rate:'Tax rules',chart_account:'Chart of accounts',statement_map:'Statement-line mappings'};
+
+export function starterProposalView(groups){
+ const sections=groups.filter(g=>g.items.length).map(g=>{
+  const rows=g.items.map(item=>{
+   const fields=[item.tax_type,item.account_group,item.category_code,item.statement,item.line_label,item.account_status==='Draft'?'Account activation pending':'',item.is_legacy?'Legacy account':'',item.effective_from,item.effective_to,item.legal_review_status,item.legal_citation,item.source_note,item.tax_note,item.evidence,item.notes,item.reason];
+   if(item.route)fields.push(`Route ${item.route}`);
+   if(item.parameters&&Object.keys(item.parameters).length)fields.push(JSON.stringify(item.parameters));
+   const summary=fields.filter(Boolean).map(value=>`<div>${e0(value)}</div>`).join('');
+   const source=/^https:\/\//i.test(item.source_url||'')?`<a href="${e0(item.source_url)}" target="_blank" rel="noopener noreferrer">Open official source</a>`:'';
+   return `<tr><td><input type="checkbox" name="starter" value="${e0(encoded(g.type,item.id))}" aria-label="Propose ${e0(item.code)} ${e0(item.label)}"></td><td><b>${e0(item.code)} ${e0(item.label)}</b></td><td>${summary}${source}</td></tr>`;
+  }).join('');
+  return `<details><summary>${e0(STARTER_TITLES[g.type])} (${g.items.length})</summary><div class="scroll"><table><thead><tr><th>Select</th><th>Draft</th><th>Details</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+ }).join('');
+ if(!sections)return '<p>No starter drafts are available for you to propose.</p>';
+ return `<form id="editForm"><p>Review each selected draft. The ERP records you as its proposer and keeps the existing approval checks.</p>${sections}<p><label><input type="checkbox" name="review_confirmed"> I reviewed each selected draft and propose it as shown.</label></p><button type="submit" class="primary">Submit proposals</button></form>`;
+}
 const reviewCard=(g,selected,esc=e0)=>{
  const count=Number(g.actionable_count||0),waiting=Number(g.waiting_count||0),blocked=Number(g.blocked_count||0);
  const label=GROUP_TITLES[g.key];
@@ -62,7 +79,7 @@ export function approvalsView(data,f,{esc=e0,selectedGroups=new Set()}={}){
  const cards=(data.actionGroups||[]).filter(g=>Number(g.waiting_count||0)>0);
  const other=(data.queues||[]).filter(q=>!BULK_KEYS.has(q.key));
  const recs=visibleRecords(data.records,f);
- return `<section class="approval-board" id="approvalBoard"><div class="approval-needs-action"><div><p class="eyebrow">SETTINGS APPROVALS</p><h3>Needs my action</h3><p>Counts reflect approval queues and review records available to your role. Ineligible and self-prepared items are excluded from bulk selection.</p></div><strong>${esc(data.actionableTotal||0)}</strong></div><div class="approval-action-grid">${cards.map(g=>reviewCard(g,selectedGroups,esc)).join('')||'<p class="ok">No bulk approval groups are waiting.</p>'}</div><div class="approval-board-actions">${btn('ap-bulk-open','Review selected queues', '', `class="primary" ${selectedGroups.size?'':'disabled'}`)}<span class="muted">Select one or more groups, review the item details, then confirm before approval.</span></div></section>
+ return `<section class="approval-board" id="approvalBoard"><div class="approval-needs-action"><div><p class="eyebrow">SETTINGS APPROVALS</p><h3>Needs my action</h3><p>Counts reflect approval queues and review records available to your role. Ineligible and self-prepared items are excluded from bulk selection.</p></div><strong>${esc(data.actionableTotal||0)}</strong></div><div class="approval-action-grid">${cards.map(g=>reviewCard(g,selectedGroups,esc)).join('')||'<p class="ok">No bulk approval groups are waiting.</p>'}</div><div class="approval-board-actions">${btn('ap-bulk-open','Review selected queues', '', `class="primary" ${selectedGroups.size?'':'disabled'}`)} ${btn('ap-starter-proposals','Propose starter drafts')}<span class="muted">Select one or more groups, review the item details, then confirm before approval.</span></div></section>
  ${other.length?`<details class="approval-secondary"><summary>Other approval tasks</summary><p class="muted">These items keep their existing review screens and controls.</p>${queuesView(other,{mine:f.mine,esc})}</details>`:''}
  <details class="approval-secondary"><summary>Renewals and expiries (${esc(data.renewals?.length||0)})</summary>${renewalsView(data.renewals,{esc})}</details>
  <details class="approval-secondary"><summary>Search all settings records</summary><p class="muted">Use these filters when you need the history or current state of a specific record.</p>${filtersView(f,data,{esc})}<div id="apRecordsBody">${recordsView(recs,{esc})}</div></details>`;
@@ -143,9 +160,9 @@ export function batchReceiptView(result,{esc=e0}={}){
   ${batchRows(result.groups,esc)}</div>`;
 }
 export function createMyApprovalsUI(ctx){
- const {request,modal}=ctx;
+ const {request,modal,notice}=ctx;
  let data=null,loading=false,failed='',f={...FILTER_DEFAULT},selectedGroups=new Set(),drawerGroups=[],drawerSelected=new Map();
- let maxBatch=500,batchBusy=false,reviewNeedsReload=false,preview=null,selectionView={};
+ let maxBatch=500,batchBusy=false,approved=false,reviewNeedsReload=false,preview=null,selectionView={};
  const el=id=>document.getElementById(id);
  const query=selector=>el('editorBody')?.querySelector(selector);
  async function load(){if(loading)return;loading=true;try{const r=await request({action:'settings_approvals_read'});if(!r||!Array.isArray(r.queues)||!Array.isArray(r.records)||!Array.isArray(r.actionGroups))throw Error('The approvals answer was not in the expected form.');data=r;failed='';}catch(e){failed=e.message||'My approvals could not be loaded.';}finally{loading=false;ctx.render();}}
@@ -224,18 +241,20 @@ export function createMyApprovalsUI(ctx){
   };
   await ctx.openTaxRule(id,{onBack:back,afterSave:saved,focusSource:!!item.source_issue,readOnly:item.legal_review_status==='Confirmed'||ctx.canEditTax?.()===false});
  }
- function batchError(error,isPreview){
+ function batchError(error,isPreview,stillOpen){
   const ref=error.approval_item,group=drawerGroups.find(g=>g.key===ref?.queue_key);
   const item=group&&groupItems(group).find(i=>String(i.id)===String(ref?.id));
   const rejected=error.status>=400&&error.status<500&&error.status!==408;
   reviewNeedsReload=error.status===409||(!isPreview&&!rejected);
   const action={approve_tax_rates:'ap-rate-open',approve_chart:'ap-chart-open',approve_statement_lines:'ap-map-open'}[ref?.queue_key];
-  paintDrawer({...selectionView,failure:{
+  const failure={
    title:isPreview?'The batch needs another check.':rejected?'Approval could not be completed. No items were approved.':'The approval result could not be verified.',
    label:item?[item.code,item.label].filter(Boolean).join(' · '):'',
    action:item?action:null,id:item?.id,
    message:error.status===504?'The server timed out. Reload Quick review to check which items are still waiting.':error.message||'Reload Quick review and try again.'
-  }});
+  };
+  if(stillOpen)paintDrawer({...selectionView,failure});
+  else notice(`${failure.title} ${failure.message}`,true);
  }
  async function checkOrApprove(isPreview){
   const selections=isPreview?drawerGroups.map(g=>({queue_key:g.key,items:groupItems(g).filter(i=>i.eligible&&drawerSelected.get(g.key)?.has(String(i.id))).map(i=>({id:i.id,revision:i.revision}))})).filter(g=>g.items.length):preview?.selections;
@@ -243,26 +262,38 @@ export function createMyApprovalsUI(ctx){
   if(isPreview&&selectionCount()>maxBatch)return;
   if(!isPreview&&!query('[data-ap-confirm]')?.checked)return;
   if(isPreview)selectionView=selectionState();
-  const editor=el('editor'),body=el('editorBody'),back=el('closeEditor'),preventClose=e=>e.preventDefault();
+  const editor=el('editor'),body=el('editorBody'),panel=body?.firstElementChild;
+  const stillOpen=()=>!!editor?.open&&(!body?.firstElementChild||body.firstElementChild===panel);
   batchBusy=true;
   if(body){body.inert=true;body.setAttribute('aria-busy','true');}
-  editor?.addEventListener('cancel',preventClose);
-  if(back)back.disabled=true;
   try{
    const p=isPreview?{preview_only:true}:{review_confirmed:true,review_version:preview.version};
    const result=await request({action:'settings_approval_batch_approve',selections,...p});
    if(isPreview){
     if(!result.review_version||!Array.isArray(result.groups))throw Error('The batch preview could not be verified.');
     preview={selections,version:result.review_version};
-    paint('Confirm batch approval',batchPreviewView(result.groups),{onBack:()=>paintDrawer(selectionView),backLabel:'Return to selection'});
+    if(stillOpen())paint('Confirm batch approval',batchPreviewView(result.groups),{
+     onBack:()=>{if(batchBusy)el('editor')?.close();else paintDrawer(selectionView);},backLabel:'Return to selection'
+    });
    }else{
-    paint('Approval receipt',batchReceiptView(result));
+    approved=true;
+    if(stillOpen())paint('Approval receipt',batchReceiptView(result));
+    else notice(`${Number(result.total||0)} items approved. See the settings audit history for the batch.`);
     preview=null;selectedGroups.clear();drawerGroups=[];drawerSelected.clear();data=null;failed='';ctx.render();await load();
    }
-  }catch(error){batchError(error,isPreview);}
-  finally{batchBusy=false;if(body){body.inert=false;body.removeAttribute('aria-busy');}editor?.removeEventListener('cancel',preventClose);if(back)back.disabled=false;}
+  }catch(error){batchError(error,isPreview,stillOpen());}
+  finally{batchBusy=false;if(body){body.inert=false;body.removeAttribute('aria-busy');}}
  }
  async function handle(action,id){
+  if(action==='ap-starter-proposals'){
+   try{
+    const {groups}=await request({action:'settings_starter_proposals_read'});
+    const records=new Map(groups.flatMap(g=>g.items.map(i=>[encoded(g.type,i.id),{type:g.type,id:i.id,revision:i.revision}])));
+    const submit=records.size?values=>request({action:'settings_starter_propose',items:values.getAll('starter').map(key=>records.get(key)),review_confirmed:values.has('review_confirmed')}):null;
+    modal('Propose starter drafts',starterProposalView(groups),submit,async()=>{data=null;await load();},{refreshWorkspace:false,successMessage:'Proposals saved and recorded in the audit history.'});
+   }catch(e){notice(e.message||'The starter drafts could not be opened.',true);}
+   return true;
+  }
   if(action==='ap-open'){const q=data?.queues.find(x=>x.key===id);if(q?.go)await ctx.openSection(q.go,q);return true;}
   if(['ap-rate-open','ap-chart-open','ap-map-open'].includes(action)){if(!batchBusy)await showRecord(action,id);return true;}
   if(action==='ap-review-reload'){if(!batchBusy)await openReview(keys(),{...selectionState(),keepSelection:true});return true;}
@@ -272,8 +303,8 @@ export function createMyApprovalsUI(ctx){
    if(!batchBusy){for(const i of document.querySelectorAll('#editorBody [data-ap-item]:checked'))selectInput(i,false);updateDrawerControls();}
    return true;
   }
-  if(action==='ap-preview-selected'||action==='ap-approve-selected'){await checkOrApprove(action==='ap-preview-selected');return true;}
+  if(action==='ap-preview-selected'||action==='ap-approve-selected'){approved=false;await checkOrApprove(action==='ap-preview-selected');return true;}
   return false;
  }
- return {card,handle,refresh:()=>{data=null;failed='';}};
+ return {card,handle,approved:()=>approved,refresh:()=>{data=null;failed='';}};
 }

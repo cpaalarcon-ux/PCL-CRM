@@ -19,6 +19,14 @@ test('six tabs, Overview first, and each tab shows only this client’s records'
  h=clientProfile(ctx({tab:'activity'}));assert.match(h,/Asked for bank statements/);assert.match(h,/Updated director list/);assert.doesNotMatch(h,/Other client call/);assert.ok(h.indexOf('Chase Friday')<h.indexOf('Asked for bank statements'),'newest first');assert.match(h,/Internal/);
  h=clientProfile(ctx({tab:'tax'}));assert.match(h,/Verified/);assert.match(h,/data-suite="tax-profile"/);
 });
+test('KRA access opens only for clients permitted by the credential vault',()=>{
+ const data={...base,client_vault_access:['c1']};
+ const allowed=clientProfile(ctx({data,leader:false,tab:'credentials'}));
+ assert.match(allowed,/aria-selected="true"[^>]*data-cprofile-tab="credentials"/);
+ assert.match(allowed,/data-tab="credentials" data-id="c1"/);
+ assert.doesNotMatch(clientProfile(ctx({data,clientId:'c2',tab:'credentials'})),/data-cprofile-tab="credentials"|data-tab="credentials"/);
+ assert.doesNotMatch(clientProfile(ctx({tab:'credentials'})),/data-cprofile-tab="credentials"|data-tab="credentials"/);
+});
 test('rights stay as they were: non-leaders get no edit buttons, hidden client details stay hidden, unknown clients are refused',()=>{
  const h=clientProfile(ctx({leader:false,tab:'contacts'}));assert.doesNotMatch(h,/data-suite=/);
  assert.doesNotMatch(clientProfile(ctx({leader:false})),/data-client=|data-setup-guide/);

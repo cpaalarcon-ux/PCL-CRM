@@ -13,6 +13,22 @@ const MA=await import('../staff-my-approvals.mjs');
 const AF=await import('../staff-approvals-filter.mjs');
 const rd=f=>readFileSync(new URL('../'+f,import.meta.url),'utf8');
 
+test('starter draft proposals are explicitly selected and sent without an approver identity',async()=>{
+ const calls=[];
+ const groups=[{type:'tax_rate',items:[{id:'rate-1',code:'KE_SAMPLE',label:'Rate & scope',revision:3,source_url:'https://www.kra.go.ke/'}]}];
+ let submit,html;
+ const ui=MA.createMyApprovalsUI({request:async p=>{calls.push(p);return {groups};},modal:(_title,form,save)=>{html=form;submit=save;}});
+ await ui.handle('ap-starter-proposals','');
+ assert.match(html,/Rate &amp; scope/);
+ assert.doesNotMatch(html,/<input[^>]*\schecked/);
+ assert.equal(calls.length,1);
+ const values=new FormData();
+ values.append('starter','tax_rate|rate-1');
+ values.append('review_confirmed','on');
+ await submit(values);
+ assert.deepEqual(calls[1],{action:'settings_starter_propose',items:[{type:'tax_rate',id:'rate-1',revision:3}],review_confirmed:true});
+});
+
 const row=(o={})=>({map_id:'m1',account_code:'40100',account_name:'Fictional sales',account_statement:'Profit or loss',account_status:'Active',is_legacy:false,line_code:'PL.REV',line_label:'Revenue',line_statement:'Profit or loss',effective_from:'2026-01-01',proposed_by:null,open_line_code:null,open_from:null,drafts:1,...o});
 
 test('statement review rules: consistent, unchanged and exceptions come only from the data',()=>{
@@ -150,7 +166,7 @@ test('Bulk review starts empty, selects eligible rows by group, and preserves se
    }
    return {queues:[],records:[],actionGroups:[]};
   },
-  modal:(_title,html)=>{document.getElementById('editorBody').innerHTML=html;},
+  modal:(_title,html)=>{document.getElementById('editor').open=true;document.getElementById('editorBody').innerHTML=html;},
   render(){},notice(){},
   openTaxRule:(id,options)=>{edit={id,...options};document.getElementById('editorBody').replaceChildren();}
  });
@@ -200,7 +216,7 @@ test('a timed-out approval requires a fresh list before retrying',async t=>{
    attempts++;
    throw Object.assign(Error('The request failed.'),{status:504});
   },
-  modal:(_title,html)=>{document.getElementById('editorBody').innerHTML=html;},
+  modal:(_title,html)=>{document.getElementById('editor').open=true;document.getElementById('editorBody').innerHTML=html;},
   render(){},notice(){}
  });
  const check=selector=>{const input=document.querySelector(selector);input.checked=true;input.dispatchEvent(new dom.window.Event('change',{bubbles:true}));};

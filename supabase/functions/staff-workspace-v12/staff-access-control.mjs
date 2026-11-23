@@ -15,7 +15,7 @@ export const STAFF_ACCESS_AREAS = Object.freeze([
 
 const AREA_CODES=STAFF_ACCESS_AREAS.map(x=>x.code);
 const LEADER_AREAS=['clients','projects','time_hr','documents','communications','billing_wip','audit','leads','staff_access','settings'];
-const TEAM_AREAS=['clients','projects','time_hr','documents','communications','audit'];
+const TEAM_AREAS=['clients','projects','time_hr','documents','communications','audit','leads'];
 const INTERN_AREAS=['projects','time_hr','documents','communications'];
 // System Administrators run logins, chat groups and system settings (sectors, private reference documents, go-live readiness).
 // They see no client, project, document, ledger or finance area, and cannot approve anything.
@@ -37,14 +37,14 @@ export function effectiveStaffAreas(role,restricted=[]){
 const PREFIX_AREAS=[
   [/^lead_/, 'leads'],
   [/^(?:staff_save|staff_disable|staff_access_|staff_right_|staff_rights_|account_link|manager_password_reset_targets|master_staff_)/,'staff_access'],
-  [/^(?:firm_save|firm_details|practice_|firm_logo|sector_save|settings_hub_|settings_overview_|settings_record_|settings_owners_|settings_approval(?:s)?_|bank_starter_confirm_|reference_|holiday_|deadline_|go_live_|policy_(?:sign|revoke)|rate_(?:save|approve|impact|test|legal_confirm)|tax_manager_|tax_role_|annual_due_rule_|release_(?:check_save|read))/, 'settings'],
-  [/^(?:client_save|client_lifecycle|client_routing_|client_master_|aml_|client_setup_|bulk_setup_|client_year_rollover_|client_holder_|client_template_|client_comm_|client_scope_|client_understanding_|client_pf_|client_register_|client_card_flags$|client_work_ready$|client_status_policy_|kyc_proposal_|client_proposal_|client_classify_|compliance_|edd_approve|owner_add|party_add|party_end|group_profile_save|licence_add|licence_end|contact_save|tax_profile_|v3_client_|v3_identity_|v3_activity_|v3_activities_|v3_stock_|v3_books_pack_|v3_vat_|v3_category_|v3_bank_|v3_opening_balance|v3_partners_add)/,'clients'],
+  [/^(?:firm_save|firm_details|practice_|firm_logo|sector_save|settings_hub_|settings_overview_|settings_record_|settings_owners_|settings_approval(?:s)?_|settings_starter_|bank_starter_confirm_|reference_|holiday_|deadline_|go_live_|policy_(?:sign|revoke)|rate_(?:save|approve|impact|test|legal_confirm)|tax_manager_|tax_role_|annual_due_rule_|release_(?:check_save|read))/, 'settings'],
+  [/^(?:client_save|client_lifecycle|client_routing_|client_vault_|client_master_|aml_|client_setup_|bulk_setup_|client_year_rollover_|client_holder_|client_template_|client_comm_|client_scope_|client_onboarding_alloc_|client_understanding_|client_pf_|client_register_|client_card_flags$|client_work_ready$|client_status_policy_|kyc_proposal_|client_proposal_|client_classify_|compliance_|edd_approve|owner_add|party_add|party_end|group_profile_save|licence_add|licence_end|contact_save|tax_profile_|v3_client_|v3_identity_|v3_activity_|v3_activities_|v3_stock_|v3_books_pack_|v3_vat_|v3_category_|v3_bank_|v3_opening_balance|v3_partners_add)/,'clients'],
   [/^(?:search_all$|calendar_read$|payroll_access_|target_measure_|bank_totals_|routing_map_|purchase_accounts_|payroll_register_|payroll_review_|payroll_confirmation_|statutory_file_|wording_library_|export_profile_|kra_csv_|eligibility_|whtvat_|template_library_|record_reopen_|delete_redo_|period_pack_|obligation_|service_template_|service_category_|task_|partner_escalation_|project_|schedule_|excise_schedule_|generate_tasks|engagement_|aup_|kra_|procedure_|accounting_|ledger_|purchase_ledger_|non_etims_|workbook_|period_import_|wht_|tax_|due_date_|work_|form_draft_|sales_|v3_mapping_|v3_project_|v3_review_|v3_export_|v3_period_add|v3_suggestions|suite_export)/,'projects'],
   [/^(?:audit_|forensic_)/, 'audit'],
   [/^(?:presence_|view_staff_|timer_|clock$|attendance_|leave_|roster_|performance_|credential_|timesheet_)/,'time_hr'],
   [/^(?:document_|doc_request_|physical_file_|incoming_|evidence_|upload$|download$|master_preview$|master_import$)/,'documents'],
   [/^(?:concern_|sar_|discussion_|communication_|ticket_|client_support_|notification_read$|client_timeline$)/,'communications'],
-  [/^(?:client_card_wip$|invoice_|payment_|advance_|billing_|fee_schedule_|budget_|wip_report$|statement$|staff_rate_|metrics_)/,'billing_wip'],
+  [/^(?:client_card_wip$|invoice_|credit_note_|payment_|advance_|billing_|fee_schedule_|budget_|wip_report$|statement$|staff_rate_|metrics_)/,'billing_wip'],
 ];
 
 export function areaForStaffAction(action){
@@ -79,7 +79,7 @@ export function filterWorkspaceAccess(workspace,areas){
   const s={...(w.suite||{})};
   if(!allowed.has('leads'))s.leads=[];
   if(!allowed.has('clients'))for(const key of ['tax_profiles','contacts','compliance','owners','kyc_evidence','kyc_changes','engagements'])s[key]=[];
-  if(!allowed.has('billing_wip'))for(const key of ['rates','staff_rates','budgets','recurring_fees','invoices','payments'])s[key]=[];
+  if(!allowed.has('billing_wip'))for(const key of ['rates','staff_rates','budgets','recurring_fees','invoices','payments','credit_notes'])s[key]=[];
   if(!allowed.has('settings'))s.rates=[];
   if(!allowed.has('projects'))s.tax_cases=[];
   if(!allowed.has('communications'))for(const key of ['communications','tickets'])s[key]=[];

@@ -1,8 +1,18 @@
 // Propose-and-approve for client onboarding. An Assistant or Supervisor's entry waits here. For an Assistant's entry a Supervisor, Manager or
 // Partner checks it first; then a Manager or Partner who is neither the proposer nor the checker approves it. The server and the database
 // enforce the same rules; this file only shows the queue and the buttons.
+import {canUseAction} from './staff-action-rights.mjs?v=20261119-2906';
+import {assistantEntryOpen} from './staff-policies.mjs?v=20261109-dr-v1';
+import {legalStructureFields,structureRows} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
 export const PROPOSER_ROLES=Object.freeze(['ASSISTANT','SUPERVISOR']);
 export const canPropose=role=>PROPOSER_ROLES.includes(role);
+export function addClientButton(data){
+ const {category_code:role,restricted_rights:rights}=data.me||{};
+ if(rights?.includes('client.details')||!canUseAction(rights,{action:'client_save'},'clients'))return '';
+ if(['MANAGER','PARTNER'].includes(role))return '<button type="button" class="primary" data-new="client">+ Add client</button>';
+ if(!canPropose(role)||!data.firms?.length||(role==='ASSISTANT'&&!assistantEntryOpen(data)))return '';
+ return '<button type="button" class="primary" data-propose="new-client">+ Add client</button>';
+}
 export const PROPOSAL_HELP='Your entry is saved as a proposal and nothing on the client record changes yet. Every proposal is checked by a Supervisor, Manager or Partner other than the person who proposed it; a Manager or Partner who neither prepared nor checked it then approves it. Each step needs a note of at least 10 characters.';
 export const KYC_HELP='The file is stored where only Managers and Partners can open it. It becomes KYC evidence only after a Supervisor, Manager or Partner checks it and a different Manager or Partner approves it. The client must already have a saved KYC profile.';
 const OPEN=['Proposed','Checked'];
@@ -34,8 +44,28 @@ export function proposeButtons(clientId,role,suiteButton,esc=v=>String(v??'')){
  return `<button type="button" class="secondary" data-propose="client" data-id="${esc(clientId)}">Propose details change</button>`+`<button type="button" class="secondary" data-propose="kyc" data-id="${esc(clientId)}">Propose KYC file</button>`+suiteButton('contact-new','Propose contact',clientId)+suiteButton('owner-new','Propose owner',clientId);
 }
 export function bindProposals(ctx){
- const {$,esc,field,form,modal,request,data}=ctx;
+ const {esc,field,select,options,form,modal,request,data}=ctx;
  document.addEventListener('click',async e=>{
+  if(e.target.closest('[data-propose="new-client"]')){
+   const workspace=data(),firms=workspace.firms||[];
+   if(!canPropose(workspace.me?.category_code)||!addClientButton(workspace))return;
+   const initialFirm=ctx.currentFirm();
+   const firmOptions=options(firms.map(f=>[f.firm_id,f.firm_code+' · '+f.legal_name]),firms.length===1?firms[0].firm_id:initialFirm);
+   modal('Propose a new client',form(
+    '<p class="info full">Send the client details for an independent check and approval. The client will appear in the register after approval.</p>'+
+    field('company_name','Registered client name *','','text','required maxlength="200"')+
+    `<label>Handling firm *<select name="firm_id" required>${firmOptions}</select></label>`+
+    field('kra_pin','KRA PIN','','text','maxlength="11"')+
+    select('branch_location','Branch',['Nairobi','Bungoma','Kisii','Other'])+
+    legalStructureFields({rows:structureRows(workspace),esc,options})+
+    field('proposal_reason','Note for the reviewer','','text','maxlength="300"'),
+    'Send for review'
+   ),f=>{
+    const {firm_id,...fields}=Object.fromEntries(f);
+    return request({action:'client_save',...fields,firm_ids:[firm_id]});
+   },undefined,{successMessage:'New client proposal sent for review. Follow its progress under Proposals.'});
+   return;
+  }
   const pb=e.target.closest('[data-propose="client"]');
   if(pb){
    const c=data().clients.find(x=>x.client_id===pb.dataset.id);if(!c)return;
@@ -63,7 +93,14 @@ export function bindProposals(ctx){
   }
   const b=e.target.closest('[data-proposal]');if(!b)return;
   const kind=b.dataset.proposal,base={proposal_id:b.dataset.id,revision:b.dataset.rev},p=(data().proposals||[]).find(x=>x.proposal_id===b.dataset.id);
-  const ask=(title,label,required,action,success)=>modal(title,form(`<p class="info full">${esc(p?.summary||'')}</p>`+field('note',label,'','text',required?'required minlength="10" maxlength="500"':'maxlength="500"'),title),f=>request({action,...base,note:f.get('note')||''}),undefined,{successMessage:success});
+  let details='';
+  if(p?.action==='client_save'&&!p.client_id&&p.payload){
+   const {company_name,kra_pin,branch_location,legal_structure,legal_subtype,primary_sector,firm_ids}=p.payload;
+   const firms=(Array.isArray(firm_ids)?firm_ids:[]).map(id=>(data().firms||[]).find(f=>f.firm_id===id)?.legal_name||'Firm unavailable').join(', ');
+   const items=[['Registered client name',company_name],['Handling firm',firms],['KRA PIN',kra_pin],['Branch',branch_location],['Legal structure',legal_structure],['Subcategory',legal_subtype],['Sector',primary_sector],['Proposer note',p.reason]];
+   details=`<dl class="full">${items.filter(([,value])=>value).map(([label,value])=>`<dt><b>${label}</b></dt><dd>${esc(value)}</dd>`).join('')}</dl>`;
+  }
+  const ask=(title,label,required,action,success)=>modal(title,form(`<p class="info full">${esc(p?.summary||'')}</p>`+details+field('note',label,'','text',required?'required minlength="10" maxlength="500"':'maxlength="500"'),title),f=>request({action,...base,note:f.get('note')||''}),undefined,{successMessage:success});
   if(kind==='check')ask('Check this proposal','Check conclusion * (at least 10 characters)',true,'client_proposal_check','Checked. A Manager or Partner can now approve it.');
   if(kind==='return')ask('Return this proposal','What needs to change? * (at least 10 characters)',true,'client_proposal_return','Returned to the proposer.');
   if(kind==='approve')ask('Approve and apply','Approval note * (at least 10 characters)',true,'client_proposal_approve','Approved and applied to the client record.');

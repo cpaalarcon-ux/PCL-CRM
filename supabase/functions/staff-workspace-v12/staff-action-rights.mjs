@@ -10,8 +10,11 @@ const key=(group,operation)=>group+'.'+operation;
 const groups=[
  ['invoice','billing_wip','Invoices',leaders,{
   view:['invoice_pdf','billing_by_task'], create:['invoice_save'], edit:['invoice_edit'],
-  post:['invoice_post'], void:['invoice_void'], etims:['invoice_etims_record'],
- }],
+  submit:['invoice_submit'], review:['invoice_check'], post:['invoice_post'], void:['invoice_void'], etims:['invoice_etims_record'], reset:['invoice_reset_to_draft'],
+ }, {reset:['PARTNER']}],
+ ['creditnote','billing_wip','Credit notes on firm invoices',leaders,{
+  view:['credit_note_pdf'], create:['credit_note_save'], submit:['credit_note_submit'], approve:['credit_note_issue','credit_note_return'], void:['credit_note_void'], etims:['credit_note_etims_record'],
+ },{approve:['PARTNER'],void:['PARTNER']}],
  ['receipt','billing_wip','Receipts and advances',leaders,{
   view:[], create:['payment_add','advance_receive'], apply:['advance_apply'], reverse:['payment_reverse'], move:['advance_refund','advance_transfer'],
  }],
@@ -25,20 +28,22 @@ const groups=[
   review:['ledger_journal_check'],post:['ledger_journal_review'],reverse:['ledger_reverse','sales_amend_prepare','sales_legacy_prepare'],
  },{review:[...leaders,'SUPERVISOR'],post:leaders,reverse:leaders}],
  ['client','clients','Client records',staff,{view:['client_register_page'],create:['client_save','client_master_import'],edit:['client_classify_save','v3_identity_save']}],
+ ['clientvault','clients','KRA credential vault',staff,{view:['client_vault_list','client_vault_reveal'],edit:['client_vault_update','client_vault_permissions']},{edit:leaders}],
+ ['clientonboard','clients','Client onboarding allocation',leaders,{view:['client_onboarding_alloc_read','client_onboarding_alloc_clients'],edit:['client_onboarding_alloc_assign','client_onboarding_alloc_remove']}],
  ['contacts','clients','Client contacts',staff,{view:[],create:['contact_save']}],
  ['kycfile','clients','KYC and ownership',staff,{view:[],edit:['compliance_save','compliance_evidence_save','compliance_evidence_remove','owner_add','party_add','party_end','group_profile_save'],review:['compliance_verify'],approve:['edd_approve']},{review:leaders,approve:partner}],
  ['project','projects','Projects',team,{view:[],create:['project_save'],edit:[],post:['engagement_save_activate','engagement_activate']},{create:[...leaders,'SUPERVISOR'],edit:[...leaders,'SUPERVISOR'],post:leaders}],
- ['task','projects','Tasks and assignments',team,{view:['task_pool_list','task_recipients','task_handover_list'],create:['task_create'],edit:['task_status','task_pool_send','task_handover_request','task_pool_claim'],review:['task_handover_decide','task_handover_reallocate']}],
+ ['task','projects','Tasks and assignments',team,{view:['task_workload_list','task_pool_list','task_recipients','task_handover_list'],create:['task_create'],edit:['task_workload_candidates','task_workload_apply','task_status','task_pool_send','task_handover_request','task_pool_claim'],review:['task_handover_decide','task_handover_reallocate']}],
  ['leave','time_hr','Leave',team,{view:[],create:['leave_request'],review:['leave_review']},{review:leaders}],
  ['attendance','time_hr','Attendance',team,{view:[],edit:['attendance_correct']},{edit:leaders}],
  ['files','documents','Documents',team,{view:['download','document_links','document_review_list','document_review_states'],create:['upload'],edit:['document_archive','document_link_add','document_link_remove'],review:['document_review_submit'],grant:['document_grantees','document_grant_add','document_grant_revoke']},{review:[...leaders,'SUPERVISOR'],grant:leaders}],
  ['messenger','communications','Messenger',office,{view:['discussion_list','discussion_messages','discussion_open','discussion_candidates','discussion_read','discussion_group_overview','discussion_shared_link','discussion_attachment_download','discussion_call_config','discussion_call_get','discussion_call_pending'],create:['discussion_send','discussion_attachment_upload','discussion_attachment_discard','discussion_call_start','discussion_call_answer','discussion_call_end'],manage:['discussion_staff_directory','discussion_group_create','discussion_group_members_set']},{manage:['ADMIN']}],
  ['letters','communications','Client communications',staff,{view:['communication_resolve','communication_qr','communication_letter_pdf','client_timeline'],create:['communication_save'],edit:[],post:['communication_issue']}],
  ['audit','audit','Audit files',staff,{view:['audit_workspace','audit_tb_lines'],create:['audit_file_save','audit_lead_create','audit_report_draft'],edit:['audit_workpaper_save','audit_tb_import','audit_tb_map','audit_materiality_save','audit_risk_save','audit_adjustment_save','audit_population_save','audit_completion_save'],submit:['audit_report_submit','audit_workpaper_submit','audit_adjustment_submit','audit_population_submit'],review:['audit_materiality_approve','audit_report_review','audit_workpaper_review','audit_adjustment_review','audit_population_review','audit_completion_review','audit_tb_confirm']}],
- ['lead','leads','Leads and pipeline',leaders,{view:[],create:['lead_save'],edit:[],approve:['lead_convert']}],
+ ['lead','leads','Leads and pipeline',staff,{view:[],create:['lead_save'],edit:[],approve:['lead_convert']},{edit:[...leaders,'SUPERVISOR'],approve:leaders}],
  ['staff','staff_access','Staff accounts', [...leaders,'ADMIN'],{view:[],create:['staff_save','master_staff_import'],edit:['staff_disable'],setup:['account_link','manager_password_reset_targets']}],
  ['access','staff_access','Access settings',[...leaders,'ADMIN'],{view:['staff_access_read'],edit:['staff_access_save'],grant:['staff_right_grant','staff_right_revoke']},{grant:partner}],
- ['settings','settings','Settings and approvals',[...leaders,'ADMIN'],{view:['settings_hub_read','settings_approvals_read','settings_approval_items_read'],edit:['sector_save','firm_save','rate_save'],approve:['settings_approval_batch_approve','rate_approve']},{approve:leaders}],
+ ['settings','settings','Settings and approvals',[...leaders,'ADMIN'],{view:['settings_hub_read','settings_approvals_read','settings_approval_items_read','settings_starter_proposals_read'],edit:['sector_save','firm_save','rate_save','settings_starter_propose'],approve:['settings_approval_batch_approve','rate_approve']},{approve:leaders}],
 ];
 
 // Route families cover the existing submodules that expose multiple screens and RPCs.
@@ -70,12 +75,12 @@ const otherAreas=[
  ['clientops','clients','Other client functions',staff],['projectops','projects','Other project functions',team],
  ['hrops','time_hr','Other time and HR functions',team],['docops','documents','Other document functions',team],
  ['commsops','communications','Other communications functions',office],['financeops','billing_wip','Other finance functions',leaders],
- ['auditops','audit','Other audit functions',staff],['leadops','leads','Other lead functions',leaders],
+ ['auditops','audit','Other audit functions',staff],['leadops','leads','Other lead functions',staff],
  ['staffops','staff_access','Other staff administration functions',[...leaders,'ADMIN']],
  ['settingops','settings','Other settings functions',[...leaders,'ADMIN']],
 ];
 const operationOf=action=>{
- if(/_(?:approve|confirm|verify|decide|issue|post|lock|file|activate|review|reject|resolve|sign|close|finalize|release|supersede)$/.test(action))return 'review';
+ if(/_(?:approve|confirm|verify|decide|issue|post|lock|file|activate|review|reject|resolve|sign|close|finalize|release|supersede|check|return)$/.test(action))return 'review';
  if(/_(?:submit|propose|send|request)$/.test(action))return 'submit';
  if(/_(?:read|list|get|page|queue|preview|template|options|menu|report|directory|search|export|download|overview|catalog|candidates|summary|backlog|impact|checklist)$/.test(action))return 'view';
  if(/_(?:add|new|create|record|import|upload|start|receive|open|raise|generate|copy)$/.test(action))return 'create';
@@ -84,12 +89,16 @@ const operationOf=action=>{
 
 const captions={
  view:'View',create:'Create / record',edit:'Edit',submit:'Submit',review:'Check / return',post:'Post / activate',approve:'Approve',
- void:'Void',etims:'Record eTIMS reference',apply:'Apply advance',reverse:'Reverse',move:'Refund / transfer',
+ void:'Void',etims:'Record eTIMS reference',reset:'Reset to draft',apply:'Apply advance',reverse:'Reverse',move:'Refund / transfer',
  generate:'Generate invoice drafts',grant:'Grant / revoke',manage:'Manage groups',setup:'Issue setup link',
 };
 
+// Check / return is a reviewer's function: the independent check is never given to the person who prepares work. Unless a group says otherwise,
+// only Supervisors, Managers and Partners hold it by default. Submitting work for review is a separate right that preparers keep.
+const reviewers=[...leaders,'SUPERVISOR'];
+const defaultRoles=(operation,roles)=>operation==='review'?roles.filter(role=>reviewers.includes(role)):roles;
 const rightRows=(group,area,label,roles,actions,defaults={})=>
- Object.entries(actions).map(([operation,routes])=>({code:key(group,operation),area,group:label,label:captions[operation],roles:defaults[operation]||roles,routes,view:key(group,'view')}));
+ Object.entries(actions).map(([operation,routes])=>({code:key(group,operation),area,group:label,label:captions[operation],roles:defaults[operation]||defaultRoles(operation,roles),routes,view:key(group,'view')}));
 const familyActions={view:[],create:[],edit:[],submit:[],review:[]};
 const rights=new Map(groups.flatMap(args=>rightRows(...args)).map(r=>[r.code,r]));
 for(const [code,area,label,roles] of [...families,...otherAreas]){
