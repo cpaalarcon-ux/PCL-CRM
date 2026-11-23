@@ -34,7 +34,7 @@ import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261116-whtva
 import {createDocumentReviewUI} from './staff-document-review.mjs?v=20261110-taxrole-v3';
 import {createClientSupportUI} from './staff-client-support.mjs?v=20261111-physfile-v1';
 import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-taxrole-v3';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261119-fixes-v1&rev=20261210-historical-vat&review=20261122-v1';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261119-fixes-v1&rev=20261119-legal&review=20261122-v1&starter=20261211-historical-vat';
 import {defaultTaxReportingPeriod,suggestedKraDueDate} from './staff-tax-period-defaults.mjs?v=20261110-taxrole-v3';
 const suitePermissions={
  'invoice-view':'invoice_pdf','invoice-pdf':'invoice_pdf','invoice-new':'invoice_save','invoice-edit':'invoice_edit',

@@ -172,6 +172,7 @@ test('grouped statement-line review, Owner Matrix and My Approvals through the r
  await assert.rejects(starter('PARTNER',proposal),/selected draft changed/);
  const taxAfter=(await tx`select created_by,status,source_note,revision from erp_private.tax_rates where rate_id=${rate.rate_id}`)[0];
  assert.equal(taxAfter.created_by,actors.MANAGER.staff_id);
+ await assert.rejects(as('PARTNER',()=>tx`update erp_private.tax_rates set created_by=${actors.PARTNER.staff_id} where rate_id=${rate.rate_id}`),/proposer is retained/);
  assert.equal(taxAfter.status,'Draft');
  assert.equal(taxAfter.source_note,'Value Added Tax Act, 2013, section 5.');
  const accountAfter=(await tx`select proposed_by,status,revision from erp_private.account_catalog where code='99974'`)[0];

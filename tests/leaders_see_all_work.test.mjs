@@ -5,7 +5,7 @@ const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};
 async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}
 
-test('Partners, Managers and Supervisors see all work in their firms; Assistants see only what is assigned; Supervisors escalate to Managers',async t=>{
+test('Partners and Managers see all work in their firms; Supervisors and Assistants see only what is assigned to them; Supervisors escalate to Managers',async t=>{
  t.after(()=>db.close());
  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create table auth.sessions(id uuid primary key,user_id uuid references auth.users);create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb) $$;create function auth.uid() returns uuid language sql stable as $$ select (auth.jwt()->>'sub')::uuid $$;`);
  for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.readFileSync(root+'/supabase/migrations/'+f,'utf8').replace('CREATE EXTENSION IF NOT EXISTS pg_cron;','').replace(/SELECT cron.schedule[^\n]+/g,'');await db.exec(q);}
@@ -25,18 +25,19 @@ test('Partners, Managers and Supervisors see all work in their firms; Assistants
  assert.deepEqual(await projects('MANAGER2'),['Mlima Traders accounts']);
  assert.deepEqual(await clients('OTHERFIRM'),['Bonde Foods','Pwani Fresh'],'a Manager of another firm does not see this firm\'s client, but does see an unlinked new one');
  assert.deepEqual(await projects('OTHERFIRM'),[]);
- assert.deepEqual(await clients('SUPERVISOR'),['Mlima Traders','Pwani Fresh'],'a Supervisor sees the firm\'s clients');
- assert.deepEqual(await projects('SUPERVISOR'),['Mlima Traders accounts'],'and its projects');
- assert.equal((await as('SUPERVISOR',()=>tx`select count(*)::int n from erp_private.client_firm_links`))[0].n,1,'and the firm link, so the client list can place them');
- for(const role of ['ASSISTANT','ASSISTANT2','INTERN']){assert.deepEqual(await clients(role),[],role+' sees nothing that is not assigned');assert.deepEqual(await projects(role),[]);}
+ for(const role of ['SUPERVISOR','ASSISTANT','ASSISTANT2','INTERN']){assert.deepEqual(await clients(role),[],role+' sees nothing that is not assigned');assert.deepEqual(await projects(role),[]);}
+ assert.equal((await as('SUPERVISOR',()=>tx`select count(*)::int n from erp_private.client_firm_links`))[0].n,0,'a Supervisor who is not assigned sees no client in the firm, and no firm link');
 
- // Work inside the project: Supervisors see all of it like Managers; an Assistant sees only the client, project and task assigned to them.
- await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors.ASSISTANT.staff_id},${F},'ASSISTANT'),(${P},${actors.MANAGER.staff_id},${F},'MANAGER')`;
+ // Work inside the project: a Supervisor assigned to it sees all of it, like a Manager; an Assistant sees only the client, project and task assigned to them.
+ await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors.ASSISTANT.staff_id},${F},'ASSISTANT'),(${P},${actors.MANAGER.staff_id},${F},'MANAGER'),(${P},${actors.SUPERVISOR.staff_id},${F},'SUPERVISOR')`;
  const TA=id(),TM=id();
  await tx`insert into erp_private.tasks(task_id,project_id,task_name,assigned_to) values(${TA},${P},'Mlima bank reconciliation',${actors.ASSISTANT.staff_id}),(${TM},${P},'Mlima VAT return',${actors.MANAGER.staff_id})`;
  const tasks=role=>names(role,'tasks','task_name');
  assert.deepEqual(await tasks('MANAGER2'),['Mlima VAT return','Mlima bank reconciliation']);
- assert.deepEqual(await tasks('SUPERVISOR'),['Mlima VAT return','Mlima bank reconciliation'],'a Supervisor sees the work inside other people\'s projects');
+ assert.deepEqual(await tasks('SUPERVISOR'),['Mlima VAT return','Mlima bank reconciliation'],'a Supervisor sees the work inside the project they are assigned to');
+ assert.deepEqual(await clients('SUPERVISOR'),['Mlima Traders'],'and that project\'s client, not the rest of the firm');
+ assert.deepEqual(await projects('SUPERVISOR'),['Mlima Traders accounts']);
+ assert.equal((await as('SUPERVISOR',()=>tx`select count(*)::int n from erp_private.client_firm_links`))[0].n,1,'and the firm link, so the client list can place them');
  assert.deepEqual(await tasks('ASSISTANT'),['Mlima bank reconciliation'],'an Assistant sees only their own task');
  assert.deepEqual(await clients('ASSISTANT'),['Mlima Traders'],'and only the client and project they are assigned to');
  assert.deepEqual(await projects('ASSISTANT'),['Mlima Traders accounts']);
