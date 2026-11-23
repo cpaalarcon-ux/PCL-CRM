@@ -10,8 +10,8 @@ const key=(group,operation)=>group+'.'+operation;
 const groups=[
  ['invoice','billing_wip','Invoices',leaders,{
   view:['invoice_pdf','billing_by_task'], create:['invoice_save'], edit:['invoice_edit'],
-  submit:['invoice_submit'], review:['invoice_check'], post:['invoice_post'], void:['invoice_void'], etims:['invoice_etims_record'],
- }],
+  submit:['invoice_submit'], review:['invoice_check'], post:['invoice_post'], void:['invoice_void'], etims:['invoice_etims_record'], reset:['invoice_reset_to_draft'],
+ }, {reset:['PARTNER']}],
  ['creditnote','billing_wip','Credit notes on firm invoices',leaders,{
   view:['credit_note_pdf'], create:['credit_note_save'], submit:['credit_note_submit'], approve:['credit_note_issue','credit_note_return'], void:['credit_note_void'], etims:['credit_note_etims_record'],
  },{approve:['PARTNER'],void:['PARTNER']}],
@@ -88,7 +88,7 @@ const operationOf=action=>{
 
 const captions={
  view:'View',create:'Create / record',edit:'Edit',submit:'Submit',review:'Check / return',post:'Post / activate',approve:'Approve',
- void:'Void',etims:'Record eTIMS reference',apply:'Apply advance',reverse:'Reverse',move:'Refund / transfer',
+ void:'Void',etims:'Record eTIMS reference',reset:'Reset to draft',apply:'Apply advance',reverse:'Reverse',move:'Refund / transfer',
  generate:'Generate invoice drafts',grant:'Grant / revoke',manage:'Manage groups',setup:'Issue setup link',
 };
 
