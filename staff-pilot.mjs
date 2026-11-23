@@ -29,7 +29,7 @@ import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
 import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261119-workspace';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
-import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes';
+import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
 import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905';
 import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
