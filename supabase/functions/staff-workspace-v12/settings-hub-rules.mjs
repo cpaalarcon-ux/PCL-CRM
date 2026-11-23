@@ -3,7 +3,7 @@
 // Forensic settings are not listed on purpose: an ordinary screen says nothing about a forensic file.
 export const OWNER_NOTE='Owners are suggestions. A Partner has not yet confirmed who owns each section.';
 export const SECTIONS=[
- {key:'kra_checks',role:'TAX_LEAD',go:{view:'projects'},group:'Defaults awaiting confirmation',title:'KRA notice checks',owner:'Tax Lead; a Partner records the confirmation',where:'Client services > KRA notices > Task and flag settings',about:'Task lead days, flag thresholds, severities and the Partner alert days.'},
+ {key:'kra_checks',role:'TAX_LEAD',go:{review:'kra-settings'},group:'Defaults awaiting confirmation',title:'KRA notice checks',owner:'Tax Lead; a Partner records the confirmation',where:'Client services > KRA notices > Task and flag settings',about:'Task lead days, flag thresholds, severities and the Partner alert days.'},
  {key:'deadline_windows',role:'TAX_LEAD',go:{tab:'accounting'},group:'Defaults awaiting confirmation',title:'Filing deadline windows',owner:'Tax Lead; a Partner records the confirmation',where:'Settings > Filing deadline windows',about:'How many days before and after the KRA date a filing is flagged.'},
  {key:'annual_due_rules',role:'TAX_LEAD',go:{tab:'access'},group:'Defaults awaiting confirmation',title:'Annual due-date rules',owner:'Tax Lead; a Partner records the confirmation',where:'Settings > Tax Manager role and annual due dates',about:'Month-end and other annual return due-date rules.'},
  {key:'tax_defaults',role:'TAX_LEAD',go:{view:'clients'},group:'Defaults awaiting confirmation',title:'Tax defaults by legal structure',owner:'Tax Lead',where:'Client set-up',about:'Starting tax settings suggested for each legal structure.'},

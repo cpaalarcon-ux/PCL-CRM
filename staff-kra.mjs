@@ -151,6 +151,15 @@ export function createKraUI(ctx){
    fm.elements.handling_firm_id.innerHTML=ids.map(i=>`<option value="${esc(i)}">${esc(firmName(i))}</option>`).join('')||'<option value="">No firm handles this client</option>';};
   fm.elements.client_id.addEventListener('change',fill);fill();
  }
+ let settingsReturn=null,settingsBackLabel='Return to list';
+ async function openSettings(onBack=null,{backLabel='Return to list'}={}){
+  settingsReturn=onBack;settingsBackLabel=backLabel;
+  const r=await request({action:'kra_settings_read'}),partner=d().me?.category_code==='PARTNER';
+  modal('Task and flag settings',`<p class="info full">${esc(KRA_NOTE)}</p><div class="scroll full"><table id="kraSettings"><thead><tr><th>Setting</th><th>Value</th><th>Status</th><th></th></tr></thead><tbody>${(r.settings||[]).map(s=>`<tr><td>${esc(s.label)}</td><td>${esc(s.int_value??s.text_value)}</td><td>${esc(settingStatus(s))}${s.source_note?`<br><small>${esc(s.source_note)}</small>`:''}</td><td>${partner?button('kra-setting-set','Change',s.setting_key)+(s.rule_status==='Suggested'?' '+button('kra-setting-confirm','Record confirmation',s.setting_key):''):''}</td></tr>`).join('')}</tbody></table></div>`,null,null,{onBack,backLabel});
+  cur={...(cur||{}),settings:r.settings};
+ }
+
+ const backToSettings=()=>openSettings(settingsReturn,{backLabel:settingsBackLabel});
  async function handle(action,id){
   if(!action.startsWith('kra-'))return false;
   const cid=cur?.case?.case_id||id;
@@ -178,13 +187,9 @@ export function createKraUI(ctx){
   if(action==='kra-attach'){const q=(cur.requests||[]).find(x=>x.request_id===id);if(!q)return true;send('Attach a document · '+q.description,select('document_id','Document filed for this client *',(cur.documents||[]).map(x=>[x.document_id,`${x.file_name} · ${x.category}`]),'')+'<p class="muted full">Upload the document to the client\'s documents first if it is not listed.</p>','kra_request_attach',{case_id:cur.case.case_id,request_id:id,revision:q.revision});return true;}
   if(action==='kra-na'){const q=(cur.requests||[]).find(x=>x.request_id===id);if(!q)return true;send('Not applicable · '+q.description,area('reason','Why does this not apply? *','',true),'kra_request_na',{case_id:cur.case.case_id,request_id:id,revision:q.revision});return true;}
   if(action==='kra-reopen'){const q=(cur.requests||[]).find(x=>x.request_id===id);if(!q)return true;await request({action:'kra_request_reopen',case_id:cur.case.case_id,request_id:id,revision:q.revision});await showCase(cur.case.case_id);return true;}
-  if(action==='kra-settings'){
-   const r=await request({action:'kra_settings_read'}),partner=d().me?.category_code==='PARTNER';
-   modal('Task and flag settings',`<p class="info full">${esc(KRA_NOTE)}</p><div class="scroll full"><table id="kraSettings"><thead><tr><th>Setting</th><th>Value</th><th>Status</th><th></th></tr></thead><tbody>${(r.settings||[]).map(s=>`<tr><td>${esc(s.label)}</td><td>${esc(s.int_value??s.text_value)}</td><td>${esc(settingStatus(s))}${s.source_note?`<br><small>${esc(s.source_note)}</small>`:''}</td><td>${partner?button('kra-setting-set','Change',s.setting_key)+(s.rule_status==='Suggested'?' '+button('kra-setting-confirm','Record confirmation',s.setting_key):''):''}</td></tr>`).join('')}</tbody></table></div>`);
-   cur={...(cur||{}),settings:r.settings};return true;
-  }
-  if(action==='kra-setting-set'){const s=(cur?.settings||[]).find(x=>x.setting_key===id);if(!s)return true;modal('Change · '+s.label,form(field('value','New value *',String(s.int_value??s.text_value),s.int_value!==null?'number':'text','required')+'<p class="info full">Changing a value withdraws any recorded confirmation.</p>'),f=>request({action:'kra_setting_set',setting_key:id,revision:s.revision,value:f.get('value')}),()=>handle('kra-settings'));return true;}
-  if(action==='kra-setting-confirm'){const s=(cur?.settings||[]).find(x=>x.setting_key===id);if(!s)return true;modal('Record confirmation · '+s.label,form(area('source_note','Who confirmed this, and where it is written (for example the Tax Lead\'s email and its date) *','',true)),f=>request({action:'kra_setting_confirm',setting_key:id,revision:s.revision,source_note:f.get('source_note')}),()=>handle('kra-settings'));return true;}
+  if(action==='kra-settings'){await openSettings();return true;}
+  if(action==='kra-setting-set'){const s=(cur?.settings||[]).find(x=>x.setting_key===id);if(!s)return true;modal('Change · '+s.label,form(field('value','New value *',String(s.int_value??s.text_value),s.int_value!==null?'number':'text','required')+'<p class="info full">Changing a value withdraws any recorded confirmation.</p>'),f=>request({action:'kra_setting_set',setting_key:id,revision:s.revision,value:f.get('value')}),backToSettings,{onBack:backToSettings,backLabel:'Return to Task and flag settings',refreshWorkspace:false});return true;}
+  if(action==='kra-setting-confirm'){const s=(cur?.settings||[]).find(x=>x.setting_key===id);if(!s)return true;modal('Record confirmation · '+s.label,form(area('source_note','Who confirmed this, and where it is written (for example the Tax Lead\'s email and its date) *','',true)),f=>request({action:'kra_setting_confirm',setting_key:id,revision:s.revision,source_note:f.get('source_note')}),backToSettings,{onBack:backToSettings,backLabel:'Return to Task and flag settings',refreshWorkspace:false});return true;}
   return false;
  }
  // The red banner on the Partner's Home page. It opens the list of critical flags; each row has a Resolve button that opens the case.
@@ -195,5 +200,5 @@ export function createKraUI(ctx){
   box.innerHTML=n?`<button type="button" class="kra-banner bad" data-suite="kra-flags" data-id="${crit?'CRITICAL':'ALL'}" aria-label="${esc(bannerText(r.counts))}"><b>${esc(bannerText(r.counts))}</b><span>${crit?`${crit} critical · `:''}Click to see the list and resolve each flag</span></button>`
    :`<p class="muted compact-empty">${esc(bannerText(r.counts))}.</p>`;
  }
- return {handle,paintBanner,openLog:()=>handle('kra-open','')};
+ return {handle,openSettings,paintBanner,openLog:()=>handle('kra-open','')};
 }

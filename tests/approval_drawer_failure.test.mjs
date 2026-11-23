@@ -27,51 +27,52 @@ const baseFetch=globalThis.fetch;
 globalThis.fetch=async(url,opts)=>{const p=JSON.parse(opts.body);
  if(p.action==='settings_approvals_read')return {ok:true,json:async()=>approvals};
  if(p.action==='settings_approval_items_read')return {ok:true,json:async()=>({ok:true,groups:[group]})};
- if(p.action==='settings_approval_batch_approve'){batchCalls++;if(mode==='fail')return {ok:false,status:504,json:async()=>{throw Error('not json');}};return {ok:true,json:async()=>({ok:true,total:2})};}
+ if(p.action==='settings_approval_batch_approve'&&p.preview_only)return {ok:true,json:async()=>({review_version:'verified',groups:[{...group,items:group.items[0].items}]})};
+ if(p.action==='settings_approval_batch_approve'){batchCalls++;if(mode==='fail')return {ok:false,status:504,json:async()=>{throw Error('not json');}};return {ok:true,json:async()=>({ok:true,total:2,groups:[{...group,items:group.items[0].items}]})};}
  return baseFetch(url,opts);};
 await import('../staff-pilot.mjs');
 const editor=()=>document.querySelector('#editor');
 async function openDrawer(){await click('[data-suite="ap-review"][data-id="approve_statement_lines"]');assert.ok(editor().open,'the quick review opened');}
-async function confirmAndApprove(){const c=document.querySelector('[data-ap-confirm]');c.checked=true;c.dispatchEvent(new dom.window.Event('change',{bubbles:true}));await click('[data-suite="ap-approve-selected"]');}
-test('a failed bulk approval keeps the review open with the error, and Return to list always closes it',async t=>{t.after(()=>dom.window.close());
+function check(selector){const input=document.querySelector(selector);assert(input,selector);input.checked=true;input.dispatchEvent(new dom.window.Event('change',{bubbles:true}));}
+async function confirmAndApprove(){
+ for(const input of document.querySelectorAll('[data-ap-item]:not(:disabled)'))input.click();
+ await click('[data-suite="ap-preview-selected"]');
+ check('[data-ap-confirm]');
+ await click('[data-suite="ap-approve-selected"]');
+}
+test('batch errors remain visible and Return to list works during and after approval',async t=>{t.after(()=>dom.window.close());
  document.querySelector('#loginForm [name=login_id]').value='qa.partner';document.querySelector('#loginForm [name=password]').value='testing';document.querySelector('#loginForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause(120);
  await click('[data-view="firms"]');await pause(80);
  await openDrawer();
- const before=document.querySelector('#editorBody').innerHTML;assert.match(before,/Fictional sales/);
  await confirmAndApprove();await pause(80);
  assert.equal(batchCalls,1);
  assert.ok(editor().open,'the review stays open after a failure');
- assert.equal(document.querySelector('#editorBody').innerHTML.length>0,true,'the review content is still there');
- assert.match(document.querySelector('#editorNotice').textContent,/nothing was approved/,'the error is shown in the drawer, in plain words');
- assert.equal(document.querySelector('[data-suite="ap-approve-selected"]').disabled,false,'the approve button works again');
- assert.equal(document.querySelector('#closeEditor').disabled,false);
- await click('#closeEditor');
- assert.equal(editor().open,false,'Return to list closes the drawer');
- // Open it again: a fresh review with no leftover error, and it can be closed again.
- await openDrawer();
- assert.equal(document.querySelector('#editorNotice').textContent,'');
- assert.match(document.querySelector('#editorBody').innerHTML,/Fictional sales/);
+ assert.match(document.querySelector('#editorBody').textContent,/Fictional sales/,'the review content remains present');
+ assert.match(document.querySelector('#apBatchError').textContent,/could not be verified/);
+ assert.equal(document.querySelector('[data-suite="ap-preview-selected"]').disabled,true,'reload is required before retrying');
+ await click('[data-suite="ap-review-reload"]');
+ assert.equal(document.querySelector('[data-suite="ap-preview-selected"]').disabled,false);
  await click('#closeEditor');assert.equal(editor().open,false);
- // Returning to the list while the request is still running: the late failure shows as a message, not in a hidden drawer.
+
+ // A late failure after the user returns to the list remains visible outside the drawer.
  await openDrawer();
  let release;const slow=new Promise(r=>{release=r;});const f0=globalThis.fetch;
- globalThis.fetch=async(url,opts)=>{const p=JSON.parse(opts.body);if(p.action==='settings_approval_batch_approve'){batchCalls++;await slow;return {ok:false,status:504,json:async()=>{throw Error('x');}};}return f0(url,opts);};
+ globalThis.fetch=async(url,opts)=>{const p=JSON.parse(opts.body);if(p.action==='settings_approval_batch_approve'&&!p.preview_only){await slow;return {ok:false,status:504,json:async()=>{throw Error('x');}};}return f0(url,opts);};
  await confirmAndApprove();
  await click('#closeEditor');assert.equal(editor().open,false,'Return to list works while the request runs');
  release();await pause(80);
- assert.match(document.body.textContent,/nothing was approved/,'the failure is still reported after returning to the list');
+ assert.match(document.body.textContent,/approval result could not be verified/);
 
- // A drawer whose content was wiped while the request ran is repainted from the same review when the request fails.
+ // If the drawer body disappears while open, the failed result restores the review and error.
  await openDrawer();
- let wipe;const hold=new Promise(r=>{wipe=r;});const f1=globalThis.fetch;
- globalThis.fetch=async(url,opts)=>{const p=JSON.parse(opts.body);if(p.action==='settings_approval_batch_approve'){await hold;document.querySelector('#editorBody').replaceChildren();return {ok:false,status:504,json:async()=>{throw Error('x');}};}return f1(url,opts);};
+ let wipe;const hold=new Promise(r=>{wipe=r;});
+ globalThis.fetch=async(url,opts)=>{const p=JSON.parse(opts.body);if(p.action==='settings_approval_batch_approve'&&!p.preview_only){await hold;document.querySelector('#editorBody').replaceChildren();return {ok:false,status:504,json:async()=>{throw Error('x');}};}return f0(url,opts);};
  await confirmAndApprove();wipe();await pause(80);
- assert.ok(editor().open);assert.match(document.querySelector('#editorBody').innerHTML,/Fictional sales/,'the review content is put back');
- assert.match(document.querySelector('#editorNotice').textContent,/nothing was approved/);
+ assert.ok(editor().open);assert.match(document.querySelector('#editorBody').textContent,/Fictional sales/);
+ assert.match(document.querySelector('#apBatchError').textContent,/could not be verified/);
  await click('#closeEditor');assert.equal(editor().open,false);
- globalThis.fetch=f1;
- // A success closes the drawer and refreshes.
+
  globalThis.fetch=f0;mode='ok';
- await openDrawer();await confirmAndApprove();await pause(120);
- assert.equal(editor().open,false,'a successful batch closes the review');
+ await openDrawer();await confirmAndApprove();await pause(80);
+ assert.match(document.querySelector('#editorTitle').textContent,/Approval receipt/);
 });

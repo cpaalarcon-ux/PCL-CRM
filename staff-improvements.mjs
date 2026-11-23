@@ -5,7 +5,7 @@ import {stockMethodChoices,stockCountChoices,stockPolicyStartDate} from './staff
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261121-coa-v1';
 import {createClientMasterUI} from './staff-client-master.mjs?v=20261121-scope-v1';
 import {createScopeUI} from './staff-engagement-scope.mjs?v=20261121-scope-v1';
-import {createOnboardingAllocUI} from './staff-onboarding-alloc.mjs?v=20261209-onb-v1';
+import {createOnboardingAllocUI} from './staff-onboarding-alloc.mjs?v=20261209-onb-v1&screen=20261211-v1';
 import {createUnderstandingUI} from './staff-understanding.mjs?v=20261121-und-v1';
 import {createKycGridUI} from './staff-kyc-grid.mjs?v=20261122-loc-v1';
 import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
@@ -28,7 +28,7 @@ export function createImprovementUI(ctx){
  const bulk=createBulkSetupUI({...ctx,show:(...a)=>show(...a)});
  const categories=createServiceCategoriesUI({...ctx,show:(...a)=>show(...a)});
  const scope=createScopeUI(ctx);
- const onboardingAlloc=createOnboardingAllocUI(ctx);void onboardingAlloc;
+ const onboardingAlloc=createOnboardingAllocUI(ctx);
  const understanding=createUnderstandingUI(ctx);
  const master=createClientMasterUI(ctx,{show:(...a)=>show(...a),button,templateBlock:t=>setup.clientTypeBlock(t),scopeButton:id=>scope.button(id)});
  const grid=createKycGridUI(ctx,{show:(...a)=>show(...a),openList:id=>master.open(id)});
@@ -183,5 +183,5 @@ function period(){const id=clientData.client.client_id;show('Add verified report
   if(a==='bank-review'){const {pid,id:rid,supplements}=bankData,s=supplements.find(x=>x.supplement_id===id);show('Review bank supplement',form(select('status','Decision',['Approved','Returned'],'Returned')+area('review_note','Independent review conclusion')),send('v3_bank_review',{project_id:pid,reconciliation_id:rid,supplement_id:id,revision:s.revision}),()=>bank(pid,rid));}
   if(a==='readiness')readiness(id);
  }catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;}});
- return {client,project,bank,chart,paintClientTab,resumeActivityDraft};
+ return {client,project,bank,chart,paintClientTab,resumeActivityDraft,mountAllocations:host=>onboardingAlloc.mount(host)};
 }

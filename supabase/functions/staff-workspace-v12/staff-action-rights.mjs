@@ -29,7 +29,7 @@ const groups=[
  },{review:[...leaders,'SUPERVISOR'],post:leaders,reverse:leaders}],
  ['client','clients','Client records',staff,{view:['client_register_page'],create:['client_save','client_master_import'],edit:['client_classify_save','v3_identity_save']}],
  ['clientvault','clients','KRA credential vault',staff,{view:['client_vault_list','client_vault_reveal'],edit:['client_vault_update','client_vault_permissions']},{edit:leaders}],
- ['clientonboard','clients','Client onboarding allocation',leaders,{view:['client_onboarding_alloc_read','client_onboarding_alloc_clients'],edit:['client_onboarding_alloc_assign','client_onboarding_alloc_remove']}],
+ ['clientonboard','clients','Client onboarding allocation',leaders,{view:['client_onboarding_alloc_read','client_onboarding_alloc_clients'],edit:['client_onboarding_alloc_assign','client_onboarding_alloc_remove','client_onboarding_alloc_move']}],
  ['contacts','clients','Client contacts',staff,{view:[],create:['contact_save']}],
  ['kycfile','clients','KYC and ownership',staff,{view:[],edit:['compliance_save','compliance_evidence_save','compliance_evidence_remove','owner_add','party_add','party_end','group_profile_save'],review:['compliance_verify'],approve:['edd_approve']},{review:leaders,approve:partner}],
  ['project','projects','Projects',team,{view:[],create:['project_save'],edit:[],post:['engagement_save_activate','engagement_activate']},{create:[...leaders,'SUPERVISOR'],edit:[...leaders,'SUPERVISOR'],post:leaders}],
@@ -43,7 +43,7 @@ const groups=[
  ['lead','leads','Leads and pipeline',staff,{view:[],create:['lead_save'],edit:[],approve:['lead_convert']},{edit:[...leaders,'SUPERVISOR'],approve:leaders}],
  ['staff','staff_access','Staff accounts', [...leaders,'ADMIN'],{view:[],create:['staff_save','master_staff_import'],edit:['staff_disable'],setup:['account_link','manager_password_reset_targets']}],
  ['access','staff_access','Access settings',[...leaders,'ADMIN'],{view:['staff_access_read'],edit:['staff_access_save'],grant:['staff_right_grant','staff_right_revoke']},{grant:partner}],
- ['settings','settings','Settings and approvals',[...leaders,'ADMIN'],{view:['settings_hub_read','settings_approvals_read','settings_approval_items_read'],edit:['sector_save','firm_save','rate_save'],approve:['settings_approval_batch_approve','rate_approve']},{approve:leaders}],
+ ['settings','settings','Settings and approvals',[...leaders,'ADMIN'],{view:['settings_hub_read','settings_approvals_read','settings_approval_items_read','settings_starter_proposals_read'],edit:['sector_save','firm_save','rate_save','settings_starter_propose'],approve:['settings_approval_batch_approve','rate_approve']},{approve:leaders}],
 ];
 
 // Route families cover the existing submodules that expose multiple screens and RPCs.

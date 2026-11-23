@@ -40,7 +40,7 @@ export function createSettingsHubUI(ctx){
  if(typeof document!=='undefined')document.addEventListener('input',e=>{if(e.target?.id!=='hubSearch'||!hub)return;q=e.target.value;const body=document.getElementById('hubBody');if(body)body.innerHTML=tableView(searchSections(hub.sections,q));});
  async function handle(action,id){
   if(action!=='hub-open')return false;
-  const s=hub?.sections.find(x=>x.key===id);if(s?.go)ctx.openSection(s.go,s);return true;
+  const s=hub?.sections.find(x=>x.key===id);if(s?.go)await ctx.openSection(s.go,s);return true;
  }
  return {card,handle,refresh:()=>{hub=null;failed='';}};
 }
