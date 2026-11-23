@@ -358,8 +358,8 @@ function staff(){
  const me=data.me,role=me.category_code;staffTab=normaliseTab(staffTab,role);
  const managerReset=role==='MANAGER'&&canUseAction(me.restricted_rights,{action:'manager_password_reset_targets'},'staff_access');
  const tabs=tabsFor(role),active=STAFF_TABS.find(t=>t.code===staffTab);
- const headerButtons=`<button class="primary" data-new="staff">+ Add staff</button>${suite.button('import-staff','Import staff from Excel')}`;
- const extra=`${managerReset?'<button type="button" data-manager-password-reset>Reset a manager’s password</button>':''}${role==='PARTNER'?'<button data-extra-rights>Additional rights</button>':''}`;
+ const headerButtons=`<button class="primary" data-new="staff">+ Add staff</button>${suite.button('import-staff','Import staff from Excel')}${managerReset?'<button type="button" data-manager-password-reset>Reset a manager’s password</button>':''}`;
+ const extra=role==='PARTNER'?'<button data-extra-rights>Additional rights</button>':'';
  const pane=staffTab==='people'?staffPeoplePane():staffTab==='allocations'?'<div id="allocHost"><p class="muted">Loading allocations…</p></div>':staffTab==='access'?accessPaneHtml({me,staff:data.staff,roles,areaLabel:code=>STAFF_ACCESS_AREAS.find(x=>x.code===code)?.label||code,esc,extraButtons:extra}):approvalsPaneHtml({esc});
  return `<div class="card staff-screen"><div class="section-head"><div><h2>Staff & access</h2><p class="muted">${esc(active.about)}</p></div>${staffTab==='people'?`<div class="actions">${headerButtons}</div>`:''}</div>${tabBarHtml(tabs,staffTab,esc,{counts:{people:data.staff.length}})}<div id="staffpane" role="tabpanel" aria-labelledby="stafftab-${esc(staffTab)}" tabindex="0">${pane}</div></div>`;
 }
