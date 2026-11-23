@@ -30,11 +30,19 @@ export function reviewView(r,{canApprove=false,esc=e0}={}){
 }
 export function createStatementReviewUI(ctx){
  const {request,modal,notice}=ctx;
- let cur=null;
+ let cur=null,options={};
  const canApprove=()=>ctx.data().me?.category_code==='PARTNER';
  async function load(){cur=await request({action:'ledger_statement_map_review_read'});}
- function paint(){if(document.getElementById('editor')?.open)document.getElementById('editor').close();modal('Statement-line mapping review',reviewView(cur,{canApprove:canApprove(),esc:e0}),null,null,{refreshWorkspace:false});}
- async function open(){try{await load();paint();}catch(e){notice(e.message||'The review could not be opened.',true);}}
+ function paint(){
+  const {focusId,onBack}=options;
+  modal('Statement-line mapping review',reviewView(cur,{canApprove:canApprove(),esc:e0}),null,null,{refreshWorkspace:false,onBack,backLabel:onBack?'Return to Quick review':'Return to list'});
+  if(focusId){
+   const row=[...document.querySelectorAll('[data-exception]')].find(x=>x.dataset.exception===focusId);
+   if(row){row.setAttribute('tabindex','-1');row.focus();}
+   else notice('This mapping is no longer listed as an exception. Check its current state in the statement-line review.');
+  }
+ }
+ async function open(view={}){options=view;try{await load();paint();}catch(e){notice(e.message||'The review could not be opened.',true);}}
  const ack=sel=>!!document.querySelector(sel)?.checked;
  async function approve(payload,done){
   try{const r=await request({action:'ledger_statement_map_review_approve',...payload});notice(`${r.reviewed} mapping${r.reviewed===1?'':'s'} approved. Approved by you and recorded on each one.`);await load();paint();if(done)done(r);}

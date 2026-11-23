@@ -8,12 +8,12 @@ import {communicationQr,letterDetails,letterDetailsQr} from './staff-communicati
 import {partiesSection,partyFormFields,groupFormFields} from './staff-parties.mjs?v=20261110-taxrole-v3';
 import {serviceFileSection,referenceAddFields} from './staff-service-file.mjs?v=20261110-taxrole-v3';
 import {createAupUI,AUP_SERVICES} from './staff-aup.mjs?v=20261110-taxrole-v3';
-import {createKraUI} from './staff-kra.mjs?v=20261111-kraprog-v1';
+import {createKraUI} from './staff-kra.mjs?v=20261111-kraprog-v1&review=20261122-v1';
 import {createIncomingUI} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
 import {createForensicUI} from './staff-forensic.mjs?v=20261110-taxrole-v3';
 import {createDeadlineUI} from './staff-deadlines.mjs?v=20261112-resources-v1';
-import {createSettingsHubUI} from './staff-settings-hub.mjs?v=20261117-actions-v1';
+import {createSettingsHubUI} from './staff-settings-hub.mjs?v=20261117-actions-v1&review=20261122-v1';
 import {createStarterConfirmUI} from './staff-starter-confirm.mjs?v=20261112-resources-v1';
 import {createRoutingMapUI} from './staff-routing-map.mjs?v=20261119-alias-v1';
 import {createTemplateLibraryUI} from './staff-template-library.mjs?v=20261116-library-v1';
@@ -25,16 +25,16 @@ import {createTaxRolesUI} from './staff-tax-roles.mjs?v=20261112-resources-v1';
 import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
 import {SETTINGS_TABS,tabForCard,layoutView,rightsView,FOLD_TABS,fold} from './staff-settings-layout.mjs?v=20261119-settings-v1';
 import {createSettingsFrameUI} from './staff-settings-frame.mjs?v=20261118-approval-board-v1';
-import {createStatementReviewUI} from './staff-statement-review.mjs?v=20261118-approval-board-v1';
+import {createStatementReviewUI} from './staff-statement-review.mjs?v=20261118-approval-board-v1&bulk=20261122-v1';
 import {createOwnerMatrixUI} from './staff-owner-matrix.mjs?v=20261117-actions-v1';
-import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261118-approval-board-v1&rev=20261119-nav&bf=20261209-bulk';
+import {createMyApprovalsUI} from './staff-my-approvals.mjs?v=20261118-approval-board-v1&rev=20261119-nav&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1';
 import {createResourcesUI} from './staff-resources.mjs?v=20261118-templates-v2';
 import {createDueBacklogUI} from './staff-due-backlog.mjs?v=20261112-resources-v1';
 import {createCreditUI,snapshotsView} from './staff-credits.mjs?v=20261116-whtvat-v1';
 import {createDocumentReviewUI} from './staff-document-review.mjs?v=20261110-taxrole-v3';
 import {createClientSupportUI} from './staff-client-support.mjs?v=20261111-physfile-v1';
 import {licencesSection,licenceFormFields} from './staff-licences.mjs?v=20261110-taxrole-v3';
-import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261119-fixes-v1&rev=20261119-legal';
+import {createTaxConfigUI} from './staff-tax-config.mjs?v=20261119-fixes-v1&rev=20261119-legal&review=20261122-v1&starter=20261211-historical-vat';
 import {defaultTaxReportingPeriod,suggestedKraDueDate} from './staff-tax-period-defaults.mjs?v=20261110-taxrole-v3';
 const suitePermissions={
  'invoice-view':'invoice_pdf','invoice-pdf':'invoice_pdf','invoice-new':'invoice_save','invoice-edit':'invoice_edit',
@@ -72,11 +72,12 @@ export function createSuiteUI(ctx){
  const settingsHub=createSettingsHubUI(hubCtx);
  const stmtReview=createStatementReviewUI(ctx);
  const ownerMatrix=createOwnerMatrixUI({...ctx,hubRefresh:()=>{settingsHub.refresh();}});
- const myApprovals=createMyApprovalsUI(hubCtx);
+ const myApprovals=createMyApprovalsUI({...ctx,openSection,canEditTax:()=>canUseAction(d().me.restricted_rights,{action:'rate_save'},'settings'),openTaxRule:taxConfig.openReviewRule,openStatementReview:stmtReview.open});
  // Where an Open button goes (build 2839): a Settings tab, the grouped statement-line review, or the area that holds the setting.
  const AREA_NAMES={projects:'Projects & tasks',clients:'Clients',documents:'Documents',audit:'Audit & assurance'};
  function openSection(o,s){
-  if(o.review==='statement'){stmtReview.open();return;}
+  if(o.review==='statement'){return stmtReview.open();}
+  if(s?.key==='kra_checks'||o.review==='kra-settings'){return kra.openSettings(()=>{$('#editor').close();},{backLabel:'Return to Settings'});}
   if(o.tab){settingsTab=o.tab;ctx.render();return;}
   if(o.view){ctx.navigate(o.view);ctx.notice(`Opened ${AREA_NAMES[o.view]||o.view}. ${s.title}: ${s.where}.`);}
  }

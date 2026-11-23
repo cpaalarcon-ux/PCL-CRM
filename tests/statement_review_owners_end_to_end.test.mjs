@@ -4,6 +4,7 @@ globalThis.Deno=globalThis.Deno||{env:{get:()=>''}};
 const {statementMapAction}=await import('../supabase/functions/staff-workspace-v12/annual-pack.ts');
 const {accountingAction}=await import('../supabase/functions/staff-workspace-v12/accounting-actions.ts');
 const {settingsOwnerAction}=await import('../supabase/functions/staff-workspace-v12/settings-owner-actions.ts');
+const {settingsStarterProposalAction}=await import('../supabase/functions/staff-workspace-v12/settings-starter-proposals.ts');
 const {settingsHubAction}=await import('../supabase/functions/staff-workspace-v12/settings-hub-actions.ts');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
@@ -115,7 +116,16 @@ test('grouped statement-line review, Owner Matrix and My Approvals through the r
  await assert.rejects(own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_chart',items:[{id:first.id,revision:first.revision},{id:second.id,revision:999}]}]}),/This record changed\. Refresh before saving/);
  assert.equal((await tx`select count(*)::int n from erp_private.approval_batches`)[0].n,0,'failed batches leave no audit record');
  assert.equal((await tx`select count(*)::int n from erp_private.account_catalog where code in ('99976','99977') and status='Draft'`)[0].n,2,'a stale item rolls back the earlier item in the same batch');
- const chartDone=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_chart',items:[{id:first.id,revision:first.revision}]}]});
+ const chartSelection=[{queue_key:'approve_chart',items:[{id:first.id,revision:first.revision}]}];
+ const preview=await own('PARTNER',{action:'settings_approval_batch_approve',preview_only:true,selections:chartSelection});
+ assert.match(preview.review_version,/^[a-f0-9]{64}$/);
+ assert.equal(preview.groups[0].items[0].code,first.id);
+ assert.equal((await tx`select count(*)::int n from erp_private.approval_batches`)[0].n,0,'preview changes nothing');
+ await assert.rejects(own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,review_version:'wrong',selections:chartSelection}),/details changed/);
+ const chartDone=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,review_version:preview.review_version,selections:chartSelection});
+ assert.equal(chartDone.approved_by,'Fictional PARTNER');
+ assert(chartDone.approved_at);
+ assert.equal(chartDone.groups[0].items[0].code,first.id);
  assert.equal(chartDone.total,1);
  const approved=(await tx`select status,approved_by,approved_at from erp_private.account_catalog where code='99976'`)[0];
  assert.equal(approved.status,'Active');assert.equal(approved.approved_by,actors.PARTNER.staff_id);assert(approved.approved_at);
@@ -128,12 +138,56 @@ test('grouped statement-line review, Owner Matrix and My Approvals through the r
  assert.equal(otherPartner.total,1,'a different Partner can approve the proposal');
 
  const mapGroup=(await own('PARTNER',{action:'settings_approval_items_read',queue_keys:['approve_statement_lines']})).groups[0];
- const mapItem=mapGroup.items.find(g=>g.eligible&&g.items.length)?.items[0];
+ const mapItem=mapGroup.items.flatMap(g=>g.items).find(x=>x.eligible);
  assert(mapItem,'a consistent statement-line item is available for the grouped path');
- const mapDone=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[{queue_key:'approve_statement_lines',items:[{id:mapItem.id,revision:null}]}]});
+ const selection=[{queue_key:'approve_statement_lines',items:[{id:mapItem.id,revision:mapItem.revision}]}];
+ const mappingPreview=await own('PARTNER',{action:'settings_approval_batch_approve',preview_only:true,selections:selection});
+ assert(mappingPreview.groups[0].items[0].statement_line);
+ await assert.rejects(own('PARTNER',{action:'settings_approval_batch_approve',preview_only:true,selections:[{queue_key:'approve_statement_lines',items:[{id:mapItem.id,revision:0}]}]}),/changed after you opened/);
+ const mapDone=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,review_version:mappingPreview.review_version,selections:selection});
  assert.equal(mapDone.total,1);
  assert.equal((await tx`select count(*)::int n from erp_private.approval_batches`)[0].n,3,'each successful typed group has one batch audit row');
  assert.equal((await tx`select count(*)::int n from erp_private.approval_batches where review_confirmed`)[0].n,3,'all successful batches retain the reviewer confirmation');
+
+ // Adopt existing starter records, preserving their contents and the distinct approval step.
+ const rate=(await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note)
+  values('KE_VAT_SAMPLE_APPROVAL','VAT','Sample VAT rule','2026-01-01','2026-12-31','{"rate":16,"treatment":"Standard"}',
+         'https://new.kenyalaw.org/akn/ke/act/2013/35','Value Added Tax Act, 2013, section 5.') returning rate_id,revision`)[0];
+ const chartSeed=(await tx`insert into erp_private.account_catalog(code,name,route,category_code,statement,account_group,catalog_version,status,tax_note)
+  values('99974','Sample starter account',2,'EXP01','Profit or loss','Custom account','CUSTOM-2026','Draft','Sample notes for proposal') returning revision`)[0];
+ const mapSeed=(await tx`insert into erp_private.account_statement_map(account_code,line_code,effective_from,reason)
+  values('99974','PL.OTHER_OPEX','2026-01-01','Sample statement line') returning map_id`)[0];
+ const starter=(role,p)=>as(role,a=>settingsStarterProposalAction(tx,a,p));
+ const list=await starter('MANAGER',{action:'settings_starter_proposals_read'});
+ const items=[{type:'tax_rate',id:rate.rate_id,revision:rate.revision},
+  {type:'chart_account',id:'99974',revision:chartSeed.revision},{type:'statement_map',id:mapSeed.map_id}];
+ for(const item of items)assert(list.groups.find(g=>g.type===item.type).items.some(row=>row.id===item.id));
+ const proposal={action:'settings_starter_propose',review_confirmed:true,items};
+ await assert.rejects(starter('SUPERVISOR',proposal),/Manager or Partner/);
+ await assert.rejects(starter('MANAGER',{...proposal,review_confirmed:false}),/Confirm that you reviewed/);
+ await assert.rejects(starter('MANAGER',{...proposal,items:[items[0],{...items[1],revision:999}]}),/selected draft changed/);
+ assert.equal((await tx`select created_by from erp_private.tax_rates where rate_id=${rate.rate_id}`)[0].created_by,null);
+ await assert.rejects(as('MANAGER',()=>tx`update erp_private.account_statement_map set proposed_by=${actors.MANAGER.staff_id},proposed_at=now(),reason='Changed mapping' where map_id=${mapSeed.map_id}`),/cannot be edited/);
+ assert.deepEqual(await starter('MANAGER',proposal),{proposed:3});
+ await assert.rejects(starter('PARTNER',proposal),/selected draft changed/);
+ const taxAfter=(await tx`select created_by,status,source_note,revision from erp_private.tax_rates where rate_id=${rate.rate_id}`)[0];
+ assert.equal(taxAfter.created_by,actors.MANAGER.staff_id);
+ await assert.rejects(as('PARTNER',()=>tx`update erp_private.tax_rates set created_by=${actors.PARTNER.staff_id} where rate_id=${rate.rate_id}`),/proposer is retained/);
+ assert.equal(taxAfter.status,'Draft');
+ assert.equal(taxAfter.source_note,'Value Added Tax Act, 2013, section 5.');
+ const accountAfter=(await tx`select proposed_by,status,revision from erp_private.account_catalog where code='99974'`)[0];
+ assert.equal(accountAfter.proposed_by,actors.MANAGER.staff_id);
+ assert.equal(accountAfter.status,'Draft');
+ assert.equal((await tx`select proposed_by from erp_private.account_statement_map where map_id=${mapSeed.map_id}`)[0].proposed_by,actors.MANAGER.staff_id);
+ const proposalAudit=await tx`select table_name from erp_private.audit_events where actor_auth_id=${actors.MANAGER.auth_user_id}
+  and action='UPDATE' and record_key in (${rate.rate_id},'99974',${mapSeed.map_id}) order by table_name`;
+ assert.deepEqual(proposalAudit.map(row=>row.table_name),['account_catalog','account_statement_map','tax_rates']);
+ const result=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[
+  {queue_key:'approve_chart',items:[{id:'99974',revision:accountAfter.revision}]},
+  {queue_key:'approve_tax_rates',items:[{id:rate.rate_id,revision:taxAfter.revision}]}]});
+ assert.equal(result.total,2);
+ await map('PARTNER',{action:'ledger_statement_map_review_approve',scope:'group',map_ids:[mapSeed.map_id]});
+ assert.equal((await tx`select reviewed_by from erp_private.account_statement_map where map_id=${mapSeed.map_id}`)[0].reviewed_by,actors.PARTNER.staff_id);
 });
 test('reviewing mappings uses a fixed number of queries however many are selected',()=>{
  const src=fs.readFileSync(root+'/supabase/functions/staff-workspace-v12/annual-pack.ts','utf8');

@@ -59,6 +59,7 @@ import {physicalFileAction,setPhysicalPdfLib} from './physical-file-actions.ts';
 import {settingsHubAction} from './settings-hub-actions.ts';
 import {settingsOverviewAction} from './settings-overview-actions.ts';
 import {settingsOwnerAction} from './settings-owner-actions.ts';
+import {settingsStarterProposalAction} from './settings-starter-proposals.ts';
 import {starterConfirmAction} from './starter-confirm-actions.ts';
 import {exciseScheduleAction} from './excise-schedule-actions.ts';
 import {bankTotalsAction} from './bank-totals-actions.ts';
@@ -209,7 +210,7 @@ async function requireStaffArea(tx:any,a:any,area:string){
 async function canManageStaffRecord(tx:any,a:any,target:any){
  if(target.staff_id===a.staff_id)fail(403,'Ask another Engagement Partner to manage your own access.');
  if(a.category_code==='ADMIN'){if(!ORDINARY.includes(target.category_code))deny();return;}
- const [scope]=await tx`select erp_private.manages(${target.staff_id}::uuid) as allowed`;
+ const [scope]=await tx`select (erp_private.manages(${target.staff_id}::uuid) or erp_private.manager_staff_scope(${target.staff_id}::uuid)) as allowed`;
  if(!scope?.allowed)deny();
  if(a.category_code==='MANAGER'&&['PARTNER','MANAGER'].includes(target.category_code))deny();
 }
@@ -600,6 +601,7 @@ async function action(id:any,p:any){
   const physicalFile=await physicalFileAction(tx,a,p);if(physicalFile!==undefined)return physicalFile;
   const settingsHub=await settingsHubAction(tx,a,p);if(settingsHub!==undefined)return settingsHub;
   const settingsOverview=await settingsOverviewAction(tx,a,p);if(settingsOverview!==undefined)return settingsOverview;
+  const settingsProposal=await settingsStarterProposalAction(tx,a,p);if(settingsProposal!==undefined)return settingsProposal;
   const settingsOwner=await settingsOwnerAction(tx,a,p);if(settingsOwner!==undefined)return settingsOwner;
   const starterConfirm=await starterConfirmAction(tx,a,p);if(starterConfirm!==undefined)return starterConfirm;
   const exciseSchedule=await exciseScheduleAction(tx,a,p);if(exciseSchedule!==undefined)return exciseSchedule;
@@ -826,8 +828,9 @@ Deno.serve(async(req:Request)=>{
    if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData(),dataset=String(form.get('dataset')||''),area=dataset==='Staff'?'staff_access':'clients';const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,area);await requireActionRight(tx,a,{action:dataset==='Staff'?'master_staff_import':'client_master_import'});return masterImport(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
   }
-  const body=await req.text();if(body.length>30000)fail(413,'The request is too large.');
+  const body=await req.text();if(body.length>60000)fail(413,'The request is too large.');
   let p;try{p=JSON.parse(body);}catch{fail(400,'Invalid request.');}if(!p||typeof p!=='object')fail(400,'Invalid request.');
+  if(body.length>30000&&p.action!=='settings_approval_batch_approve')fail(413,'The request is too large.');
   let result;
   // Public release identity: lets the website and checks confirm the server matches the page build.
   // When deployed from a pinned GitHub commit, the module URL carries that commit.
@@ -864,6 +867,6 @@ Deno.serve(async(req:Request)=>{
   if(['23505','23514','42501','P0001'].includes(e.code)&&/PL\/pgSQL function erp_private\./.test(String(e.where||''))&&typeof e.message==='string'&&e.message.length<400)message=e.message;
   // Do not log passwords, setup tokens, JWTs, file contents or SQL parameters.
   if(status===500)console.error('staff-pilot request failed',{code:e.code||'INTERNAL',type:e.name||'Error'});
-  return new Response(JSON.stringify({error:message}),{status,headers});
+  return new Response(JSON.stringify({error:message,...(status<500&&e.approval_item?{approval_item:e.approval_item}:{})}),{status,headers});
  }
 });

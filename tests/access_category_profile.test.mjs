@@ -52,7 +52,9 @@ test('Check / return is reviewer-only by default and the category summary matche
 test('the Edit access screen shows the category summary and marks Check / return as reserved for an Assistant',async t=>{t.after(()=>dom.window.close());
  document.querySelector('#loginForm [name=login_id]').value='qa.partner';document.querySelector('#loginForm [name=password]').value='testing';document.querySelector('#loginForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause2(140);
  const view=document.querySelector('[data-view="staff"]');assert.ok(view,'Staff & access is available to a Partner');view.click();await pause2();
- assert.match(document.querySelector('#content').textContent,/Actions by category and area/,'the guide shows the action matrix');
+ document.querySelector('[data-staff-tab="access"]').click();await pause2();
+ assert.match(document.querySelector('#content').textContent,/Actions by role and area/,'the Access & rights tab shows the action matrix');
+ document.querySelector('[data-staff-tab="people"]').click();await pause2();
  const edit=document.querySelector(`[data-rights="${asst.staff_id}"]`);assert.ok(edit,'the Assistant row has an Edit access button');edit.click();await pause2(120);
  const body=document.querySelector('#editorBody');assert.match(body.textContent,/Audit Assistant: what this category can do/);assert.match(body.textContent,/Independent check:.*reserved for a Supervisor, Manager or Partner/);
  const reviewBoxes=[...body.querySelectorAll('fieldset.access-actions label')].filter(l=>/Check \/ return/.test(l.textContent));assert.ok(reviewBoxes.length>5,'Check / return appears in many groups');

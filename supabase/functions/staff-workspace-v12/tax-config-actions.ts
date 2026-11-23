@@ -95,7 +95,7 @@ export async function taxConfigAction(tx:any,a:any,p:any):Promise<any>{
   if(p.confirm_legal_basis!==true)fail(400,'Confirm the statutory rate, eligibility conditions and effective dates against the linked source.');
   validateCanonicalRate(r.rate_key,r.tax_type,r.parameters);registryParameters(r.tax_type,r.parameters);if(['PAYE','Individual income tax'].includes(r.tax_type))rateParameters(r.tax_type,r.parameters);
   await tx`select pg_advisory_xact_lock(hashtextextended(${r.rate_key},0))`;
-  if((await tx`select rate_id from erp_private.tax_rates where rate_key=${r.rate_key} and status='Approved' and effective_from<=${r.effective_to} and effective_to>=${r.effective_from}`).length)fail(400,'Approved dates overlap for this rule. Choose a non-overlapping validity period.');
+  if((await tx`select rate_id from erp_private.tax_rates where rate_key=${r.rate_key} and status='Approved' and deleted_at is null and effective_from<=${r.effective_to} and effective_to>=${r.effective_from}`).length)fail(400,'Approved dates overlap for this rule. Choose a non-overlapping validity period.');
   await tx`update erp_private.tax_rates set status='Approved',approved_by=${a.staff_id},approved_at=now(),partner_source_verified_on=current_date where rate_id=${r.rate_id}`;return {ok:true};
  }
  if(p.action==='rate_impact'){

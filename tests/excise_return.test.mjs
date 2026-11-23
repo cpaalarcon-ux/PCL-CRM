@@ -108,7 +108,7 @@ test('database and actions: due date, return task, eTIMS sales and the Tax Lead-
 
  // ---- Tax Lead-only approval of excise rules
  const M2=actors.MANAGER2.staff_id,PT=actors.PARTNER.staff_id;
- const rule=async(key)=>(await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by) values(${key},'Excise duty','Staging excise rule for the Tax Lead check','2035-01-01','2035-12-31',${JSON.stringify({excise_basis:'Amount per unit',product_code:'2711.19.00',unit:'Kilogram',rate_per_unit:1})},'https://www.kra.go.ke/','Excise Duty Act, section 5. Staging check of the Tax Lead right.',${actors.MANAGER.staff_id}) returning rate_id`)[0].rate_id;
+ const rule=async(key,proposer=actors.MANAGER.staff_id)=>(await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by) values(${key},'Excise duty','Staging excise rule for the Tax Lead check','2035-01-01','2035-12-31',${JSON.stringify({excise_basis:'Amount per unit',product_code:'2711.19.00',unit:'Kilogram',rate_per_unit:1})},'https://www.kra.go.ke/','Excise Duty Act, section 5. Staging check of the Tax Lead right.',${proposer}) returning rate_id`)[0].rate_id;
  const R=await rule('KE_EXCISE_APPROVAL_CHECK');await tx`update erp_private.tax_rates set legal_review_status='Pending',legal_review_note='Pending the Tax Lead review',legal_citation='Fictional Excise Act s1' where rate_id=${R}`;
  const rev=async()=>(await tx`select revision from erp_private.tax_rates where rate_id=${R}`)[0].revision;
  const approveSql=(role)=>as(role,()=>db.query(`update erp_private.tax_rates set status='Approved',approved_by=$2,approved_at=now(),partner_source_verified_on=current_date where rate_id=$1`,[R,actors[role].staff_id]));
@@ -123,7 +123,7 @@ test('database and actions: due date, return task, eTIMS sales and the Tax Lead-
  // the right is granted to a Manager
  await tx`insert into erp_private.staff_capabilities(staff_id,capability,granted_by,reason,expires_on) values(${M2},'APPROVE_TAX_RULES',${PT},'Fictional Tax Lead',current_date+100)`;
  // the preparer still cannot approve their own rule
- const R2=await rule('KE_EXCISE_SELF_CHECK');await tx`update erp_private.tax_rates set created_by=${M2} where rate_id=${R2}`;
+ const R2=await rule('KE_EXCISE_SELF_CHECK',M2);
  await assert.rejects(as('MANAGER2',()=>db.query(`update erp_private.tax_rates set status='Approved',approved_by=$2,approved_at=now(),partner_source_verified_on=current_date where rate_id=$1`,[R2,M2])),/cannot confirm or approve/);
  // the Tax Lead can confirm the legal basis and approve
  await cfg('MANAGER2',{action:'rate_legal_confirm',rate_id:R,revision:await rev(),lead_name:'Fictional Tax Lead',reference:'Memo 2026-11-12 fictional',legal_citation:'Fictional Act s1',confirmed:true});

@@ -2,7 +2,7 @@ import {fail,text,uuid} from './validation.mjs';
 // Access alignment, step 1: a Manager or Partner allocates existing clients to a preparer (Assistant or Supervisor) before any project exists.
 // An active allocation gives that person the client's onboarding profile and proposal workflow (see client_onboarding_allocated in
 // 20261209100000_client_onboarding_allocations.sql); the database applies it, so no other screen or route can widen it.
-const ACTIONS=['client_onboarding_alloc_read','client_onboarding_alloc_clients','client_onboarding_alloc_assign','client_onboarding_alloc_remove'];
+const ACTIONS=['client_onboarding_alloc_read','client_onboarding_alloc_clients','client_onboarding_alloc_assign','client_onboarding_alloc_remove','client_onboarding_alloc_move'];
 const MAX_PER_REQUEST=500;
 const leader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 const uuids=(v:any,label:string)=>{
@@ -21,6 +21,16 @@ async function preparer(tx:any,staffId:string){
 async function clientsOfFile(tx:any,file:string){
  return (await tx`select distinct f.client_id from erp_private.client_field_facts f join erp_private.clients c on c.client_id=f.client_id and c.deleted_at is null
   where f.source_kind='Import' and regexp_replace(f.source_reference,' row [0-9]+$','')=${file} limit ${MAX_PER_REQUEST+1}`).map((r:any)=>r.client_id);
+}
+
+// Every client matching a search, an import file and the not-yet-allocated switch. One definition for the list on screen and for "allocate all matching".
+async function matchingClients(tx:any,q:string,file:string|null,only:boolean,limit:number){
+ return (await tx`select c.client_id from erp_private.clients c
+   where c.deleted_at is null
+    and (${q}='' or strpos(lower(concat_ws(' ',c.company_name,c.kra_pin)),lower(${q}))>0)
+    and (${file}::text is null or exists(select 1 from erp_private.client_field_facts f where f.client_id=c.client_id and f.source_kind='Import' and regexp_replace(f.source_reference,' row [0-9]+$','')=${file}))
+    and (not ${only} or not exists(select 1 from erp_private.client_onboarding_allocations x where x.client_id=c.client_id and x.ended_at is null))
+   order by c.company_name,c.client_id limit ${limit}`).map((r:any)=>r.client_id);
 }
 
 export async function clientOnboardingAllocationAction(tx:any,a:any,p:any):Promise<any>{
@@ -61,6 +71,14 @@ export async function clientOnboardingAllocationAction(tx:any,a:any,p:any):Promi
   const note=text(p.note||'',500,false);
   let ids:string[],source='Selected';
   if(p.file){const file=importedFile(p.file);ids=await clientsOfFile(tx,file);if(!ids.length)fail(400,'No clients were imported from that file.');if(ids.length>MAX_PER_REQUEST)fail(400,`That file has more than ${MAX_PER_REQUEST} clients. Allocate them in smaller groups.`);source='Import: '+file;}
+  else if(p.match&&typeof p.match==='object'){
+   const m=p.match,q=text(m.q||'',120,false),file=m.file?importedFile(m.file):null;
+   if(!q&&!file&&m.unallocated_only!==true)fail(400,'Search for clients first, then allocate everything that matches.');
+   ids=await matchingClients(tx,q,file,m.unallocated_only===true,MAX_PER_REQUEST+1);
+   if(!ids.length)fail(400,'No clients match that search.');
+   if(ids.length>MAX_PER_REQUEST)fail(400,`More than ${MAX_PER_REQUEST} clients match. Narrow the search or allocate in groups.`);
+   source='Search';
+  }
   else ids=uuids(p.client_ids,'client');
   // Only clients this Manager or Partner may see, and only where the preparer works in one of the client's firms (or the client has no firm yet).
   const added=await tx`insert into erp_private.client_onboarding_allocations(client_id,staff_id,allocated_by,note,source)
@@ -71,6 +89,25 @@ export async function clientOnboardingAllocationAction(tx:any,a:any,p:any):Promi
   const requested=ids.length,allocated=added.length;
   const already=(await tx`select count(*)::int n from erp_private.client_onboarding_allocations where staff_id=${person.staff_id} and client_id=any(${ids}::uuid[]) and ended_at is null`)[0].n-allocated;
   return {ok:true,staff_name:person.full_name,requested,allocated,already_allocated:Math.max(0,already),not_eligible:Math.max(0,requested-allocated-Math.max(0,already))};
+ }
+
+ if(p.action==='client_onboarding_alloc_move'){
+  // Reassign: hand a person's onboarding allocations to someone else. The new person gets the access first, then the old one ends, so a client is never left without an owner.
+  const from=uuid(p.staff_id),to=await preparer(tx,uuid(p.to_staff_id)),reason=text(p.reason||'',500,true);
+  if(from===to.staff_id)fail(400,'Choose a different person to move the allocations to.');
+  if(reason.trim().length<5)fail(400,'Say why the allocations are moving (at least 5 characters).');
+  const held=(await tx`select client_id from erp_private.client_onboarding_allocations where staff_id=${from} and ended_at is null`).map((r:any)=>r.client_id);
+  const ids=p.all===true?held:uuids(p.client_ids,'client').filter((c:string)=>held.includes(c));
+  if(!ids.length)fail(400,'That person has no matching onboarding allocations to move.');
+  if(ids.length>MAX_PER_REQUEST)fail(400,`Move at most ${MAX_PER_REQUEST} clients at a time.`);
+  await tx`insert into erp_private.client_onboarding_allocations(client_id,staff_id,allocated_by,note,source)
+   select c.client_id,${to.staff_id},${a.staff_id},${reason.trim().slice(0,500)},'Reassigned' from erp_private.clients c
+   where c.client_id=any(${ids}::uuid[]) and c.deleted_at is null and erp_private.onboarding_staff_fits_client(${to.staff_id},c.client_id)
+   on conflict (client_id,staff_id) where ended_at is null do nothing`;
+  const ended=await tx`update erp_private.client_onboarding_allocations o set ended_at=now(),ended_by=${a.staff_id},end_reason=${('Reassigned to '+to.full_name+': '+reason.trim()).slice(0,500)}
+   where o.staff_id=${from} and o.client_id=any(${ids}::uuid[]) and o.ended_at is null
+    and exists(select 1 from erp_private.client_onboarding_allocations n where n.client_id=o.client_id and n.staff_id=${to.staff_id} and n.ended_at is null) returning o.client_id`;
+  return {ok:true,to_name:to.full_name,requested:ids.length,moved:ended.length,not_eligible:ids.length-ended.length};
  }
 
  // client_onboarding_alloc_remove
