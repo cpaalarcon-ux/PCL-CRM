@@ -40,7 +40,8 @@ test('The invoice PDF carries the Alarcon-style layout, and drafts are watermark
  const noLogo=await invoicePdf({...base,logo:null,etims:{etims_invoice_no:'ETIMS-1',etims_issued_on:'2026-11-01',qr_url:'https://etims.example.test/v/1'}},PDFLib);assert.ok(text(noLogo).includes('eTIMS invoice no: ETIMS-1'));
  const many=await invoicePdf({...base,invoice:{...base.invoice,lines:rules.invoiceLines(Array.from({length:50},(_,n)=>({description:'Line '+(n+1)+' '+'long wording '.repeat(8),quantity:1,unit_price:100,vat_rate:0,line_type:'Disbursement'}))),net_amount:5000,vat_amount:0}},PDFLib);
  assert.ok((await PDFLib.PDFDocument.load(many)).getPageCount()>1,'long invoices flow onto more pages');assert.ok(text(many).includes('Total Amount Due'));
- assert.deepEqual(invoiceTotals({net_amount:100,vat_amount:16,paid_amount:20,brought_forward:30}),{net:100,vat:16,total:116,paid:20,brought_forward:30,due:126});
+ assert.deepEqual(invoiceTotals({net_amount:100,vat_amount:16,paid_amount:20,brought_forward:30}),{net:100,vat:16,total:116,paid:20,credited:0,brought_forward:30,due:126});
+ assert.deepEqual(invoiceTotals({net_amount:100,vat_amount:16,paid_amount:20,credited_amount:58,brought_forward:30}),{net:100,vat:16,total:116,paid:20,credited:58,brought_forward:30,due:68},'an issued credit note lowers the amount due');
 });
 
 test('Invoices: period, duplicate warning, continuous numbering, balance brought forward, recurring narration and the PDF download',async t=>{
@@ -79,14 +80,14 @@ test('Invoices: period, duplicate warning, continuous numbering, balance brought
  await act('PARTNER',{action:'firm_details',firm_id:F,legal_name:'Fictional Mlima Consultants Ltd',kra_pin:'P000000001A',vat_registered:true,invoice_prefix:'INV/MLI',invoice_numbering:'continuous',invoice_last_number:'322',payment_instructions:'Pay to Fictional Bank, account 0000',phone:'0700000000',physical_address:'Kenya'});
  // The number can only be raised, never lowered.
  await act('PARTNER',{action:'firm_details',firm_id:F,legal_name:'Fictional Mlima Consultants Ltd',kra_pin:'P000000001A',vat_registered:true,invoice_prefix:'INV/MLI',invoice_numbering:'continuous',invoice_last_number:'10',payment_instructions:'Pay to Fictional Bank, account 0000',phone:'0700000000',physical_address:'Kenya'});
- const posted=await act('PARTNER',{action:'invoice_post',invoice_id:first,revision:1});
+ const posted=(await (async()=>{const rev=async()=>(await tx`select revision from erp_private.invoices where invoice_id=${first}`)[0].revision,o={override_reason:'Fictional test: one Partner prepares, checks and posts'};await act('PARTNER',{action:'invoice_submit',invoice_id:first,revision:await rev()});await act('PARTNER',{action:'invoice_check',decision:'pass',invoice_id:first,revision:await rev(),...o});return act('PARTNER',{action:'invoice_post',invoice_id:first,revision:await rev(),...o});})());
  assert.equal(posted.invoice_number,'INV/MLI/00323');assert.equal(posted.brought_forward,0);
  // The next invoice brings forward the unpaid balance of the first; a payment changes the next one, not the one already issued.
  const second=(await save('PARTNER',{service_from:'2026-12-01',service_to:'2026-12-31',invoice_date:'2026-11-02',description:'Tax Compilation And Compliance 1 Month 1 Dec 2026 to 31 Dec 2026',lines:[{description:'Tax Compilation And Compliance 1 Month 1 Dec 2026 to 31 Dec 2026',quantity:1,unit_price:4000,vat_rate:16,includes_vat:true}]})).invoice_id;
  const draftPdf=await act('PARTNER',{action:'invoice_pdf',invoice_id:second});
  assert.match(draftPdf.file_name,/^Draft_invoice_/);let doc1=text(Buffer.from(draftPdf.base64,'base64'));assert.match(doc1,/DRAFT/);assert.ok(doc1.includes('8,000.00 KSh'),'draft previews the balance brought forward');
  await act('PARTNER',{action:'payment_add',request_id:id(),invoice_id:first,payment_date:'2026-11-03',method:'Bank',reference:'BANK-1',amount:1500});
- const posted2=await act('PARTNER',{action:'invoice_post',invoice_id:second,revision:1});
+ const posted2=(await (async()=>{const rev=async()=>(await tx`select revision from erp_private.invoices where invoice_id=${second}`)[0].revision,o={override_reason:'Fictional test: one Partner prepares, checks and posts'};await act('PARTNER',{action:'invoice_submit',invoice_id:second,revision:await rev()});await act('PARTNER',{action:'invoice_check',decision:'pass',invoice_id:second,revision:await rev(),...o});return act('PARTNER',{action:'invoice_post',invoice_id:second,revision:await rev(),...o});})());
  assert.equal(posted2.invoice_number,'INV/MLI/00324');assert.equal(posted2.brought_forward,2500);
  // The issued PDF keeps the figure fixed at posting, with the logo once uploaded.
  await assert.rejects(()=>act('MANAGER',{action:'firm_logo_set',firm_id:F,mime_type:'image/png',data_base64:PNG.toString('base64')}),/Partner/);

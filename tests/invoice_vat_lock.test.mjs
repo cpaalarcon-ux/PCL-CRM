@@ -52,7 +52,9 @@ test('Invoices are locked to 16% VAT, disbursements carry none, and the database
  await assert.rejects(()=>raw([],0.01,0),/at least one line/);
  // 5. Editing a draft cannot sneak the rate down either; posting an invoice is unaffected.
  await assert.rejects(()=>as('PARTNER',()=>tx`update erp_private.invoices set lines=${tx.json(L1({vat_rate:0,vat:0}))}::jsonb,vat_amount=0 where invoice_id=${a.invoice_id}`),/VATable at 16%/);
+ await db.exec('alter table erp_private.invoices disable trigger invoice_review_guard');// this test is about the VAT lock; the review stages have their own test
  await tx`update erp_private.invoices set invoice_number='INV/T/1',status='Posted',posted_by=${actors.PARTNER.staff_id},posted_at=now() where invoice_id=${a.invoice_id}`;
+ await db.exec('alter table erp_private.invoices enable trigger invoice_review_guard');
  // 6. A historical invoice billed at another rate stays readable and can still be voided.
  await db.exec(`alter table erp_private.invoices disable trigger invoice_vat_guard`);
  const old=id();await tx`insert into erp_private.invoices(invoice_id,request_id,project_id,client_id,firm_id,invoice_number,description,invoice_date,due_date,lines,net_amount,vat_amount,status,created_by,posted_by,posted_at) values(${old},${id()},${P},${C},${F},'INV/OLD/1','Old',${'2025-01-05'},${'2025-01-20'},${tx.json([{description:'Old',quantity:1,unit_price:1000,vat_rate:8,net:1000,vat:80,total:1080}])}::jsonb,1000,80,'Posted',${actors.PARTNER.staff_id},${actors.PARTNER.staff_id},now())`;
