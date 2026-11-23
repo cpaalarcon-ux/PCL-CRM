@@ -1,20 +1,29 @@
 import {fail,text,uuid,HttpError} from './validation.mjs';
 import {STRUCTURES,pairOk,pairRetired,familyFor} from './legal-structure.mjs';
 const deny=():never=>fail(403,'You do not have access to this action.');
-// Saves the Legal Structure + Subcategory chosen on Edit client. A first classification is open to anyone who can save the client;
-// a change is for Managers and Partners, needs a reason, is audited, and never rewrites history: a change that would move the client to
-// another accounting family is refused once the client has accounting records under the old one.
-export async function applyLegalStructure(tx:any,a:any,cid:string,p:any,isNew:boolean){
+async function readLegalStructurePair(tx:any,p:any,isNew:boolean){
  const structure=p.legal_structure?String(p.legal_structure):null,subtype=p.legal_subtype?String(p.legal_subtype):null;
- if(!structure&&!subtype){if(isNew)fail(400,'Choose the client’s Legal structure and Subcategory.');return {changed:false};}
+ if(!structure&&!subtype){if(isNew)fail(400,'Choose the client’s Legal structure and Subcategory.');return null;}
  if(!structure||!STRUCTURES.includes(structure))fail(400,'Choose a Legal structure.');
  if(!subtype)fail(400,'Choose the Subcategory for this legal structure.');
  const types=await tx`select structure,subtype,engine_family,retired from erp_private.legal_structure_types`;
  if(!pairOk(types,structure,subtype))fail(400,'That subcategory does not belong to the chosen legal structure.');
+ return {structure,subtype,types};
+}
+export async function validateNewClientStructure(tx:any,p:any){
+ const pair=await readLegalStructurePair(tx,p,true);
+ if(pair&&pairRetired(pair.types,pair.structure,pair.subtype))retiredStructure();
+}
+const retiredStructure=()=>fail(400,'That subcategory is retired. Choose Deposit-taking SACCO, Non-withdrawable-deposit-taking SACCO or another current subcategory.');
+// A change to an existing classification requires a Manager or Partner and an audit note. Existing accounting records keep their family.
+export async function applyLegalStructure(tx:any,a:any,cid:string,p:any,isNew:boolean){
+ const pair=await readLegalStructurePair(tx,p,isNew);
+ if(!pair)return {changed:false};
+ const {structure,subtype,types}=pair;
  const c=(await tx`select legal_structure,legal_subtype,legal_entity_type from erp_private.clients where client_id=${cid} for update`)[0];
  if(!c)deny();
  if(c.legal_structure===structure&&c.legal_subtype===subtype)return {changed:false};
- if(pairRetired(types,structure,subtype))fail(400,'That subcategory is retired. Choose Deposit-taking SACCO, Non-withdrawable-deposit-taking SACCO or another current subcategory.');
+ if(pairRetired(types,structure,subtype))retiredStructure();
  const family=familyFor(types,structure,subtype),revising=!!c.legal_structure&&!!c.legal_subtype;
  const note=text(p.legal_structure_reason||'',1000,false);
  if(revising){
