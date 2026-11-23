@@ -57,7 +57,7 @@ export function drawerView(groups,selected,{esc=e0}={}){
 }
 export function createMyApprovalsUI(ctx){
  const {request,modal,notice}=ctx;
- let data=null,loading=false,failed='',f={...FILTER_DEFAULT},selectedGroups=new Set(),drawerGroups=[],drawerSelected=new Map();
+ let data=null,loading=false,outcome='',failed='',f={...FILTER_DEFAULT},selectedGroups=new Set(),drawerGroups=[],drawerSelected=new Map();
  async function load(){if(loading)return;loading=true;try{const r=await request({action:'settings_approvals_read'});if(!r||!Array.isArray(r.queues)||!Array.isArray(r.records)||!Array.isArray(r.actionGroups))throw Error('The approvals answer was not in the expected form.');data=r;failed='';}catch(e){failed=e.message||'My approvals could not be loaded.';}finally{loading=false;ctx.render();}}
  function card(){if(!['PARTNER','MANAGER'].includes(ctx.data().me?.category_code))return '';const wrap=inner=>`<section class="card settings-card" id="myApprovalsCard"><h2>Approval task board</h2>${inner}</section>`;if(!data&&!failed){queueMicrotask(load);return wrap('<p class="muted">Loading…</p>');}if(failed)return wrap(`<p class="error" role="alert">${e0(failed)}</p>`);return wrap(approvalsView(data,f,{esc:e0,selectedGroups}));}
  function selectedMap(groups){const map=new Map();for(const g of groups){const ids=groupItems(g).filter(i=>i.eligible).map(i=>String(i.id));map.set(g.key,new Set(ids));}return map;}
@@ -82,11 +82,23 @@ export function createMyApprovalsUI(ctx){
    const selections=drawerGroups.map(g=>({queue_key:g.key,items:groupItems(g).filter(i=>drawerSelected.get(g.key)?.has(String(i.id))).map(i=>({id:i.id,revision:i.revision}))})).filter(g=>g.items.length);
    if(!selections.length){notice('Select at least one eligible item.',true);return true;}
    const button=document.querySelector('[data-suite="ap-approve-selected"]');if(button){button.disabled=true;button.setAttribute('aria-busy','true');}
-   try{const r=await request({action:'settings_approval_batch_approve',selections,review_confirmed:true});const total=Number(r.total||0);notice(`${total} item${total===1?'':'s'} approved. The batch is recorded in the settings audit log.`);document.getElementById('editor')?.close?.();selectedGroups.clear();drawerGroups=[];data=null;failed='';ctx.render();await load();}
-   catch(e){const message=e.message||'The approval batch did not go through. No item was approved.';const error=document.getElementById('editorNotice');if(error)error.textContent=message;else notice(message,true);if(button){button.disabled=false;button.removeAttribute('aria-busy');}}
+   const total0=selections.reduce((n,g)=>n+g.items.length,0),drawer=()=>document.getElementById('editor'),status=()=>document.getElementById('editorNotice');
+   if(status())status.textContent=`Approving ${total0} item${total0===1?'':'s'}. This can take up to a minute. You can return to the list; the result will show as a message.`;
+   outcome='';
+   try{const r=await request({action:'settings_approval_batch_approve',selections,review_confirmed:true});const total=Number(r.total||0);notice(`${total} item${total===1?'':'s'} approved. The batch is recorded in the settings audit log.`);drawer()?.close?.();selectedGroups.clear();drawerGroups=[];data=null;failed='';outcome='approved';ctx.render();await load();}
+   catch(e){
+    const raw=String(e?.message||''),vague=!raw||/^the request failed\.?$/i.test(raw)||Number(e?.status)>=500||e?.connection_dropped;
+    const message=vague?'The approval did not finish, so nothing was approved. Approve fewer items at a time, or try again in a moment.':raw;
+    outcome='failed';
+    if(drawer()?.open){
+     if(!document.querySelector('.approval-drawer-content')&&drawerGroups.length)paintDrawer();
+     const box=status();if(box)box.textContent=message;else notice(message,true);
+     const again=document.querySelector('[data-suite="ap-approve-selected"]');if(again){again.disabled=false;again.removeAttribute('aria-busy');updateDrawerControls();}
+    }else notice(message,true);
+   }
    return true;
   }
   return false;
  }
- return {card,handle,refresh:()=>{data=null;failed='';}};
+ return {card,handle,approved:()=>outcome==='approved',refresh:()=>{data=null;failed='';}};
 }
