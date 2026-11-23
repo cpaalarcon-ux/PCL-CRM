@@ -209,7 +209,7 @@ async function requireStaffArea(tx:any,a:any,area:string){
 async function canManageStaffRecord(tx:any,a:any,target:any){
  if(target.staff_id===a.staff_id)fail(403,'Ask another Engagement Partner to manage your own access.');
  if(a.category_code==='ADMIN'){if(!ORDINARY.includes(target.category_code))deny();return;}
- const [scope]=await tx`select erp_private.manages(${target.staff_id}::uuid) as allowed`;
+ const [scope]=await tx`select (erp_private.manages(${target.staff_id}::uuid) or erp_private.manager_staff_scope(${target.staff_id}::uuid)) as allowed`;
  if(!scope?.allowed)deny();
  if(a.category_code==='MANAGER'&&['PARTNER','MANAGER'].includes(target.category_code))deny();
 }
