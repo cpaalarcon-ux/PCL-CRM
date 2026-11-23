@@ -16,6 +16,7 @@ test('2808: client facts import from the master workbook as unverified Import fa
  await tx`insert into erp_private.firms(firm_id,firm_code,legal_name) values(${F},'V3QA','Fictional V3 firm')`;
  for(const role of ['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN']){const a=actors[role]={staff_id:id(),auth_user_id:id(),session:id(),category_code:role};await tx`insert into auth.users(id) values(${a.auth_user_id})`;await tx`insert into auth.sessions(id,user_id) values(${a.session},${a.auth_user_id})`;await tx`insert into erp_private.staff_members(staff_id,auth_user_id,staff_identifier,login_id,full_name,category_code,employment_type,contract_end_date,access_status,sessions_invalid_before) values(${a.staff_id},${a.auth_user_id},${role},${role.toLowerCase()},${'Fictional '+role},${role},'Permanent','2027-12-31','Active',now()-interval '1 day')`;await tx`insert into erp_private.pilot_sessions(session_id,staff_id,expires_at) values(${a.session},${a.staff_id},now()+interval '1 hour')`;await tx`insert into erp_private.staff_firm_access(staff_id,firm_id,scope) values(${a.staff_id},${F},'Assigned')`;}
  await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id,legal_entity_type) values(${C},'Fictional V3 client',${actors.ASSISTANT.staff_id},'Limited company')`;await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C},${F})`;
+ await tx`insert into erp_private.client_onboarding_allocations(client_id,staff_id,allocated_by) values(${C},${actors.SUPERVISOR.staff_id},${actors.MANAGER.staff_id})`;
  await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${P},${C},${F},'Fictional V3 project','TAX-COMP',${actors.MANAGER.staff_id})`;
  for(const role of Object.keys(actors)){await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors[role].staff_id},${F},${role})`;}
 
@@ -23,6 +24,7 @@ test('2808: client facts import from the master workbook as unverified Import fa
  await tx`insert into erp_private.documents(document_id,client_id,handling_firm_id,project_id,task_id,category,file_name,object_key,file_size_bytes,sha256,mime_type,uploaded_by) values(${D},${C},${F},${P},${T},'Working Papers','Fictional.xlsx',${'qa/'+D},100,${'a'.repeat(64)},'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',${actors.ASSISTANT.staff_id})`;
  const C2=id();
  await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id,legal_entity_type) values(${C2},'Fictional copy target',${actors.ASSISTANT.staff_id},'Limited company')`;await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C2},${F})`;
+ await tx`insert into erp_private.client_onboarding_allocations(client_id,staff_id,allocated_by) values(${C2},${actors.SUPERVISOR.staff_id},${actors.MANAGER.staff_id})`;
  await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${id()},${C2},${F},'Fictional project 2','TAX-COMP',${actors.MANAGER.staff_id})`;
  const book=async rows=>{const wb=new ExcelJS.Workbook(),ws=wb.addWorksheet('Clients');for(const r of rows)ws.addRow(r);return Buffer.from(await wb.xlsx.writeBuffer());};
  const form=async(rows,map)=>{const f=new FormData();f.set('dataset','Clients');f.set('action','master_commit');f.set('firm_id',F);f.set('header_row','1');f.set('first_row','2');f.set('last_row',String(rows.length));f.set('column_map',JSON.stringify(map));f.set('file',new File([await book(rows)],'clients.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));return f;};
@@ -35,6 +37,7 @@ test('2808: client facts import from the master workbook as unverified Import fa
  assert.match(out.rejections.map(r=>r.reason).join(' '),/Invalid KRA PIN/);assert.match(out.rejections.map(r=>r.reason).join(' '),/Check date of incorporation/i);
  assert.equal(out.facts_recorded,10,'7 for the new client and 3 for the existing target (name, registration number, year end)');
  const imp=(await tx`select client_id from erp_private.clients where company_name='Fictional Imported Ltd'`)[0].client_id;
+ await tx`insert into erp_private.client_onboarding_allocations(client_id,staff_id,allocated_by) values(${imp},${actors.SUPERVISOR.staff_id},${actors.MANAGER.staff_id})`;
  const rdI=await cm('MANAGER',{action:'client_master_read',client_id:imp});
  assert.equal(rdI.verified,0,'imports are never verified');assert.ok(rdI.started_at);
  const pin=rdI.rows.find(r=>r.key==='kra_pin');assert.equal(pin.fact.value,'A000000004Z');assert.equal(pin.fact.source_kind,'Import');assert.match(pin.fact.source_reference,/clients\.xlsx row 2/);assert.equal(pin.state,'Recorded');
