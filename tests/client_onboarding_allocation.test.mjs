@@ -78,6 +78,8 @@ for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.re
  await assert.rejects(decide('ASSISTANT',{action:'client_proposal_approve',proposal_id:pr.proposal_id}),/Manager or Partner can approve/);
  await assert.rejects(decide('MANAGER',{action:'client_proposal_approve',proposal_id:pr.proposal_id}),/must check this proposal first/);
  await assert.rejects(decide('ASSISTANT',{action:'client_proposal_check',proposal_id:pr.proposal_id,note:'Checked by the preparer'}),/Supervisor, Manager or Partner|access/);
+ await assert.rejects(decide('SUPERVISOR',{action:'client_proposal_check',proposal_id:pr.proposal_id,note:'Matches the certificate of incorporation'}),/not available/,'a Supervisor reaches only their own clients, so one who is not allocated cannot check');
+ await ax('MANAGER',{action:'client_onboarding_alloc_assign',staff_id:actors.SUPERVISOR.staff_id,client_ids:[C1],note:'Fictional: independent checker'});
  await decide('SUPERVISOR',{action:'client_proposal_check',proposal_id:pr.proposal_id,note:'Matches the certificate of incorporation'});
  await decide('MANAGER',{action:'client_proposal_approve',proposal_id:pr.proposal_id,note:'Approved after the check'});
  assert.equal(await nameOf(C1),'ACL Fictional One Renamed','the approver applied the change');

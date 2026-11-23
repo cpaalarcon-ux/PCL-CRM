@@ -46,7 +46,7 @@ test('Check / return is reviewer-only by default and the category summary matche
  assert.equal(actionsForCategory('INTERN','clients'),null);assert.equal(actionsForCategory('ASSISTANT','billing_wip'),null);
  const esc=s=>String(s);const html=categoryActionMatrix(esc);assert.match(html,/Not in this category/);assert.match(html,/Audit Assistant/);
  assert.match(renderAccessGuide('ASSISTANT',esc),/Actions by category and area/);
- assert.match(categoryProfileBlock('SUPERVISOR',esc,'Audit Supervisor'),/Policy difference to settle/);
+ assert.match(categoryProfileBlock('SUPERVISOR',esc,'Audit Supervisor'),/Not the rest of the firm/);
  assert.match(categoryProfileBlock('ASSISTANT',esc),/reserved for a Supervisor, Manager or Partner/);
 });
 test('the Edit access screen shows the category summary and marks Check / return as reserved for an Assistant',async t=>{t.after(()=>dom.window.close());
