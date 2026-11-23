@@ -5,6 +5,7 @@ import {stockMethodChoices,stockCountChoices,stockPolicyStartDate} from './staff
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261121-coa-v1';
 import {createClientMasterUI} from './staff-client-master.mjs?v=20261121-scope-v1';
 import {createScopeUI} from './staff-engagement-scope.mjs?v=20261121-scope-v1';
+import {createOnboardingAllocUI} from './staff-onboarding-alloc.mjs?v=20261209-onb-v1';
 import {createUnderstandingUI} from './staff-understanding.mjs?v=20261121-und-v1';
 import {createKycGridUI} from './staff-kyc-grid.mjs?v=20261122-loc-v1';
 import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
@@ -27,6 +28,7 @@ export function createImprovementUI(ctx){
  const bulk=createBulkSetupUI({...ctx,show:(...a)=>show(...a)});
  const categories=createServiceCategoriesUI({...ctx,show:(...a)=>show(...a)});
  const scope=createScopeUI(ctx);
+ const onboardingAlloc=createOnboardingAllocUI(ctx);void onboardingAlloc;
  const understanding=createUnderstandingUI(ctx);
  const master=createClientMasterUI(ctx,{show:(...a)=>show(...a),button,templateBlock:t=>setup.clientTypeBlock(t),scopeButton:id=>scope.button(id)});
  const grid=createKycGridUI(ctx,{show:(...a)=>show(...a),openList:id=>master.open(id)});
