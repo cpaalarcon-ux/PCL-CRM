@@ -3,6 +3,8 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {createProposal,proposalAction,proposalsRead,proposalSummary}=await import('../supabase/functions/staff-workspace-v12/proposal-actions.ts');
 const {policyAction}=await import('../supabase/functions/staff-workspace-v12/policy-actions.ts');
+const {handlingFirmIds,readClientEntry}=await import('../supabase/functions/staff-workspace-v12/client-entry.ts');
+const {applyLegalStructure}=await import('../supabase/functions/staff-workspace-v12/legal-structure-actions.ts');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),C=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
 async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}
@@ -17,6 +19,8 @@ test('proposals: the right people check and approve, nobody approves their own w
  await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id) values(${C},'UAT Fictional Old Name Ltd',${actors.MANAGER.staff_id})`;await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C},${F})`;
  const P=id();await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${P},${C},${F},'UAT Fictional proposals project','TAX-COMP',${actors.MANAGER.staff_id})`;
  for(const role of ['ASSISTANT','SUPERVISOR'])await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors[role].staff_id},${F},${role})`;
+ const newClient={action:'client_save',company_name:'UAT Fictional New Client Ltd',kra_pin:'A123456789Z',branch_location:'Kisii',legal_structure:'Limited Company',legal_subtype:'Private Limited Company',firm_ids:[F]};
+ await assert.rejects(()=>propose('ASSISTANT',newClient),/locked|authorization/i);
  await as('PARTNER',a=>policyAction(tx,a,{action:'policy_sign',policy_code:'ASSISTANT_DATA_ENTRY',confirm:true}));// Assistants may propose only after the Partner has signed
  const entry={client_id:C,company_name:'UAT Fictional New Name Ltd',revision:1,proposal_reason:'Name on the certificate of incorporation'};
  // 1. An Assistant's entry is stored as typed; nothing on the client changes.
@@ -78,4 +82,33 @@ test('proposals: the right people check and approve, nobody approves their own w
  const mine=await as('ASSISTANT',()=>proposalsRead(tx)),all=await as('SUPERVISOR',()=>proposalsRead(tx));
  assert.ok(mine.length>=1&&mine.every(p=>p.proposed_by===actors.ASSISTANT.staff_id));assert.ok(all.some(p=>p.proposed_role==='SUPERVISOR')&&all.length>mine.length);
  assert.equal(proposalSummary('owner_add',{full_name:'Jane'}),'Add owner or controller: Jane');
+
+ // A new client does not need a pre-existing assignment. The proposer still needs firm access.
+ const otherFirm=id(),newClientRows=()=>tx`select client_id from erp_private.clients where company_name=${newClient.company_name}`;
+ await tx`insert into erp_private.firms(firm_id,firm_code,legal_name) values(${otherFirm},'PRQAX','Out-of-scope proposals firm')`;
+ await assert.rejects(()=>propose('ASSISTANT',{...newClient,firm_ids:[otherFirm]}),/handling firm that your account can access/);
+ await assert.rejects(()=>propose('ASSISTANT',{...newClient,firm_ids:[]}),/Select at least one handling firm/);
+ await assert.rejects(()=>propose('ASSISTANT',{...newClient,kra_pin:'INVALID'}),/Check the KRA PIN format/);
+ await assert.rejects(()=>propose('ASSISTANT',{...newClient,legal_structure:'',legal_subtype:''}),/Choose the client’s Legal structure and Subcategory/);
+ await assert.rejects(()=>propose('ASSISTANT',{...newClient,legal_subtype:'Public Body'}),/subcategory does not belong/);
+ const draft=await propose('ASSISTANT',newClient),draftRow=await row(draft.proposal_id);
+ assert.equal(draftRow.client_id,null);
+ assert.equal(draftRow.status,'Proposed');
+ assert.equal(draftRow.payload.company_name,newClient.company_name);
+ assert.deepEqual(await newClientRows(),[]);
+ await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:draft.proposal_id,note:'Approval before the check'}),/must check this proposal first/);
+ await act('SUPERVISOR',{action:'client_proposal_check',proposal_id:draft.proposal_id,note:'Checked client identity and firm'});
+ assert.deepEqual(await newClientRows(),[]);
+ const created=await act('MANAGER',{action:'client_proposal_approve',proposal_id:draft.proposal_id,note:'Approved after independent review'},async q=>{
+  assert.equal(q.action,'client_save');assert.equal(q.client_id,undefined);
+  const {name,pin,branch,cat}=await readClientEntry(tx,q),cid=id();
+  await tx`insert into erp_private.clients(client_id,company_name,kra_pin,branch_location,client_category,owner_staff_id)
+   values(${cid},${name},${pin},${branch},${cat},${actors.MANAGER.staff_id})`;
+  await applyLegalStructure(tx,actors.MANAGER,cid,q,true);
+  for(const firm of handlingFirmIds(q))await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${cid},${firm})`;
+  return {ok:true,client_id:cid};
+ });
+ assert.deepEqual(await newClientRows(),[{client_id:created.applied.client_id}]);
+ assert.equal((await tx`select legal_subtype from erp_private.clients where client_id=${created.applied.client_id}`)[0].legal_subtype,newClient.legal_subtype);
+ assert.equal((await tx`select firm_id from erp_private.client_firm_links where client_id=${created.applied.client_id}`)[0].firm_id,F);
 });
