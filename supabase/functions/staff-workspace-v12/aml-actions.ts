@@ -90,7 +90,12 @@ export async function amlAction(tx:any,a:any,p:any):Promise<any>{
    return {client_id:r.client_id,company_name:r.company_name,stage:r.stage,status_code:st.code,status:st.label,risk_rating:r.risk_rating,decision:r.decision,next_review:day(r.next_review),submitted_at:r.submitted_at,screening_status:r.screening_status,pep_type:r.pep_type,attention:attentionReasons({profile:r,selections:mine,attentionOf}),kyc_verified:!!r.kyc_verified,edd_approved:!!r.edd_approved};
   });
   const soon=new Date(Date.now()+3*3600000+30*86400000).toISOString().slice(0,10);
-  const by=(f:any)=>items.filter(f).sort((x:any,y:any)=>queueOrder(x)-queueOrder(y));
+  // MLROs named on the client team get that client's work first. It is routing only: any other MLRO or Partner can still decide.
+  const named=await tx`select m.client_id,m.staff_id,erp_private.aml_staff_name(m.staff_id) as name from erp_private.client_team_members m where m.role='MLRO' and m.ended_at is null order by 3,2`;
+  const namedBy=(cid:string)=>named.filter((n:any)=>n.client_id===cid);
+  const tag=(i:any)=>({...i,mlros:namedBy(i.client_id).map((n:any)=>n.name),mine:namedBy(i.client_id).some((n:any)=>n.staff_id===a.staff_id)});
+  const mineFirst=(x:any,y:any)=>(x.mine===y.mine?0:x.mine?-1:1);
+  const by=(f:any)=>items.filter(f).map(tag).sort((x:any,y:any)=>mineFirst(x,y)||queueOrder(x)-queueOrder(y));
   const queue:any={
    waiting:by((i:any)=>i.status_code==='MLRO_REVIEW'),
    edd:by((i:any)=>i.status_code==='EDD_REQUIRED'),
@@ -98,14 +103,14 @@ export async function amlAction(tx:any,a:any,p:any):Promise<any>{
    review_due:by((i:any)=>i.stage==='Decided'&&['Accept','Accept with conditions'].includes(i.decision)&&i.next_review&&i.next_review<=soon),
    high_risk:by((i:any)=>i.stage==='Decided'&&i.risk_rating==='High'&&['Accept','Accept with conditions'].includes(i.decision)),
   };
-  const flags=(await openFlags(tx,null)).filter((f:any)=>!f.answered);
+  const flags=(await openFlags(tx,null)).filter((f:any)=>!f.answered).map(tag).sort(mineFirst);
   queue.services=flags;
   const none=(await tx`select count(*)::int n from erp_private.clients c where c.deleted_at is null and not exists(select 1 from erp_private.client_aml_profiles p where p.client_id=c.client_id)`)[0].n;
   const policy=(await tx`select gate_enforced,gate_changed_at,gate_reason from erp_private.aml_policy`)[0];
   const approvals=await tx`select ap.approved_at,ap.reference,ap.note,erp_private.aml_staff_name(ap.approved_by) as approved_by_name from erp_private.aml_policy_approvals ap order by ap.approved_at desc limit 5`;
   const holders=await tx`select full_name,expires_on from erp_private.aml_mlro_holders()`;
   const undecided=(await tx`select count(*)::int n from erp_private.services s where s.is_active and not exists(select 1 from erp_private.aml_service_rules r where r.service_code=s.service_code and r.ended_at is null)`)[0].n;
-  return {queue,counts:{profiles:items.length,without_profile:none,services_undecided:undecided,services_flagged:flags.length,starter_values:lookups.filter((l:any)=>l.status==='Starter').length},lookups,policy:{...policy,gate_changed_at:policy.gate_changed_at||null},approvals,mlro_holders:holders.map((h:any)=>({full_name:h.full_name,expires_on:day(h.expires_on)})),
+  return {queue,counts:{my_clients:new Set(named.filter((n:any)=>n.staff_id===a.staff_id).map((n:any)=>n.client_id)).size,profiles:items.length,without_profile:none,services_undecided:undecided,services_flagged:flags.length,starter_values:lookups.filter((l:any)=>l.status==='Starter').length},lookups,policy:{...policy,gate_changed_at:policy.gate_changed_at||null},approvals,mlro_holders:holders.map((h:any)=>({full_name:h.full_name,expires_on:day(h.expires_on)})),
    can_approve_policy:a.category_code==='PARTNER',categories:CATEGORY_LABELS,
    note:'You maintain the lists, rate the risk and decide. An Engagement Partner records the formal approval of the lists and switches the engagement gate on. Starter values stay marked until you confirm them.'};
  }
@@ -181,7 +186,8 @@ export async function amlAction(tx:any,a:any,p:any):Promise<any>{
   const codes=await tx`select distinct pr.service_code,v.service_name from erp_private.projects pr join erp_private.services v on v.service_code=pr.service_code where pr.client_id=${cid} and pr.status<>'Archived' and pr.deleted_at is null order by v.service_name`;
   const services:any[]=[];for(const c of codes)services.push({service_code:c.service_code,service_name:c.service_name,...(await amlServiceScope(tx,cid,c.service_code)).scope});
   const flags=await openFlags(tx,cid);
-  return {client,profile:prof&&{...prof,next_review:day(prof.next_review)},gate_enforced:!!gate?.gate_enforced,services,flags,mlro:await isMlro(tx),
+  const mlros=(await tx`select erp_private.aml_staff_name(m.staff_id) as name from erp_private.client_team_members m where m.client_id=${cid} and m.role='MLRO' and m.ended_at is null order by 1`).map((r:any)=>r.name);
+  return {client,mlros,profile:prof&&{...prof,next_review:day(prof.next_review)},gate_enforced:!!gate?.gate_enforced,services,flags,mlro:await isMlro(tx),
    note:'This is a summary. The MLRO decides which services need POCAMLA questions. An undecided service is not treated as exempt.'};
  }
  if(p.action==='aml_profile_read')return await build(tx,a,cid);
