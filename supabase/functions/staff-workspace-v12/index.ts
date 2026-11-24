@@ -806,6 +806,7 @@ Deno.serve(async(req:Request)=>{
   headers['Access-Control-Allow-Origin']=origin;
   headers['Access-Control-Allow-Headers']='authorization,content-type,apikey,x-erp-activity-age-ms,x-erp-upload-kind,x-region';
   headers['Access-Control-Allow-Methods']='POST,OPTIONS';
+  headers['Access-Control-Max-Age']='7200';
  }
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
  if(req.method!=='POST')return new Response(JSON.stringify({error:'Use POST.'}),{status:405,headers});
