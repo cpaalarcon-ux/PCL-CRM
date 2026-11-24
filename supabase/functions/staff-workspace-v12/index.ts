@@ -107,6 +107,7 @@ import {clientFilingPrefix} from './engagement-setup-rules.mjs';
 import {amlReportAction} from './aml-report-actions.ts';
 import {clientScopeAction} from './client-scope-actions.ts';
 import {clientOnboardingAllocationAction} from './client-onboarding-allocation-actions.ts';
+import {clientTeamAction} from './client-team-actions.ts';
 import {clientUnderstandingAction} from './client-understanding-actions.ts';
 import {areaForStaffAction,defaultStaffAreas,effectiveStaffAreas,filterWorkspaceAccess,scopeWorkspaceRecords,staffAreaCanUse} from './staff-access-control.mjs';
 import {rightsForRequest,actionRightLabel,defaultActionRights,isActionRight,filterActionWorkspace,canUseAction} from './staff-action-rights.mjs';
@@ -616,7 +617,7 @@ async function action(id:any,p:any){
   const deleteRedo=await deleteRedoAction(tx,a,p);if(deleteRedo!==undefined)return deleteRedo;
   const clientMaster=await clientMasterAction(tx,a,p);if(clientMaster!==undefined)return clientMaster;
   const aml=await amlAction(tx,a,p);if(aml!==undefined)return aml;
-  const clientScope=await clientScopeAction(tx,a,p);if(clientScope!==undefined)return clientScope;const onboardingAlloc=await clientOnboardingAllocationAction(tx,a,p);if(onboardingAlloc!==undefined)return onboardingAlloc;const amlReport=await amlReportAction(tx,a,p);if(amlReport!==undefined)return amlReport;const understanding=await clientUnderstandingAction(tx,a,p,admin.storage.from(BUCKET),bucket);if(understanding!==undefined)return understanding;
+  const clientScope=await clientScopeAction(tx,a,p);if(clientScope!==undefined)return clientScope;const onboardingAlloc=await clientOnboardingAllocationAction(tx,a,p);if(onboardingAlloc!==undefined)return onboardingAlloc;const clientTeam=await clientTeamAction(tx,a,p);if(clientTeam!==undefined)return clientTeam;const amlReport=await amlReportAction(tx,a,p);if(amlReport!==undefined)return amlReport;const understanding=await clientUnderstandingAction(tx,a,p,admin.storage.from(BUCKET),bucket);if(understanding!==undefined)return understanding;
   const setupReview=await clientSetupReviewAction(tx,a,p);if(setupReview!==undefined)return setupReview;
   const clientChoices=await clientChoicesAction(tx,a,p);if(clientChoices!==undefined)return clientChoices;
   const bulkSetup=await bulkSetupAction(tx,a,p);if(bulkSetup!==undefined)return bulkSetup;
