@@ -11,7 +11,7 @@ export function addClientButton(data){
  if(rights?.includes('client.details')||!canUseAction(rights,{action:'client_save'},'clients'))return '';
  if(['MANAGER','PARTNER'].includes(role))return '<button type="button" class="primary" data-new="client">+ Add client</button>';
  if(!canPropose(role)||!data.firms?.length||(role==='ASSISTANT'&&!assistantEntryOpen(data)))return '';
- return '<button type="button" class="primary" data-propose="new-client">+ Add client</button>';
+ return '<button type="button" class="primary" data-propose="new-client">+ Add client</button><button type="button" class="secondary" data-propose="client-batch">Propose clients from Excel</button>';
 }
 export const PROPOSAL_HELP='Your entry is saved as a proposal and nothing on the client record changes yet. Every proposal is checked by a Supervisor, Manager or Partner other than the person who proposed it; a Manager or Partner who neither prepared nor checked it then approves it. Each step needs a note of at least 10 characters.';
 export const KYC_HELP='The file is stored where only Managers and Partners can open it. It becomes KYC evidence only after a Supervisor, Manager or Partner checks it and a different Manager or Partner approves it. The client must already have a saved KYC profile.';
@@ -27,6 +27,22 @@ export function proposalActions(p,me){
  return out;
 }
 const LABEL={check:'Check',approve:'Approve and apply',return:'Return',withdraw:'Withdraw'};
+// One batch is the set of proposals created from one workbook. The buttons run the same single-proposal check or approval for each, so no rule is skipped.
+export function batchGroups(list,me){
+ const lead=['PARTNER','MANAGER'].includes(me.category_code),checker=['SUPERVISOR','MANAGER','PARTNER'].includes(me.category_code),map=new Map();
+ for(const p of list){const ref=p.payload?.batch_ref;if(!ref||p.action!=='client_save'||p.client_id||!OPEN.includes(p.status))continue;map.set(ref,[...(map.get(ref)||[]),p]);}
+ return [...map].map(([ref,items])=>({ref,total:items.length,
+  check:checker?items.filter(p=>p.status==='Proposed'&&p.proposed_by!==me.staff_id).length:0,
+  approve:lead?items.filter(p=>p.status==='Checked'&&p.proposed_by!==me.staff_id&&p.checked_by!==me.staff_id).length:0}));
+}
+export function batchBar(list,me,esc=v=>String(v??'')){
+ const groups=batchGroups(list,me).filter(g=>g.check||g.approve);if(!groups.length)return '';
+ return '<div class="info" id="clientBatches">'+groups.map(g=>`<p><b>Batch ${esc(g.ref)}</b> · ${g.total} client${g.total===1?'':'s'} waiting ${g.check?`<button type="button" class="secondary" data-batch="check" data-ref="${esc(g.ref)}">Check all (${g.check})</button> `:''}${g.approve?`<button type="button" class="primary" data-batch="approve" data-ref="${esc(g.ref)}">Approve all (${g.approve})</button>`:''}</p>`).join('')+'</div>';
+}
+export function batchIssuesHtml(out,esc=v=>String(v??'')){
+ const rows=(items,limit)=>`<table><thead><tr><th>Row</th><th>Column</th><th>Problem</th><th>Suggestion</th></tr></thead><tbody>${items.slice(0,limit).map(x=>`<tr><td>${esc(x.row)}</td><td>${esc(x.column)}</td><td>${esc(x.issue)}</td><td>${esc(x.suggestion||'')}</td></tr>`).join('')}</tbody></table>${items.length>limit?`<p class="muted">Showing the first ${limit} of ${items.length}.</p>`:''}`;
+ return `<p class="missing">${esc(out.message||'Nothing was proposed.')}</p>${rows(out.errors||[],100)}`;
+}
 export function proposalsCard(data,esc=v=>String(v??''),nameOf=()=>''){
  const list=data.proposals||[];if(!list.length||!data.me)return '';
  const rows=list.map(p=>{
@@ -37,7 +53,7 @@ export function proposalsCard(data,esc=v=>String(v??''),nameOf=()=>''){
   return `<tr><td><b>${esc(p.summary)}</b>${p.company_name?`<small class="muted">${esc(p.company_name)}</small>`:''}${note}</td><td><span class="badge ${p.status==='Approved'?'good':p.status==='Returned'||p.status==='Withdrawn'?'warn':'info'}">${esc(p.status)}</span></td><td><small>${trail}</small></td><td class="actions">${acts}${file}</td></tr>`;
  }).join('');
  const waiting=list.filter(p=>OPEN.includes(p.status)).length;
- return `<div class="card" id="proposalsCard"><div class="section-head"><h2>Proposals <span class="badge ${waiting?'warn':'good'}">${waiting} waiting</span></h2></div><p class="muted">${esc(PROPOSAL_HELP)}</p><table><thead><tr><th>Change</th><th>Status</th><th>Who</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+ return `<div class="card" id="proposalsCard"><div class="section-head"><h2>Proposals <span class="badge ${waiting?'warn':'good'}">${waiting} waiting</span></h2></div><p class="muted">${esc(PROPOSAL_HELP)}</p>${batchBar(list,data.me,esc)}<table><thead><tr><th>Change</th><th>Status</th><th>Who</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 export function proposeButtons(clientId,role,suiteButton,esc=v=>String(v??'')){
  if(!canPropose(role))return '';
@@ -64,6 +80,33 @@ export function bindProposals(ctx){
     const {firm_id,...fields}=Object.fromEntries(f);
     return request({action:'client_save',...fields,firm_ids:[firm_id]});
    },undefined,{successMessage:'New client proposal sent for review. Follow its progress under Proposals.'});
+   return;
+  }
+  if(e.target.closest('[data-propose="client-batch"]')){
+   const workspace=data(),firms=workspace.firms||[];
+   if(!canPropose(workspace.me?.category_code)||!firms.length)return;
+   const firmOptions=options(firms.map(f=>[f.firm_id,f.firm_code+' · '+f.legal_name]),firms.length===1?firms[0].firm_id:ctx.currentFirm());
+   modal('Propose clients from an Excel workbook',form(
+    '<p class="info full">Use the PCL client workbook. The “Client Import” sheet lists the clients; “Client Details”, “Industry &amp; Activities” and “Contacts” are matched by KRA PIN. Every row is checked first. If one row has a problem, nothing is proposed. Each client then waits for an independent check and approval. A client that is already on file is held back at approval and is never overwritten.</p>'+
+    `<label>Handling firm *<select name="firm_id" required>${firmOptions}</select></label>`+
+    field('file','Workbook (.xlsx) *','','file','required accept=".xlsx"'),
+    'Check and propose'
+   ),async f=>{
+    const file=f.get('file');if(!file||!file.name)throw Error('Choose the workbook.');
+    const up=new FormData();up.set('firm_id',f.get('firm_id'));up.set('file',file);
+    const out=await request(up,{file:true,uploadKind:'client_batch'});
+    if(out.status==='VALIDATION_FAILED'){setTimeout(()=>modal('Nothing was proposed',batchIssuesHtml(out,esc)),20);return;}
+    setTimeout(()=>modal('Proposals sent for review',`<p class="info">${esc(out.message)}</p><p>Proposed: <b>${out.proposed.length}</b> · Already clients (left unchanged): <b>${out.skipped_existing.length}</b>${out.notices?.length?` · Values tidied or not recorded: <b>${out.notices.length}</b>`:''}</p>${out.skipped_existing.length?`<ul>${out.skipped_existing.map(x=>`<li>Row ${esc(x.row)} · ${esc(x.name)}</li>`).join('')}</ul>`:''}`),20);
+   },undefined,{successMessage:'Workbook checked. Proposals are waiting under Proposals.'});
+   return;
+  }
+  const bb=e.target.closest('[data-batch]');
+  if(bb){
+   const kind=bb.dataset.batch,ref=bb.dataset.ref,title=kind==='check'?'Check every proposal in this batch':'Approve every proposal in this batch';
+   modal(title,form(`<p class="info full">Batch ${esc(ref)}. This runs the same check or approval that one proposal would get, one client at a time, under your name. A client you are not allowed to handle is skipped and listed.</p>`+field('note',kind==='check'?'Check conclusion * (at least 10 characters)':'Approval note * (at least 10 characters)','','text','required minlength="10" maxlength="500"'),title),async f=>{
+    const out=await request({action:kind==='check'?'client_batch_check':'client_batch_approve',batch_ref:ref,note:f.get('note')});
+    setTimeout(()=>modal('Batch result',`<p>${kind==='check'?'Checked':'Approved'}: <b>${out.done.length}</b> · Held back: <b>${out.held.length}</b></p>${out.held.length?`<ul>${out.held.map(x=>`<li>${esc(x.name)}: ${esc(x.reason)}</li>`).join('')}</ul>`:''}${kind==='approve'&&out.done.some(x=>x.activity)?`<p class="muted">Business activities are prepared for a different Manager or Partner to apply: ${out.done.filter(x=>x.activity==='submitted').length} ready, ${out.done.filter(x=>x.activity&&x.activity!=='submitted'&&x.activity!=='none').length} to do by hand.</p>`:''}`),20);
+   },undefined,{successMessage:kind==='check'?'Batch checked.':'Batch approved.'});
    return;
   }
   const pb=e.target.closest('[data-propose="client"]');
