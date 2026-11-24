@@ -4,24 +4,44 @@ import {fileType,fail,text,uuid,choice,staffInput,login} from './validation.mjs'
 import {cleanCell} from './suite-rules.mjs';
 import {one,leader} from './suite-actions.ts';
 import {importFacts,FACT_IMPORT_KEYS} from './client-master-import.ts';
+import {checkClientRows,normaliseDate,normaliseYearEnd} from './client-import-check.mjs';
+import {sectorForActivity} from './activity-sectors.ts';
 const fields:any={Clients:['company_name','kra_pin','primary_sector','branch_location','client_category',...FACT_IMPORT_KEYS],Staff:['staff_identifier','login_id','full_name','category_code','employment_type','billing_status','branch_location','contract_start_date','contract_end_date']};
+
+// Reads the rows of the chosen sheet into named values for the pre-check. Mapped columns use the mapping; the activity columns are found by their heading.
+const CHECK_EXTRA=['activity_code','pack_code'];
+async function precheck(tx:any,sheet:any,header:number,first:number,last:number,map:any){
+ const heads=Array.from({length:sheet.columnCount},(_,i)=>cleanCell(sheet.getRow(header).getCell(i+1).value).toLowerCase().replaceAll(' ','_'));
+ const cols:any={...map};for(const k of CHECK_EXTRA){const i=heads.indexOf(k);if(i>=0)cols[k]=i+1;}
+ const rows:any[]=[];
+ for(let r=first;r<=Math.min(last,sheet.rowCount,first+1999);r++){
+  const raw=Array.from({length:sheet.columnCount},(_,i)=>sheet.getRow(r).getCell(i+1).value);if(raw.every(v=>v==null||String(v).trim()===''))continue;
+  const values:any={};for(const [k,c] of Object.entries(cols)){const v=raw[Number(c)-1];values[k]=v&&typeof v==='object'&&'formula' in v?'':cleanCell(v);}
+  rows.push({row:r,values});
+ }
+ const sectors=(await tx`select name from erp_private.sectors where deleted_at is null order by name`).map((x:any)=>x.name);
+ return checkClientRows(rows,{sectors,activitySectors:sectorForActivity});
+}
 export async function masterImport(tx:any,a:any,f:FormData){
  leader(a);const dataset=choice(f.get('dataset'),['Clients','Staff']),file=f.get('file');if(!(file instanceof File))fail(400,'Choose an Excel workbook.');
  if(dataset==='Clients'&&(await tx`select erp_private.uat_scope_enabled() enabled`)[0]?.enabled)fail(400,'Client master imports are paused in the isolated UAT workspace. Add approved fictional test clients from Clients → Add client; use names beginning “UAT Fictional”.');
  const bytes=new Uint8Array(await file.arrayBuffer());if(fileType(file.name,bytes)!=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')fail(400,'Use an XLSX workbook.');checkWorkbookZip(bytes);
  const {sheet,sheets}=await readWorkbookSheet(bytes,f.get('sheet_name')||null),header=Number(f.get('header_row')||1);if(!Number.isInteger(header)||header<1||header>200)fail(400,'Choose a header row from 1 to 200.');
  const row=(n:number)=>Array.from({length:sheet.columnCount},(_,i)=>sheet.getRow(n).getCell(i+1).value);
- if(f.get('action')==='master_preview')return {dataset,sheets,sheet_name:sheet.name,header_row:header,fields:fields[dataset],headers:row(header).map(cleanCell),rows:sheet.rowCount,preview:Array.from({length:Math.min(8,Math.max(0,sheet.rowCount-header))},(_,i)=>({row:header+i+1,values:row(header+i+1).map(cleanCell)}))};
+ if(f.get('action')==='master_preview')return {dataset,sheets,sheet_name:sheet.name,header_row:header,fields:fields[dataset],headers:row(header).map(cleanCell),rows:sheet.rowCount,preview:Array.from({length:Math.min(8,Math.max(0,sheet.rowCount-header))},(_,i)=>({row:header+i+1,values:row(header+i+1).map(cleanCell)})),issues:dataset==='Clients'?await precheck(tx,sheet,header,header+1,sheet.rowCount,Object.fromEntries(fields.Clients.map((k:string)=>[k,row(header).map(cleanCell).findIndex((h:string)=>h.toLowerCase().replaceAll(' ','_')===k)+1]).filter(([,c]:any)=>c>0))):null};
  const firm=uuid(f.get('firm_id'));one(await tx`select firm_id from erp_private.firms where firm_id=${firm}`);
  let map:any;try{map=JSON.parse(String(f.get('column_map')));}catch{fail(400,'Map the columns first.');}
  for(const [k,v] of Object.entries(map)){if(!fields[dataset].includes(k)||!Number.isInteger(v)||Number(v)<1||Number(v)>sheet.columnCount)fail(400,'Invalid column mapping.');}
  if(!map[dataset==='Clients'?'company_name':'full_name']||dataset==='Staff'&&(!map.staff_identifier||!map.login_id))fail(400,'Map the required name and staff/login identifiers.');
  const first=Number(f.get('first_row')||header+1),last=Number(f.get('last_row')||sheet.rowCount);if(!Number.isInteger(first)||!Number.isInteger(last)||first<=header||last<first||last>sheet.rowCount||last-first>1999)fail(400,'Select up to 2,000 data rows.');
+ // Pre-check (a Manager or Partner chooses it on the screen): any error stops the import before a single row is saved.
+ if(dataset==='Clients'&&f.get('precheck')==='1'){const chk=await precheck(tx,sheet,header,first,last,map);if(chk.errors.length)return {status:'VALIDATION_FAILED',...chk};}
  let source=0,added=0,duplicates=0,factsRecorded=0,factsKept=0;const rejected:any[]=[];
  for(let i=first;i<=last;i++){
   const raw=row(i);if(raw.every(v=>v==null||String(v).trim()===''))continue;source++;
   try{await tx.savepoint(async(rtx:any)=>{
    const v:any=Object.fromEntries(Object.entries(map).map(([key,col])=>[key,cleanCell(raw[Number(col)-1])]));
+   if(dataset==='Clients'){if(v.incorporation_date)v.incorporation_date=normaliseDate(v.incorporation_date)||v.incorporation_date;if(v.year_end)v.year_end=normaliseYearEnd(v.year_end)||v.year_end;}
    if(dataset==='Clients'){
     const name=text(v.company_name,200),pin=v.kra_pin?text(v.kra_pin,11).toUpperCase():null;if(pin&&!/^[A-Z][0-9]{9}[A-Z]$/.test(pin))fail(400,'Invalid KRA PIN.');
     const existing=await rtx`select client_id,company_name,kra_pin from erp_private.clients where deleted_at is null and ((${pin}::text is not null and kra_pin=${pin}) or lower(btrim(company_name))=lower(btrim(${name})))`;
