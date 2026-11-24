@@ -93,7 +93,7 @@
     if (retryButton) retryButton.hidden = true;
     notice('Opening your secure workspace…');
     try {
-      await import('./staff-pilot.mjs?v=20261114-setupguide-v1&rev=20261119-2906&reset=20261122-v1&vault=20261122-v1&create-client=20261122-v1&review=20261122-v1&bulk=20261122-v1&starter=20261210-v1&screen=20261211-v1&routing=20261124-mumbai-v1');
+      await import('./staff-pilot.mjs?v=20261114-setupguide-v1&rev=20261119-2906&swap=20261124-v1&reset=20261122-v1&vault=20261122-v1&create-client=20261122-v1&review=20261122-v1&bulk=20261122-v1&starter=20261210-v1&screen=20261211-v1&routing=20261124-mumbai-v1');
     } catch {
       workspaceLoading = false;
       if (readSavedSession()) {

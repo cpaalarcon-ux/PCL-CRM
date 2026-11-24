@@ -158,7 +158,7 @@ test('every record section opts in and the page applies the views after drawing 
   const read = f => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
   const pilot = read('staff-pilot.mjs');
   assert.match(pilot, /from '\.\/staff-items-view\.mjs\?v=/);
-  assert.match(pilot, /\[view\]\)\(\);applyItemViews\(\$\('#content'\),\{view,storage:globalThis\.localStorage\}\);v6\.bind\(\);/);
+  assert.match(pilot, /\[view\]\)\(\),view\);applyItemViews\(\$\('#content'\),\{view,storage:globalThis\.localStorage\}\);v6\.bind\(\);/);
   assert.match(pilot, /bindItemViews\(\{storage:globalThis\.localStorage,getView:\(\)=>view,render\}\)/);
   for (const [file, marker] of [['staff-pilot.mjs', 'data-views="ERP role"'], ['staff-pilot.mjs', 'data-views="Category"'], ['staff-leads.mjs', 'data-views="Stage / qualification"'], ['staff-workspace-v6.mjs', 'data-views="Status"'], ['staff-suite.mjs', 'data-views="${esc(group)}"']]) assert.ok(read(file).includes(marker), file + ' ' + marker);
   const suite = read('staff-suite.mjs');
