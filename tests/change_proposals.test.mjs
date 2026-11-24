@@ -49,6 +49,13 @@ test('proposals: the right people check and approve, nobody approves their own w
  await act('MANAGER',{action:'client_proposal_check',proposal_id:a2.proposal_id,note:'Contact details match the ID copy'});
  await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:a2.proposal_id,note:'Approved by the checker'}),/another Manager or Partner must approve/);
  await act('MANAGER2',{action:'client_proposal_approve',proposal_id:a2.proposal_id,note:'Fictional approval by Manager 2'},async q=>({ok:true,saw:q.action}));assert.equal((await row(a2.proposal_id)).decided_by,actors.MANAGER2.staff_id);
+ // 5b. A change proposed on an existing client is applied to the live record: the version number and any field the proposer left out come from the client as it is now.
+ await tx`update erp_private.clients set branch_location='Bungoma' where client_id=${C}`;
+ const liveRev=(await tx`select revision from erp_private.clients where client_id=${C}`)[0].revision;
+ const a2b=await propose('ASSISTANT',{action:'client_save',client_id:C,company_name:'UAT Fictional New Name Ltd',firm_ids:[F],proposal_reason:'Live record test'});
+ await act('MANAGER',{action:'client_proposal_check',proposal_id:a2b.proposal_id,note:'Checked against the certificate'});
+ let seen=null;await act('MANAGER2',{action:'client_proposal_approve',proposal_id:a2b.proposal_id,note:'Approved on the live record'},async q=>{seen=q;return {ok:true};});
+ assert.equal(String(seen.revision),String(liveRev));assert.equal(seen.branch_location,'Bungoma');
  // 6. A Supervisor's proposal is checked by someone else too, then approved by a Manager or Partner who neither proposed nor checked it.
  const s1=await propose('SUPERVISOR',{action:'owner_add',client_id:C,full_name:'Fictional Owner',identity_reference:'ID-FICT-1',ownership_percentage:40});
  await assert.rejects(()=>act('MANAGER',{action:'client_proposal_approve',proposal_id:s1.proposal_id,note:'Approving without any check'}),/must check this proposal first/);
