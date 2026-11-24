@@ -33,6 +33,27 @@ export function createClientTeamUI(ctx){
   }).join('');
   return `<section class="team-role"><h4>Workstream owners</h4><p class="muted">One person can handle sales and purchases, another bank statements, another payroll. Scheduled tasks for that work are given to the owner.</p><div class="scroll"><table><thead><tr><th>Workstream</th><th>Owner</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
  }
+
+ // Hand over open tasks. Only tasks not started yet move. The screen shows the count first; nothing moves until the Manager confirms with a reason.
+ function handoverPart(r){
+  if(!r.can_edit)return '';
+  const holders=r.holders||[],people=new Map();
+  for(const h of holders)people.set(h.staff_id,{name:h.staff_name,n:(people.get(h.staff_id)?.n||0)+h.tasks});
+  if(!people.size)return '<section class="team-role"><h4>Hand over open tasks</h4><p class="muted">No tasks waiting to start. Tasks that are already in progress or in review are never moved from here.</p></section>';
+  const from=[...people.entries()].map(([id,x])=>`<option value="${esc(id)}">${esc(x.name)} · ${esc(x.n)} not started</option>`).join('');
+  const checkers=new Set(r.members.filter(m=>CHECKER.includes(m.role)).map(m=>m.staff_id));
+  const to=r.candidates.filter(c=>!checkers.has(c.staff_id)).map(c=>`<option value="${esc(c.staff_id)}">${esc(c.full_name)} · ${esc(CAT[c.category_code]||c.category_code)}</option>`).join('');
+  const ws=r.workstreams.map(w=>`<option value="${esc(w.code)}">${esc(w.label)}</option>`).join('');
+  return `<section class="team-role"><h4>Hand over open tasks</h4><p class="muted">Use this when someone leaves the team, goes on leave, or a new owner should take work that has already been created. Only tasks that have not started move. The count is shown first.</p>
+   <div class="grid"><label>From<select name="hoFrom"><option value="">Choose a person…</option>${from}</select></label>
+   <label>Workstream<select name="hoWs"><option value="">Every workstream</option>${ws}</select></label>
+   <label>To<select name="hoTo"><option value="">Whoever is free (fewest open tasks)</option>${to}</select></label></div>
+   <label class="full">Reason (at least 10 characters)<input name="hoReason" maxlength="500" placeholder="For example: on leave from 1 to 14 December"></label>
+   <div class="actions"><button type="button" data-team="ho-preview">Show what will move</button><button type="button" class="primary" data-team="ho-apply" disabled>Hand over</button></div>
+   <p id="hoResult" class="info" role="status"></p></section>`;
+ }
+ const hoArgs=b=>({from_staff_id:b.querySelector('[name="hoFrom"]')?.value||undefined,workstream:b.querySelector('[name="hoWs"]')?.value||undefined,to_staff_id:b.querySelector('[name="hoTo"]')?.value||undefined,reason:b.querySelector('[name="hoReason"]')?.value||''});
+ const hoText=x=>x.moving?`${x.moving} task${x.moving===1?'':'s'} ${x.preview?'will move':'moved'}: ${x.groups.map(g=>`${g.staff_name} ${g.tasks}`).join(', ')}.`+(x.staying?` ${x.staying} will stay where ${x.staying===1?'it is':'they are'}. ${x.stay_reason||''}`:''):`Nothing to move.${x.staying?` ${x.staying} task${x.staying===1?'':'s'} stay because no available team owner could take ${x.staying===1?'it':'them'}.`:''}`;
  function paint(message=''){
   const r=st.read;if(!r)return;
   const project=r.projects.find(p=>p.project_id===st.projectId);
@@ -41,7 +62,7 @@ export function createClientTeamUI(ctx){
   const mlro=st.projectId?`<section class="team-role"><h4>MLROs</h4><ul>${r.members.filter(m=>m.role==='MLRO').map(m=>memberRow(m,false)).join('')||'<li class="muted">None named. Any MLRO or Partner can decide.</li>'}</ul><p class="muted">Named for the whole client. Choose “The whole client” above to change them.</p></section>`
    :rolePart(r,'MLRO','MLROs','AML flags and profile reviews for this client go to these MLROs first. Any other MLRO or Partner can still decide.');
   const reason=r.can_edit?`<label class="full">Reason when ending someone (at least 5 characters)<input name="teamReason" maxlength="500" placeholder="For example: moved to another client"></label>`:'<p class="info full">Only a Manager or Partner can change the team.</p>';
-  const html=`<div class="team-ui"><h3>${esc(r.client.company_name)}</h3>${scopeSel}${intro}<div class="notice" role="status" id="teamNotice">${esc(message)}</div>${rolePart(r,'PREPARER','Preparers','Do the day-to-day work. A preparer who is an Assistant or Supervisor gets access to this client.')}${rolePart(r,'REVIEWER','Reviewers','A Partner, Manager or Supervisor who checks the work before it goes on.')}${mlro}${workstreamPart(r)}${reason}</div>`;
+  const html=`<div class="team-ui"><h3>${esc(r.client.company_name)}</h3>${scopeSel}${intro}<div class="notice" role="status" id="teamNotice">${esc(message)}</div>${rolePart(r,'PREPARER','Preparers','Do the day-to-day work. A preparer who is an Assistant or Supervisor gets access to this client.')}${rolePart(r,'REVIEWER','Reviewers','A Partner, Manager or Supervisor who checks the work before it goes on.')}${mlro}${workstreamPart(r)}${handoverPart(r)}${reason}</div>`;
   modal(st.projectId?'Project team':'Client team',html,null,null,{refreshWorkspace:false});
   wire();
  }
@@ -60,11 +81,21 @@ export function createClientTeamUI(ctx){
     const r=await request({action:'client_team_add',client_id:st.clientId,project_id:st.projectId||undefined,staff_id:sel.value,role:el.dataset.role,workstream:el.dataset.workstream||undefined});
     await load();paint(`${r.staff_name} added.`);
    });
+   if(a==='ho-preview')return act(async()=>{
+    const args=hoArgs(b);if(!args.from_staff_id){document.querySelector('#hoResult').textContent='Choose whose tasks to hand over.';return;}
+    const x=await request({action:'client_team_handover',client_id:st.clientId,preview:true,...args});
+    document.querySelector('#hoResult').textContent=hoText(x);const go=b.querySelector('[data-team="ho-apply"]');if(go)go.disabled=!x.moving;
+   });
+   if(a==='ho-apply')return act(async()=>{
+    const args=hoArgs(b);if(args.reason.trim().length<10){const box=$('#teamNotice');if(box)box.textContent='Say why the tasks are moving (at least 10 characters).';return;}
+    const x=await request({action:'client_team_handover',client_id:st.clientId,preview:false,...args});
+    await load();paint(hoText(x));
+   });
    if(a==='end')return act(async()=>{
     const reason=b.querySelector('[name="teamReason"]')?.value||'';
     if(reason.trim().length<5){const box=$('#teamNotice');if(box)box.textContent='Say why this person is leaving the team (at least 5 characters).';return;}
-    await request({action:'client_team_end',client_id:st.clientId,team_member_id:el.dataset.id,reason});
-    await load();paint('Removed from the team.');
+    const ended=await request({action:'client_team_end',client_id:st.clientId,team_member_id:el.dataset.id,reason});
+    await load();const n=ended?.open_tasks||0;paint('Removed from the team.'+(n?` ${n} task${n===1?'':'s'} not started ${n===1?'is':'are'} still with this person. Use Hand over open tasks below to move ${n===1?'it':'them'}.`:''));
    });
   };
  }
