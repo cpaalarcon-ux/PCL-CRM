@@ -25,6 +25,7 @@ import {createHolidaysUI} from './staff-holidays.mjs?v=20261109-rev-v1';
 import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
+import {staffReadRequestUrl} from './staff-read-routing.mjs?v=20261124-mumbai-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
 import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1&team=20261212-v2';
 import {createMessenger} from './staff-messenger.mjs?v=20261119-workspace';
@@ -61,6 +62,12 @@ sessionStorage.removeItem('pcl-staff-session-v2');
 let drafts=null; // the form-draft helper, created further down once the screens it reopens exist
 const session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut});
 const isLeader=()=>data&&['PARTNER','MANAGER'].includes(data.me.category_code);
+const readRouteKey='pcl-staff-read-route';
+const defaultReadRoute=()=>isLeader()?'mumbai':'automatic';
+function readRoutePreference(){
+ const route=localStorage.getItem(readRouteKey);
+ return route==='automatic'||route==='mumbai'?route:'';
+}
 const canArea=area=>!!data&&(Array.isArray(data.me.allowed_areas)?data.me.allowed_areas:effectiveStaffAreas(data.me.category_code,data.me.restricted_areas||[])).includes(area)&&hasVisibleActionGroup(data.me.category_code,area,data.me.restricted_rights);
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const scheduleEndFor=start=>{const d=new Date(`${start}T00:00:00Z`);d.setUTCFullYear(d.getUTCFullYear()+5);d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);};
@@ -73,8 +80,9 @@ function signedOut(message=''){session.end(message);}
 function showSignedOut(message=''){drafts?.detach();drafts?.clearAsides();timingRows.length=0;timingTargets.clear();data=null;navFlags={forensic:false,mlro:false};forensicMenuAt=0;mlroMenuAt=0;navBadges={};navOpenFor='';navBadgeAt=0;cardFlags=new Map();cardWip=new Map();workReady=new Map();workReadyLoaded=false;workReadyFailed=false;cardFacts.key='';cardFacts.at=0;document.body.classList.remove('nav-open');presence?.clear();if(typeof bell!=='undefined')bell.paint();if(typeof holidaysUI!=='undefined')holidaysUI.reset();if(typeof suite!=='undefined')suite.chat?.clear();if(typeof messenger!=='undefined')messenger.stop();document.body.classList.remove('workspace-active');$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));}
 async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},timeoutMs=0}={}){
  const headers={apikey:KEY,...extra};if(uploadKind)headers['x-erp-upload-kind']=uploadKind;if(!file)headers['Content-Type']='application/json';
+ const api=!file&&!blob&&data&&extra.Authorization?staffReadRequestUrl(API,p?.action,readRoutePreference()||defaultReadRoute()):API;
  const controller=timeoutMs?new AbortController():null;let timer,res;
- try{if(controller)timer=setTimeout(()=>controller.abort(),timeoutMs);res=await fetch(API,{method:'POST',headers,body:file?p:JSON.stringify(p),cache:'no-store',referrerPolicy:'no-referrer',signal:controller?.signal});}
+ try{if(controller)timer=setTimeout(()=>controller.abort(),timeoutMs);res=await fetch(api,{method:'POST',headers,body:file?p:JSON.stringify(p),cache:'no-store',referrerPolicy:'no-referrer',signal:controller?.signal});}
  catch(error){if(controller&&error?.name==='AbortError')throw Error('The sign-in service did not respond in time. Check your connection and try again.');if(controller&&error instanceof TypeError)throw Error('Could not reach the sign-in service. Check your connection and reload the page.');throw error;}
  finally{if(timer)clearTimeout(timer);}
  if(!res.ok){const e=await res.json().catch(()=>({}));throw Object.assign(Error(e.error||'The request failed.'),{status:res.status,approval_item:e.approval_item});}
@@ -87,7 +95,11 @@ const measuredActions={
  workbook_map:'Map rows',
  workbook_map_groups:'Map account groups',
  tax_read:'Open tax review',
- tax_row_review_batch:'Confirm bulk decision'
+ tax_row_review_batch:'Confirm bulk decision',
+ settings_approvals_read:'Open Settings approvals',
+ settings_approval_items_read:'Open approval details',
+ ledger_read:'Load financial report data',
+ ledger_report_gate:'Check financial report readiness'
 };
 const timingRows=[],timingTargets=new Map();
 function openTimingLog(){
@@ -100,10 +112,17 @@ function openTimingLog(){
   const local=new Intl.DateTimeFormat('en-KE',{timeZone:'Africa/Nairobi',dateStyle:'short',timeStyle:'medium'}).format(r.at);
   return `<tr><td>${esc(local)}</td><td>${esc(measuredActions[r.action])}</td><td>${r.seconds.toFixed(2)} s</td><td>${target?target.toFixed(2)+' s':'—'}</td><td>${result}</td></tr>`;
  }).join('');
+ const routeOptions=options([['automatic','Automatic'],['mumbai','Mumbai']],readRoutePreference(),
+  defaultReadRoute()==='mumbai'?'Rollout default (Mumbai)':'Rollout default (Automatic)');
  modal('Import and review timings',
   '<p>Elapsed times for this sign-in. Enter the agreed target for each action to compare results. Targets and timings clear on sign-out.</p>'+
+  `<div class="filters"><label>Settings and Financial Reports read routing for this browser<select id="staffReadRoute">${routeOptions}</select></label></div>`+
   `<div class="filters" id="timingSettings"><label>Action<select id="timingAction">${options(Object.entries(measuredActions),selectedAction)}</select></label>${targetInput}<button type="button" id="timingSet">Set target</button></div>`+
   `<div class="scroll"><table><thead>${heading}</thead><tbody>${rows||'<tr><td colspan="5">No measured actions yet.</td></tr>'}</tbody></table></div>`);
+ $('#staffReadRoute').onchange=e=>{
+  if(e.target.value)localStorage.setItem(readRouteKey,e.target.value);
+  else localStorage.removeItem(readRouteKey);
+ };
  const action=$('#timingAction'),target=$('#timingSettings [name=timing_seconds]');
  action.onchange=()=>{target.value=timingTargets.get(action.value)??'';};
  $('#timingSet').onclick=()=>{
