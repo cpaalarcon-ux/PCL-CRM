@@ -30,7 +30,7 @@ const LABEL={check:'Check',approve:'Approve and apply',return:'Return',withdraw:
 // One batch is the set of proposals created from one workbook. The buttons run the same single-proposal check or approval for each, so no rule is skipped.
 export function batchGroups(list,me){
  const lead=['PARTNER','MANAGER'].includes(me.category_code),checker=['SUPERVISOR','MANAGER','PARTNER'].includes(me.category_code),map=new Map();
- for(const p of list){const ref=p.payload?.batch_ref;if(!ref||p.action!=='client_save'||p.client_id||!OPEN.includes(p.status))continue;map.set(ref,[...(map.get(ref)||[]),p]);}
+ for(const p of list){const ref=p.payload?.batch_ref;if(!ref||p.action!=='client_save'||!OPEN.includes(p.status))continue;map.set(ref,[...(map.get(ref)||[]),p]);}
  return [...map].map(([ref,items])=>({ref,total:items.length,
   check:checker?items.filter(p=>p.status==='Proposed'&&p.proposed_by!==me.staff_id).length:0,
   approve:lead?items.filter(p=>p.status==='Checked'&&p.proposed_by!==me.staff_id&&p.checked_by!==me.staff_id).length:0}));
@@ -87,16 +87,17 @@ export function bindProposals(ctx){
    if(!canPropose(workspace.me?.category_code)||!firms.length)return;
    const firmOptions=options(firms.map(f=>[f.firm_id,f.firm_code+' · '+f.legal_name]),firms.length===1?firms[0].firm_id:ctx.currentFirm());
    modal('Propose clients from an Excel workbook',form(
-    '<p class="info full">Use the PCL client workbook. The “Client Import” sheet lists the clients; “Client Details”, “Industry &amp; Activities” and “Contacts” are matched by KRA PIN. Every row is checked first. If one row has a problem, nothing is proposed. Each client then waits for an independent check and approval. A client that is already on file is held back at approval and is never overwritten.</p>'+
+    '<p class="info full">Use the PCL client workbook. The “Client Import” sheet lists the clients; “Client Details”, “Industry &amp; Activities” and “Contacts” are matched by KRA PIN. Every row is checked first. If one row has a problem, nothing is proposed. Each client then waits for an independent check and approval. A client that is already on file is left alone unless you tick “Also update clients already on file”.</p>'+
     `<label>Handling firm *<select name="firm_id" required>${firmOptions}</select></label>`+
-    field('file','Workbook (.xlsx) *','','file','required accept=".xlsx"'),
+    field('file','Workbook (.xlsx) *','','file','required accept=".xlsx"')+
+    '<label class="full"><input type="checkbox" name="existing" value="update"> Also update clients already on file. Only what the workbook adds or changes is proposed (sector, branch, category, and details not yet recorded). Blank cells never erase anything and recorded details are never overwritten.</label>',
     'Check and propose'
    ),async f=>{
     const file=f.get('file');if(!file||!file.name)throw Error('Choose the workbook.');
-    const up=new FormData();up.set('firm_id',f.get('firm_id'));up.set('file',file);
+    const up=new FormData();up.set('firm_id',f.get('firm_id'));up.set('file',file);if(f.get('existing'))up.set('existing','update');
     const out=await request(up,{file:true,uploadKind:'client_batch'});
     if(out.status==='VALIDATION_FAILED'){setTimeout(()=>modal('Nothing was proposed',batchIssuesHtml(out,esc)),20);return;}
-    setTimeout(()=>modal('Proposals sent for review',`<p class="info">${esc(out.message)}</p><p>Proposed: <b>${out.proposed.length}</b> · Already clients (left unchanged): <b>${out.skipped_existing.length}</b>${out.notices?.length?` · Values tidied or not recorded: <b>${out.notices.length}</b>`:''}</p>${out.skipped_existing.length?`<ul>${out.skipped_existing.map(x=>`<li>Row ${esc(x.row)} · ${esc(x.name)}</li>`).join('')}</ul>`:''}`),20);
+    setTimeout(()=>modal('Proposals sent for review',`<p class="info">${esc(out.message)}</p><p>Proposed: <b>${out.proposed.length}</b>${out.updates?` (changes to existing clients: <b>${out.updates}</b>)`:''} · Already clients (left unchanged): <b>${out.skipped_existing.length}</b>${out.notices?.length?` · Values tidied or not recorded: <b>${out.notices.length}</b>`:''}</p>${out.proposed.some(x=>x.update)?`<p><b>Changes proposed</b></p><ul>${out.proposed.filter(x=>x.update).map(x=>`<li>Row ${esc(x.row)} · ${esc(x.name)}: ${esc(x.changes.join('; '))}</li>`).join('')}</ul>`:''}${out.skipped_existing.length?`<ul>${out.skipped_existing.map(x=>`<li>Row ${esc(x.row)} · ${esc(x.name)}${x.reason?': '+esc(x.reason):''}</li>`).join('')}</ul>`:''}`),20);
    },undefined,{successMessage:'Workbook checked. Proposals are waiting under Proposals.'});
    return;
   }
