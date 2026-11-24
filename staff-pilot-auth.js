@@ -23,7 +23,7 @@
   }
 
   async function send(payload, { headers: extra = {}, timeoutMs = 0 } = {}) {
-    const headers = { apikey: KEY, 'Content-Type': 'application/json', ...extra };
+    const headers = { apikey: KEY, 'x-region': 'ap-south-1', 'Content-Type': 'application/json', ...extra };
     const controller = timeoutMs ? new AbortController() : null;
     let timer;
     let response;

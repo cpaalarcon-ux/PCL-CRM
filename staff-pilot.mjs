@@ -80,7 +80,7 @@ function notice(message,error=false){$('#notice').textContent=message;$('#notice
 function signedOut(message=''){session.end(message);}
 function showSignedOut(message=''){drafts?.detach();drafts?.clearAsides();timingRows.length=0;timingTargets.clear();data=null;navFlags={forensic:false,mlro:false};forensicMenuAt=0;mlroMenuAt=0;navBadges={};navOpenFor='';navBadgeAt=0;cardFlags=new Map();cardWip=new Map();workReady=new Map();workReadyLoaded=false;workReadyFailed=false;cardFacts.key='';cardFacts.at=0;document.body.classList.remove('nav-open');presence?.clear();if(typeof bell!=='undefined')bell.paint();if(typeof holidaysUI!=='undefined')holidaysUI.reset();if(typeof suite!=='undefined')suite.chat?.clear();if(typeof messenger!=='undefined')messenger.stop();document.body.classList.remove('workspace-active');$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));}
 async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},timeoutMs=0}={}){
- const headers={apikey:KEY,...extra};if(uploadKind)headers['x-erp-upload-kind']=uploadKind;if(!file)headers['Content-Type']='application/json';
+ const headers={apikey:KEY,'x-region':'ap-south-1',...extra};if(uploadKind)headers['x-erp-upload-kind']=uploadKind;if(!file)headers['Content-Type']='application/json';
  const api=!file&&!blob&&data&&extra.Authorization?staffReadRequestUrl(API,p?.action,readRoutePreference()||defaultReadRoute()):API;
  const controller=timeoutMs?new AbortController():null;let timer,res;
  try{if(controller)timer=setTimeout(()=>controller.abort(),timeoutMs);res=await fetch(api,{method:'POST',headers,body:file?p:JSON.stringify(p),cache:'no-store',referrerPolicy:'no-referrer',signal:controller?.signal});}
@@ -793,7 +793,7 @@ async function uploadMessenger(attachment,channelId,options){
  form.set('channel_id',channelId);
  const sessionContext=await session.beforeRequest();
  try{
-  const result=await postMessengerFile(API,{...sessionContext.headers,apikey:KEY,'x-erp-upload-kind':'messenger'},form,options);
+  const result=await postMessengerFile(API,{...sessionContext.headers,apikey:KEY,'x-region':'ap-south-1','x-erp-upload-kind':'messenger'},form,options);
   session.accept(sessionContext);
   return result;
  }catch(error){session.reject(sessionContext,error);throw error;}
