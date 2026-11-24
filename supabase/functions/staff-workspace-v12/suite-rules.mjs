@@ -67,7 +67,7 @@ export function recurringFeePeriods(startsOn,endsOn,frequency,through,limit=120)
  return periods;
 }
 export const filingKinds=['VAT','PAYE','Company','Partnership','Individual'];
-export const cleanCell=v=>{if(v&&typeof v==='object'&&'formula'in v)fail(400,'Import plain values for staff and client master data.');return String(v??'').trim();};
+export const cleanCell=v=>{if(v instanceof Date)return Number.isNaN(v.getTime())?'':v.toISOString().slice(0,10);if(v&&typeof v==='object'&&'formula'in v)fail(400,'Import plain values for staff and client master data.');return String(v??'').trim();};
 
 // Service period and narration. The period is its own pair of dates; the narration is built from the service name and the period,
 // for example "Tax Compilation And Compliance 1 Month 1 Nov 2026 to 30 Nov 2026". Staff may edit the words, not the dates.

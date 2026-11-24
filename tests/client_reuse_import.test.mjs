@@ -30,7 +30,7 @@ test('2808: client facts import from the master workbook as unverified Import fa
  const form=async(rows,map)=>{const f=new FormData();f.set('dataset','Clients');f.set('action','master_commit');f.set('firm_id',F);f.set('header_row','1');f.set('first_row','2');f.set('last_row',String(rows.length));f.set('column_map',JSON.stringify(map));f.set('file',new File([await book(rows)],'clients.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));return f;};
  const HEAD=['company_name','kra_pin','registration_number','incorporation_date','registered_address','contact_phone','year_end'];
  const MAP=Object.fromEntries(HEAD.map((k,i)=>[k,i+1]));
- const rows=[HEAD,['Fictional Imported Ltd','a000000004z','C.004','2021-03-01','P.O. Box 4, Fictional Town','0700000004','12-31'],['Fictional Bad Pin Ltd','12345','C.005','2021-03-01','P.O. Box 5','0700000005','12-31'],['Fictional Bad Date Ltd','','C.006','1/3/2021','P.O. Box 6','0700000006','12-31'],['Fictional copy target','','C.777','','','','06-30']];
+ const rows=[HEAD,['Fictional Imported Ltd','a000000004z','C.004','2021-03-01','P.O. Box 4, Fictional Town','0700000004','12-31'],['Fictional Bad Pin Ltd','12345','C.005','2021-03-01','P.O. Box 5','0700000005','12-31'],['Fictional Bad Date Ltd','','C.006','31/02/2021','P.O. Box 6','0700000006','12-31'],['Fictional copy target','','C.777','','','','06-30']];
  await assert.rejects(()=>as('ASSISTANT',async a=>masterImport(tx,a,await form(rows,MAP))),/Partner|Manager/);
  const out=await as('MANAGER',async a=>masterImport(tx,a,await form(rows,MAP)));
  assert.equal(out.new_count,1);assert.equal(out.duplicate_count,1);assert.equal(out.rejected_count,2);
