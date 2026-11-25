@@ -115,6 +115,7 @@ import {rightsForRequest,actionRightLabel,defaultActionRights,isActionRight,filt
 import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode,isProposableAction} from './staff-rights-catalog.mjs';
 import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts';
 import {clientBatchAction,clientBatchStage} from './client-batch-actions.ts';
+import {monthWorkAction} from './month-work-actions.ts';
 import {clientSetupPipelineAction} from './client-setup-pipeline-actions.ts';
 import {handlingFirmIds,readClientEntry} from './client-entry.ts';
 import {policiesRead,policyAction,requireAssistantEntryAuthorised} from './policy-actions.ts';
@@ -573,6 +574,7 @@ async function action(id:any,p:any){
   if(isProposableAction(String(p.action||''))&&['ASSISTANT','SUPERVISOR'].includes(a.category_code))return await createProposal(tx,a,p);
   const proposals=await proposalAction(tx,a,p,run);if(proposals!==undefined)return proposals;
   const clientBatch=await clientBatchAction(tx,a,p,run);if(clientBatch!==undefined)return clientBatch;
+  const monthWork=await monthWorkAction(tx,a,p);if(monthWork!==undefined)return monthWork;
   const setupPipeline=await clientSetupPipelineAction(tx,a,p);if(setupPipeline!==undefined)return setupPipeline;
   const teamQueue=await teamQueueAction(tx,a,p);if(teamQueue!==undefined)return teamQueue;
   const workload=await workloadAction(tx,a,p);if(workload!==undefined)return workload;
