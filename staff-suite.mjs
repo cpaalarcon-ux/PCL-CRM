@@ -23,7 +23,7 @@ import {createToolsUI} from './staff-tools.mjs?v=20261116-tools-v1';
 import {createRolloverUI} from './staff-rollover.mjs?v=20261116-roll-v1';
 import {createTaxRolesUI} from './staff-tax-roles.mjs?v=20261112-resources-v1';
 import {settingsCard} from './staff-settings-cards.mjs?v=20261112-resources-v1';
-import {SETTINGS_TABS,tabForCard,layoutView,rightsView,FOLD_TABS,fold} from './staff-settings-layout.mjs?v=20261119-settings-v1';
+import {SETTINGS_TABS,tabForCard,layoutView,rightsView,FOLD_TABS,fold} from './staff-settings-layout.mjs?v=20261119-settings-v1&fold=20261125-v1';
 import {createSettingsFrameUI} from './staff-settings-frame.mjs?v=20261118-approval-board-v1';
 import {createStatementReviewUI} from './staff-statement-review.mjs?v=20261118-approval-board-v1&bulk=20261122-v1';
 import {createOwnerMatrixUI} from './staff-owner-matrix.mjs?v=20261117-actions-v1';
@@ -133,7 +133,7 @@ export function createSuiteUI(ctx){
   const pieces={myApprovalsCard:myApprovals.card(),overviewFeedsCard:frame.card(),settingsHub:settingsHub.card(),ownerMatrixCard:ownerMatrix.card(),referenceCard:settingsCard({id:'referenceCard',title:'Reference documents & change control',purpose:'Review the consolidated Word specifications and retain each approved version inside the ERP.',audience:'Managers and Partners',actions:button('references','Open')}),chartCard:settingsCard({id:'chartCard',title:'Chart of accounts',purpose:'Attached account master, controlled additions and separate tax rules. Every staff member can search the chart under Documents, Resources.',audience:'Managers and Partners',actions:'<button type="button" data-accounting="catalog">Browse chart of accounts</button>'+button('resources-open','Resources')}),deadlineCard:deadlines.card(),taxRoleCard:taxRoles.card(),dueBacklogCard:dueBacklog.card(),taxRatesCard:taxConfig.rates(),starterConfirmCard:starterConfirm.card(),templateLibraryCard:templateLibrary.card(),exportProfilesCard:exportProfiles.card(),eligibilityCard:eligibility.card(),toolsCard:tools.card(),
    staffRatesCard:partner()?`<section class="card section-space"><div class="section-head"><h2>Staff cost & billing rates</h2>${button('staff-rate','+ Add rate period')}</div>${table(['Staff','Effective dates','Cost / hour','Billable / hour'],s().staff_rates.map(r=>[esc(staffName(r.staff_id)),`${shortDate(r.effective_from)} – ${shortDate(r.effective_to)}`,money(r.cost_rate),money(r.billable_rate)]))}</section>`:'',handlingFirmsCard:partner()?`<section class="card section-space"><div class="section-head"><h2>Handling firms</h2><button data-new="firm">+ Add firm</button></div>${table(['Firm','Registered name','Invoice prefix','Action'],d().firms.map(f=>[esc(f.firm_code),esc(f.legal_name),esc(f.invoice_prefix||'INV/'+f.firm_code),button('firm','Edit details',f.firm_id)]))}</section>`:''};
   const panels={};for(const t of SETTINGS_TABS)panels[t.code]='';
-  const seen={};for(const [id,html] of Object.entries(pieces)){const tab=tabForCard(id);if(FOLD_TABS.includes(tab)&&html){panels[tab]+=fold(id,html,{first:!seen[tab],tab});seen[tab]=true;}else panels[tab]+=html;}
+  for(const [id,html] of Object.entries(pieces)){const tab=tabForCard(id);panels[tab]+=FOLD_TABS.includes(tab)?fold(id,html,{tab}):html;}
   panels.access+=rightsView({me:d().me.category_code});
   for(const [code,html] of Object.entries(extra))if(code in panels)panels[code]+=html;
   return frame.bar()+layoutView({active:settingsTab,panels,button});}

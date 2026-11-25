@@ -23,7 +23,7 @@ test('the role rules on each moved action are unchanged',()=>{
 
 test('the wrong-file note is folded, not removed, and the table is not clipped',()=>{
  assert.match(pilot,/<details class="doc-note"><summary>Uploaded the wrong file\?<\/summary><p class="muted">If you uploaded the wrong file/);
- assert.match(pilot,/<div class="scroll doc-roster"><table data-views="Category">/);
+ assert.match(pilot,/<div class="scroll doc-roster"><table data-views="Category" aria-label=/);
  assert.match(css,/\.staff-roster,\.doc-roster\{overflow:visible\}/);assert.match(css,/\.doc-note>summary/);
 });
 

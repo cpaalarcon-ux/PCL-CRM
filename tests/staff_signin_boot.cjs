@@ -107,6 +107,10 @@ const server = http.createServer((req, res) => {
     await page.getByText('If email recovery is enabled for this login ID', { exact: false }).waitFor();
     assert.equal(mainRequested, false, 'requesting recovery must not open the ERP workspace');
     await signIn.click();
+    const assignedTasks = page.locator('#content summary').filter({ hasText: 'Assigned tasks' });
+    await assignedTasks.waitFor();
+    assert.equal(await page.getByText('Prepare test work', { exact: true }).isVisible(), false);
+    await assignedTasks.click();
     await page.getByText('Prepare test work', { exact: true }).waitFor();
     assert.equal(landingChecks, 1);
     assert.equal(mainRequested, false, 'My Work must render without the full workspace module');
@@ -118,6 +122,7 @@ const server = http.createServer((req, res) => {
     await page.goto(`http://127.0.0.1:${server.address().port}/staff-pilot?from=bookmark#view=clients`);
     await page.getByRole('button', { name: 'Retry workspace area' }).waitFor();
     assert.deepEqual(workspaceStarts, [1, 2], 'opening a saved Clients link also requests the landing dashboard before loading full modules');
+    await assignedTasks.click();
     assert.equal(await page.getByText('Prepare test work', { exact: true }).isVisible(), true, 'a saved-link failure keeps Home visible');
     assert.equal(await page.locator('#signin').isVisible(), false, 'a detail failure leaves the saved sign-in active');
     assert.deepEqual(errors, []);

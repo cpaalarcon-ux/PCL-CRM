@@ -53,7 +53,12 @@ export function proposalsCard(data,esc=v=>String(v??''),nameOf=()=>''){
   return `<tr><td><b>${esc(p.summary)}</b>${p.company_name?`<small class="muted">${esc(p.company_name)}</small>`:''}${note}</td><td><span class="badge ${p.status==='Approved'?'good':p.status==='Returned'||p.status==='Withdrawn'?'warn':'info'}">${esc(p.status)}</span></td><td><small>${trail}</small></td><td class="actions">${acts}${file}</td></tr>`;
  }).join('');
  const waiting=list.filter(p=>OPEN.includes(p.status)).length;
- return `<div class="card" id="proposalsCard"><div class="section-head"><h2>Proposals <span class="badge ${waiting?'warn':'good'}">${waiting} waiting</span></h2></div><p class="muted">${esc(PROPOSAL_HELP)}</p>${batchBar(list,data.me,esc)}<table><thead><tr><th>Change</th><th>Status</th><th>Who</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+ return `<details class="settings-fold" id="proposalsCard" data-preserve-open>
+  <summary id="proposalsSummary">Proposals <span class="badge ${waiting?'warn':'good'}">${waiting} waiting</span></summary>
+  <div><p class="muted">${esc(PROPOSAL_HELP)}</p>${batchBar(list,data.me,esc)}
+   <table><thead><tr><th>Change</th><th>Status</th><th>Who</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+  </div>
+ </details>`;
 }
 export function proposeButtons(clientId,role,suiteButton,esc=v=>String(v??'')){
  if(!canPropose(role))return '';
