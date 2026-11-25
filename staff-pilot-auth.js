@@ -14,6 +14,8 @@
 
   let setupToken = null;
   let workspaceLoading = false;
+  let landing = null;
+  let fullWorkspace = null;
 
   function notice(message, error = false) {
     const element = $('#notice');
@@ -79,6 +81,16 @@
     }
   }
 
+  async function openFullWorkspace(options) {
+    fullWorkspace ??= await import('./staff-pilot.mjs?v=20261114-setupguide-v1&rev=20261119-2906&upd=20261124-v1&swap=20261124-v1&reset=20261122-v1&vault=20261122-v1&create-client=20261122-v1&review=20261122-v1&bulk=20261122-v1&starter=20261210-v1&screen=20261211-v1&routing=20261124-mumbai-v1&landing=20261125-v1');
+    await fullWorkspace.activateStaffWorkspace(options);
+    landing=null;
+  }
+
+  function sessionEnded(message) {
+    document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));
+  }
+
   async function openWorkspace() {
     if (workspaceLoading) return;
     if (!readSavedSession()) {
@@ -93,7 +105,20 @@
     if (retryButton) retryButton.hidden = true;
     notice('Opening your secure workspace…');
     try {
-      await import('./staff-pilot.mjs?v=20261114-setupguide-v1&rev=20261119-2906&upd=20261124-v1&swap=20261124-v1&reset=20261122-v1&vault=20261122-v1&create-client=20261122-v1&review=20261122-v1&bulk=20261122-v1&starter=20261210-v1&screen=20261211-v1&routing=20261124-mumbai-v1');
+      const route=new URLSearchParams(location.hash.slice(1));
+      if(['task','project','client','communication'].some(key=>route.has(key))||
+         (route.get('view')&&route.get('view')!=='home')){
+        await openFullWorkspace();
+      }else{
+        const {mountStaffLanding}=await import('./staff-pilot-landing.mjs?v=20261125-v1');
+        try{
+          landing=await mountStaffLanding({send,notice,openFullWorkspace,sessionEnded});
+        }catch(error){
+          // The frontend can deploy before the backend adds the landing action.
+          if(![403,404].includes(error.status))throw error;
+          await openFullWorkspace();
+        }
+      }
     } catch {
       workspaceLoading = false;
       if (readSavedSession()) {
@@ -101,7 +126,7 @@
         notice('Your sign-in is saved, but the workspace screens did not load. Retry loading them or refresh the page.', true);
       } else {
         loginButton.disabled = false;
-        notice('The workspace did not load. Please sign in again.', true);
+        notice(error.status===401?error.message:'The workspace did not load. Please sign in again.', true);
       }
     }
   }
@@ -141,6 +166,8 @@
 
   function openSetup(value) {
     setupToken = value;
+    landing?.end();
+    landing = null;
     clearSavedSession();
     loginForm.hidden = true;
     setupForm.hidden = false;

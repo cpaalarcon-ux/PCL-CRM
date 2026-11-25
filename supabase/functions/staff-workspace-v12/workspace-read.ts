@@ -1,4 +1,41 @@
-// One scoped query avoids serial database round trips on the landing page.
+import {effectiveStaffAreas} from './staff-access-control.mjs';
+import {hasVisibleActionGroup} from './staff-action-rights.mjs';
+
+export async function readWorkspaceLanding(tx:any,a:any,requestedFirm?:string){
+ const [base]=await tx`select
+   erp_private.uat_scope_enabled() as uat_client_scope,
+   array(select area_code from erp_private.staff_area_restrictions where staff_id=${a.staff_id}) as denied_areas,
+   array(select right_code from erp_private.staff_right_restrictions where staff_id=${a.staff_id}) as denied_rights,
+   coalesce((select jsonb_agg(f order by f.firm_code) from
+     (select firm_id,firm_code,legal_name from erp_private.firms where deleted_at is null) f),'[]'::jsonb) as firms`;
+ const allowed_areas=effectiveStaffAreas(a.category_code,base.denied_areas)
+   .filter(area=>hasVisibleActionGroup(a.category_code,area,base.denied_rights));
+ const firm_id=base.firms.find((f:any)=>f.firm_id===requestedFirm)?.firm_id||null;
+ let my_work=null;
+ if(allowed_areas.includes('projects')&&!base.denied_rights.includes('task.view')){
+  const tasks=await tx`select t.task_id,t.task_name,t.status,t.due_at,p.project_name,
+    count(*) over ()::int as open_count,
+    count(*) filter (where (t.due_at at time zone 'Africa/Nairobi')::date < (now() at time zone 'Africa/Nairobi')::date) over ()::int as overdue_count
+   from erp_private.tasks t
+   join erp_private.projects p using(project_id)
+   join erp_private.clients c using(client_id)
+   where t.assigned_to=${a.staff_id} and t.deleted_at is null and p.deleted_at is null and c.deleted_at is null
+     and t.status not in ('Completed','Cancelled')
+     and (${firm_id}::uuid is null or p.handling_firm_id=${firm_id}::uuid)
+   order by case
+     when (t.due_at at time zone 'Africa/Nairobi')::date < (now() at time zone 'Africa/Nairobi')::date then 0
+     when t.status in ('Returned','Blocked','Pending manager') then 1
+     when t.status='In Review' then 2 else 3 end,
+     t.due_at nulls last,t.task_id
+   limit 5`;
+  my_work={open_count:tasks[0]?.open_count??0,overdue_count:tasks[0]?.overdue_count??0,
+   tasks:tasks.map(({open_count,overdue_count,...task}:any)=>task)};
+ }
+ return {me:{staff_id:a.staff_id,login_id:a.login_id,full_name:a.full_name,category_code:a.category_code,allowed_areas},
+  uat_client_scope:base.uat_client_scope,firms:base.firms,firm_id,my_work};
+}
+
+// The full workspace read batches the common ERP records into one query.
 export async function readWorkspace(tx:any,a:any){
  const [r]=await tx`select jsonb_build_object(
  'me',jsonb_build_object('staff_id',${a.staff_id}::text,'login_id',${a.login_id}::text,'full_name',${a.full_name}::text,'category_code',${a.category_code}::text),
