@@ -41,7 +41,7 @@ test('the old long window is split in two and every entry point lands in the fil
  const chk=rd('staff-setup-checklist.mjs');for(const b of ["'activity'","'chart'","'vat-cats'","'period'","'identity'","'setup-review'"])assert.match(chk,new RegExp('\\['+b),b);
  assert.doesNotMatch(set,/Payroll returns|Tax rule exceptions|routing-map-open/,'these moved to Tax & returns');
  assert.match(imp,/async function client\(id,options=\{\}\)\{if\(options\.stockSetup\)\{await loadClient\(id\);policy\(options\);return;\}openFile\(id,'setup'\);\}/);
- assert.match(imp,/b\.dataset\.clientOpen=id;b\.dataset\.clientTab=tab/);assert.match(imp,/return \{client,project,bank,chart,paintClientTab(?:,resumeActivityDraft)?\}/);
+ assert.match(imp,/b\.dataset\.clientOpen=id;b\.dataset\.clientTab=tab/);assert.match(imp,/return \{client,project,bank,chart,paintClientTab(?:,resumeActivityDraft)?(?:,mountAllocations:[^}]*)?\}/);
  assert.match(imp,/\['identity','vat-cats','activity','period','partners','stock-policy','stock-policy-step'\]\.includes\(a\)&&clientData\?\.client\?\.client_id!==id\)await loadClient\(id\)/,'a button in the tab always works on this client');
  assert.match(imp,/now\.dataset\.tab!==tab\|\|now\.dataset\.id!==id\)return/,'a slow answer for a tab the person has left is dropped');
 });

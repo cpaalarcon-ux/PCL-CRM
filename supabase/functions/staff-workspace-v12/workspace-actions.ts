@@ -94,7 +94,7 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   if(afterOverdue!==null&&(!Number.isInteger(afterOverdue)||afterOverdue<0))fail(400,'The project page cursor is invalid. Restart the project list.');
   if([afterOverdue!==null,afterName!==null,!!afterProjectId].some(Boolean)&&![afterOverdue!==null,afterName!==null,!!afterProjectId].every(Boolean))fail(400,'The project page cursor is incomplete. Restart the project list.');
   const [snapshot]=await tx`select coalesce(${snapshotInput}::timestamptz,transaction_timestamp()) snapshot_at`;
-  const fullAccess=['PARTNER','MANAGER'].includes(a.category_code),intern=a.category_code==='INTERN',today=nairobiDate();
+  const fullAccess=['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code),intern=a.category_code==='INTERN',today=nairobiDate();
   const rows=await tx`select p.project_id,p.client_id,p.handling_firm_id,p.project_name,p.service_code,p.status,p.tax_master,p.revision,p.created_at,
     c.company_name,lower(c.company_name) sort_name,f.firm_code,
     (select to_jsonb(s) from erp_private.project_schedules s where s.project_id=p.project_id and s.deleted_at is null) schedule,
@@ -242,11 +242,13 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   return {financial_year_end:{month:client.year_end_month,day:client.year_end_day},catchup_task:s.enabled&&s.catchup_starts_on?{starts_on:s.catchup_starts_on,ends_on:s.catchup_ends_on}:null,occurrences:await tx`select distinct on(o.release_at,o.template_key,o.period_start) o.* from (select * from erp_private.project_schedule_history where project_id=${s.project_id} and enabled union all select * from erp_private.project_schedules where project_id=${s.project_id} and enabled) v cross join lateral erp_private.schedule_occurrences(v.frequency,v.pack,v.starts_on,v.ends_on,v.effective_from,v.obligations,now()+interval '40 days',${client.year_end_month},${client.year_end_day}) o where o.release_at>now() order by o.release_at,o.template_key,o.period_start,v.version limit 100`};
  }
  if(p.action==='task_create'){
-  editor(a);const pid=uuid(p.project_id),pool=p.unassigned===true,sid=pool?null:uuid(p.assigned_to),due=date(p.due_date);
+  editor(a);if(p.unassigned===true||!p.assigned_to)fail(400,'Assign this task to an Assistant. Tasks are not left unassigned.');
+  const pid=uuid(p.project_id),sid=uuid(p.assigned_to),due=date(p.due_date);
+  const assignee=one(await tx`select category_code,access_status from erp_private.staff_members where staff_id=${sid} and deleted_at is null`);
+  if(assignee.category_code!=='ASSISTANT'||assignee.access_status!=='Active')fail(400,'Tasks are assigned to active Assistants only. Supervisors, Managers and Partners review, edit and reassign tasks.');
   if(!due)fail(400,'Choose a due date.');const project=one(await tx`select client_id,handling_firm_id,status from erp_private.projects where project_id=${pid}`);
   if(project.status==='Archived')fail(400,'Choose an open project.');
-  if(pool&&(!['PARTNER','MANAGER'].includes(a.category_code)||project.status!=='Active'))fail(403,'A Manager or Partner can add unassigned tasks to an active project.');
-  const gate=await projectTaskGate(tx,pid,project.client_id,due);if(!gate.ready)fail(400,gate.reason);if(sid)await assign(tx,pid,project.handling_firm_id,sid);
+  const gate=await projectTaskGate(tx,pid,project.client_id,due);if(!gate.ready)fail(400,gate.reason);await assign(tx,pid,project.handling_firm_id,sid);
   return one(await tx`insert into erp_private.tasks(project_id,assigned_to,task_name,description,due_at,requires_document) values(${pid},${sid},${text(p.task_name,200)},${text(p.description||'',2000,false)},${due+'T17:00:00+03:00'},${p.requires_document===true}) returning task_id`);
  }
  if(p.action==='task_recipients')return {recipients:await tx`select * from erp_private.task_recipient_candidates(${uuid(p.task_id)}::uuid)`};

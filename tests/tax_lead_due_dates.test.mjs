@@ -28,7 +28,7 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  const tax=(role,p)=>as(role,a=>taxAction(tx,a,p));
  const cfg=(role,p)=>as(role,a=>taxConfigAction(tx,a,p));
  // ============================ A. The Tax Lead right =====================================================================================================================
- const vat=async(key,from,to,type='VAT')=>(await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by) values(${key},${type},'Staging rule for the Tax Lead check',${from},${to},'{"rate":16,"treatment":"Standard"}','https://www.kra.go.ke/individual/filing-paying/types-of-taxes/value-added-tax','VAT Act, section 5. Staging check of the Tax Lead right.',${M}) returning rate_id`)[0].rate_id;
+ const vat=async(key,from,to,type='VAT',proposer=M)=>(await tx`insert into erp_private.tax_rates(rate_key,tax_type,label,effective_from,effective_to,parameters,source_url,source_note,created_by) values(${key},${type},'Staging rule for the Tax Lead check',${from},${to},'{"rate":16,"treatment":"Standard"}','https://www.kra.go.ke/individual/filing-paying/types-of-taxes/value-added-tax','VAT Act, section 5. Staging check of the Tax Lead right.',${proposer}) returning rate_id`)[0].rate_id;
  const R1=await vat('KE_VAT_STANDARD','2030-01-01','2030-12-31');
  await tx`update erp_private.tax_rates set legal_review_status='Pending',legal_review_note='Pending the Tax Lead review of the provision',legal_citation='VAT Act, section 5' where rate_id=${R1}`;
  const approve=(role,rate)=>as(role,()=>db.query(`update erp_private.tax_rates set status='Approved',approved_by=$2,approved_at=now(),partner_source_verified_on=current_date where rate_id=$1`,[rate,actors[role].staff_id]));
@@ -38,7 +38,7 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  // a Partner holds the authority by rank: a rule prepared by someone else is approved by a Partner without any grant
  const P1=await vat('KE_FICT_VATP','2029-01-01','2029-12-31');await approve('PARTNER',P1);
  assert.equal((await tx`select status from erp_private.tax_rates where rate_id=${P1}`)[0].status,'Approved','a Partner approves a VAT rule by rank');
- const P2=await vat('KE_FICT_VATP2','2028-01-01','2028-12-31');await tx`update erp_private.tax_rates set created_by=${actors.PARTNER.staff_id} where rate_id=${P2}`;
+ const P2=await vat('KE_FICT_VATP2','2028-01-01','2028-12-31','VAT',actors.PARTNER.staff_id);
  await assert.rejects(approve('PARTNER',P2),/cannot confirm or approve/,'a Partner cannot approve a rule they prepared');
  // only a Partner grants it, only to a Manager, with a reason and an end date
  const grant=(role,staff,extra={})=>rights(role,{action:'staff_right_grant',staff_id:staff,capability:'APPROVE_TAX_RULES',reason:'Designated Tax Lead for VAT and credit rules',expires_on:new Date(Date.now()+200*86400000).toISOString().slice(0,10),...extra});
@@ -53,7 +53,7 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  assert.equal((await q('PARTNER',`select erp_private.tax_rules_approver() ok`))[0].ok,true,'a Partner holds it by rank');
  assert.equal((await q('MANAGER',`select erp_private.tax_rules_approver() ok`))[0].ok,false);
  // the Tax Lead acts: confirm the legal basis (action path), then approve (database path)
- await assert.rejects(approve('MANAGER2',await vat('KE_FICT_SELF','2031-01-01','2031-12-31').then(async r=>{await tx`update erp_private.tax_rates set created_by=${M3} where rate_id=${r}`;return r;})),/cannot confirm or approve/,'the Tax Lead cannot approve a rule they prepared');
+ await assert.rejects(approve('MANAGER2',await vat('KE_FICT_SELF','2031-01-01','2031-12-31','VAT',M3)),/cannot confirm or approve/,'the Tax Lead cannot approve a rule they prepared');
  await cfg('MANAGER2',{action:'rate_legal_confirm',rate_id:R1,revision:(await tx`select revision from erp_private.tax_rates where rate_id=${R1}`)[0].revision,lead_name:'Fictional Tax Lead',reference:'Memo 2026-11-10 fictional',legal_citation:'VAT Act, section 5',confirmed:true});
  assert.equal((await tx`select legal_review_status,legal_reviewed_by from erp_private.tax_rates where rate_id=${R1}`)[0].legal_reviewed_by,M3,'the Tax Lead recorded the legal confirmation');
  await cfg('MANAGER2',{action:'rate_approve',rate_id:R1,revision:(await tx`select revision from erp_private.tax_rates where rate_id=${R1}`)[0].revision,confirm_legal_basis:true});
@@ -124,6 +124,9 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  // ============================ C. Amendments change adjustments only ====================================================================================================
  const orig=id();
  await db.query(`insert into erp_private.tax_cases(case_id,project_id,kind,starts_on,ends_on,prepared_by,reviewed_by,review_snapshot,status,filing_date,inputs) values($1,$2,'VAT','2026-06-01','2026-06-30',$3,$4,'{}','Filed','2026-07-18',$5)`,[orig,PJ,AST,M,JSON.stringify({opening_credit:100,withholding_credit:25,adjustments:[],adjustment_basis:'',bank_reconciliation:{note:'filed'}})]);
+ // Only a Manager or a Partner starts an amendment: the server refuses the others, and so does the database for a signed-in person.
+ for(const r of ['SUPERVISOR','ASSISTANT','INTERN'])await assert.rejects(tax(r,{action:'tax_amend',case_id:orig,reason:'Corrected output VAT on one sale invoice'}),/Manager or a Partner|Supervisor, Manager or Partner must review|requires a staff preparer/);
+ await assert.rejects(as('SUPERVISOR',()=>tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by,amends_case_id,amendment_no,amendment_reason,status) values(${PJ},'VAT','2026-06-01','2026-06-30',${AST},${orig},1,'Corrected output VAT on one sale invoice','Draft')`),/Manager or a Partner/);
  const am=await tax('MANAGER',{action:'tax_amend',case_id:orig,reason:'Corrected output VAT on one sale invoice'});
  const A1=am.case_id;
  assert.equal((await tx`select prepared_by from erp_private.tax_cases where case_id=${A1}`)[0].prepared_by,M);

@@ -6,7 +6,7 @@ test('review count and Home labels match the task, tax and sales review sources'
 test('the Audit & assurance area uses its existing route, and a shared breadcrumb is declared in the page and renderer',async()=>{
  const {readFileSync}=await import('node:fs');const root=new URL('..',import.meta.url).pathname;
  const dash=readFileSync(root+'staff-dashboard.mjs','utf8'),html=readFileSync(root+'staff-pilot.html','utf8'),app=readFileSync(root+'staff-pilot.mjs','utf8'),ledger=readFileSync(root+'staff-ledger.mjs','utf8');
- assert.match(app,/view:'audit',title:'Audit & assurance',area:'audit'/);
+ assert.match(readFileSync(root+'staff-nav.mjs','utf8'),/view:'audit',title:'Audit & assurance',area:'audit'/);
  assert.match(html,/<nav id="crumbs"[^>]+aria-label="Breadcrumb"/);
  assert.match(app,/function paintCrumbs\(\)/);assert.match(app,/paintCrumbs\(\);\$\('#greeting'\)/);
  assert.match(ledger,/workspace-breadcrumb[^`]+Client accounting/);

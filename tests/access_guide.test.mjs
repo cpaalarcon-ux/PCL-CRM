@@ -58,14 +58,14 @@ test('individual access restrictions only narrow the current role baseline',()=>
 
 test('every routed staff action has an access area and unknown actions fail closed',()=>{
  const dir=new URL('../supabase/functions/staff-workspace-v12/',import.meta.url);
- const actions=new Set(),outsideSession=new Set(['release_info','login','refresh_session','setup','setup_status','request_partner_recovery','session_activity','workspace','logout']);
+ const actions=new Set(),sharedActions=new Set(['release_info','login','refresh_session','setup','setup_status','request_partner_recovery','session_activity','workspace','workspace_landing','logout']);
  for(const name of fs.readdirSync(dir).filter(x=>/\.(?:ts|mjs)$/.test(x))){
   const source=fs.readFileSync(new URL(name,dir),'utf8');
   for(const match of source.matchAll(/(?:p|payload|body)\.action\s*===?\s*['"]([A-Za-z0-9_-]+)['"]/g))actions.add(match[1]);
   for(const match of source.matchAll(/\[\s*((?:['"][A-Za-z0-9_-]+['"]\s*,?\s*)+)\]\.includes\((?:p|payload|body)\.action\)/g))
    for(const item of match[1].matchAll(/['"]([A-Za-z0-9_-]+)['"]/g))actions.add(item[1]);
  }
- const unmapped=[...actions].filter(action=>!outsideSession.has(action)&&!areaForStaffAction(action));
+ const unmapped=[...actions].filter(action=>!sharedActions.has(action)&&!areaForStaffAction(action));
  assert.deepEqual(unmapped,[],'every server route action must be classified before it is callable');
  assert.equal(areaForStaffAction('future_unregistered_action'),null);
  assert.match(api,/const requestArea=areaForStaffAction\(String\(p\.action\|\|''\)\);if\(!requestArea\)deny\(\);await requireStaffArea\(tx,a,requestArea\)/);
@@ -91,7 +91,7 @@ test('workspace filtering limits client and tax detail to the permitted area and
  assert.deepEqual(noClientAccess.suite.compliance,[]);
 });
 
-test('supervisors see assigned and routed review work, not firm-wide client details',()=>{
+test('supervisors see and review every project and task in the firm',()=>{
  const workspace={me:{staff_id:'s1'},clients:[
   {client_id:'c1',company_name:'Assigned Client',kra_pin:'P000000001A'},
   {client_id:'c2',company_name:'Unassigned Client',kra_pin:'P000000002A'}
@@ -99,9 +99,8 @@ test('supervisors see assigned and routed review work, not firm-wide client deta
   tasks:[{task_id:'t1',project_id:'p1',assigned_to:'other',status:'Open'},{task_id:'t2',project_id:'p2',assigned_to:'other',status:'Open'}],
   assignments:[{project_id:'p1',staff_id:'s1'}],schedules:[],work_periods:[],work_period_tasks:[],task_procedures:[],sales_reviews:[],task_events:[],workbook_batches:[],documents:[],timesheets:[],notifications:[],suite:{tax_profiles:[]}};
  const scoped=scopeWorkspaceRecords(workspace,'SUPERVISOR','s1');
- assert.deepEqual(scoped.projects.map(x=>x.project_id),['p1']);
+ assert.deepEqual(scoped.projects.map(x=>x.project_id),['p1','p2']);
  assert.equal(scoped.clients.find(x=>x.client_id==='c1').details_visible,true);
  const other=scoped.clients.find(x=>x.client_id==='c2');
- assert.equal(other.details_visible,false);
- assert.equal(Object.hasOwn(other,'kra_pin'),false);
+ assert.equal(other.details_visible,true);
 });

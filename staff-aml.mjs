@@ -141,8 +141,9 @@ export function createAmlUI(ctx,{show}){
 
  // ---------- the MLRO's queue, lists and policy ----------
  const tbl=(heads,rows)=>`<div class="scroll"><table><thead><tr>${heads.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')||`<tr><td colspan="${heads.length}" class="muted">Nothing here.</td></tr>`}</tbody></table></div>`;
- const qrow=i=>`<tr><td><b>${esc(i.company_name)}</b>${i.attention.length?`<small>${i.attention.slice(0,3).map(esc).join(' · ')}</small>`:''}</td><td>${esc(i.status)}</td><td>${esc(i.risk_rating||'Not rated')}</td><td>${i.next_review?esc(shortDate(i.next_review)):''}</td><td><button type="button" data-am-open="${esc(i.client_id)}">Open</button></td></tr>`;
- const frow=f=>`<tr><td><b>${esc(f.company_name)}</b></td><td>${esc(f.service_name)}</td><td>${esc(f.applicability)}</td><td>${esc(shortDate(f.raised_at))} · ${esc(f.raised_by_name)}</td><td><button type="button" data-am-open="${esc(f.client_id)}">Open profile</button></td></tr>`;
+ const mlroCell=i=>(i.mine?'<span class="badge good">Yours</span> ':'')+((i.mlros||[]).length?esc(i.mlros.join(', ')):'<span class="muted">Not named</span>');
+ const qrow=i=>`<tr><td><b>${esc(i.company_name)}</b>${i.attention.length?`<small>${i.attention.slice(0,3).map(esc).join(' · ')}</small>`:''}</td><td>${esc(i.status)}</td><td>${esc(i.risk_rating||'Not rated')}</td><td>${i.next_review?esc(shortDate(i.next_review)):''}</td><td>${mlroCell(i)}</td><td><button type="button" data-am-open="${esc(i.client_id)}">Open</button></td></tr>`;
+ const frow=f=>`<tr><td><b>${esc(f.company_name)}</b></td><td>${esc(f.service_name)}</td><td>${esc(f.applicability)}</td><td>${esc(shortDate(f.raised_at))} · ${esc(f.raised_by_name)}</td><td>${mlroCell(f)}</td><td><button type="button" data-am-open="${esc(f.client_id)}">Open profile</button></td></tr>`;
  function rulesHtml(){
   if(!rules)return '';
   const rows=rules.services.map(r=>`<tr><td>${esc(r.service_name)}<small>${esc(r.service_group)}</small></td><td>${r.rule_id?`<span class="badge ${r.applicability==='Not relevant'?'':'warn'}">${esc(r.applicability)}</span>`:'<span class="badge">MLRO has not decided</span>'}</td><td>${r.activities&&r.activities.length?esc(r.activities.join(', ')):'<span class="muted">none listed</span>'}${r.reason?`<small>${esc(r.reason)}</small>`:''}</td><td>${r.rule_id&&rules.can_set?`<button type="button" data-am-rule-end="${esc(r.service_code)}">End rule</button>`:''}</td></tr>`);
@@ -162,13 +163,13 @@ export function createAmlUI(ctx,{show}){
     <form data-am-add="${esc(cat)}" class="am-addform"><input name="value" placeholder="New value" required maxlength="120" aria-label="New value"><input name="source" placeholder="Source or reference" required maxlength="300" aria-label="Source"><label><input type="checkbox" name="attention"> Looked at first</label><button type="submit">Add</button></form></details>`;}).join('');
   const pol=ov.policy;
   return `<div class="am" data-am-ov><p class="kg-title"><b>POCAMLA · MLRO workspace</b></p><p class="muted">${esc(ov.note)}</p>
-   <p><b>MLRO:</b> ${ov.mlro_holders.length?ov.mlro_holders.map(h=>esc(h.full_name)+(h.expires_on?' (until '+esc(shortDate(h.expires_on))+')':'')).join(', '):'<span class="muted">No Manager appointed. Engagement Partners hold the right by rank.</span>'} · ${c.profiles} profile${c.profiles===1?'':'s'} · ${c.without_profile} client${c.without_profile===1?'':'s'} without a profile</p>
-   <section class="am-sec"><h3 class="kg-bar">Waiting for you (${q.waiting.length})</h3>${tbl(['Client','Status','Risk','Review by',''],q.waiting.map(qrow))}</section>
-   <section class="am-sec"><h3 class="kg-bar">Enhanced due diligence (${q.edd.length})</h3>${tbl(['Client','Status','Risk','Review by',''],q.edd.map(qrow))}</section>
-   <section class="am-sec"><h3 class="kg-bar">Screening matches (${q.matches.length})</h3>${tbl(['Client','Status','Risk','Review by',''],q.matches.map(qrow))}</section>
-   <section class="am-sec"><h3 class="kg-bar">Reviews due within 30 days (${q.review_due.length})</h3>${tbl(['Client','Status','Risk','Review by',''],q.review_due.map(qrow))}</section>
-   <section class="am-sec"><h3 class="kg-bar">High-risk clients accepted (${q.high_risk.length})</h3>${tbl(['Client','Status','Risk','Review by',''],q.high_risk.map(qrow))}</section>
-   <section class="am-sec"><h3 class="kg-bar">Services set up that need AML scope (${(q.services||[]).length})</h3>${tbl(['Client','Service','Rule','Raised',''],(q.services||[]).map(frow))}</section>
+   <p><b>MLRO:</b> ${ov.mlro_holders.length?ov.mlro_holders.map(h=>esc(h.full_name)+(h.expires_on?' (until '+esc(shortDate(h.expires_on))+')':'')).join(', '):'<span class="muted">No Manager appointed. Engagement Partners hold the right by rank.</span>'} · ${c.my_clients||0} client${c.my_clients===1?'':'s'} named to you · ${c.profiles} profile${c.profiles===1?'':'s'} · ${c.without_profile} client${c.without_profile===1?'':'s'} without a profile</p>
+   <section class="am-sec"><h3 class="kg-bar">Waiting for you (${q.waiting.length})</h3>${tbl(['Client','Status','Risk','Review by','MLRO',''],q.waiting.map(qrow))}</section>
+   <section class="am-sec"><h3 class="kg-bar">Enhanced due diligence (${q.edd.length})</h3>${tbl(['Client','Status','Risk','Review by','MLRO',''],q.edd.map(qrow))}</section>
+   <section class="am-sec"><h3 class="kg-bar">Screening matches (${q.matches.length})</h3>${tbl(['Client','Status','Risk','Review by','MLRO',''],q.matches.map(qrow))}</section>
+   <section class="am-sec"><h3 class="kg-bar">Reviews due within 30 days (${q.review_due.length})</h3>${tbl(['Client','Status','Risk','Review by','MLRO',''],q.review_due.map(qrow))}</section>
+   <section class="am-sec"><h3 class="kg-bar">High-risk clients accepted (${q.high_risk.length})</h3>${tbl(['Client','Status','Risk','Review by','MLRO',''],q.high_risk.map(qrow))}</section>
+   <section class="am-sec"><h3 class="kg-bar">Services set up that need AML scope (${(q.services||[]).length})</h3>${tbl(['Client','Service','Rule','Raised','MLRO',''],(q.services||[]).map(frow))}</section>
    ${rulesHtml()}
    <section class="am-sec"><h3 class="kg-bar">Lists you maintain</h3><div class="am-box am-pad">${lists}</div></section>
    <section class="am-sec"><h3 class="kg-bar">Policy approval and the engagement gate</h3><div class="am-box am-pad">

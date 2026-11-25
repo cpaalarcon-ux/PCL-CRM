@@ -66,6 +66,8 @@ test('Amendments: numbered, linked, one at a time, only from a filed return, ori
  assert.match(read('supabase/functions/staff-workspace-v12/period-import-actions.ts'),/order by amendment_no desc/);
  assert.match(read('supabase/functions/staff-workspace-v12/suite-actions.ts'),/amendment_no,amends_case_id/);
  const ui=read('staff-suite.mjs');
+ assert.match(ui,/\['PARTNER','MANAGER'\]\.includes\(d\(\)\.me\.category_code\)&&!s\(\)\.tax_cases\.some/,'the Amend button shows to Managers and Partners only');
+ assert.match(srv,/Only a Manager or a Partner can start an amendment/);
  assert.match(ui,/tax-amend/);assert.match(ui,/Amend this filed return/);assert.match(ui,/Amendment \$\{c\.amendment_no\}/);
  for(const f of ['supabase/migrations/20261110272000_return_amendments.sql','staff-suite.mjs'])assert.ok(!/ISRS\s*4000/i.test(read(f)));
 });

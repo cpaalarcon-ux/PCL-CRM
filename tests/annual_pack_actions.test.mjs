@@ -3,6 +3,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 globalThis.Deno=globalThis.Deno||{env:{get:()=>''}};
 const {statementMapAction,reportingRead,reportingSave,packReadinessFrom}=await import('../supabase/functions/staff-workspace-v12/annual-pack.ts');
+const {settingsOwnerAction}=await import('../supabase/functions/staff-workspace-v12/settings-owner-actions.ts');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),C=id(),P=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
 async function as(role,fn){const a=actors[role];await db.exec('begin');try{await db.query(`select set_config('request.jwt.claims',$1,true)`,[JSON.stringify({sub:a.auth_user_id,session_id:a.session})]);await db.exec('set local role erp_api');const r=await fn(a);await db.exec('commit');return r;}catch(e){await db.exec('rollback');throw e;}}
@@ -26,8 +27,24 @@ test('statement map and reporting framework through the actions',async t=>{
  // who may approve: not a Manager, not an Assistant; a Partner may, and may approve every seeded proposal at once
  await assert.rejects(()=>map('MANAGER',{action:'ledger_statement_map_approve',all_seeded:true}),/Partner/);
  await assert.rejects(()=>map('ASSISTANT',{action:'ledger_statement_map_propose',account_code:'10020',line_code:'SFP.CASH',effective_from:'2026-01-01',reason:'Fictional reason here'}),/Manager or Partner/);
+ const review=await map('PARTNER',{action:'ledger_statement_map_review_read'});
+ const groupIds=review.groups.flatMap(group=>group.accounts.map(row=>row.map_id));
+ assert.ok(groupIds.length>200);
+ assert.match(review.groups[0].accounts[0].effective_from,/^\d{4}-\d{2}-\d{2}$/);
+ const groupApprove={action:'ledger_statement_map_review_approve',scope:'group',map_ids:groupIds,review_note:'Fictional group review'};
+ await assert.rejects(()=>map('MANAGER',groupApprove),/Partner/);
+ await assert.rejects(()=>map('PARTNER',{...groupApprove,map_ids:[...groupIds,id()]}),/no longer waiting/);
+ assert.equal((await map('PARTNER',{action:'ledger_statement_map_read'})).totals.approved,0);
+ const grouped=await as('PARTNER',a=>settingsOwnerAction(tx,a,{action:'settings_approval_batch_approve',review_confirmed:true,
+  selections:[{queue_key:'approve_statement_lines',items:groupIds.map(id=>({id}))}]}));
+ assert.equal(grouped.total,groupIds.length);
+ const savedGroup=await tx`select reviewed_by,review_note from erp_private.account_statement_map where map_id=any(${tx.array(groupIds)}::uuid[])`;
+ assert.equal(savedGroup.length,groupIds.length);
+ assert.ok(savedGroup.every(row=>row.reviewed_by===actors.PARTNER.staff_id));
+ const [audit]=await tx`select items_approved from erp_private.approval_batches where batch_id=${grouped.batch_id}`;
+ assert.equal(audit.items_approved,groupIds.length);
  const done=await map('PARTNER',{action:'ledger_statement_map_approve',all_seeded:true,review_note:'Fictional review of the seeded map'});
- assert(done.reviewed>300);
+ assert(done.reviewed+grouped.total>300);
  const m1=await map('PARTNER',{action:'ledger_statement_map_read'});assert.equal(m1.totals.draft,0);assert(m1.totals.approved>300);
  await assert.rejects(()=>map('PARTNER',{action:'ledger_statement_map_approve',all_seeded:true}),/no seeded/i);
 

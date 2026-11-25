@@ -29,10 +29,12 @@ const server = http.createServer((req, res) => {
   try {
     const page = await browser.newPage();
     const errors = [];
-    let mainRequested = false, releaseChecks = 0, serverBuild = '', emailRecoveryEnabled = false;
+    let mainRequested = false, releaseChecks = 0, serverBuild = '', emailRecoveryEnabled = false, landingChecks = 0;
+    const workspaceStarts = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/staff-pilot.mjs*', route => {
       mainRequested = true;
+      workspaceStarts.push(landingChecks);
       return route.abort();
     });
     await page.route('https://yfjiculexbzpkvtapudk.supabase.co/**', async route => {
@@ -45,6 +47,25 @@ const server = http.createServer((req, res) => {
       if (payload.action === 'request_partner_recovery') {
         assert.deepEqual(payload, { action: 'request_partner_recovery', login_id: 'fictional-test-user' });
         await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' }, body: JSON.stringify({ ok: true }) });
+        return;
+      }
+      if (payload.action === 'workspace_landing') {
+        landingChecks += 1;
+        assert.equal(route.request().headers().authorization, 'Bearer fictional-access-token');
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' },
+          json: {
+            me: { staff_id: 'fictional-staff', login_id: 'fictional-test-user', full_name: 'Test Staff', category_code: 'ASSISTANT', allowed_areas: ['projects'] },
+            firms: [], firm_id: null, uat_client_scope: false,
+            my_work: { open_count: 1, overdue_count: 0, tasks: [{ task_id: 'fictional-task', task_name: 'Prepare test work', project_name: 'Test project', status: 'Pending', due_at: null }] }
+          }
+        });
+        return;
+      }
+      if (payload.action === 'session_activity') {
+        await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' }, json: { ok: true } });
         return;
       }
       assert.equal(payload.action, 'login');
@@ -86,11 +107,21 @@ const server = http.createServer((req, res) => {
     await page.getByText('If email recovery is enabled for this login ID', { exact: false }).waitFor();
     assert.equal(mainRequested, false, 'requesting recovery must not open the ERP workspace');
     await signIn.click();
-    await page.getByText('Your sign-in is saved, but the workspace screens did not load.', { exact: false }).waitFor({ state: 'visible' });
-    assert.equal(mainRequested, true, 'the ERP module should load only after authentication succeeds');
-    assert.equal(await page.locator('#retryWorkspace').isVisible(), true);
+    await page.getByText('Prepare test work', { exact: true }).waitFor();
+    assert.equal(landingChecks, 1);
+    assert.equal(mainRequested, false, 'My Work must render without the full workspace module');
+    assert.equal(await page.getByRole('link', { name: 'Staff & access' }).count(), 0);
+    await page.getByRole('link', { name: 'Open task' }).click();
+    await page.getByRole('button', { name: 'Retry workspace area' }).waitFor();
+    assert.equal(mainRequested, true, 'opening a task loads the full workspace module');
+    assert.equal(await page.getByText('Prepare test work', { exact: true }).isVisible(), true, 'a load error keeps the dashboard usable');
+    await page.goto(`http://127.0.0.1:${server.address().port}/staff-pilot?from=bookmark#view=clients`);
+    await page.getByRole('button', { name: 'Retry workspace area' }).waitFor();
+    assert.deepEqual(workspaceStarts, [1, 2], 'opening a saved Clients link also requests the landing dashboard before loading full modules');
+    assert.equal(await page.getByText('Prepare test work', { exact: true }).isVisible(), true, 'a saved-link failure keeps Home visible');
+    assert.equal(await page.locator('#signin').isVisible(), false, 'a detail failure leaves the saved sign-in active');
     assert.deepEqual(errors, []);
-    console.log('PASS Chromium: sign-in becomes usable without the full ERP module; successful authentication then offers a workspace retry if app modules fail.');
+    console.log('PASS Chromium: sign-in and My Work open without full ERP modules. Selecting a task loads the modules and keeps the dashboard usable if they fail.');
   } finally {
     await browser.close();
     server.close();

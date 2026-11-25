@@ -1,13 +1,18 @@
 let documentKind='Evidence';
-import {addClientButton,proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1&create-client=20261122-v1';
+import {addClientButton,proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1&create-client=20261122-v1&batch=20261124-v2';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
+import {createContentSwap} from './staff-content-swap.mjs?v=20261125-scroll-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
 import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNote} from './staff-upload-retry.mjs?v=20261119-upload-v1';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb';
+import {createOnboardingBatchUI} from './staff-onboarding-batch.mjs?v=20261214-ob-v1';
+import {createSetupPipelineUI} from './staff-setup-pipeline.mjs?v=20261125-pipe-v1';
+import {createMonthWorkUI} from './staff-month-work.mjs?v=20261125-month-v1';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1&rev=20261119-2904';
 import {returnLabel,chooseReturn,createReturnStore} from './staff-return-state.mjs?v=20261119-nav-v1';
 import {clientProfile} from './staff-client-profile.mjs?v=20261121-und-v1&rev=20261119-nav&vault=20261122-v1';
+import {createTeamQueueUI} from './staff-team-queue.mjs?v=20261214-tq-v1';
 import {openWorkload,workloadShell} from './staff-workload.mjs?v=20261122-workload-v1';
 import {mountClientVault} from './staff-client-vault.mjs?v=20261122-vault-v1';
 import {paintDocRequests,bindDocRequests} from './staff-doc-requests.mjs?v=20261109-dr-v1';
@@ -25,17 +30,18 @@ import {createHolidaysUI} from './staff-holidays.mjs?v=20261109-rev-v1';
 import {createMetricsUI} from './staff-metrics.mjs?v=20261109-hol-v1';
 import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
+import {staffReadRequestUrl} from './staff-read-routing.mjs?v=20261124-mumbai-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1&team=20261212-v2';
 import {createMessenger} from './staff-messenger.mjs?v=20261119-workspace';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
-import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261209-bulk';
+import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1&imp=20261124-v1';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
 import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905';
 import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
-import {moduleLinks,GROUP_ENGAGEMENTS,GROUP_COMPLIANCE,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261121-comply-v1';
+import {moduleLinks,GROUP_ENGAGEMENTS,GROUP_COMPLIANCE,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge,WORKSPACE_AREAS,WORKSPACE_ROLES as roles} from './staff-nav.mjs?v=20261121-comply-v1&landing=20261125-v1';
 import {statusPolicyCard} from './staff-work-ready.mjs?v=20261118-ready-v1';
 import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261119-tabs-v1&rev=20261119-nav';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
@@ -43,6 +49,7 @@ import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligation
 import {createAuditUI} from './staff-audit.mjs?v=20261110-taxrole-v3&rev=20261119-nav';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261118-ready-v1';
 import {currentReportingMonth,previousReportingMonthStart,monthEndDate} from './staff-reporting-calendar.mjs?v=20261102-reporting-calendar-v1';
+import {tabsFor,normaliseTab,STAFF_TABS,tabBarHtml,bindTabKeys,reachLine,emptyPeople,roleSummaryHtml,filterBarHtml,bindStaffFilter,accessPaneHtml,approvalsPaneHtml} from './staff-access-screen.mjs?v=20261211-screen';
 import {renderAccessGuide,categoryProfileBlock} from './staff-access-guide.mjs?v=20261106-rights-v1&reset=20261122-v1&cat=20261209-profile';
 import {STAFF_ACCESS_AREAS,defaultStaffAreas,effectiveStaffAreas} from './staff-access-control.mjs?v=20261105-check-v1';
 import {ACTION_RIGHTS,canUseAction,hasVisibleActionGroup} from './staff-action-rights.mjs?v=20261122-workload-v1&rf=20261209-review-floor';
@@ -50,7 +57,6 @@ import {STAFF_RIGHTS} from './staff-rights-catalog.mjs?v=20261118-approval-board
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v12';
 const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const roles={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Audit Supervisor',ASSISTANT:'Audit Assistant',INTERN:'Intern',ADMIN:'System Administrator'};
 const sectors=['Agribusiness','Financial Services','Energy','Healthcare','NGO','Public Sector','SME/Startup','Legal','Education'];
 const branches=['Nairobi','Bungoma','Kisii','Other'],states=['Pending','In Progress','Waiting on client','Paused','In Review','Blocked','Completed','Cancelled'];
 let navFlags={forensic:false,mlro:false},pendingClientTab='',data=null,view='home',firm='',setupToken=null,presence=null,procedures=null,selectedTask='',selectedClient='',clientTab='overview',missingProject=false,clientMappingReadiness=null,clientMappingReadinessRequest=null,clientAccountReturn=null,clientAccountReturnLabel='Return to purchase mapping';
@@ -58,8 +64,14 @@ let navFlags={forensic:false,mlro:false},pendingClientTab='',data=null,view='hom
 if(!localStorage.getItem('pcl-staff-session-v2')&&sessionStorage.getItem('pcl-staff-session-v2'))localStorage.setItem('pcl-staff-session-v2',sessionStorage.getItem('pcl-staff-session-v2'));
 sessionStorage.removeItem('pcl-staff-session-v2');
 let drafts=null; // the form-draft helper, created further down once the screens it reopens exist
-const session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut});
+let session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut}),stopWatchingSession;
 const isLeader=()=>data&&['PARTNER','MANAGER'].includes(data.me.category_code);
+const readRouteKey='pcl-staff-read-route';
+const defaultReadRoute=()=>isLeader()?'mumbai':'automatic';
+function readRoutePreference(){
+ const route=localStorage.getItem(readRouteKey);
+ return route==='automatic'||route==='mumbai'?route:'';
+}
 const canArea=area=>!!data&&(Array.isArray(data.me.allowed_areas)?data.me.allowed_areas:effectiveStaffAreas(data.me.category_code,data.me.restricted_areas||[])).includes(area)&&hasVisibleActionGroup(data.me.category_code,area,data.me.restricted_rights);
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const scheduleEndFor=start=>{const d=new Date(`${start}T00:00:00Z`);d.setUTCFullYear(d.getUTCFullYear()+5);d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);};
@@ -71,12 +83,13 @@ function notice(message,error=false){$('#notice').textContent=message;$('#notice
 function signedOut(message=''){session.end(message);}
 function showSignedOut(message=''){drafts?.detach();drafts?.clearAsides();timingRows.length=0;timingTargets.clear();data=null;navFlags={forensic:false,mlro:false};forensicMenuAt=0;mlroMenuAt=0;navBadges={};navOpenFor='';navBadgeAt=0;cardFlags=new Map();cardWip=new Map();workReady=new Map();workReadyLoaded=false;workReadyFailed=false;cardFacts.key='';cardFacts.at=0;document.body.classList.remove('nav-open');presence?.clear();if(typeof bell!=='undefined')bell.paint();if(typeof holidaysUI!=='undefined')holidaysUI.reset();if(typeof suite!=='undefined')suite.chat?.clear();if(typeof messenger!=='undefined')messenger.stop();document.body.classList.remove('workspace-active');$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));}
 async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},timeoutMs=0}={}){
- const headers={apikey:KEY,...extra};if(uploadKind)headers['x-erp-upload-kind']=uploadKind;if(!file)headers['Content-Type']='application/json';
+ const headers={apikey:KEY,'x-region':'ap-south-1',...extra};if(uploadKind)headers['x-erp-upload-kind']=uploadKind;if(!file)headers['Content-Type']='application/json';
+ const api=!file&&!blob&&data&&extra.Authorization?staffReadRequestUrl(API,p?.action,readRoutePreference()||defaultReadRoute()):API;
  const controller=timeoutMs?new AbortController():null;let timer,res;
- try{if(controller)timer=setTimeout(()=>controller.abort(),timeoutMs);res=await fetch(API,{method:'POST',headers,body:file?p:JSON.stringify(p),cache:'no-store',referrerPolicy:'no-referrer',signal:controller?.signal});}
+ try{if(controller)timer=setTimeout(()=>controller.abort(),timeoutMs);res=await fetch(api,{method:'POST',headers,body:file?p:JSON.stringify(p),cache:'no-store',referrerPolicy:'no-referrer',signal:controller?.signal});}
  catch(error){if(controller&&error?.name==='AbortError')throw Error('The sign-in service did not respond in time. Check your connection and try again.');if(controller&&error instanceof TypeError)throw Error('Could not reach the sign-in service. Check your connection and reload the page.');throw error;}
  finally{if(timer)clearTimeout(timer);}
- if(!res.ok){const e=await res.json().catch(()=>({}));throw Object.assign(Error(e.error||'The request failed.'),{status:res.status});}
+ if(!res.ok){const e=await res.json().catch(()=>({}));throw Object.assign(Error(e.error||'The request failed.'),{status:res.status,approval_item:e.approval_item});}
  return blob?res.blob():res.json();
 }
 const measuredActions={
@@ -86,7 +99,11 @@ const measuredActions={
  workbook_map:'Map rows',
  workbook_map_groups:'Map account groups',
  tax_read:'Open tax review',
- tax_row_review_batch:'Confirm bulk decision'
+ tax_row_review_batch:'Confirm bulk decision',
+ settings_approvals_read:'Open Settings approvals',
+ settings_approval_items_read:'Open approval details',
+ ledger_read:'Load financial report data',
+ ledger_report_gate:'Check financial report readiness'
 };
 const timingRows=[],timingTargets=new Map();
 function openTimingLog(){
@@ -99,10 +116,17 @@ function openTimingLog(){
   const local=new Intl.DateTimeFormat('en-KE',{timeZone:'Africa/Nairobi',dateStyle:'short',timeStyle:'medium'}).format(r.at);
   return `<tr><td>${esc(local)}</td><td>${esc(measuredActions[r.action])}</td><td>${r.seconds.toFixed(2)} s</td><td>${target?target.toFixed(2)+' s':'—'}</td><td>${result}</td></tr>`;
  }).join('');
+ const routeOptions=options([['automatic','Automatic'],['mumbai','Mumbai']],readRoutePreference(),
+  defaultReadRoute()==='mumbai'?'Rollout default (Mumbai)':'Rollout default (Automatic)');
  modal('Import and review timings',
   '<p>Elapsed times for this sign-in. Enter the agreed target for each action to compare results. Targets and timings clear on sign-out.</p>'+
+  `<div class="filters"><label>Settings and Financial Reports read routing for this browser<select id="staffReadRoute">${routeOptions}</select></label></div>`+
   `<div class="filters" id="timingSettings"><label>Action<select id="timingAction">${options(Object.entries(measuredActions),selectedAction)}</select></label>${targetInput}<button type="button" id="timingSet">Set target</button></div>`+
   `<div class="scroll"><table><thead>${heading}</thead><tbody>${rows||'<tr><td colspan="5">No measured actions yet.</td></tr>'}</tbody></table></div>`);
+ $('#staffReadRoute').onchange=e=>{
+  if(e.target.value)localStorage.setItem(readRouteKey,e.target.value);
+  else localStorage.removeItem(readRouteKey);
+ };
  const action=$('#timingAction'),target=$('#timingSettings [name=timing_seconds]');
  action.onchange=()=>{target.value=timingTargets.get(action.value)??'';};
  $('#timingSet').onclick=()=>{
@@ -123,10 +147,10 @@ async function request(p,{auth=true,...options}={}){
  finally{if(started!==null&&data){timingRows.unshift({action,at:new Date(),seconds:(performance.now()-started)/1000,error});if(timingRows.length>100)timingRows.length=100;}}
 }
 const load=createLoadQueue(options=>loadNow(options));
-async function loadNow(requestOptions={}){data=await request({action:'workspace'},requestOptions);syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
+async function loadNow({waitForPresence=false,...requestOptions}={}){data=await request({action:'workspace'},requestOptions);syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
  $('#greeting').textContent='My workspace';$('#roleLabel').textContent=roles[data.me.category_code]+' · '+data.me.login_id;
  $('#firmFilter').innerHTML=options(data.firms.map(x=>[x.firm_id,x.firm_code+' · '+x.legal_name]),firm,'All authorised firms');
- $('.firm-picker').hidden=data.me.category_code==='INTERN';applyWorkspaceRoute(false);render();await openCommunicationHash();void presence.refresh();}
+ $('.firm-picker').hidden=data.me.category_code==='INTERN';applyWorkspaceRoute(false);render();await openCommunicationHash();if(waitForPresence)await presence.refresh();else void presence.refresh();}
 let viewStaff=VS_DEFAULT,viewStaffOpts=null,viewStaffFor='';
 function paintStaffPicker(){const w=$('#staffPicker');if(!w)return;const ok=hasPicker(viewStaffOpts);w.hidden=!ok;$('#staffFilter').innerHTML=ok?pickerOptions(viewStaffOpts,esc,viewStaff,data.me.staff_id):'';}
 async function loadViewStaff(){const who=data.me.staff_id;viewStaffFor=who;try{const o=await request({action:'view_staff_options'});if(viewStaffFor!==who)return;viewStaffOpts=o;}catch{viewStaffOpts=null;}paintStaffPicker();if(['time','team','projects','task'].includes(view))render();}
@@ -182,18 +206,7 @@ async function refreshForensicMenu(force=false){
  finally{forensicMenuBusy=false;}
 }
 function setNavDrawer(open){document.body.classList.toggle('nav-open',!!open);$('#navToggle')?.setAttribute('aria-expanded',String(!!open));}
-function nav(){const catalog=[
- {view:'clients',title:'Clients',area:'clients',icon:'▦',tone:'green',desc:'Client onboarding and records'},
- {view:'projects',title:'Projects & Tasks',area:'projects',icon:'▣',tone:'blue',desc:'Engagements, workpapers and tasks'},
- {view:'time',title:'Time & Attendance',area:'time_hr',icon:'◷',tone:'amber',desc:'Timesheets and attendance'},
- {view:'documents',title:'Documents',area:'documents',icon:'▤',tone:'violet',desc:'Source files and evidence'},
- {view:'communications',title:'Communications Hub',area:'communications',icon:'◉',tone:'teal',desc:'Client and team messages'},
- {view:'audit',title:'Audit & assurance',area:'audit',icon:'✓',tone:'rose',desc:'Audit work and review'},
- {view:'finance',title:'Finance & Reports',area:'billing_wip',icon:'£',tone:'orange',desc:'Billing and work in progress'},
- {view:'staff',title:'Staff & access',area:'staff_access',icon:'♙',tone:'cyan',desc:'Staff, teams and permissions'},
- {view:'firms',title:'Settings',area:'settings',icon:'⚙',tone:'slate',desc:'Firm and workspace setup'},
- {view:'leads',title:'Leads & Pipeline',area:'leads',icon:'＋',tone:'purple',desc:'Prospect handover'}
-],cards=catalog.filter(item=>canArea(item.area)).map(item=>`<button class="workspace-area-card tone-${item.tone}" type="button" data-view="${item.view}" data-area="${item.area}"><span class="workspace-area-icon" aria-hidden="true">${item.icon}</span><b>${esc(item.title)}</b><small>${esc(item.desc)}</small></button>`).join('');const by=v=>catalog.find(item=>item.view===v&&canArea(item.area)),leaf=(v,title,icon)=>{const it=by(v);return it?{view:v,title,icon:icon||it.icon}:null;},
+function nav(){const catalog=WORKSPACE_AREAS,cards=catalog.filter(item=>canArea(item.area)).map(item=>`<button class="workspace-area-card tone-${item.tone}" type="button" data-view="${item.view}" data-area="${item.area}"><span class="workspace-area-icon" aria-hidden="true">${item.icon}</span><b>${esc(item.title)}</b><small>${esc(item.desc)}</small></button>`).join('');const by=v=>catalog.find(item=>item.view===v&&canArea(item.area)),leaf=(v,title,icon)=>{const it=by(v);return it?{view:v,title,icon:icon||it.icon}:null;},
   team=['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code)&&canArea('time_hr')?{view:'team',title:'Team & HR',icon:'♙'}:null,
   lead=leaf('leads','Leads & Pipeline','＋'),audit=leaf('audit','Audit files','✓'),staffLeaf=leaf('staff','Staff & access','♙'),settingsLeaf=leaf('firms','Settings','⚙'),
   modLinks=v=>moduleLinks(data.me,v,canArea,navFlags),
@@ -239,7 +252,16 @@ function bindWorkspaceSearch(){const input=$('#workspaceSearch');if(!input)retur
  out.hidden=false;out.innerHTML=matches.slice(0,20).map(x=>`<div><small>${esc(x.text.split(' · ')[0])}</small>${x.html}</div>`).join('')||'<p>No matching authorised records loaded.</p>';};}
 
 function clientMappingLabel(s){const activities=Number(s?.activity_count||0),methods=Number(s?.stock_method_count||0),categories=Number(s?.category_count||0),accounts=Number(s?.approved_account_count||0),pending=Number(s?.pending_account_count||0),stock=activities?(methods&&categories?`${activities} activities · ${methods} stock methods · ${categories} categories`:`${activities} activities · stock setup incomplete`):'No activity saved';return [accounts?'good':'warn',`${accounts} general mappings active${pending?` · ${pending} awaiting review`:''} · ${stock}`];}
-function repaintClientCards(){const grid=document.querySelector('.client-grid');if(!grid)return;const tmp=document.createElement('div');tmp.innerHTML=clients();const fresh=tmp.querySelector('.client-grid'),chips=tmp.querySelector('.cc-chips'),old=document.querySelector('.cc-chips');if(fresh)grid.innerHTML=fresh.innerHTML;if(chips&&old)old.innerHTML=chips.innerHTML;bindClientChips();const search=document.querySelector('#search');if(search)search.dispatchEvent(new Event('input'));}
+function repaintClientCards(){
+ const grid=$('.client-grid');if(!grid)return;
+ const scroll=grid.closest('.workspace-main-content'),position=scroll?.scrollTop;
+ const tmp=document.createElement('div');tmp.innerHTML=clients();
+ const fresh=tmp.querySelector('.client-grid'),chips=tmp.querySelector('.cc-chips'),old=$('.cc-chips');
+ if(fresh&&grid.innerHTML!==fresh.innerHTML)grid.innerHTML=fresh.innerHTML;
+ if(chips&&old&&old.innerHTML!==chips.innerHTML){old.innerHTML=chips.innerHTML;bindClientChips();}
+ applyClientFilters();
+ if(scroll)scroll.scrollTop=position;
+}
 async function loadClientMappingReadiness(){if(!isLeader()||clientMappingReadiness||clientMappingReadinessRequest)return;clientMappingReadinessRequest=request({action:'v3_client_mapping_readiness'}).then(rows=>{clientMappingReadiness=new Map(rows.map(x=>[x.client_id,x]));if(view==='clients')repaintClientCards();}).catch(error=>{if(view==='clients')document.querySelectorAll('[data-client-status]').forEach(node=>{if(node.textContent==='Checking…')node.textContent='Status unavailable'});}).finally(()=>{clientMappingReadinessRequest=null;});await clientMappingReadinessRequest;}
 function classifyClients(){
  const list=unclassified(data.clients),rows=structureRows(data);
@@ -261,15 +283,36 @@ document.addEventListener('click',e=>{
  const b=e.target.closest('[data-status-policy]');if(!b||!statusPolicy)return;const turnOn=b.dataset.statusPolicy==='on';
  modal(turnOn?'Require the approved Chart of Accounts':'Stop requiring the approved Chart of Accounts',form(`<p class="info full">${turnOn?'From now on a client is Healthy only when its Chart of Accounts is also approved. Cards change on their next refresh.':'A client is Healthy again once KYC, PIN, engagement and signed letter are in place, whether or not the chart is approved.'} Your name, the date and your reason are recorded, and the earlier choice stays on record.</p><label class="full">Why is this being changed? *<textarea name="reason" required minlength="10" maxlength="500"></textarea></label>`,'Record this choice'),f=>request({action:'client_status_policy_set',require_chart:turnOn,reason:f.get('reason')}),()=>{cardFacts.at=0;void paintStatusPolicy();},{successMessage:'Recorded. Client cards will use this choice.'});
 });
-let clientStateFilter='all',bindClientChips=()=>{},clientQuery=DEFAULT_QUERY(),clientPage=null,clientPageLoading=false,searchTimer=0;
+let clientStateFilter='all',clientQuery=DEFAULT_QUERY(),clientPage=null,clientPageLoading=false,searchTimer=0;
+function applyClientFilters(){
+ const q=($('#search')?.value||'').toLowerCase(),sf=$('#clientStructureFilter')?.value||'';
+ for(const card of document.querySelectorAll('.client-grid [data-search]')){
+  const {state,structure,incomplete}=card.dataset,filter=clientStateFilter;
+  const stateMatches=filter==='all'||state==='all'||(filter==='setup'&&incomplete!==undefined?incomplete==='1':state===filter);
+  card.hidden=!card.dataset.search.includes(q)||!stateMatches||!!(sf&&(sf==='__missing'?structure!=='':structure!==sf));
+ }
+}
+function bindClientChips(){
+ for(const button of document.querySelectorAll('[data-client-state]'))button.onclick=()=>{
+  clientStateFilter=button.dataset.clientState;
+  document.querySelectorAll('[data-client-state]').forEach(chip=>{
+   const selected=chip.dataset.clientState===clientStateFilter;
+   chip.classList.toggle('on',selected);
+   chip.setAttribute('aria-pressed',String(selected));
+  });
+  applyClientFilters();
+ };
+}
 async function fetchClientPage(){
  if(clientPageLoading)return;clientPageLoading=true;const snap=JSON.stringify([clientQuery,firm]);
- try{const r=await request(queryToRequest(clientQuery,firm));if(JSON.stringify([clientQuery,firm])!==snap){clientPageLoading=false;return fetchClientPage();}
-  if(r.page>0&&r.page>=r.pages){clientQuery.page=r.pages-1;clientPageLoading=false;return fetchClientPage();}clientPage=r;}
- catch(e){clientPage={error:e.message,rows:[],total:0,page:0,pages:1,page_size:clientQuery.size};}
- clientPageLoading=false;if(view!=='clients')return;
- const el=document.activeElement,keep=el&&el.id==='search'?el.selectionStart:null;render();
- if(keep!==null){const n=$('#search');if(n){n.focus();n.setSelectionRange(keep,keep);}}
+ let page;
+ try{page=await request(queryToRequest(clientQuery,firm));}
+ catch(e){page={error:e.message,rows:[],total:0,page:0,pages:1,page_size:clientQuery.size};}
+ clientPageLoading=false;if(!data)return;
+ if(JSON.stringify([clientQuery,firm])!==snap){if(view==='clients')return fetchClientPage();return;}
+ if(page.page>0&&page.page>=page.pages){clientQuery.page=page.pages-1;return fetchClientPage();}
+ clientPage=page;
+ if(view==='clients')render();
 }
 // Extra facts for the cards on screen: KRA notices near their deadline, files waiting in Incoming review and WIP (Managers and Partners).
 // The database decides what each person may see; a failure leaves the cards as they are. Fetched at most once a minute for the same clients.
@@ -292,7 +335,7 @@ function clients(){
  if(leaderView&&!clientPage&&!clientPageLoading)void fetchClientPage();
  const rows=leaderView?(clientPage?.rows||[]).map(r=>byId.get(r.client_id)).filter(Boolean):filtered().clients.filter(c=>!isArchived(c));
  if(isLeader())void ensureCardFacts(rows.map(c=>c.client_id));
- const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button type="button" data-v3="bulk-setup">Bulk set-up</button><button type="button" data-v3="categories">Service categories</button><button data-v6="sector">+ Add sector</button>'+addClientButton(data)+(canUseAction(data.me?.restricted_rights,{action:'client_onboarding_alloc_read'},'clients')?'<button type="button" data-onb-open>Onboarding allocation</button>':'')+'<button data-suite="import-clients">Import clients from Excel</button></div>':'';
+ const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button type="button" data-setup-pipeline>Set-up status</button><button type="button" data-onboarding-batches>Onboarding batches</button>'+'<button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button type="button" data-v3="bulk-setup">Bulk set-up</button><button type="button" data-v3="categories">Service categories</button><button data-v6="sector">+ Add sector</button>'+addClientButton(data)+(canUseAction(data.me?.restricted_rights,{action:'client_onboarding_alloc_read'},'clients')?'<button type="button" data-onb-open>Onboarding allocation</button>':'')+'<button data-suite="import-clients">Import clients from Excel</button></div>':'';
  const cards=rows.map(c=>{
   const missing=c.details_visible?clientMissing(c):[],stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);
   const progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB});
@@ -304,7 +347,7 @@ function clients(){
  });
  const counts=stateCounts(cards.map(x=>({status:isLeader()?cardStatus(x.progress,{flags:x.flags,meta:x.row,wr:x.wr}):{key:'all'},incomplete:x.wr?x.wr.progress.pct<100:undefined})));
  const body=cards.map(x=>x.card).join('');
- return assistantLockBanner(data,esc)+proposalsCard(data,esc,staffName)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks">Client Setup Tasks</button>'+addClientButton(data)+'</div>'}</div><p class="muted">Use the setup guide to move each client through identity and year-end, opening TB import, period source posting, tax checks and project release. Create a draft project and client year first, then the preparer can upload, map and import the opening TB in one sitting. An independent Manager or Partner reviews the mappings and journal together and posts once. Complete Wholesale first, then repeat for Construction.</p>${isLeader()?'<p class="muted">Draft project setup does not unlock reporting or task release. Reports use posted entries only, and tasks stay locked until the opening balances are posted or confirmed not applicable and engagement checks are complete.</p><div class="actions"><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a></div>':''}<div class="actions">${structureFilter(structureRows(data),esc)}</div>${leaderView?registerBar(clientQuery,{sectors:(data.sectors||[]).map(x=>x.name),owners:data.staff.filter(x=>['MANAGER','PARTNER'].includes(x.category_code)&&x.access_status!=='Inactive')},esc):''}<input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients">${isLeader()?chipRow(counts,clientStateFilter,esc):''}<div class="client-grid">${body}</div>${leaderView&&!clientPage?'<p class="muted" role="status">Loading clients…</p>':''}${leaderView&&clientPage?.error?`<p class="info">${esc(clientPage.error)}</p>`:''}${!rows.length&&(!leaderView||(clientPage&&!clientPage.error))?empty(leaderView?'No clients match these filters.':'No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}${leaderView?registerPager(clientPage,esc):''}</div>`;
+ return assistantLockBanner(data,esc)+proposalsCard(data,esc,staffName)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks">Client Setup Tasks</button>'+addClientButton(data)+'<button type="button" data-onboarding-batches>Onboarding batches</button></div>'}</div><p class="muted">Use the setup guide to move each client through identity and year-end, opening TB import, period source posting, tax checks and project release. Create a draft project and client year first, then the preparer can upload, map and import the opening TB in one sitting. An independent Manager or Partner reviews the mappings and journal together and posts once. Complete Wholesale first, then repeat for Construction.</p>${isLeader()?'<p class="muted">Draft project setup does not unlock reporting or task release. Reports use posted entries only, and tasks stay locked until the opening balances are posted or confirmed not applicable and engagement checks are complete.</p><div class="actions"><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a></div>':''}<div class="actions">${structureFilter(structureRows(data),esc)}</div>${leaderView?registerBar(clientQuery,{sectors:(data.sectors||[]).map(x=>x.name),owners:data.staff.filter(x=>['MANAGER','PARTNER'].includes(x.category_code)&&x.access_status!=='Inactive')},esc):''}<input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients" value="${leaderView?esc(clientQuery.q):''}">${isLeader()?chipRow(counts,clientStateFilter,esc):''}<div class="client-grid">${body}</div>${leaderView&&!clientPage?'<p class="muted" role="status">Loading clients…</p>':''}${leaderView&&clientPage?.error?`<p class="info">${esc(clientPage.error)}</p>`:''}${!rows.length&&(!leaderView||(clientPage&&!clientPage.error))?empty(leaderView?'No clients match these filters.':'No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}${leaderView?registerPager(clientPage,esc):''}</div>`;
 }
 function renderClientProfile(){
  const c=data.clients.find(x=>x.client_id===selectedClient);let progress=null,step=null,status=null;
@@ -342,11 +385,33 @@ function openingBalanceState(client,status){const resetting=status==='Pending';m
 function projectActions(){const off=new Set(data.me.restricted_rights||[]),leader=isLeader(),supervisor=data.me.category_code==='SUPERVISOR',buttons=[];
  if((leader||supervisor)&&!off.has('project.propose'))buttons.push(`<button data-new="project">${leader?'+ Draft project':'+ Propose project'}</button>`);
  if(leader)buttons.push('<button class="primary" data-new="task">+ Assign task</button>');
+ buttons.push('<button type="button" data-month-work>Monthly work</button>');
  return buttons.length?`<div class="actions">${buttons.join('')}</div>`:'';}
 function projects(){const f=filtered();return `<div class="card"><div class="section-head"><h2>Projects & assigned tasks</h2>${projectActions()}</div><p class="muted">One workspace across authorised firms. Each project retains its handling firm. A Supervisor proposes a project as a Draft; a Manager or Partner activates it and releases its tasks.</p>${f.projects.length?`<div class="scroll"><table><thead><tr><th>Project</th><th>Client</th><th>Handling firm</th><th>Status</th></tr></thead><tbody>${f.projects.map(p=>`<tr><td>${esc(p.project_name)}</td><td>${esc(clientName(p.client_id))}</td><td>${esc(firmName(p.handling_firm_id))}</td><td>${badge(p.status)}${p.status==='Draft'?'<small class="muted"> Proposed: waits for a Manager or Partner to activate</small>':''}</td></tr>`).join('')}</tbody></table></div>`:''}<h3 class="section-space">Tasks</h3>${taskRows(f.tasks)}</div>`;}
+let staffTab='people';
+function staffRow(s){
+ const restricted=s.restricted_areas||[],custom=restricted.length||(s.restricted_rights||[]).length;
+ return `<tr data-staff-row data-search="${esc([s.full_name,s.staff_identifier,s.login_id].join(' ').toLowerCase())}" data-role="${esc(s.category_code)}" data-status="${esc(s.access_status||'')}" data-custom="${custom?1:0}"><td>${s.staff_id===data.me.staff_id?esc(s.full_name):`<button class="link" data-staff="${s.staff_id}" title="Edit staff profile and ERP role">${esc(s.full_name)}</button>`}<small>${esc(s.staff_identifier)} · ${esc(s.login_id)}</small></td><td>${esc(roles[s.category_code])}</td><td>${esc(s.employment_type)}<small>${s.contract_end_date?'Ends '+esc(shortDate(s.contract_end_date)):''}</small></td><td>${badge(s.access_status)}</td><td>${restricted.length?`<span class="badge warn">Custom · ${restricted.length} restricted</span><small>${esc(restricted.map(code=>STAFF_ACCESS_AREAS.find(x=>x.code===code)?.label||code).join(', '))}</small>`:'Role defaults'}</td><td>${s.staff_id!==data.me.staff_id?`<div class="actions"><button data-rights="${s.staff_id}">Edit access</button><details class="cc-more cc-more-wide"><summary aria-label="More actions for ${esc(s.full_name)}" title="More actions"><span aria-hidden="true">More ▾</span></summary><div class="cc-menu" role="menu" aria-label="More actions for ${esc(s.full_name)}"><button type="button" data-link="${s.staff_id}">${s.access_status==='Active'?'Reset password':'Generate login link'}</button><button type="button" class="danger" data-disable="${s.staff_id}">Disable access</button></div></details></div>`:'Your account'}</td></tr>`;
+}
+function staffPeoplePane(){
+ const me=data.me,rows=data.staff.map(staffRow).join(''),line=reachLine(me.category_code);
+ return `${line?`<p class="muted">${esc(line)}</p>`:''}${roleSummaryHtml(data.staff,roles,esc)}${data.staff.filter(s=>s.staff_id!==me.staff_id).length?filterBarHtml(data.staff,roles,esc):`<p class="info">${esc(emptyPeople(me.category_code))}</p>`}<div class="scroll staff-roster"><table data-views="ERP role"><thead><tr><th>Staff / login ID</th><th>ERP role</th><th>Employment</th><th>Account</th><th>ERP areas</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div><p class="muted" id="staffNone" hidden>No one matches these filters.</p>`;
+}
 function staff(){
- const managerReset=data.me.category_code==='MANAGER'&&canUseAction(data.me.restricted_rights,{action:'manager_password_reset_targets'},'staff_access');
- const counts=Object.entries(roles).map(([code,label])=>`<span class="badge">${esc(label)} · ${data.staff.filter(s=>s.category_code===code).length}</span>`).join(' ');return `${renderAccessGuide(data.me.category_code,esc)}<div class="card"><div class="section-head"><h2>Staff roster & access</h2><div class="actions"><button class="primary" data-new="staff">+ Add staff</button>${suite.button('import-staff','Import staff from Excel')}${managerReset?'<button type="button" data-manager-password-reset>Reset a manager’s password</button>':''}${data.me.category_code==='PARTNER'?'<button data-extra-rights>Additional rights</button>':''}</div></div><p class="muted">Assign one ERP role to each person in their profile; any number of staff can share a role. A Partner can assign all roles. A Manager can assign team roles to their direct reports. Use Edit access to restrict individual ERP areas within that person’s role.</p><div class="actions section-space">${counts}</div><div class="scroll staff-roster"><table data-views="ERP role"><thead><tr><th>Staff / login ID</th><th>ERP role</th><th>Employment</th><th>Account</th><th>ERP areas</th><th>Actions</th></tr></thead><tbody>${data.staff.map(s=>{const restricted=s.restricted_areas||[];return `<tr><td>${s.staff_id===data.me.staff_id?esc(s.full_name):`<button class="link" data-staff="${s.staff_id}" title="Edit staff profile and ERP role">${esc(s.full_name)}</button>`}<small>${esc(s.staff_identifier)} · ${esc(s.login_id)}</small></td><td>${esc(roles[s.category_code])}</td><td>${esc(s.employment_type)}<small>${s.contract_end_date?'Ends '+esc(shortDate(s.contract_end_date)):''}</small></td><td>${badge(s.access_status)}</td><td>${restricted.length?`<span class="badge warn">Custom · ${restricted.length} restricted</span><small>${esc(restricted.map(code=>STAFF_ACCESS_AREAS.find(x=>x.code===code)?.label||code).join(', '))}</small>`:'Role defaults'}</td><td>${s.staff_id!==data.me.staff_id?`<div class="actions"><button data-rights="${s.staff_id}">Edit access</button><details class="cc-more cc-more-wide"><summary aria-label="More actions for ${esc(s.full_name)}" title="More actions"><span aria-hidden="true">More ▾</span></summary><div class="cc-menu" role="menu" aria-label="More actions for ${esc(s.full_name)}"><button type="button" data-link="${s.staff_id}">${s.access_status==='Active'?'Reset password':'Generate login link'}</button><button type="button" class="danger" data-disable="${s.staff_id}">Disable access</button></div></details></div>`:'Your account'}</td></tr>`;}).join('')}</tbody></table></div></div>`;}
+ const me=data.me,role=me.category_code;staffTab=normaliseTab(staffTab,role);
+ const managerReset=role==='MANAGER'&&canUseAction(me.restricted_rights,{action:'manager_password_reset_targets'},'staff_access');
+ const tabs=tabsFor(role),active=STAFF_TABS.find(t=>t.code===staffTab);
+ const headerButtons=`<button class="primary" data-new="staff">+ Add staff</button>${suite.button('import-staff','Import staff from Excel')}${managerReset?'<button type="button" data-manager-password-reset>Reset a manager’s password</button>':''}`;
+ const extra=role==='PARTNER'?'<button data-extra-rights>Additional rights</button>':'';
+ const pane=staffTab==='people'?staffPeoplePane():staffTab==='allocations'?'<div id="allocHost"><p class="muted">Loading allocations…</p></div>':staffTab==='access'?accessPaneHtml({me,staff:data.staff,roles,areaLabel:code=>STAFF_ACCESS_AREAS.find(x=>x.code===code)?.label||code,esc,extraButtons:extra}):approvalsPaneHtml({esc});
+ return `<div class="card staff-screen"><div class="section-head"><div><h2>Staff & access</h2><p class="muted">${esc(active.about)}</p></div>${staffTab==='people'?`<div class="actions">${headerButtons}</div>`:''}</div>${tabBarHtml(tabs,staffTab,esc,{counts:{people:data.staff.length}})}<div id="staffpane" role="tabpanel" aria-labelledby="stafftab-${esc(staffTab)}" tabindex="0">${pane}</div></div>`;
+}
+// After the page is drawn: wire the tab keys, the roster filter, and mount the inline allocation screen.
+function afterStaffRender(){
+ const root=$('#content');bindTabKeys(root);
+ if(staffTab==='people')bindStaffFilter(root);
+ if(staffTab==='allocations'){const host=$('#allocHost');if(host)void improvements.mountAllocations(host).catch(e=>{host.innerHTML=`<p class="error" role="alert">${esc(e.message||'Allocations could not be loaded.')}</p>`;});}
+}
 function documents(){
  const batchDocs=new Set((data.workbook_batches||[]).map(b=>b.document_id)),isImport=d=>d.is_import_source||d.category==='Import Sources'||batchDocs.has(d.document_id),archivedView=documentKind==='Archived sources';
  const rows=filtered().documents.filter(d=>archivedView?!!d.archived_at:!d.archived_at&&(isImport(d)===(documentKind==='Import Sources')));
@@ -363,7 +428,21 @@ const crumbLabels={clients:'Clients',projects:'Projects & Tasks',time:'Time & At
 function paintCrumbs(){const el=$('#crumbs');if(!el)return;if(view==='home'||view==='task'||view==='clientfile'||!crumbLabels[view]){el.hidden=true;el.replaceChildren();return;}el.hidden=false;el.innerHTML=`<a href="#view=home" data-view="home">Home</a><span aria-hidden="true">/</span><span aria-current="page">${esc(crumbLabels[view])}</span>`;}
 loadMyWorkMode(globalThis.localStorage);
 watchStickyBar($('#content'));
-function render(){bindWorkspaceSearch();const allowed=['home'];if(canArea('projects'))allowed.push('task','projects');if(canArea('clients'))allowed.push('clients','clientfile');if(canArea('time_hr'))allowed.push('time');if(canArea('time_hr')&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))allowed.push('team');if(canArea('documents'))allowed.push('documents');if(canArea('communications'))allowed.push('communications');for(const [area,target] of [['audit','audit'],['leads','leads'],['billing_wip','finance'],['staff_access','staff'],['settings','firms']])if(canArea(area))allowed.push(target);if(!allowed.includes(view))view='home';nav();paintCrumbs();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';$('#content').innerHTML=detailReturn()+({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,clientfile:renderClientProfile,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<details class="settings-fold section-space" id="taxWorkFold" name="projects-more"><summary>Tax compilation, approvals and KRA notices</summary><section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>${['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(data.me.category_code)?`<section class="card section-space" id="kraNoticesCard"><h2>KRA notices</h2><p class="muted">Log each notice KRA sends, see the verification task it creates, and clear its non-compliance flags.</p>${suite.button('kra-open','Open the KRA notice log')}</section>`:''}</details>`,audit:audit.render,team:teamUI.render,time:()=>staffAttendancePanel()+v6.time()+suite.hr(),staff,documents,firms:()=>suite.settings({access:policyCard(data,esc,shortDate)+otherPoliciesCard(data,esc,shortDate)+statusPolicyCard(statusPolicy,{esc,fmt:shortDate})+goLiveCard(data,esc),firm:holidaysUI.render()}),communications:suite.communications,finance:suite.finance}[view])();applyItemViews($('#content'),{view,storage:globalThis.localStorage});v6.bind();presence.paint();bell.paint();if(view==='time')void paintStaffAttendance();if(view==='audit')audit.enter();if(view==='home'&&!['INTERN','ADMIN'].includes(data.me.category_code))void workQueue.mount();if(view==='home'&&(isLeader()||data.me.category_code==='SUPERVISOR'))void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='clientfile'&&clientTab==='credentials'&&$('#clientTabHost')?.dataset.tab==='credentials')mountClientVault($('#clientTabHost'),{clientId:selectedClient,request,esc,shortDate});if(view==='clientfile'&&clientTab==='documents')void paintDocRequests({request,esc,shortDate,data:()=>data});if(view==='clientfile'&&((isLeader()&&['setup','tax'].includes(clientTab))||['aml','understanding'].includes(clientTab)))void improvements.paintClientTab(clientTab,selectedClient).catch(e=>{const h=$('#clientTabHost');if(h)h.innerHTML='<p class="error" role="alert">'+esc(e.message)+'</p>';});if(view==='home'&&data.me.category_code==='PARTNER'){void v6.paintPartnerEscalations();void suite.kra.paintBanner();}if(view==='documents')void suite.incoming.paintCard();if(view==='documents')void suite.docReview.paintStates();if(view==='home'&&['PARTNER','MANAGER'].includes(data.me.category_code)){void teamUI.paintPool();void metricsUI.paint();}if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='firms')void paintStatusPolicy();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();if($('#search')){const runClientFilter=()=>{const q=($('#search').value||'').toLowerCase(),sf=$('#clientStructureFilter')?.value||'';document.querySelectorAll('[data-search]').forEach(r=>{const s=r.dataset.structure,st=clientStateFilter,stateHidden=st!=='all'&&r.dataset.state!=='all'&&!(st==='setup'&&r.dataset.incomplete!==undefined?r.dataset.incomplete==='1':r.dataset.state===st);r.hidden=!r.dataset.search.includes(q)||!!(sf&&(sf==='__missing'?s!=='':s!==sf))||stateHidden;});};bindClientChips=()=>document.querySelectorAll('[data-client-state]').forEach(b=>b.onclick=()=>{clientStateFilter=b.dataset.clientState;document.querySelectorAll('[data-client-state]').forEach(x=>{const on=x.dataset.clientState===clientStateFilter;x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});runClientFilter();});bindClientChips();runClientFilter();$('#search').oninput=runClientFilter;if(isLeader()){const el=$('#search');el.value=clientQuery.q;el.oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{const pos=el.selectionStart;clientQuery.q=el.value.trim();clientQuery.page=0;clientPage=null;render();const n=$('#search');if(n){n.focus();n.setSelectionRange(pos,pos);}},350);};runClientFilter();}if($('#clientStructureFilter'))$('#clientStructureFilter').onchange=runClientFilter;}}
+let swapContent=null;
+function render(){swapContent||=createContentSwap($('#content'));bindWorkspaceSearch();const allowed=['home'];if(canArea('projects'))allowed.push('task','projects');if(canArea('clients'))allowed.push('clients','clientfile');if(canArea('time_hr'))allowed.push('time');if(canArea('time_hr')&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))allowed.push('team');if(canArea('documents'))allowed.push('documents');if(canArea('communications'))allowed.push('communications');for(const [area,target] of [['audit','audit'],['leads','leads'],['billing_wip','finance'],['staff_access','staff'],['settings','firms']])if(canArea(area))allowed.push(target);if(!allowed.includes(view))view='home';nav();paintCrumbs();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';swapContent(detailReturn()+({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,clientfile:renderClientProfile,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<details class="settings-fold section-space" id="taxWorkFold" name="projects-more"><summary>Tax compilation, approvals and KRA notices</summary><section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>${['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(data.me.category_code)?`<section class="card section-space" id="kraNoticesCard"><h2>KRA notices</h2><p class="muted">Log each notice KRA sends, see the verification task it creates, and clear its non-compliance flags.</p>${suite.button('kra-open','Open the KRA notice log')}</section>`:''}</details>`,audit:audit.render,team:teamUI.render,time:()=>staffAttendancePanel()+v6.time()+suite.hr(),staff,documents,firms:()=>suite.settings({access:policyCard(data,esc,shortDate)+otherPoliciesCard(data,esc,shortDate)+statusPolicyCard(statusPolicy,{esc,fmt:shortDate})+goLiveCard(data,esc),firm:holidaysUI.render()}),communications:suite.communications,finance:suite.finance}[view])(),view);applyItemViews($('#content'),{view,storage:globalThis.localStorage});v6.bind();presence.paint();bell.paint();if(view==='time')void paintStaffAttendance();if(view==='audit')audit.enter();if(view==='home'&&!['INTERN','ADMIN'].includes(data.me.category_code))void workQueue.mount();if(view==='home'&&(isLeader()||data.me.category_code==='SUPERVISOR'))void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='clientfile'&&clientTab==='credentials'&&$('#clientTabHost')?.dataset.tab==='credentials')mountClientVault($('#clientTabHost'),{clientId:selectedClient,request,esc,shortDate});if(view==='clientfile'&&clientTab==='documents')void paintDocRequests({request,esc,shortDate,data:()=>data});if(view==='clientfile'&&((isLeader()&&['setup','tax'].includes(clientTab))||['aml','understanding'].includes(clientTab)))void improvements.paintClientTab(clientTab,selectedClient).catch(e=>{const h=$('#clientTabHost');if(h)h.innerHTML='<p class="error" role="alert">'+esc(e.message)+'</p>';});if(view==='home'&&data.me.category_code==='PARTNER'){void v6.paintPartnerEscalations();void suite.kra.paintBanner();}if(view==='documents')void suite.incoming.paintCard();if(view==='documents')void suite.docReview.paintStates();if(view==='home'&&['PARTNER','MANAGER'].includes(data.me.category_code)){void teamUI.paintPool();void metricsUI.paint();}if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='staff')afterStaffRender();if(view==='firms')void paintStatusPolicy();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();const search=$('#search');if(search){
+ bindClientChips();
+ applyClientFilters();
+ search.oninput=isLeader()?()=>{
+  clearTimeout(searchTimer);
+  const query=search.value.trim();
+  searchTimer=setTimeout(()=>{
+   if(view!=='clients'||query===clientQuery.q)return;
+   clientQuery.q=query;clientQuery.page=0;
+   void fetchClientPage();
+  },350);
+ }:applyClientFilters;
+ if($('#clientStructureFilter'))$('#clientStructureFilter').onchange=applyClientFilters;
+}}
 function detailReturn(){
  const route=workspaceRoute(location.hash)||{};
  if(route.returnTo&&(view==='clientfile'||view==='task'||view==='projects'&&route.id))return `<div class="detail-return"><button type="button" data-return-back="1">${esc(returnLabel(route.returnTo))}</button></div>`;
@@ -375,7 +454,7 @@ function field(name,label,value='',type='text',extra=''){return `<label>${label}
 function select(name,label,items,value='',blank='Choose…'){return `<label>${label}<select name="${name}">${options(items,value,blank)}</select></label>`;}
 function firmChecks(selected=[]){return `<fieldset class="full"><legend>Authorised / handling firms *</legend>${data.firms.map(f=>`<label><input type="checkbox" name="firm_ids" value="${f.firm_id}"${selected.includes(f.firm_id)?' checked':''}>${esc(f.firm_code+' · '+f.legal_name)}</label>`).join('')||'<p>Add a firm first.</p>'}</fieldset>`;}
 let editorBack=null,editorSaveObserver=null,editorPending=false,editorEdited=false,editorRevision=0;
-function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='Saving…',pendingMessage='Saving your changes. Please wait.',successMessage='Saved successfully.',onBack=null,draft=null}={}){
+function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='Saving…',pendingMessage='Saving your changes. Please wait.',successMessage='Saved successfully.',backLabel='Return to list',onBack=null,draft=null}={}){
  const messengerButton=$('#editorMessenger');if(messengerButton)messengerButton.hidden=!canArea('communications')||!canUseAction(data?.me?.restricted_rights,{action:'discussion_list'});
  const editor=$('#editor'),body=$('#editorBody'),status=$('#editorNotice'),save=$('#editorSave'),back=$('#closeEditor');
  const revision=++editorRevision;
@@ -383,7 +462,8 @@ function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='
  editorBack=onBack;
  editorPending=false;
  editorEdited=false;
- editor.classList.remove('accounting-drawer','ledger-dialog','discussion-dialog','mapping-workspace');
+ editor.classList.remove('accounting-drawer','ledger-dialog','discussion-dialog','mapping-workspace','approval-drawer');
+ back.textContent=backLabel;
  $('#editorTitle').textContent=title;
  status.textContent='';
  body.innerHTML=html;
@@ -482,7 +562,7 @@ async function editClient(c={}){
   const tax_setup=scheduleNeedsSave?{project_id:existing?.project_id,revision:existing?.revision,firm_id:firmId,...scheduleValues,require_schedule_preview:true,schedule_previewed:schedulePreviewed,confirm_task_backlog:f.has('confirm_task_backlog')}:undefined;
   return request({...Object.fromEntries(f),action:'client_save',client_id:c.client_id,revision:c.revision,firm_ids:f.getAll('firm_ids'),tax_setup});
  },result=>{if(result?.tax_project_id){if(taxDraftKey)sessionStorage.removeItem(taxDraftKey);notice(result.tax_project_status==='Active'?`Active project saved. ${Number(result.tax_generated||0)} due task(s) generated; later tasks follow their scheduled release dates.`:'Draft project saved. No tasks were released. Create the client year, then upload, map and import the opening TB. An independent Manager or Partner reviews the mappings and journal together and posts once before reports or task release.');}else if(result?.client_id&&taxDraftToSave){try{sessionStorage.setItem(`pcl-client-tax-draft:${result.client_id}`,JSON.stringify(taxDraftToSave));notice('Client profile saved. Choose the handling firm to create the Draft project and client year. Upload, map and import the opening TB there, then have an independent reviewer post it.');}catch{notice('Client profile saved. Complete client setup, then re-enter the task settings.');}}else if(result?.client_id&&removeTaxDraft){sessionStorage.removeItem(taxDraftKey);notice('Client details saved. The unsaved task schedule was cleared.');}else if(result?.client_id){const savedClient=data.clients.find(x=>x.client_id===result.client_id),identityReady=!!savedClient?.legal_entity_type&&String(savedClient.entity_evidence||'').trim().length>=10&&!!savedClient.year_end_month&&!!savedClient.year_end_day,staged=data.documents.find(d=>d.client_id===result.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);if(!identityReady)notice('Client details saved. Complete the legal entity, supporting source and financial year-end before continuing.');else if(staged)notice(`Client details saved. The opening TB is staged under ${firmName(staged.handling_firm_id)||'the selected firm'}. Create the Draft project and client year, then import and map it in one sitting.`);else notice('Client details saved. Create the Draft project and client year, then upload, map and import the opening TB. No reports or tasks are released until the opening balance and engagement checks are complete.');}},{draft:{kind:'client_edit',key:c.client_id?`client:${c.client_id}`:'client:new',title:`Client set-up form · ${c.company_name||'new client'}`,client_id:c.client_id||undefined,meta:{client_id:c.client_id||''},aside:()=>{const o={};try{if(taxDraftKey&&sessionStorage.getItem(taxDraftKey))o[taxDraftKey]=sessionStorage.getItem(taxDraftKey);}catch{/* not kept */}return o;}}});
- const f=$('#editForm'),e=n=>f.elements.namedItem(n);function people(){const candidates=data.candidates.filter(x=>x.firm_id===e('tax_firm').value),preparer=schedule?.assigned_to||data.me.staff_id,reviewers=candidates.filter(x=>['PARTNER','MANAGER','SUPERVISOR'].includes(x.category_code)),reviewer=schedule?.reviewer_id&&schedule.reviewer_id!==preparer?schedule.reviewer_id:reviewers.find(x=>x.staff_id!==preparer)?.staff_id||'';e('tax_preparer').innerHTML=options(candidates.map(x=>[x.staff_id,x.full_name]),preparer);e('tax_reviewer').innerHTML=options(reviewers.map(x=>[x.staff_id,x.full_name]),reviewer);}
+ const f=$('#editForm'),e=n=>f.elements.namedItem(n);function people(){const candidates=data.candidates.filter(x=>x.firm_id===e('tax_firm').value),preparer=schedule?.assigned_to||data.me.staff_id,reviewers=candidates.filter(x=>['PARTNER','MANAGER','SUPERVISOR'].includes(x.category_code)),reviewer=schedule?.reviewer_id&&schedule.reviewer_id!==preparer?schedule.reviewer_id:reviewers.find(x=>x.staff_id!==preparer)?.staff_id||'';const assistants=candidates.filter(x=>x.category_code==='ASSISTANT');e('tax_preparer').innerHTML=options(assistants.map(x=>[x.staff_id,x.full_name]),assistants.some(x=>x.staff_id===preparer)?preparer:'','Select an Assistant…');e('tax_reviewer').innerHTML=options(reviewers.map(x=>[x.staff_id,x.full_name]),reviewer);}
  function updateSaveLabel(){const button=f.querySelector('button[type="submit"]');if(!button)return;button.textContent=!c.client_id?'Save client profile':!currentOpeningReady?'Save client details':!existing&&e('tax_selected').checked?'Create project and tasks':'Save client changes';}
  function syncCatchup(){const enabled=!catchupTaskReleased&&e('tax_catchup_enabled').checked,startMonth=e('tax_catchup_start_month'),range=$('#clientTaxCatchupRange'),prior=previousReportingMonthStart(e('tax_start').value||start);range.hidden=!enabled;startMonth.disabled=!enabled||catchupTaskReleased;startMonth.required=enabled;startMonth.max=prior?.slice(0,7)||'';if(startMonth.value&&startMonth.max&&startMonth.value>startMonth.max)startMonth.value='';$('#clientTaxCatchupEnd').textContent=enabled&&prior?`This one upload task will cover the selected first missing month through ${shortDate(monthEndDate(prior.slice(0,7)))}. It will not merge the monthly reports.`:'';}
  function toggle(){const enabled=e('tax_selected').checked;$('#clientTaxSetup').hidden=!enabled;for(const n of ['tax_firm','tax_frequency','tax_start','tax_end','tax_preparer','tax_reviewer'])e(n).required=enabled&&(currentOpeningReady||!!existing);$('#previewClientSchedule').disabled=!c.client_id||!currentOpeningReady;updateSaveLabel();}
@@ -493,12 +573,14 @@ async function editClient(c={}){
  $('#previewClientSchedule').onclick=async event=>{const button=event.currentTarget,status=$('#clientSchedulePreview');button.disabled=true;status.textContent='Preparing plan preview…';try{const catchupOn=catchupTaskReleased?!!schedule?.catchup_starts_on:e('tax_catchup_enabled').checked,month=catchupTaskReleased?schedule?.catchup_starts_on?.slice(0,7)||'':e('tax_catchup_start_month').value,previous=previousReportingMonthStart(e('tax_start').value);const preview=await request({action:'schedule_config_preview',project_id:existing?.project_id,client_id:c.client_id,firm_id:e('tax_firm').value,frequency:e('tax_frequency').value,starts_on:e('tax_start').value||schedule?.starts_on?.slice(0,10),ends_on:e('tax_end').value||end,assigned_to:e('tax_preparer').value||schedule?.assigned_to,reviewer_id:e('tax_reviewer').value||schedule?.reviewer_id,obligations:[...f.querySelectorAll('[name="tax_obligations"]:checked')].map(x=>x.value),enabled:e('tax_enabled').checked,catchup_enabled:catchupOn,catchup_starts_on:catchupOn&&month?`${month}-01`:null,catchup_ends_on:catchupOn&&previous?monthEndDate(previous.slice(0,7)):null});latestSchedulePreview=preview;schedulePreviewed=true;const catchup=preview.catchup_task?`<p><b>1 catch-up upload task:</b> ${shortDate(preview.catchup_task.starts_on)}–${shortDate(preview.catchup_task.ends_on)}.</p>`:'<p>No earlier periods selected for catch-up.</p>',backlog=preview.due_now>12?`<p class="info">${preview.due_now} recurring tasks have release dates already passed. Review this count before saving.</p><label class="full"><input type="checkbox" name="confirm_task_backlog"> I reviewed and confirm this recurring task count</label>`:'',fye=preview.financial_year_end?`Quarterly and annual tasks follow the saved client financial year ending ${String(preview.financial_year_end.day).padStart(2,'0')}/${String(preview.financial_year_end.month).padStart(2,'0')}.`:'Quarterly and annual tasks follow the saved client financial year.';status.innerHTML=`<p><b>Preview ready — not saved.</b> ${catchup}Recurring work starts ${shortDate(e('tax_start').value||schedule?.starts_on||start)}: ${preview.due_now} task(s) have already been released and ${preview.upcoming} are later (${preview.total} recurring task(s)). The preview creates no tasks. ${fye} Weekly periods run Monday–Sunday.</p>${backlog}${preview.breakdown?.length?`<details class="section-space"><summary>View recurring task breakdown</summary><ul>${preview.breakdown.map(x=>`<li>${esc(x.task_name)}: ${x.due_now} released · ${x.upcoming} later · ${x.total} total</li>`).join('')}</ul></details>`:''}`;}catch(error){status.textContent=error.message;schedulePreviewed=false;latestSchedulePreview=null;}finally{button.disabled=!c.client_id||!currentOpeningReady;}};
 
 }
-function editStaff(s={}){const choices=Object.entries(roles).filter(([k])=>data.me.category_code==='PARTNER'||(data.me.category_code==='ADMIN'?['SUPERVISOR','ASSISTANT','INTERN'].includes(k):!['PARTNER','MANAGER','ADMIN'].includes(k)));modal(s.staff_id?'Edit staff profile and ERP role':'Add staff member and assign ERP role',form(field('staff_identifier','Staff ID *',s.staff_identifier,'text',s.staff_id?'readonly':'required maxlength="80"')+field('login_id','Login ID *',s.login_id,'text',s.staff_id?'readonly':'required pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,79}"')+field('full_name','Full name *',s.full_name,'text','required maxlength="160"')+select('category_code','ERP role *',choices,s.category_code||'ASSISTANT')+'<p class="info full">One person has one ERP role. You can assign any number of staff to the same role. Managers can assign team roles to their direct reports; only a Partner can assign Manager or Partner roles.</p>'+select('employment_type','Employment type *',['Permanent','Contract','Internship','Consultant'],s.employment_type||'Contract')+select('billing_status','Billing status',['Billable','Partially billable','Non-billable'],s.billing_status||'Billable')+select('branch_location','Branch',branches,s.branch_location)+field('contract_start_date','Contract start',s.contract_start_date?.slice(0,10),'date')+field('contract_end_date','Contract end (required for Contract / Intern)',s.contract_end_date?.slice(0,10),'date')+firmChecks(data.staff_firms.filter(l=>l.staff_id===s.staff_id).map(l=>l.firm_id))),f=>request({...Object.fromEntries(f),action:'staff_save',staff_id:s.staff_id,revision:s.revision,firm_ids:f.getAll('firm_ids')}));}
+function editStaff(s={}){const choices=Object.entries(roles).filter(([k])=>data.me.category_code==='PARTNER'||(data.me.category_code==='ADMIN'?['SUPERVISOR','ASSISTANT','INTERN'].includes(k):!['PARTNER','MANAGER','ADMIN'].includes(k)));modal(s.staff_id?'Edit staff profile and ERP role':'Add staff member and assign ERP role',form(field('staff_identifier','Staff ID *',s.staff_identifier,'text',s.staff_id?'readonly':'required maxlength="80"')+field('login_id','Login ID *',s.login_id,'text',s.staff_id?'readonly':'required pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,79}"')+field('full_name','Full name *',s.full_name,'text','required maxlength="160"')+select('category_code','ERP role *',choices,s.category_code||'ASSISTANT')+'<p class="info full">One person has one ERP role. You can assign any number of staff to the same role. Managers can assign team roles to their direct reports; only a Partner can assign Manager or Partner roles.</p>'+select('employment_type','Employment type *',['Permanent','Contract','Internship','Consultant'],s.employment_type||'Contract')+select('billing_status','Billing status',['Billable','Partially billable','Non-billable'],s.billing_status||'Billable')+select('branch_location','Branch',branches,s.branch_location)+field('contract_start_date','Contract start',s.contract_start_date?.slice(0,10),'date')+field('contract_end_date','Contract end (required for Contract / Intern)',s.contract_end_date?.slice(0,10),'date')+firmChecks(data.staff_firms.filter(l=>l.staff_id===s.staff_id).map(l=>l.firm_id))+mlroBlock(s)),f=>request({...Object.fromEntries(f),action:'staff_save',staff_id:s.staff_id,revision:s.revision,firm_ids:f.getAll('firm_ids'),mlro_appoint:f.get('mlro_appoint')==='on'}));}
+// MLRO designation on the staff screen: an Engagement Partner appoints a Manager or Supervisor, with a reason and an end date. It is recorded as an additional right.
+function mlroBlock(s){if(data.me.category_code!=='PARTNER')return '';if(!s.staff_id||s.access_status!=='Active')return '<p class="info full">MLRO appointment: save the staff member and activate their login first, then edit the profile to appoint them as MLRO (Manager or Supervisor).</p>';if(!['MANAGER','SUPERVISOR'].includes(s.category_code))return '';return '<fieldset class="full"><legend>MLRO designation</legend><label class="check"><input type="checkbox" name="mlro_appoint"> Appoint as MLRO (money laundering reporting officer)</label>'+field('mlro_reason','Reason for the appointment (if appointing)','','text','maxlength="1000"')+field('mlro_expires_on','MLRO appointment ends (up to one year)','','date','')+'<p class="info">An MLRO checks and updates the AML work and decides client acceptance, but never on a profile they prepared themselves. To withdraw it, use Additional rights.</p></fieldset>';}
 const RIGHT_LABELS={FINANCE:'Finance (client advances, invoices and payments)',APPROVE_TAX_RULES:'Tax Lead (a Manager who may approve tax rules; Partners already can)',HR:'HR',MLRO:'MLRO',SYSTEM_ADMIN:'System administrator'};
 async function additionalRights(){
  const o=await request({action:'staff_rights_read'}),rows=o.staff.filter(s=>s.grants.length).flatMap(s=>s.grants.map(g=>`<tr><td>${esc(s.full_name)}<small>${esc(s.staff_identifier)} · ${esc(roles[s.category_code]||s.category_code)}</small></td><td>${esc(RIGHT_LABELS[g.capability]||g.capability)}</td><td class="preserve-lines">${esc(g.reason||'Set before reasons were recorded')}<small>Granted by ${esc(g.granted_by_name||'earlier set-up')} on ${esc(shortDate(g.granted_at))}</small></td><td>${g.expires_on?esc(shortDate(g.expires_on)):'No end date'}${g.expired?' <span class="badge warn">Ended</span>':''}</td><td><button class="danger" data-right-revoke="${esc(g.grant_id)}">Withdraw</button></td></tr>`)).join('');
  const hist=(o.history||[]).slice(0,15).map(h=>`<tr><td>${esc(shortDate(h.at))}</td><td>${esc(h.event)}</td><td>${esc(h.staff_name)}</td><td>${esc(RIGHT_LABELS[h.capability]||h.capability)}</td><td>${esc(h.by||'')}</td><td class="preserve-lines">${esc(h.reason||'')}</td></tr>`).join('');
- modal('Additional rights',`<p class="info">An additional right adds to a person’s role for a set time. Only an Engagement Partner can grant or withdraw it. Each right needs a reason and an end date, stops by itself on that date, and is recorded in the audit log. It never lets a person approve their own work. Engagement Partners already hold every right.</p><div class="actions"><button class="primary" data-right-grant>+ Grant a right</button></div>${rows?`<div class="scroll"><table><thead><tr><th>Staff</th><th>Right</th><th>Reason</th><th>Ends</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">No additional rights have been granted.</p>'}<p class="muted">HR, MLRO and System administrator are reserved. No screen uses them yet, so they cannot be granted.</p>${hist?`<h3>Recent changes</h3><div class="scroll"><table><thead><tr><th>Date</th><th>Change</th><th>Staff</th><th>Right</th><th>By</th><th>Reason</th></tr></thead><tbody>${hist}</tbody></table></div>`:''}`);
+ modal('Additional rights',`<p class="info">An additional right adds to a person’s role for a set time. Only an Engagement Partner can grant or withdraw it. Each right needs a reason and an end date, stops by itself on that date, and is recorded in the audit log. It never lets a person approve their own work. Engagement Partners already hold every right.</p><div class="actions"><button class="primary" data-right-grant>+ Grant a right</button></div>${rows?`<div class="scroll"><table><thead><tr><th>Staff</th><th>Right</th><th>Reason</th><th>Ends</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="muted">No additional rights have been granted.</p>'}<p class="muted">HR and System administrator are reserved. No screen uses them yet, so they cannot be granted. The MLRO can be appointed from the Manager or Supervisor rank.</p>${hist?`<h3>Recent changes</h3><div class="scroll"><table><thead><tr><th>Date</th><th>Change</th><th>Staff</th><th>Right</th><th>By</th><th>Reason</th></tr></thead><tbody>${hist}</tbody></table></div>`:''}`);
  $('#editorBody')._rights=o;
 }
 function grantRightForm(){
@@ -537,7 +619,7 @@ async function editStaffAccess(staffId){
 }
 function editTask(t){modal('Update assigned task',form(`<div class="full"><h3>${esc(t.task_name)}</h3><p>${esc(t.description||'')}</p>${data.task_events.filter(e=>e.task_id===t.task_id).slice(0,10).map(e=>`<small>${shortDate(e.created_at)} · ${esc(e.event_type)}: ${esc(e.reason)}</small>`).join('')}</div>`+select('status','Task status',states,t.status)+field('filing_date','Actual filing date (required for filing tasks)',t.filing_date?.slice(0,10)||'','date',`max="${today()}"`)+`<label class="full">Work note / reason (required for Blocked, Waiting on client, Paused and Cancelled)<textarea name="blocked_reason" maxlength="1000">${esc(t.blocked_reason||'')}</textarea></label>`),f=>request({...Object.fromEntries(f),action:'task_status',task_id:t.task_id,revision:t.revision}));}
 function addProject(){modal('Create draft project',form(field('project_name','Project name *','','text','required maxlength="200"')+select('client_id','Client *',data.clients.map(c=>[c.client_id,c.company_name]))+select('firm_id','Handling firm *',data.firms.map(f=>[f.firm_id,f.firm_code]))+select('service_code','Service *',data.services.map(s=>[s.service_code,s.service_name]))+select('staff_id','Initial team member',data.staff.map(s=>[s.staff_id,s.full_name]),data.me.staff_id)+`<p class="info full">This creates a draft project for the pilot. Activation requires verified onboarding and engagement approval.</p>`),f=>request({...Object.fromEntries(f),action:'project_save'}));}
-function addTask(){modal('Assign task',form(field('task_name','Task name *','','text','required maxlength="200"')+select('project_id','Project *',data.projects.map(p=>[p.project_id,p.project_name]))+select('assigned_to','Assigned staff *',data.staff.map(s=>[s.staff_id,s.full_name]))+field('due_date','Due date (5:00 PM EAT)','','date','required')+`<label class="full">Instructions<textarea name="description" maxlength="2000"></textarea></label>`),f=>request({...Object.fromEntries(f),action:'task_create'}));}
+function addTask(){modal('Assign task',form(field('task_name','Task name *','','text','required maxlength="200"')+select('project_id','Project *',data.projects.map(p=>[p.project_id,p.project_name]))+select('assigned_to','Assign to an Assistant *',data.staff.filter(s=>s.category_code==='ASSISTANT'&&s.access_status!=='Inactive').map(s=>[s.staff_id,s.full_name]),'','Select an Assistant…')+field('due_date','Due date (5:00 PM EAT)','','date','required')+`<label class="full">Instructions<textarea name="description" maxlength="2000"></textarea></label>`),f=>request({...Object.fromEntries(f),action:'task_create'}));const sel=document.querySelector('#editForm select[name="assigned_to"]');if(sel){sel.required=true;const save=document.querySelector('#editForm button[type="submit"]');const sync=()=>{if(save)save.disabled=!sel.value;};sel.addEventListener('change',sync);sync();}}
 function upload(preset={}){
  const isOpeningTB=!!preset.openingTB;
  const cats=isLeader()?['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports','Correspondence','KRA Notices','Import Sources']:data.me.category_code==='SUPERVISOR'?['Current Year Audit','Tax Returns','Working Papers','PBC Documents','Correspondence','KRA Notices','Import Sources']:['Working Papers','Import Sources'];
@@ -613,10 +695,10 @@ $('#closeEditor').onclick=async()=>{
  await closeEditorNow();
 };
 $('#editor').addEventListener('cancel',event=>{
- if(!editorPending&&!editorEdited)return;
+ if(!editorPending&&!editorEdited&&!editorBack)return;
  event.preventDefault();
- if(editorPending||!drafts)return;
- void (async()=>{if(await drafts.confirmLeave())await closeEditorNow();})();
+ if(editorPending)return;
+ void (async()=>{if(!editorEdited||!drafts||await drafts.confirmLeave())await closeEditorNow();})();
 });
 // Closing the tab or leaving the page with an unsaved form open triggers the browser's own warning.
 globalThis.addEventListener?.('beforeunload',event=>{
@@ -654,6 +736,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(!b){const row=e.target.closest('[data-task-row]');if(row&&!e.target.closest('a,input,select,textarea,label')&&!window.getSelection()?.toString())navigateWorkspace('task',row.dataset.taskRow);return;}
  if(b.matches('a')){if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();}
  try{
+ if(b.hasAttribute('data-team-queue')){await teamQueue.open();return;}
  if(b.dataset.workload){
   const mode=b.dataset.workload;
   modal('Workload',workloadShell);
@@ -676,6 +759,9 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.myReview==='report'){notice('Opening the ledger: go to Reports, then choose Review beside the submitted report.');await v6.openLedger(b.dataset.project);}
  if(b.dataset.searchProject)navigateWorkspace('projects',b.dataset.searchProject);
  if(b.hasAttribute('data-classify-clients'))classifyClients();
+ if(b.hasAttribute('data-onboarding-batches'))void onboardingBatches.open().catch(e=>notice(e.message||'The onboarding batches could not be loaded.',true));
+ if(b.hasAttribute('data-month-work'))void monthWork.open().catch(e=>notice(e.message||'Monthly work could not be loaded.'));
+ if(b.hasAttribute('data-setup-pipeline'))void setupPipeline.open().catch(e=>notice(e.message||'The set-up status could not be loaded.'));
  if(b.closest('#workspaceSearchResults'))$('#workspaceSearchResults').hidden=true;
  if(b.dataset.view){if(b.closest('#editor')&&$('#editor').open)$('#editor').close();navigateWorkspace(b.dataset.view);}
  if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload,firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}
@@ -684,7 +770,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.clientOpen){if(b.closest('#editor')&&$('#editor').open)$('#editor').close();pendingClientTab=b.dataset.clientTab||'';navigateWorkspace('clientfile',b.dataset.clientOpen);return;}
  if(b.dataset.cprofileTab){clientTab=b.dataset.cprofileTab;render();return;}
  if(b.dataset.cregPage){clientQuery.page=Math.max(0,clientQuery.page+(b.dataset.cregPage==='next'?1:-1));clientPage=null;render();return;}
- if(b.dataset.cregClear!==undefined){clientQuery=DEFAULT_QUERY();clientPage=null;render();return;}
+ if(b.dataset.cregClear!==undefined){clearTimeout(searchTimer);if($('#search'))$('#search').value=$('#search').defaultValue;clientQuery=DEFAULT_QUERY();clientPage=null;render();return;}
  if(b.dataset.clientLife){const act=b.dataset.clientLife,cid=b.dataset.id,w=LIFECYCLE_WORDS[act];if(w){const c=data.clients.find(x=>x.client_id===cid);modal(w.title+(c?' · '+c.company_name:''),form(lifecycleForm(act,esc),w.verb),f=>request({action:'client_lifecycle',client_id:cid,lifecycle:act,reason:f.get('reason')}),()=>render(),{successMessage:'Client updated.'});}return;}
  if(b.dataset.client&&!b.dataset.myReview)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
  if(b.dataset.clientView){navigateWorkspace('clientfile',b.dataset.clientView);return;}
@@ -693,6 +779,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.clientMapClose){const mappingId=b.dataset.clientMapClose,clientId=b.dataset.clientId;modal('End dated client account mapping',form(field('effective_to','Last date this mapping applies *',today(),'date','required')+'<p class="info full">This closes the old account on the selected date. Add the replacement from the next day. Past imports and posted work are retained.</p>','Save end date'),f=>request({action:'v3_client_account_mapping_end',mapping_id:mappingId,revision:b.dataset.revision,effective_to:f.get('effective_to')}),()=>clientAccountSetup(clientId));}
  if(b.dataset.openingUpload)stageOpeningTB(b.dataset.openingUpload);
  if(b.dataset.openingState){const c=data.clients.find(x=>x.client_id===b.dataset.openingState);if(c)openingBalanceState(c,b.dataset.openingStatus);}
+ if(b.dataset.staffTab){staffTab=b.dataset.staffTab;render();$('#stafftab-'+staffTab)?.focus();return;}
  if(b.dataset.staff)editStaff(data.staff.find(x=>x.staff_id===b.dataset.staff));
  if(b.dataset.rights)await editStaffAccess(b.dataset.rights);
  if(b.hasAttribute('data-manager-password-reset')){
@@ -715,10 +802,13 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.disable){const id=b.dataset.disable;modal('Disable staff access',`<p>Disable ${esc(staffName(id))}? Historical work will remain, and the next request from this account will be blocked.</p><button id="confirmDisable" class="primary">Confirm disable</button>`);$('#confirmDisable').onclick=async()=>{try{await request({action:'staff_disable',staff_id:id});$('#editor').close();await load();notice('Staff access disabled.');}catch(err){$('#editorNotice').textContent=err.message;}};}
  if(b.dataset.download){b.disabled=true;try{const d=data.documents.find(x=>x.document_id===b.dataset.download),blob=await request({action:'download',document_id:d.document_id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=d.file_name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}finally{b.disabled=false;}}
  }catch(err){notice(err.message,true);}});
-watchStaffActivity(session);
 for(const button of document.querySelectorAll('[data-continue-session]'))button.onclick=()=>{if(session.activity())void session.pulse();};
 drafts=createDraftUI({$,esc,request,notice,document,sessionStorage,autosaveMs:2500,returnToQueue:()=>{if($('#editor').open)$('#editor').close();navigateWorkspace('home');}});
 const workQueue=createWorkQueueUI({$,esc,form,modal,request,notice,shortDate,data:()=>data});
+const onboardingBatches=createOnboardingBatchUI({esc,modal,request,form,field,options,notice,data:()=>data});
+const teamQueue=createTeamQueueUI({esc,modal,request,shortDate,openTask:id=>navigateWorkspace('task',id)});
+const setupPipeline=createSetupPipelineUI({esc,modal,request});
+const monthWork=createMonthWorkUI({esc,modal,request,notice,assistants:()=>(data.staff||[]).filter(x=>x.category_code==='ASSISTANT'&&x.access_status==='Active')});
 const improvements=createImprovementUI({$,esc,field,select,form,modal,request,notice,shortDate,today,projectName,data:()=>data,drafts:()=>drafts});
 const v6=createWorkspaceUI({drafts:()=>drafts,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openProject:id=>navigateWorkspace('projects',id),reviewImportRows:(rows,onReturn)=>suite.reviewImportRows(rows,onReturn),openClientSettings:improvements.client,openClientChart:improvements.chart,openClientAccounts:(id,options)=>clientAccountSetup(id,options)});
 // Resuming a saved draft reopens its own form. Every opener only refills what the person typed; the server checks the person's access again when the form is saved.
@@ -748,13 +838,13 @@ async function uploadMessenger(attachment,channelId,options){
  form.set('channel_id',channelId);
  const sessionContext=await session.beforeRequest();
  try{
-  const result=await postMessengerFile(API,{...sessionContext.headers,apikey:KEY,'x-erp-upload-kind':'messenger'},form,options);
+  const result=await postMessengerFile(API,{...sessionContext.headers,apikey:KEY,'x-region':'ap-south-1','x-erp-upload-kind':'messenger'},form,options);
   session.accept(sessionContext);
   return result;
  }catch(error){session.reject(sessionContext,error);throw error;}
 }
 const messenger=createMessenger({esc,request,notice,uploadMessenger,openTask:id=>navigateWorkspace('task',id),data:()=>data});
-const suite=createSuiteUI({upload,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openTask:id=>navigateWorkspace('task',id),navigate:next=>navigateWorkspace(next),currentHash:()=>location.hash,goHash:h=>{history.pushState(null,'',location.pathname+location.search+h);applyWorkspaceRoute();}});
+const suite=createSuiteUI({upload,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openChartAccount:(code,options)=>v6.openCatalog(code,options),openTask:id=>navigateWorkspace('task',id),navigate:next=>navigateWorkspace(next),currentHash:()=>location.hash,goHash:h=>{history.pushState(null,'',location.pathname+location.search+h);applyWorkspaceRoute();}});
 bindProposals({esc,field,select,options,form,modal,request,load,notice,data:()=>data,currentFirm:()=>firm});
 bindPolicies({esc,form,modal,request,data:()=>data});
 bindDocRequests({esc,form,field,select,modal,request,data:()=>data,notice,shortDate,today,load});
@@ -786,7 +876,21 @@ if(!bootedByLightweightAuth){
  $('#setupForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return notice('Passwords do not match.',true);const b=e.target.querySelector('button[type=submit]'),current=setupToken;b.disabled=true;try{await request({action:'setup',token:current,password:f.get('password')},{auth:false});if(current!==setupToken)return;setupToken=null;e.target.reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Password saved. Sign in using the login ID provided with your link.');}catch(err){if(current===setupToken){notice(err.message,true);b.disabled=false;}}};
  setupWatcher=watchSetupLinks(openSetup);
 }
-if(!setupWatcher.hasSetup&&session.active)load().catch(e=>signedOut(e.message));
+if(!bootedByLightweightAuth){
+ stopWatchingSession=watchStaffActivity(session);
+ if(!setupWatcher.hasSetup&&session.active)load().catch(e=>signedOut(e.message));
+}
+
+export async function activateStaffWorkspace({firmId='',signOut=false}={}){
+ if(!session.active)session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut});
+ firm=firmId;
+ view='home';
+ await load({timeoutMs:30000,waitForPresence:signOut});
+ if(['Opening your secure workspace…','Opening workspace area…'].includes($('#notice').textContent))notice('');
+ stopWatchingSession?.();
+ stopWatchingSession=watchStaffActivity(session);
+ if(signOut)presence.requestLogout();
+}
 
 async function openCommunicationHash(){const ref=new URLSearchParams(location.hash.slice(1)).get('communication');if(!ref||!data)return;history.replaceState(null,'',location.pathname+location.search);try{await suite.openReference(ref);}catch(err){notice('This communication is unavailable or your account does not have permission to view it.',true);}}
 window.addEventListener('hashchange',()=>void openCommunicationHash());

@@ -5,7 +5,8 @@ import {stockMethodChoices,stockCountChoices,stockPolicyStartDate} from './staff
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261121-coa-v1';
 import {createClientMasterUI} from './staff-client-master.mjs?v=20261121-scope-v1';
 import {createScopeUI} from './staff-engagement-scope.mjs?v=20261121-scope-v1';
-import {createOnboardingAllocUI} from './staff-onboarding-alloc.mjs?v=20261209-onb-v1';
+import {createOnboardingAllocUI} from './staff-onboarding-alloc.mjs?v=20261209-onb-v1&screen=20261211-v1';
+import {createClientTeamUI} from './staff-client-team.mjs?v=20261212-team-v2';
 import {createUnderstandingUI} from './staff-understanding.mjs?v=20261121-und-v1';
 import {createKycGridUI} from './staff-kyc-grid.mjs?v=20261122-loc-v1';
 import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
@@ -29,7 +30,8 @@ export function createImprovementUI(ctx){
  const bulk=createBulkSetupUI({...ctx,show:(...a)=>show(...a)});
  const categories=createServiceCategoriesUI({...ctx,show:(...a)=>show(...a)});
  const scope=createScopeUI(ctx);
- const onboardingAlloc=createOnboardingAllocUI(ctx);void onboardingAlloc;
+ const onboardingAlloc=createOnboardingAllocUI(ctx);
+ const team=createClientTeamUI(ctx);
  const understanding=createUnderstandingUI(ctx);
  const master=createClientMasterUI(ctx,{show:(...a)=>show(...a),button,templateBlock:t=>setup.clientTypeBlock(t),scopeButton:id=>scope.button(id)});
  const grid=createKycGridUI(ctx,{show:(...a)=>show(...a),openList:id=>master.open(id)});
@@ -177,12 +179,12 @@ function period(){const id=clientData.client.client_id;show('Add verified report
  function readiness(pid){show('KRA return export readiness',form(select('kind','Return type',['VAT3','IT1','IT2P','IT2C','P10'])+field('starts_on','Period start *','','date','required')+field('ends_on','Period end *','','date','required'),'Check readiness'),send('v3_export_readiness',{project_id:pid}),r=>show('Return export readiness',`<p class="info">${esc(r.label)}</p><ul>${r.issues.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><p>No portal submission or KRA import file has been generated.</p>`));}
  document.addEventListener('click',async e=>{const b=e.target.closest('[data-v3]');if(!b)return;b.disabled=true;try{const a=b.dataset.v3,id=b.dataset.id;
   if(['identity','vat-cats','activity','period','partners','stock-policy','stock-policy-step'].includes(a)&&clientData?.client?.client_id!==id)await loadClient(id);
-  if(a==='client')await client(id);if(a==='setup-review')await setupReview(id);if(a==='setup-queue')await setupQueue();if(a==='setup-tasks')await setupTasks();if(a==='bulk-setup')await bulk.open();if(a==='categories')await categories.open();if(a==='returns')await choices.returns(id);if(a==='exceptions')await choices.exceptions(id);if(a==='skip-step')await afterStep(id,b.dataset.key);if(a==='master')await grid.open(id);if(a==='master-list')await master.open(id);if(a==='aml')await aml.open(id);if(a==='aml-queue')await aml.openOverview();if(a==='setup')await setup.open(id);if(master.isAction(a))await master.handle(a,id,b.dataset.key);if(a==='identity')identity();if(a==='vat-cats')vatCats();if(a==='chart')await chart(id);if(a==='activity')activity();if(a==='activity-review')reviewActivity(id);if(a==='period')period();if(a==='partners')partners();if(a==='stock-policy')policy();if(a==='stock-policy-step')policy({step:true});if(a==='project')await project(id);if(a==='stock-vat')stockVat();if(a==='stock-new')stockNew();if(a==='stock-open')await stockOpen(b.dataset.project,id);if(a==='stock-edit')stockEdit();
+  if(a==='team'){await team.open(id,b.dataset.project||'');}if(a==='client')await client(id);if(a==='setup-review')await setupReview(id);if(a==='setup-queue')await setupQueue();if(a==='setup-tasks')await setupTasks();if(a==='bulk-setup')await bulk.open();if(a==='categories')await categories.open();if(a==='returns')await choices.returns(id);if(a==='exceptions')await choices.exceptions(id);if(a==='skip-step')await afterStep(id,b.dataset.key);if(a==='master')await grid.open(id);if(a==='master-list')await master.open(id);if(a==='aml')await aml.open(id);if(a==='aml-queue')await aml.openOverview();if(a==='setup')await setup.open(id);if(master.isAction(a))await master.handle(a,id,b.dataset.key);if(a==='identity')identity();if(a==='vat-cats')vatCats();if(a==='chart')await chart(id);if(a==='activity')activity();if(a==='activity-review')reviewActivity(id);if(a==='period')period();if(a==='partners')partners();if(a==='stock-policy')policy();if(a==='stock-policy-step')policy({step:true});if(a==='project')await project(id);if(a==='stock-vat')stockVat();if(a==='stock-new')stockNew();if(a==='stock-open')await stockOpen(b.dataset.project,id);if(a==='stock-edit')stockEdit();
   if(a==='stock-submit'){const {pid,record:c}=stockData;await request({action:'v3_stock_submit',project_id:pid,control_id:c.control_id,revision:c.revision});await stockOpen(pid,c.control_id);}
   if(a==='stock-review'){const {pid,record:c}=stockData;show('Independent stock review',form(select('status','Decision',['Approved','Returned'],'Returned')+area('review_note','Review conclusion and evidence')+select('variance_evidence_id','Independent variance evidence if applicable',docs(pid))+'<p class="info full">Approval retains the source snapshot. A margin estimate remains provisional after approval and cannot certify annual stock.</p>'),send('v3_stock_review',{project_id:pid,control_id:c.control_id,revision:c.revision}),()=>stockOpen(pid,c.control_id));}
   if(a==='category-decide')await categoryDecide(id);if(a==='bank')await bank(b.dataset.project,id);if(a==='bank-defer')bankDefer();if(a==='bank-add')bankAdd();
   if(a==='bank-review'){const {pid,id:rid,supplements}=bankData,s=supplements.find(x=>x.supplement_id===id);show('Review bank supplement',form(select('status','Decision',['Approved','Returned'],'Returned')+area('review_note','Independent review conclusion')),send('v3_bank_review',{project_id:pid,reconciliation_id:rid,supplement_id:id,revision:s.revision}),()=>bank(pid,rid));}
   if(a==='readiness')readiness(id);
  }catch(err){if($('#editor').open)$('#editorNotice').textContent=err.message;else notice(err.message,true);}finally{b.disabled=false;}});
- return {client,project,bank,chart,paintClientTab,resumeActivityDraft};
+ return {client,project,bank,chart,paintClientTab,resumeActivityDraft,mountAllocations:host=>onboardingAlloc.mount(host),openTeam:(id,projectId)=>team.open(id,projectId)};
 }

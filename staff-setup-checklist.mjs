@@ -11,7 +11,7 @@ export function setupPhases({r,pending=[],isLeader=false,isReviewer=false}){
  const part=(key,title,status,statusText,btns)=>({key,title,status,statusText,btns});
  const phases=[
   {key:'identity',title:'Company identity and KYC',hint:'Legal details, owners and the AML profile for the MLRO.',parts:[
-   part('identity','Legal identity and master facts',null,'',[['identity','Confirm legal identity'],['master','Client master facts']]),
+   part('identity','Legal identity and master facts',null,'',[['identity','Confirm legal identity'],['master','Client master facts'],['team','Client team']]),
    part('kyc','Owners, KYC and AML',null,'',[['aml','AML / POCAMLA profile'],...(isLeader?[['aml-queue','MLRO workspace']]:[])])]},
   {key:'operations',title:'Operations and tax profile',hint:'What the client does, which VAT categories it sells, and stock.',parts:[
    part('activities','Services and activities',pending.length?'waiting':acts.length?'done':'todo',pending.length?'Change waiting for review':acts.length?`${acts.length} activit${acts.length===1?'y':'ies'}`:'None yet',[['activity','Activities / end dates'],...(isReviewer?[['setup','Set up a service']]:[]),['setup-review','Setup review'],...(isLeader?[['setup-queue','Review pending setup']]:[])]),

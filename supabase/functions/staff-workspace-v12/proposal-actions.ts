@@ -92,7 +92,18 @@ export async function proposalAction(tx:any,a:any,p:any,replay:(p:any)=>Promise<
   if(row.status!=='Checked')fail(409,'A Supervisor, Manager or Partner other than the proposer must check this proposal first.');
   const approvalNote=text(p.note||'',1000,false);if(approvalNote.length<10)fail(400,'Record your approval note in at least 10 characters.');
   // Replayed under the approver's own name: every existing validation, scope and review rule runs exactly as if the approver had typed it.
-  const result=await replay({...row.payload,action:row.action,proposal_applied:row.proposal_id});
+  // A change proposed on an existing client is applied on top of the live record: it carries only what the proposer typed,
+  // so the live version number and any field the proposer left out are taken from the client as it is now. Without this an
+  // approval fails with "Refresh this record" and, once it passes, would blank the branch and every field not in the proposal.
+  let applied={...row.payload};
+  if(row.action==='client_save'&&row.client_id){
+   const [live]=await tx`select revision,company_name,kra_pin,primary_sector,branch_location,client_category from erp_private.clients where client_id=${row.client_id} and deleted_at is null for update`;
+   if(!live)fail(409,'This client is no longer available.');
+   const blank=(v:any)=>v===undefined||v===null||String(v).trim()==='';
+   for(const k of ['company_name','kra_pin','primary_sector','branch_location','client_category'])if(blank(applied[k])&&!blank((live as any)[k]))applied[k]=(live as any)[k];
+   applied.revision=String(live.revision);
+  }
+  const result=await replay({...applied,action:row.action,proposal_applied:row.proposal_id});
   await tx`update erp_private.change_proposals set status='Approved',decision_note=${approvalNote},result=${tx.json(JSON.parse(JSON.stringify(result??{ok:true})))} where proposal_id=${row.proposal_id}`;
   return {ok:true,status:'Approved',applied:result};
  }

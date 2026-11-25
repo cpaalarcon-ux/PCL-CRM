@@ -10,7 +10,7 @@ import {actionsForCategory} from '../staff-access-guide.mjs';
 const CATEGORIES=['PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN','ADMIN'];
 const AREAS=STAFF_ACCESS_AREAS.map(a=>a.code);
 const dir=new URL('../supabase/functions/staff-workspace-v12/',import.meta.url);
-const outsideSession=new Set(['release_info','login','refresh_session','setup','setup_status','request_partner_recovery','session_activity','workspace','logout']);
+const sharedActions=new Set(['release_info','login','refresh_session','setup','setup_status','request_partner_recovery','session_activity','workspace','workspace_landing','logout']);
 const actions=(()=>{
  const found=new Set();
  for(const name of fs.readdirSync(dir).filter(x=>/\.(?:ts|mjs)$/.test(x))){
@@ -19,7 +19,7 @@ const actions=(()=>{
   for(const m of source.matchAll(/\[\s*((?:['"][A-Za-z0-9_-]+['"]\s*,?\s*)+)\]\.includes\((?:p|payload|body)\.action\)/g))
    for(const item of m[1].matchAll(/['"]([A-Za-z0-9_-]+)['"]/g))found.add(item[1]);
  }
- return [...found].filter(a=>!outsideSession.has(a)).sort();
+ return [...found].filter(a=>!sharedActions.has(a)).sort();
 })();
 const reach=role=>actions.filter(a=>staffAreaCanUse(role,[],areaForStaffAction(a)));
 
