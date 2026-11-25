@@ -205,7 +205,7 @@ export async function taxAction(tx:any,a:any,p:any):Promise<any>{
   return one(await tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by) values(${pid},${kind},${start},${end},${a.staff_id}) returning case_id`);
  }
  if(p.action==='tax_amend'){
-  editor(a);
+  editor(a);if(!['PARTNER','MANAGER'].includes(a.category_code))fail(403,'Only a Manager or a Partner can start an amendment of a filed return.');
   const target=one(await tx`select * from erp_private.tax_cases where case_id=${uuid(p.case_id)} for update`);
   await tx`select pg_advisory_xact_lock(hashtextextended(${target.project_id+':tax'},0))`;
   if(target.status!=='Filed')fail(400,'Only a filed return can be amended. Finish the current review or filing first.');

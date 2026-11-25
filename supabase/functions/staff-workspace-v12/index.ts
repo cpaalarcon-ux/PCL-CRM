@@ -20,6 +20,7 @@ import {handoverAction} from './handover-actions.ts';
 import {teamAction} from './team-actions.ts';
 import {holidayAction} from './holiday-actions.ts';
 import {workloadAction} from './workload-actions.ts';
+import {teamQueueAction} from './team-queue-actions.ts';
 import {clientVaultAction,clientVaultAccess} from './client-vault-actions.ts';
 import {clientLifecycleAction} from './client-lifecycle-actions.ts';
 import {kycProposalAction} from './kyc-upload-actions.ts';
@@ -575,6 +576,7 @@ async function action(id:any,p:any){
   const clientBatch=await clientBatchAction(tx,a,p,run);if(clientBatch!==undefined)return clientBatch;
   const monthWork=await monthWorkAction(tx,a,p);if(monthWork!==undefined)return monthWork;
   const setupPipeline=await clientSetupPipelineAction(tx,a,p);if(setupPipeline!==undefined)return setupPipeline;
+  const teamQueue=await teamQueueAction(tx,a,p);if(teamQueue!==undefined)return teamQueue;
   const workload=await workloadAction(tx,a,p);if(workload!==undefined)return workload;
   const vault=await clientVaultAction(tx,a,p);if(vault!==undefined)return vault;
   const policy=await policyAction(tx,a,p);if(policy!==undefined)return policy;

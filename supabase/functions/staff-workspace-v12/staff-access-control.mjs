@@ -89,8 +89,8 @@ export function filterWorkspaceAccess(workspace,areas){
 }
 
 export function scopeWorkspaceRecords(workspace,role,staffId){
-  // Supervisors see only assigned or explicitly routed review work. Firm-wide
-  // visibility is reserved for Partners and Managers; RLS still limits both.
+  // Partners and Managers see everything. Supervisors see and can work on every project and task in their firms (they review; Assistants do the
+  // work) but keep the narrower rows for leave, attendance and reviews. RLS still limits all of them to the firms they belong to.
   const fullAccess=['PARTNER','MANAGER'].includes(role);
   const projects=Array.isArray(workspace.projects)?workspace.projects:[];
   const tasks=Array.isArray(workspace.tasks)?workspace.tasks:[];
@@ -101,7 +101,7 @@ export function scopeWorkspaceRecords(workspace,role,staffId){
   if(fullAccess)return {...workspace,clients:clients.map(c=>({...c,details_visible:true}))};
   const intern=role==='INTERN';
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date());
-  const allocatedProjectIds=new Set(intern?[]:assignments.filter(a=>a.staff_id===staffId&&(!a.start_date||String(a.start_date).slice(0,10)<=today)&&(!a.end_date||String(a.end_date).slice(0,10)>=today)).map(a=>a.project_id));
+  const allocatedProjectIds=new Set(role==='SUPERVISOR'?projects.map(p=>p.project_id):intern?[]:assignments.filter(a=>a.staff_id===staffId&&(!a.start_date||String(a.start_date).slice(0,10)<=today)&&(!a.end_date||String(a.end_date).slice(0,10)>=today)).map(a=>a.project_id));
   const ownedTaskIds=new Set(tasks.filter(t=>t.assigned_to===staffId).map(t=>t.task_id));
   const reviewTaskIds=new Set(intern?[]:procedures.filter(p=>p.reviewer_id===staffId&&p.prepared_by!==staffId).map(p=>p.task_id));
   const reviewProjects=new Set(intern?[]:schedules.filter(s=>s.reviewer_id===staffId).map(s=>s.project_id));
