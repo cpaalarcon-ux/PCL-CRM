@@ -7,6 +7,7 @@ const read = path => fs.readFileSync(new URL('../' + path, import.meta.url), 'ut
 const html = read('staff-pilot.html');
 const css = read('staff-pilot.css');
 const app = read('staff-pilot.mjs');
+const navigation = read('staff-nav.mjs');
 const dashboard = read('staff-dashboard.mjs');
 const uat = read('supabase/FULL_ERP_STAFF_UAT.md');
 const alignment = read('supabase/ERP_ALIGNMENT_CONTROL.md');
@@ -31,18 +32,20 @@ test('the signed-in workspace has a fixed sidebar beside the shared workspace sh
 test('the Home launcher lists integrated areas and filters by server-provided access areas', () => {
   assert.doesNotMatch(css, /workspace-nav-open|navScrim|navToggle|nav-more|erp-area-grid|erp-module|home-areas/);
   for (const label of ['Clients', 'Projects & Tasks', 'Time & Attendance', 'Documents', 'Communications Hub', 'Audit & assurance', 'Finance & Reports', 'Staff & access', 'Settings', 'Leads & Pipeline']) {
-    assert.ok(app.includes("title:'" + label + "'"), 'launcher catalog includes ' + label);
+    assert.ok(navigation.includes("title:'" + label + "'"), 'launcher catalog includes ' + label);
   }
   assert.match(app, /catalog\.filter\(item=>canArea\(item\.area\)\)/);
   assert.match(app, /const canArea=area=>!!data&&/);
-  assert.match(app, /const allowed=\['home'\]/);
+  assert.match(app, /function canOpenWorkspace\(target\)\{\s*if\(target==='home'\)return true;/);
+  assert.match(app, /return canArea\(workspaceAreas\[target\]\|\|target\)/);
   assert.doesNotMatch(dashboard, /home-areas|erp-module|ERP areas/);
   assert.match(app, /staff-dashboard\.mjs\?v=20261119-queue-v1/);
 });
 
 test('areas route through the existing ERP views and the topbar button returns Home', () => {
   assert.match(html, /id="areasHome"[^>]*data-view="home"/);
-  assert.match(app, /if\(b\.dataset\.view\)[\s\S]{0,150}navigateWorkspace\(b\.dataset\.view\)/);
+  assert.match(app, /if\(b\.dataset\.view&&\!\(await navigateWorkspace\(b\.dataset\.view\)\)\)return;/);
+  assert.match(app, /Leave workspace and return to Home/);
   assert.match(app, /\$\('#areasLauncher'\)\.hidden=view!=='home'/);
   assert.doesNotMatch(app, /workspace-nav-open|navScrim/);
   assert.match(html, /id="navToggle"[^>]*aria-controls="workspaceSidebar"[^>]*aria-expanded="false"/, 'the hamburger opens the menu drawer on a phone');

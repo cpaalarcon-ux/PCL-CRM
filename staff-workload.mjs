@@ -9,7 +9,7 @@ export function openWorkload({host, request, leader, mode, firm, project, refres
  const actionForm = host.querySelector('[data-action-form]'), feedback = host.querySelector('[data-feedback]');
  const dueDay = value => new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(value));
  const active = () => host.isConnected && !!host.closest('dialog')?.open;
- tabs.innerHTML = (leader ? ['tasks','pool','projects'] : ['pool']).map(key =>
+ tabs.innerHTML = (leader ? ['tasks','projects'] : []).map(key =>
   `<button type="button" data-mode="${key}">${titles[key]}</button>`).join('');
  tabs.onclick = event => {
   const key = event.target.closest('[data-mode]')?.dataset.mode;

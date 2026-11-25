@@ -71,7 +71,11 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
  leader(a);
  if(p.action==='owner_add'){
   const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);const before=await kycSnapshot(tx,cid);
-  await tx`insert into erp_private.beneficial_owners(client_id,full_name,identity_reference,kra_pin,ownership_percentage,control_basis) values(${cid},${text(p.full_name,160)},${text(p.identity_reference,100)},${text(p.kra_pin||'',11,false)||null},${number(p.ownership_percentage,0,100)},${text(p.control_basis,1000)})`;
+  // The onboarding form records that an identity document was sighted, never its number. These fields are optional, so other screens behave as before.
+  const idType=p.identity_type?choice(p.identity_type,['National ID','Passport','Alien ID']):null,holding=p.holding_type?choice(p.holding_type,['Direct','Indirect']):null,pepStatus=p.pep_status?choice(p.pep_status,['Yes','No','To confirm']):null;
+  const sightKnown=p.identity_sighted===true||p.identity_sighted===false,sighted=p.identity_sighted===true,sightedOn=sighted?date(p.identity_sighted_on):null,sightedBy=sighted?text(p.identity_sighted_by||'',120,false):null;
+  if(sighted&&(!sightedOn||sightedOn>today()||String(sightedBy||'').trim().length<2))fail(400,'Say when and by whom the identity document was sighted (the date cannot be in the future).');
+  await tx`insert into erp_private.beneficial_owners(client_id,full_name,identity_reference,kra_pin,ownership_percentage,control_basis,identity_type,nationality,holding_type,pep_status,identity_sighted,identity_sighted_on,identity_sighted_by,created_by) values(${cid},${text(p.full_name,160)},${text(p.identity_reference,100)},${text(p.kra_pin||'',11,false)||null},${number(p.ownership_percentage,0,100)},${text(p.control_basis,1000)},${idType},${text(p.nationality||'',80,false)||null},${holding},${pepStatus},${sightKnown?sighted:null},${sightedOn},${sightedBy?.trim()||null},${a.staff_id})`;
   await kycChanged(tx,a,cid,before,['BENEFICIAL_OWNERSHIP'],text(p.change_reason||'',2000,false)||'Owner or controller added');return {ok:true};
  }
  // Step 3: directors, shareholders and trustees as data, the ownership link between entities, and the group profile. The database repeats
@@ -209,6 +213,9 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   const evidence=await tx`select * from erp_private.client_kyc_evidence where client_id=${c.client_id} and deleted_at is null`,required=await kycRequiredCodes(tx,c.legal_structure,c.legal_subtype),gaps=kycGaps(c.entity_type,await kycRules(tx),evidence,today(),required);
   if(gaps.length)fail(400,'Current KYC evidence is missing or expired for: '+gaps.join(', ')+'.');
   if((required?required.includes('BENEFICIAL_OWNERSHIP'):c.entity_type==='Company')&&!(await tx`select owner_id from erp_private.beneficial_owners where client_id=${c.client_id} and deleted_at is null`).length)fail(400,'This client’s KYC requires at least one beneficial owner or controller record.');
+  // The owners of a client account for the whole of it. A file with owners recorded is verified only when their shares total 100%.
+  const shares=(await tx`select count(*)::int n,coalesce(sum(ownership_percentage),0)::float8 total from erp_private.beneficial_owners where client_id=${c.client_id} and deleted_at is null`)[0];
+  if(shares.n&&Math.abs(Number(shares.total)-100)>0.02)fail(400,`The recorded owners’ shares add to ${Math.round(Number(shares.total)*100)/100}%. They must total 100% before the KYC file is verified. Correct the owners on the client record first.`);
   await tx`update erp_private.client_kyc_change_versions set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${text(p.review_note||'',2000,false)||'Verified with the KYC file'} where client_id=${c.client_id} and status='Pending review'`;
   await tx`update erp_private.client_compliance set verified_by=${a.staff_id},verified_at=now() where client_id=${c.client_id}`;return {ok:true};
  }

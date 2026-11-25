@@ -71,7 +71,7 @@ test('Home carries the switch, shows the board only when chosen, and the old lis
  const d={me:{staff_id:'me',category_code:'ASSISTANT'},staff:[{staff_id:'me',full_name:'Me'}],projects,tasks:mine,documents:[],timesheets:[],schedules:[],task_procedures:[],notifications:[],suite:{tax_cases:[],compliance:[],engagements:[],sales_reviews:[]},sales_reviews:[],variances:[],recon_reviews:[]};
  const base={data:d,firm:'',today:T,esc,shortDate:s=>String(s).slice(0,10),empty:s=>s,clientName:id=>names[id]||'?',projectName:id=>projects.find(p=>p.project_id===id)?.project_name||'?'};
  let html;try{html=renderDashboard(base);}catch(e){html=null;}
- assert.ok(html,'Home still renders');assert.match(html,/id="homeQueue"/);assert.match(html,/<h2>My Work<\/h2>/);assert.match(html,/data-my-work="mode" data-value="board"/);assert.doesNotMatch(html,/class="mywork-board"/);
+ assert.ok(html,'Home still renders');assert.match(html,/<details[^>]*id="homeQueue" data-preserve-open tabindex="-1"><summary>My Work/);assert.match(html,/data-my-work="mode" data-value="board"/);assert.doesNotMatch(html,/class="mywork-board"/);
  setMyWork('mode','board');const b=renderDashboard(base);assert.match(b,/class="mywork-board"/);assert.match(b,/Everything assigned to you, across every client/);assert.doesNotMatch(b,/class="home-task/,'one view at a time');
 });
 test('the controls are wired in the page, the cache tokens moved, and nothing here writes to the server',()=>{

@@ -119,7 +119,7 @@ test('wiring: screen imported, routed, reachable from Documents and Communicatio
  const su=rd('staff-suite.mjs'),pi=rd('staff-pilot.mjs'),css=rd('staff-pilot.css');
  assert.match(su,/import \{createIncomingUI\} from '\.\/staff-incoming\.mjs\?v=20261110-taxrole-v3'/);assert.match(su,/const incoming=createIncomingUI\(\{\.\.\.ctx,button,area,check\}\)/);assert.match(su,/if\(await incoming\.handle\(action,id\)\)return;/);assert.match(su,/return \{[^}]*kra,incoming(,forensic)?(,deadlines)?\}/);
  assert.match(su,/'Letter','Email','WhatsApp','Call','Meeting','Visit','Internal note'/);assert.match(su,/select\('direction'/);assert.match(su,/field\('sender_address'/);
- assert.match(pi,/return incomingCardHtml\(data\.me,suite\.button\)\+/);assert.match(pi,/if\(view==='documents'\)void suite\.incoming\.paintCard\(\);/);
+ assert.match(pi,/return \(scope\?'':incomingCardHtml\(data\.me,suite\.button\)\+/);assert.match(pi,/if\(view==='documents'&&!route\.scoped\)void suite\.incoming\.paintCard\(\);/);
  assert.match(pi,/'Correspondence','KRA Notices','Import Sources'\]/);assert.match(css,/\.timeline-doc\{/);
  const html=rd('staff-pilot.html'),rel=JSON.parse(rd(fx+'release.json'));
  assert.match(html,new RegExp('data-build="'+rel.build.replace(/\./g,'\\.')+'"'));assert.equal(rel.build,'2026-11-19.2906');

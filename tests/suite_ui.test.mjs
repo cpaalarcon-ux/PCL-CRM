@@ -19,7 +19,11 @@ let failLetterSave=false;const calls=[];globalThis.fetch=async(url,opts)=>{const
  }
  if(p.action==='workspace')await new Promise(r=>setTimeout(r,10));
 const result=p.action==='login'?{access_token:'qa',refresh_token:'refresh',expires_at:Date.now()/1000+3600,session_id:'qa',idle_timeout_seconds:1800}:p.action==='workspace'?data:p.action==='statement'?{opening:0,closing:0,rows:[],currency:'KES'}:{ok:true};return {ok:true,json:async()=>result};};
-const pause=()=>new Promise(r=>setTimeout(r,40));const click=async s=>{const b=document.querySelector(s);assert.ok(b,'Missing control '+s);b.click();await pause();};
+const pause=()=>new Promise(r=>setTimeout(r,40));const click=async s=>{
+ const b=document.querySelector(s);assert.ok(b,'Missing control '+s);b.click();await pause();
+ const switchArea=document.querySelector('dialog.leave-dialog[open] [data-leave="switch"]');
+ if(switchArea){switchArea.click();await pause();}
+};
 await import('../staff-pilot.mjs');
 test('connected navigation, activation controls, tax bands and invoice form are usable',async t=>{t.after(()=>dom.window.close());
  document.querySelector('#loginForm [name=login_id]').value='qa.partner';document.querySelector('#loginForm [name=password]').value='testing';document.querySelector('#loginForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));await pause();

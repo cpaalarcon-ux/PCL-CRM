@@ -40,7 +40,8 @@ test('the sidebar follows the agreed layout and rights are unchanged',()=>{
  assert.match(app,/subs=\[audit,\.\.\.modLinks\('engagements'\)\]/,'Audit files sit under Engagements & Delivery');
  assert.ok(!/sideItems=\[[^\]]*leaf\('audit'/.test(app),'Audit is not a top-level sidebar item');
  // areas (rights) are untouched
- for(const area of ['clients','projects','time_hr','documents','communications','audit','billing_wip','staff_access','settings','leads'])assert.ok(app.includes(`area:'${area}'`),area);
+ const nav=fs.readFileSync(path.join(root,'staff-nav.mjs'),'utf8');
+ for(const area of ['clients','projects','time_hr','documents','communications','audit','billing_wip','staff_access','settings','leads'])assert.ok(nav.includes(`area:'${area}'`),area);
  assert.match(leads,/Promote to Client/);assert.ok(!/Prepare client/.test(leads));assert.match(leads,/action:'lead_convert'/);
  assert.match(msg,/> Messenger<span id="messengerBadge"/);
 });

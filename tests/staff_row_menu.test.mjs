@@ -26,7 +26,7 @@ test('your own row still shows no actions, and the handlers are unchanged',()=>{
 
 test('the menu names the person for screen readers and is not clipped by the table wrapper',()=>{
  assert.match(pilot,/aria-label="More actions for \$\{esc\(s\.full_name\)\}"/);
- assert.match(pilot,/<div class="scroll staff-roster"><table data-views="ERP role">/);
+ assert.match(pilot,/<div class="scroll staff-roster"><table data-views="ERP role" aria-label="Staff roster">/);
  assert.match(css,/\.staff-roster,\.doc-roster\{overflow:visible\}/);assert.match(css,/\.cc-menu button\.danger\{/);
 });
 

@@ -153,7 +153,7 @@ test('the page loads the card facts safely: one request per minute, WIP only for
  assert.match(pilot,/Date\.now\(\)-cardFacts\.at<60000/);assert.match(pilot,/ids\.slice\(0,500\)/);
  assert.match(pilot,/\/\^\(\?:kra_\|incoming_\)\/\.test\(String\(p\?\.action\|\|''\)\)\|\|options\.uploadKind==='incoming'\)cardFacts\.at=0/);
  assert.match(pilot,/cardFlags=new Map\(\);cardWip=new Map\(\);workReady=new Map\(\);workReadyLoaded=false;workReadyFailed=false;cardFacts\.key='';cardFacts\.at=0;/,'signing out forgets the facts, including the work-ready answers');
- assert.match(pilot,/stateHidden=st!=='all'&&r\.dataset\.state!=='all'&&!\(st==='setup'&&r\.dataset\.incomplete!==undefined\?r\.dataset\.incomplete==='1':r\.dataset\.state===st\);/,'Set-up incomplete filters on progress when the server answer is loaded, on the old status when it is not');
+ assert.match(pilot,/filter==='setup'&&incomplete!==undefined\?incomplete==='1':state===filter/,'Set-up incomplete filters on progress when the server answer is loaded, on the old status when it is not');
  assert.match(pilot,/document\.querySelectorAll\('\.cc-more\[open\]'\)\.forEach\(d=>\{if\(d!==more\|\|e\.target\.closest\('\.cc-menu button'\)\)d\.open=false;\}\)/,'the menu closes on an outside click or a choice');
  assert.match(pilot,/e\.key!=='Escape'\)return;const d=document\.querySelector\('\.cc-more\[open\]'\)/);
  assert.match(act,/client_card_flags/);assert.match(act,/\['PARTNER','MANAGER','SUPERVISOR'\]/);assert.match(act,/\['PARTNER','MANAGER'\]\.includes\(a\.category_code\)\)fail\(403,'Work in progress/);
@@ -174,7 +174,7 @@ test('the Clients screen uses the card grid and keeps search, structure and stat
  assert.match(pilot,/from '\.\/staff-client-cards\.mjs\?v=/);
  assert.match(pilot,/<div class="client-grid">\$\{body\}<\/div>/);
  assert.doesNotMatch(pilot,/<th>Purchase mapping setup<\/th>/);
- assert.match(pilot,/stateHidden/);assert.match(pilot,/repaintClientCards/);
+ assert.match(pilot,/function applyClientFilters\(/);assert.match(pilot,/repaintClientCards/);
  assert.match(css,/\.client-grid\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(min\(100%,380px\),1fr\)\)/);
 });
 

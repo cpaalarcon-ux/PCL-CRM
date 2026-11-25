@@ -20,6 +20,7 @@ import {handoverAction} from './handover-actions.ts';
 import {teamAction} from './team-actions.ts';
 import {holidayAction} from './holiday-actions.ts';
 import {workloadAction} from './workload-actions.ts';
+import {teamQueueAction} from './team-queue-actions.ts';
 import {clientVaultAction,clientVaultAccess} from './client-vault-actions.ts';
 import {clientLifecycleAction} from './client-lifecycle-actions.ts';
 import {kycProposalAction} from './kyc-upload-actions.ts';
@@ -36,7 +37,7 @@ import {accountingAction} from './accounting-actions.ts';
 import {ledgerAction} from './ledger-actions.ts';
 import {purchaseLedgerAction} from './purchase-ledger-actions.ts';
 import {taxConfigAction} from './tax-config-actions.ts';
-import {readWorkspace} from './workspace-read.ts';
+import {readWorkspace,readWorkspaceLanding} from './workspace-read.ts';
 import {setupLinkState,setupLinkMessages} from './setup-link-rules.mjs';
 import {managerResetTargets} from './manager-reset-targets.mjs';
 import {leadAction} from './lead-actions.ts';
@@ -114,6 +115,10 @@ import {rightsForRequest,actionRightLabel,defaultActionRights,isActionRight,filt
 import {rightForAction,rightLabel,defaultStaffRights,effectiveStaffRights,isRightCode,isProposableAction} from './staff-rights-catalog.mjs';
 import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts';
 import {clientBatchAction,clientBatchStage} from './client-batch-actions.ts';
+import {onboardingTemplateAction,onboardingTemplateStage} from './onboarding-template-actions.ts';
+import {ownerBatchAction,ownerBatchStage} from './owner-batch-actions.ts';
+import {monthWorkAction} from './month-work-actions.ts';
+import {clientSetupPipelineAction} from './client-setup-pipeline-actions.ts';
 import {handlingFirmIds,readClientEntry} from './client-entry.ts';
 import {policiesRead,policyAction,requireAssistantEntryAuthorised} from './policy-actions.ts';
 
@@ -545,6 +550,7 @@ async function action(id:any,p:any){
   await admin.auth.admin.signOut(id.jwt,'local');return {ok:true};
  }
  return scoped(id,async(tx,a)=>{
+  if(p.action==='workspace_landing')return readWorkspaceLanding(tx,a,typeof p.firm_id==='string'?p.firm_id:undefined);
   if(p.action==='workspace'){
    const w=await readWorkspace(tx,a),denied=await restrictedAreas(tx,a.staff_id),areas=effectiveStaffAreas(a.category_code,denied);
    const visibleStaff=Array.isArray(w.staff)?w.staff:[],staffIds=visibleStaff.map((s:any)=>s.staff_id);
@@ -571,6 +577,11 @@ async function action(id:any,p:any){
   if(isProposableAction(String(p.action||''))&&['ASSISTANT','SUPERVISOR'].includes(a.category_code))return await createProposal(tx,a,p);
   const proposals=await proposalAction(tx,a,p,run);if(proposals!==undefined)return proposals;
   const clientBatch=await clientBatchAction(tx,a,p,run);if(clientBatch!==undefined)return clientBatch;
+  const onboardingTemplate=await onboardingTemplateAction(tx,a,p,run);if(onboardingTemplate!==undefined)return onboardingTemplate;
+  const ownerBatch=await ownerBatchAction(tx,a,p,run);if(ownerBatch!==undefined)return ownerBatch;
+  const monthWork=await monthWorkAction(tx,a,p);if(monthWork!==undefined)return monthWork;
+  const setupPipeline=await clientSetupPipelineAction(tx,a,p);if(setupPipeline!==undefined)return setupPipeline;
+  const teamQueue=await teamQueueAction(tx,a,p);if(teamQueue!==undefined)return teamQueue;
   const workload=await workloadAction(tx,a,p);if(workload!==undefined)return workload;
   const vault=await clientVaultAction(tx,a,p);if(vault!==undefined)return vault;
   const policy=await policyAction(tx,a,p);if(policy!==undefined)return policy;
@@ -784,7 +795,16 @@ async function action(id:any,p:any){
    }
    // Removing a firm revokes the scope immediately without deleting historical assignments.
    await tx`update erp_private.staff_firm_access set deleted_at=now() where staff_id=${sid} and firm_id<>all(${firms}::uuid[])`;
-   return {ok:true,staff_id:sid};
+   // Optional MLRO appointment made on the same screen. Only the Partner's own grant function decides; it checks rank, status, reason and end date.
+   let mlro:any=null;
+   if(p.mlro_appoint===true||p.mlro_appoint==='on'||p.mlro_appoint==='true'){
+    if(a.category_code!=='PARTNER')fail(403,'Only an Engagement Partner can appoint the MLRO.');
+    const [st]=await tx`select access_status from erp_private.staff_members where staff_id=${sid}`;
+    if(st.access_status!=='Active')fail(400,'Activate this person\'s login first, then appoint the MLRO (edit the staff profile again).');
+    const [g]=await tx`select erp_private.staff_right_grant(${sid}::uuid,'MLRO',${text(p.mlro_reason,1000,false)},${/^\d{4}-\d{2}-\d{2}$/.test(String(p.mlro_expires_on||''))?String(p.mlro_expires_on):fail(400,'Choose the MLRO end date.')}::date) as grant_id`;
+    mlro={appointed:true,grant_id:g.grant_id};
+   }
+   return {ok:true,staff_id:sid,mlro};
   }
   if(p.action==='staff_disable'){
    const sid=uuid(p.staff_id);if(sid===a.staff_id)deny();const target=one(await tx`select category_code from erp_private.staff_members where staff_id=${sid}`);
@@ -804,8 +824,9 @@ Deno.serve(async(req:Request)=>{
  if(origin){
   if(!allowedOrigin(origin,ORIGIN_LIST))return new Response(JSON.stringify({error:'Origin not allowed.'}),{status:403,headers});
   headers['Access-Control-Allow-Origin']=origin;
-  headers['Access-Control-Allow-Headers']='authorization,content-type,apikey,x-erp-activity-age-ms,x-erp-upload-kind';
+  headers['Access-Control-Allow-Headers']='authorization,content-type,apikey,x-erp-activity-age-ms,x-erp-upload-kind,x-region';
   headers['Access-Control-Allow-Methods']='POST,OPTIONS';
+  headers['Access-Control-Max-Age']='7200';
  }
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
  if(req.method!=='POST')return new Response(JSON.stringify({error:'Use POST.'}),{status:405,headers});
@@ -828,7 +849,9 @@ Deno.serve(async(req:Request)=>{
     return new Response(JSON.stringify(result),{headers});
    }
    if(req.headers.get('x-erp-upload-kind')==='reference'){const result=await referenceUpload(req,id);return new Response(JSON.stringify(result),{headers});}
+   if(req.headers.get('x-erp-upload-kind')==='onboarding_template'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'clients');await requireActionRight(tx,a,{action:'onboarding_template_propose'});return onboardingTemplateStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='client_batch'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'clients');await requireActionRight(tx,a,{action:'client_batch_propose'});return clientBatchStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
+   if(req.headers.get('x-erp-upload-kind')==='owner_batch'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'clients');await requireActionRight(tx,a,{action:'owner_batch_propose'});return ownerBatchStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData(),dataset=String(form.get('dataset')||''),area=dataset==='Staff'?'staff_access':'clients';const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,area);await requireActionRight(tx,a,{action:dataset==='Staff'?'master_staff_import':'client_master_import'});return masterImport(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
   }

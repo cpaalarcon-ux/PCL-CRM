@@ -26,14 +26,13 @@ export const CARD_TAB=Object.freeze({
 });
 export const tabForCard=id=>CARD_TAB[id]||'records';
 
-// Build 2849: the Accounting & Tax Rules tab is long (about 240 buttons), so each of its cards sits in a fold and one is open at a time (a shared
-// name makes the browser close the others). The first card starts open. Every card keeps its own id inside the fold; nothing is removed.
+// Accounting & Tax Rules starts with every list closed. A shared name keeps only one panel open at a time.
 export const FOLD_TABS=Object.freeze(['accounting']);
 export const FOLD_TITLES=Object.freeze({chartCard:'Chart of accounts',starterConfirmCard:'Starter rules',taxRatesCard:'Tax rates and rules',deadlineCard:'KRA due dates',dueBacklogCard:'Due-date backlog'});
-export function fold(id,html,{first=false,tab='accounting'}={}){
+export function fold(id,html,{tab='accounting'}={}){
  if(!html)return '';
  const title=FOLD_TITLES[id]||String(id).replace(/Card$/,'').replace(/([A-Z])/g,' $1').trim();
- return `<details class="settings-fold" name="settings-fold-${esc(tab)}" data-fold="${esc(id)}"${first?' open':''}><summary>${esc(title)}</summary>${html}</details>`;
+ return `<details class="settings-fold" id="settingsFold-${esc(id)}" name="settings-fold-${esc(tab)}" data-fold="${esc(id)}" data-preserve-open><summary>${esc(title)}</summary>${html}</details>`;
 }
 
 // Tabs with nothing to configure yet say so plainly, with where the related work lives. They are not blank pages and they promise nothing.

@@ -1,7 +1,8 @@
 export class HttpError extends Error { constructor(status,message){super(message);this.status=status;} }
 /** @type {(status: number, message: string) => never} */
 export const fail=(status,message)=>{throw new HttpError(status,message);};
-export const text=(v,max=160,required=true)=>{if(typeof v!=="string" || v.length>max || (required&&!v.trim()))fail(400,"Check the required text fields.");return v.trim();};
+// Spaces around pasted values (for example a KRA PIN copied from a sheet) are not part of the value: the length limit applies after trimming. The raw cap only stops oversized input.
+export const text=(v,max=160,required=true)=>{if(typeof v!=="string" || v.length>max*2+64)fail(400,"Check the required text fields.");const t=v.trim();if(t.length>max || (required&&!t))fail(400,"Check the required text fields.");return t;};
 export const uuid=v=>{if(typeof v!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v))fail(400,"Invalid record reference.");return v;};
 export const choice=(v,options)=>{if(!options.includes(v))fail(400,"Choose a valid option.");return v;};
 export const date=v=>{if(!v)return null;const d=new Date(v+'T00:00:00Z');if(!/^\d{4}-\d{2}-\d{2}$/.test(v)||!Number.isFinite(d.getTime())||d.toISOString().slice(0,10)!==v)fail(400,"Enter a valid date.");return v;};
