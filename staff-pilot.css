@@ -795,3 +795,7 @@ html{scroll-padding-top:calc(var(--detail-bar-h,0px) + .5rem)}
 .setup-advanced{margin-top:1rem;border-top:1px solid #d9e2ec;padding-top:.5rem}
 .setup-advanced>summary{cursor:pointer;font-weight:600;padding:.4rem 0}
 @media (max-width:560px){.step-actions{margin-left:0}}
+.setup-part{margin:.7rem 0 0 2.4rem;padding-top:.6rem;border-top:1px dashed #d9e2ec}
+.part-head{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.setup-part .step-actions{margin:.4rem 0 0 0}
+@media (max-width:560px){.setup-part{margin-left:0}}
