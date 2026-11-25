@@ -40,7 +40,7 @@ test('assistants see only assigned work; unfinished work is handed over with a n
  assert.equal(queue.length,1);assert.equal(queue[0].client_name,'Mlima Traders');assert.equal(queue[0].task_name,'Capture January sales');assert.match(queue[0].narration,/till rolls/);
  await assert.rejects(()=>act('ASSISTANT',{action:'task_handover_candidates',project_id:P}),/Only a Supervisor, Manager or Partner/);
  const cands=(await act('SUPERVISOR',{action:'task_handover_candidates',project_id:P,exclude:actors.ASSISTANT.staff_id})).candidates.map(x=>x.full_name).sort();
- assert.deepEqual(cands,['Fictional ASSISTANT2','Fictional MANAGER','Fictional PARTNER','Fictional SUPERVISOR'],'active firm staff; never the person handing over and never an intern');
+ assert.deepEqual(cands,['Fictional ASSISTANT2'],'active Assistants of the firm; never the person handing over, and never a Supervisor, Manager, Partner or intern, because tasks are assigned to Assistants only');
 
  // Reallocation.
  await assert.rejects(()=>act('SUPERVISOR',{action:'task_handover_decide',handover_id:req.handover_id,decision:'Reallocated',new_assignee_id:actors.ASSISTANT.staff_id,note:'Move to the colleague on leave cover.'}),/another active staff member/);
@@ -71,12 +71,13 @@ test('assistants see only assigned work; unfinished work is handed over with a n
  assert.equal(moved.moved,1);
  assert.equal(await count('ASSISTANT','projects'),0,'the first assistant no longer sees the project or client');assert.equal(await count('ASSISTANT','clients'),0);
 
- // Direct reallocation by a Supervisor, recorded in the same table.
- const direct=await act('SUPERVISOR',{action:'task_handover_reallocate',project_id:P,task_id:T1,new_assignee_id:actors.SUPERVISOR.staff_id,reason:'Supervisor takes the sales capture to finish before the deadline.'});
+ // Direct reallocation by a Supervisor, recorded in the same table. Work goes to an Assistant, never to the Supervisor.
+ await assert.rejects(()=>act('SUPERVISOR',{action:'task_handover_reallocate',project_id:P,task_id:T1,new_assignee_id:actors.SUPERVISOR.staff_id,reason:'Supervisor takes the sales capture to finish before the deadline.'}),/who is an Assistant/);
+ const direct=await act('SUPERVISOR',{action:'task_handover_reallocate',project_id:P,task_id:T1,new_assignee_id:actors.ASSISTANT.staff_id,reason:'Back to the first Assistant to finish before the deadline.'});
  assert.equal(direct.moved,1);
- assert.equal((await tx`select assigned_to from erp_private.tasks where task_id=${T1}`)[0].assigned_to,actors.SUPERVISOR.staff_id);
+ assert.equal((await tx`select assigned_to from erp_private.tasks where task_id=${T1}`)[0].assigned_to,actors.ASSISTANT.staff_id);
  assert.equal((await tx`select count(*)::int n from erp_private.task_handovers where decision_note='Direct reallocation'`)[0].n,1);
- await assert.rejects(()=>act('SUPERVISOR',{action:'task_handover_reallocate',project_id:P,task_id:T1,new_assignee_id:actors.SUPERVISOR.staff_id,reason:'Same person again, which is pointless.'}),/another active staff member/);
+ await assert.rejects(()=>act('SUPERVISOR',{action:'task_handover_reallocate',project_id:P,task_id:T1,new_assignee_id:actors.ASSISTANT.staff_id,reason:'Same person again, which is pointless.'}),/another active staff member/);
 
  // There is no suspense account.
  assert.equal((await tx`select count(*)::int n from erp_private.account_catalog where code='37000'`)[0].n,0);

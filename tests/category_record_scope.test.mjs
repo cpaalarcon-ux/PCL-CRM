@@ -13,7 +13,7 @@ test('record scope by category: who reaches which client, project and task, and 
  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create table auth.sessions(id uuid primary key,user_id uuid references auth.users);create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),'')::jsonb,'{}'::jsonb) $$;create function auth.uid() returns uuid language sql stable as $$ select (auth.jwt()->>'sub')::uuid $$;`);
 for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.readFileSync(root+'/supabase/migrations/'+f,'utf8').replace('CREATE EXTENSION IF NOT EXISTS pg_cron;','').replace(/SELECT cron.schedule[^\n]+/g,'');await db.exec(q);}
  await tx`insert into erp_private.firms(firm_id,firm_code,legal_name) values(${F},'V3QA','Fictional V3 firm'),(${G},'V3QB','Fictional other firm')`;
- for(const role of ['PARTNER','MANAGER','SUPERVISOR','SUPERVISOR2','ASSISTANT','INTERN','ADMIN']){const a=actors[role]={staff_id:id(),auth_user_id:id(),session:id(),category_code:role.replace('2','')};await tx`insert into auth.users(id) values(${a.auth_user_id})`;await tx`insert into auth.sessions(id,user_id) values(${a.session},${a.auth_user_id})`;await tx`insert into erp_private.staff_members(staff_id,auth_user_id,staff_identifier,login_id,full_name,category_code,employment_type,contract_end_date,access_status,sessions_invalid_before) values(${a.staff_id},${a.auth_user_id},${role},${role.toLowerCase()},${'Fictional '+role},${a.category_code},'Permanent','2027-12-31','Active',now()-interval '1 day')`;await tx`insert into erp_private.pilot_sessions(session_id,staff_id,expires_at) values(${a.session},${a.staff_id},now()+interval '1 hour')`;await tx`insert into erp_private.staff_firm_access(staff_id,firm_id,scope) values(${a.staff_id},${F},'Assigned')`;}
+ for(const role of ['PARTNER','MANAGER','SUPERVISOR','SUPERVISOR2','ASSISTANT','ASSISTANT2','INTERN','ADMIN']){const a=actors[role]={staff_id:id(),auth_user_id:id(),session:id(),category_code:role.replace('2','')};await tx`insert into auth.users(id) values(${a.auth_user_id})`;await tx`insert into auth.sessions(id,user_id) values(${a.session},${a.auth_user_id})`;await tx`insert into erp_private.staff_members(staff_id,auth_user_id,staff_identifier,login_id,full_name,category_code,employment_type,contract_end_date,access_status,sessions_invalid_before) values(${a.staff_id},${a.auth_user_id},${role},${role.toLowerCase()},${'Fictional '+role},${a.category_code},'Permanent','2027-12-31','Active',now()-interval '1 day')`;await tx`insert into erp_private.pilot_sessions(session_id,staff_id,expires_at) values(${a.session},${a.staff_id},now()+interval '1 hour')`;await tx`insert into erp_private.staff_firm_access(staff_id,firm_id,scope) values(${a.staff_id},${F},'Assigned')`;}
 
  for(const [c,name,firm] of [[C1,'RS Fictional Owned',F],[C2,'RS Fictional Assigned',F],[C3,'RS Fictional Allocated',F],[C4,'RS Fictional Firm Only',F],[C5,'RS Fictional Other Firm',G],[C6,'RS Fictional Unlinked',F]]){await tx`insert into erp_private.clients(client_id,company_name,legal_entity_type,owner_staff_id) values(${c},${name},'Limited company',${c===C1?actors.ASSISTANT.staff_id:null})`;await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${c},${firm})`;}
  const S=actors.SUPERVISOR.staff_id,A=actors.ASSISTANT.staff_id,M=actors.MANAGER.staff_id;
@@ -21,8 +21,8 @@ for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.re
  await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P2},${S},${F},'SUPERVISOR'),(${P2},${A},${F},'ASSISTANT'),(${P2},${M},${F},'MANAGER')`;
  const T2=(await tx`insert into erp_private.tasks(project_id,assigned_to,task_name) values(${P2},${A},'RS assistant task') returning task_id`)[0].task_id;
  await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${P3},${C4},${F},'RS firm-only project','TAX-COMP',${M})`;
- await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P3},${M},${F},'MANAGER')`;
- await tx`insert into erp_private.tasks(project_id,assigned_to,task_name) values(${P3},${M},'RS manager task')`;
+ await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P3},${M},${F},'MANAGER'),(${P3},${actors.ASSISTANT2.staff_id},${F},'ASSISTANT')`;
+ await tx`insert into erp_private.tasks(project_id,assigned_to,task_name) values(${P3},${actors.ASSISTANT2.staff_id},'RS second assistant task')`;
  await ax('MANAGER',{action:'client_onboarding_alloc_assign',staff_id:S,client_ids:[C3],note:'Fictional RS allocation'});
  const ids={C1,C2,C3,C4,C5,C6};
  const reach=async role=>{const out={};for(const [k,c] of Object.entries(ids))out[k]=await sees(role,c);return out;};
@@ -35,14 +35,14 @@ for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.re
  // Manager: every client and project of the firms they work in; nothing in another firm.
  assert.deepEqual(await reach('MANAGER'),{C1:true,C2:true,C3:true,C4:true,C5:false,C6:true});
  assert.equal((await projects('MANAGER')).length,2);
- // Supervisor: only what they own, are assigned to, or are allocated for onboarding. Not the rest of the firm.
- assert.deepEqual(await reach('SUPERVISOR'),{C1:false,C2:true,C3:true,C4:false,C5:false,C6:false},'a Supervisor reaches assigned and allocated clients only');
- assert.deepEqual(await projects('SUPERVISOR'),[P2],'a Supervisor reaches the project they are assigned to, not the other firm projects');
- assert.equal(await tasks('SUPERVISOR'),1,'and the tasks inside that project only');
- assert.equal(await allowed('SUPERVISOR',C4),false);
- // A second Supervisor with no assignment reaches nothing, although they work in the same firm.
- assert.deepEqual(await reach('SUPERVISOR2'),{C1:false,C2:false,C3:false,C4:false,C5:false,C6:false});
- assert.deepEqual(await projects('SUPERVISOR2'),[]);
+ // Supervisor: every project and task in the firms they work in (they review; Assistants do the work), plus the clients of those projects and onboarding allocations. Nothing in another firm.
+ assert.deepEqual(await reach('SUPERVISOR'),{C1:false,C2:true,C3:true,C4:true,C5:false,C6:false},'a Supervisor reaches the clients of every project in their firm and allocated clients');
+ assert.deepEqual((await projects('SUPERVISOR')).sort(),[P2,P3].sort(),'a Supervisor reaches every project in their firm, not the other firm');
+ assert.equal(await tasks('SUPERVISOR'),2,'and every task inside those projects');
+ assert.equal(await allowed('SUPERVISOR',C4),true);
+ // A second Supervisor works in the same firm, so they see the same projects and tasks.
+ assert.deepEqual((await projects('SUPERVISOR2')).sort(),[P2,P3].sort());
+ assert.equal(await tasks('SUPERVISOR2'),2);
  // Assistant: the client they own and the project they are assigned to; never the rest of the firm.
  assert.deepEqual(await reach('ASSISTANT'),{C1:true,C2:true,C3:false,C4:false,C5:false,C6:false});
  assert.deepEqual(await projects('ASSISTANT'),[P2]);
@@ -65,8 +65,8 @@ for(const f of fs.readdirSync(root+'/supabase/migrations').sort()){const q=fs.re
  assert.equal(await sees('SUPERVISOR',C3),false,'ending the allocation ends the Supervisor access');
  assert.equal(await sees('SUPERVISOR',C2),true,'the project assignment is untouched');
  await tx`update erp_private.project_assignments set deleted_at=now() where project_id=${P2} and staff_id=${S}`;
- assert.deepEqual(await reach('SUPERVISOR'),{C1:false,C2:false,C3:false,C4:false,C5:false,C6:false},'with no assignment and no allocation a Supervisor reaches nothing');
- assert.deepEqual(await projects('SUPERVISOR'),[]);
+ assert.deepEqual(await reach('SUPERVISOR'),{C1:false,C2:true,C3:false,C4:true,C5:false,C6:false},'with no assignment and no allocation a Supervisor still reaches the clients of every project in their firm, and nothing else');
+ assert.deepEqual((await projects('SUPERVISOR')).sort(),[P2,P3].sort());
  await ax('PARTNER',{action:'client_onboarding_alloc_assign',staff_id:S,client_ids:[C4,C6],note:'Fictional RS reallocation'});
- assert.deepEqual(await reach('SUPERVISOR'),{C1:false,C2:false,C3:false,C4:true,C5:false,C6:true});
+ assert.deepEqual(await reach('SUPERVISOR'),{C1:false,C2:true,C3:false,C4:true,C5:false,C6:true});
 });
