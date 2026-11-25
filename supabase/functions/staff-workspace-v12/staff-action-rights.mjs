@@ -28,6 +28,7 @@ const groups=[
   review:['ledger_journal_check'],post:['ledger_journal_review'],reverse:['ledger_reverse','sales_amend_prepare','sales_legacy_prepare'],
  },{review:[...leaders,'SUPERVISOR'],post:leaders,reverse:leaders}],
  ['client','clients','Client records',staff,{view:['client_register_page'],create:['client_save','client_master_import'],edit:['client_classify_save','v3_identity_save']}],
+ ['onboardbatch','clients','Client onboarding batches (MLRO template)',staff,{view:['onboarding_batch_read','onboarding_batch_pdf'],create:['onboarding_template_propose'],review:['onboarding_batch_check'],approve:['onboarding_batch_approve'],mlro:['onboarding_batch_checks_save','onboarding_batch_ratings_save','onboarding_batch_accept','onboarding_batch_sign']},{review:[...leaders,'SUPERVISOR'],approve:leaders,mlro:[...leaders,'SUPERVISOR']}],
  ['clientvault','clients','KRA credential vault',staff,{view:['client_vault_list','client_vault_reveal'],edit:['client_vault_update','client_vault_permissions']},{edit:leaders}],
  ['clientpipeline','clients','Client set-up status',leaders,{view:['client_setup_pipeline_read'],edit:[]}],
  ['clientonboard','clients','Client onboarding allocation',leaders,{view:['client_onboarding_alloc_read','client_onboarding_alloc_clients'],edit:['client_onboarding_alloc_assign','client_onboarding_alloc_remove','client_onboarding_alloc_move']}],
