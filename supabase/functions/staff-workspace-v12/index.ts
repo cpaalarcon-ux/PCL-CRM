@@ -786,7 +786,16 @@ async function action(id:any,p:any){
    }
    // Removing a firm revokes the scope immediately without deleting historical assignments.
    await tx`update erp_private.staff_firm_access set deleted_at=now() where staff_id=${sid} and firm_id<>all(${firms}::uuid[])`;
-   return {ok:true,staff_id:sid};
+   // Optional MLRO appointment made on the same screen. Only the Partner's own grant function decides; it checks rank, status, reason and end date.
+   let mlro:any=null;
+   if(p.mlro_appoint===true||p.mlro_appoint==='on'||p.mlro_appoint==='true'){
+    if(a.category_code!=='PARTNER')fail(403,'Only an Engagement Partner can appoint the MLRO.');
+    const [st]=await tx`select access_status from erp_private.staff_members where staff_id=${sid}`;
+    if(st.access_status!=='Active')fail(400,'Activate this person\'s login first, then appoint the MLRO (edit the staff profile again).');
+    const [g]=await tx`select erp_private.staff_right_grant(${sid}::uuid,'MLRO',${text(p.mlro_reason,1000,false)},${/^\d{4}-\d{2}-\d{2}$/.test(String(p.mlro_expires_on||''))?String(p.mlro_expires_on):fail(400,'Choose the MLRO end date.')}::date) as grant_id`;
+    mlro={appointed:true,grant_id:g.grant_id};
+   }
+   return {ok:true,staff_id:sid,mlro};
   }
   if(p.action==='staff_disable'){
    const sid=uuid(p.staff_id);if(sid===a.staff_id)deny();const target=one(await tx`select category_code from erp_private.staff_members where staff_id=${sid}`);
