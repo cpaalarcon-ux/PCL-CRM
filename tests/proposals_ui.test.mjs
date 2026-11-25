@@ -83,10 +83,26 @@ test('the buttons send the right server action with the proposal reference',asyn
  data.me=person('SUPERVISOR','s-sup');
  data.proposals=[prop({action:'client_save',client_id:null,summary:'Add client',payload:newClient,reason:'Reviewed the registration certificate'})];
  document.body.innerHTML=proposalsCard(data,esc);
+ document.querySelector('#proposalsCard summary').click();
  document.querySelector('[data-proposal="check"]').click();
  const review=modalFns.at(-1);
  assert.equal(review.title,'Check this proposal');
  for(const value of ['UAT Fictional New Client &amp; Co.','Alarcon Consultants','A123456789Z','Kisii','Limited Company','Private Limited Company','Reviewed the registration certificate'])assert.ok(review.html.includes(value));
+});
+test('proposal history starts closed and can be opened even when nothing is waiting',()=>{
+ document.body.innerHTML=proposalsCard({
+  me:person('ASSISTANT','s-assist'),
+  proposals:[prop({status:'Approved',summary:'Add contact for test client'})]
+ },esc);
+ const panel=document.getElementById('proposalsCard');
+ const summary=panel.querySelector('summary');
+ assert.equal(panel.open,false);
+ assert.equal(summary.textContent,'Proposals 0 waiting');
+ summary.click();
+ assert.equal(panel.open,true);
+ assert.match(panel.querySelector('tbody').textContent,/Add contact for test client/);
+ summary.click();
+ assert.equal(panel.open,false);
 });
 test('server wiring: the Assistant/Supervisor path creates a proposal before any handler runs, and the area map and catalogue list agree',()=>{
  const idx=fs.readFileSync(new URL('../supabase/functions/staff-workspace-v12/index.ts',import.meta.url),'utf8');

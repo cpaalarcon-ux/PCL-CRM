@@ -61,4 +61,9 @@ test('KYC uses evidence records, needs an independent verifier and reopens revie
  await assert.rejects(()=>kyc('PARTNER',{action:'compliance_verify',revision:c.revision}),/different Manager or Partner/);
  await kyc('MANAGER',{action:'compliance_verify',revision:c.revision});
  assert.equal(Number((await tx`select count(*)::int as n from erp_private.client_kyc_change_versions where client_id=${C} and status='Pending review'`)[0].n),0);
+ // The owners of a client must total 100% before the file is verified. A file with no owner recorded is not affected by this rule.
+ await kyc('PARTNER',{action:'owner_add',full_name:'Fictional Owner One',identity_reference:'Not recorded: identity document not yet sighted',ownership_percentage:60,control_basis:'Director',change_reason:'Fictional owner added'});
+ c=await compliance();await assert.rejects(()=>kyc('MANAGER',{action:'compliance_verify',revision:c.revision}),/shares add to 60%\. They must total 100%/);
+ await kyc('PARTNER',{action:'owner_add',full_name:'Fictional Owner Two',identity_reference:'Not recorded: identity document not yet sighted',ownership_percentage:40,control_basis:'Director',change_reason:'Fictional owner added'});
+ c=await compliance();await kyc('MANAGER',{action:'compliance_verify',revision:c.revision});
 });

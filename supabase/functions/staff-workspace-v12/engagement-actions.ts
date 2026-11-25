@@ -213,6 +213,9 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   const evidence=await tx`select * from erp_private.client_kyc_evidence where client_id=${c.client_id} and deleted_at is null`,required=await kycRequiredCodes(tx,c.legal_structure,c.legal_subtype),gaps=kycGaps(c.entity_type,await kycRules(tx),evidence,today(),required);
   if(gaps.length)fail(400,'Current KYC evidence is missing or expired for: '+gaps.join(', ')+'.');
   if((required?required.includes('BENEFICIAL_OWNERSHIP'):c.entity_type==='Company')&&!(await tx`select owner_id from erp_private.beneficial_owners where client_id=${c.client_id} and deleted_at is null`).length)fail(400,'This client’s KYC requires at least one beneficial owner or controller record.');
+  // The owners of a client account for the whole of it. A file with owners recorded is verified only when their shares total 100%.
+  const shares=(await tx`select count(*)::int n,coalesce(sum(ownership_percentage),0)::float8 total from erp_private.beneficial_owners where client_id=${c.client_id} and deleted_at is null`)[0];
+  if(shares.n&&Math.abs(Number(shares.total)-100)>0.02)fail(400,`The recorded owners’ shares add to ${Math.round(Number(shares.total)*100)/100}%. They must total 100% before the KYC file is verified. Correct the owners on the client record first.`);
   await tx`update erp_private.client_kyc_change_versions set status='Approved',reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${text(p.review_note||'',2000,false)||'Verified with the KYC file'} where client_id=${c.client_id} and status='Pending review'`;
   await tx`update erp_private.client_compliance set verified_by=${a.staff_id},verified_at=now() where client_id=${c.client_id}`;return {ok:true};
  }
