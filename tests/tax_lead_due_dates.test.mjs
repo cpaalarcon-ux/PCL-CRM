@@ -124,6 +124,9 @@ test('Tax Lead right, confirmed KRA due dates, adjustments-only amendments',asyn
  // ============================ C. Amendments change adjustments only ====================================================================================================
  const orig=id();
  await db.query(`insert into erp_private.tax_cases(case_id,project_id,kind,starts_on,ends_on,prepared_by,reviewed_by,review_snapshot,status,filing_date,inputs) values($1,$2,'VAT','2026-06-01','2026-06-30',$3,$4,'{}','Filed','2026-07-18',$5)`,[orig,PJ,AST,M,JSON.stringify({opening_credit:100,withholding_credit:25,adjustments:[],adjustment_basis:'',bank_reconciliation:{note:'filed'}})]);
+ // Only a Manager or a Partner starts an amendment: the server refuses the others, and so does the database for a signed-in person.
+ for(const r of ['SUPERVISOR','ASSISTANT','INTERN'])await assert.rejects(tax(r,{action:'tax_amend',case_id:orig,reason:'Corrected output VAT on one sale invoice'}),/Manager or a Partner|Supervisor, Manager or Partner must review|requires a staff preparer/);
+ await assert.rejects(as('SUPERVISOR',()=>tx`insert into erp_private.tax_cases(project_id,kind,starts_on,ends_on,prepared_by,amends_case_id,amendment_no,amendment_reason,status) values(${PJ},'VAT','2026-06-01','2026-06-30',${AST},${orig},1,'Corrected output VAT on one sale invoice','Draft')`),/Manager or a Partner/);
  const am=await tax('MANAGER',{action:'tax_amend',case_id:orig,reason:'Corrected output VAT on one sale invoice'});
  const A1=am.case_id;
  assert.equal((await tx`select prepared_by from erp_private.tax_cases where case_id=${A1}`)[0].prepared_by,M);
