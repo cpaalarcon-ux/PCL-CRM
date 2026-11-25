@@ -43,7 +43,7 @@ export function clientProfile(ctx){
   credentials:()=>host('credentials'),
   aml:()=>host('aml'),
   understanding:()=>host('understanding'),
-  setup:()=>`<p class="muted">Everything that sets this client up for work, in one place: legal identity, activities, chart of accounts, VAT categories, reporting periods and stock. The steps and the Healthy checks are on the Overview.</p>${leader?host('setup'):''}`,
+  setup:()=>`${leader?host('setup'):''}`,
   tax:()=>{
    const tps=(suite.tax_profiles||[]).filter(x=>x.client_id===c.client_id);
    return `${table(['Status','From','To','Entity','Regime'],tps.map(x=>`<tr><td>${badge(x.status)}</td><td>${esc(shortDate(x.effective_from))}</td><td>${esc(x.effective_to?shortDate(x.effective_to):'Open')}</td><td>${esc(x.entity_type||'')}</td><td>${esc(x.regime||'')}</td></tr>`),'No tax profile recorded yet.')}${leader?`<div class="actions section-space">${btn(`data-suite="tax-profile" data-id="${id}"`,'Open tax profile','primary')}${btn(`data-v3="returns" data-id="${id}"`,'Payroll returns')}${btn(`data-v3="exceptions" data-id="${id}"`,'Tax rule exceptions')}${btn(`data-suite="routing-map-open" data-id="${id}"`,'Routing map')}</div>`:''}<p class="muted">A tax profile says which returns apply. No tax rate is entered here; rates come from the dated rules register.</p>${leader?host('tax'):''}`;

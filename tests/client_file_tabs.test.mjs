@@ -16,7 +16,7 @@ test('a Manager or Partner gets the Set-up tab, with a host the page fills from 
  const h=clientProfile(ctx({tab:'setup'}));
  assert.match(h,/data-cprofile-tab="setup"/);assert.match(h,/aria-selected="true"[^>]*data-cprofile-tab="setup"/);
  assert.match(h,/<div id="clientTabHost" class="section-space" data-tab="setup" data-id="c1">/);
- assert.match(h,/legal identity, activities, chart of accounts, VAT categories, reporting periods and stock/);
+ assert.doesNotMatch(h,/Everything that sets this client up for work/,'the long intro is replaced by the checklist');
 });
 
 test('anyone else does not see the Set-up tab, and cannot land on it',()=>{
@@ -38,7 +38,7 @@ test('the old long window is split in two and every entry point lands in the fil
  const set=body.slice(body.indexOf('setup:`'),body.indexOf(',tax:`')),tax=body.slice(body.indexOf(',tax:`'));
  assert.match(tax,/Active tax obligations/);assert.doesNotMatch(set,/Active tax obligations/);
  for(const t of ['Activities','Current dependency map','Setup changes waiting for review','Verified reporting periods','Stock settings history'])assert.match(set,new RegExp('<h3>'+t+'</h3>'),t);
- for(const b of ["'activity'","'chart'","'vat-cats'","'period'","'identity'","'setup-review'"])assert.match(set,new RegExp('button\\('+b),b);
+ const chk=rd('staff-setup-checklist.mjs');for(const b of ["'activity'","'chart'","'vat-cats'","'period'","'identity'","'setup-review'"])assert.match(chk,new RegExp('\\['+b),b);
  assert.doesNotMatch(set,/Payroll returns|Tax rule exceptions|routing-map-open/,'these moved to Tax & returns');
  assert.match(imp,/async function client\(id,options=\{\}\)\{if\(options\.stockSetup\)\{await loadClient\(id\);policy\(options\);return;\}openFile\(id,'setup'\);\}/);
  assert.match(imp,/b\.dataset\.clientOpen=id;b\.dataset\.clientTab=tab/);assert.match(imp,/return \{client,project,bank,chart,paintClientTab(?:,resumeActivityDraft)?\}/);
