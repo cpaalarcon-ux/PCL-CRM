@@ -82,7 +82,7 @@
   }
 
   async function openFullWorkspace(options) {
-    fullWorkspace ??= await import('./staff-pilot.mjs?v=20261114-setupguide-v1&rev=20261119-2906&upd=20261124-v1&swap=20261124-v1&reset=20261122-v1&vault=20261122-v1&create-client=20261122-v1&review=20261122-v1&bulk=20261122-v1&starter=20261210-v1&screen=20261211-v1&routing=20261124-mumbai-v1&landing=20261125-v2&fold=20261125-v1&single=20261125-v1&ownerbatch=20261125-v1');
+    fullWorkspace ??= await import('./staff-pilot.mjs?v=20261114-setupguide-v1&rev=20261119-2906&upd=20261124-v1&swap=20261124-v1&reset=20261122-v1&vault=20261122-v1&create-client=20261122-v1&review=20261122-v1&bulk=20261122-v1&starter=20261210-v1&screen=20261211-v1&routing=20261124-mumbai-v1&landing=20261125-v2&fold=20261125-v1&single=20261125-v1&ownerbatch=20261125-v1&register=20261125-v1');
     await fullWorkspace.activateStaffWorkspace(options);
     landing=null;
   }
@@ -91,7 +91,7 @@
     document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));
   }
 
-  async function openWorkspace() {
+  async function openWorkspace({started=performance.now(),mode='Saved session'}={}) {
     if (workspaceLoading) return;
     if (!readSavedSession()) {
       workspaceLoading = false;
@@ -105,9 +105,9 @@
     if (retryButton) retryButton.hidden = true;
     notice('Opening your secure workspace…');
     try {
-      const {mountStaffLanding}=await import('./staff-pilot-landing.mjs?v=20261125-v2&fold=20261125-v1');
+      const {mountStaffLanding}=await import('./staff-pilot-landing.mjs?v=20261125-v2&fold=20261125-v1&register=20261125-v1');
       try{
-        landing=await mountStaffLanding({send,notice,openFullWorkspace,sessionEnded});
+        landing=await mountStaffLanding({send,notice,openFullWorkspace,sessionEnded,started,mode});
       }catch(error){
         // The frontend can deploy before the backend adds the landing action.
         if(![403,404].includes(error.status))throw error;
@@ -185,13 +185,14 @@
     loginButton.textContent = 'Signing in…';
     loginButton.setAttribute('aria-busy', 'true');
     notice('Checking your staff login…');
+    const started=performance.now();
     try {
       const credentials = Object.fromEntries(new FormData(loginForm));
       const result = await send({ ...credentials, action: 'login' }, { timeoutMs: 20000 });
       saveSession(result);
       loginForm.reset();
       loginButton.textContent = 'Sign in';
-      await openWorkspace();
+      await openWorkspace({started,mode:'New sign-in'});
     } catch (error) {
       loginButton.disabled = false;
       notice(error.message, true);

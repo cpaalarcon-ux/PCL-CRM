@@ -1,5 +1,5 @@
 import {lifecycleBadge} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1&rev=20261119-nav';
-import {identityChecks,clientSpine} from './staff-setup-spine.mjs?v=20261118-ready-v1';
+import {identityChecks,clientSpine} from './staff-setup-spine.mjs?v=20261118-ready-v1&register=20261125-v1';
 import {gateAction,gateReasons,progressBar} from './staff-work-ready.mjs?v=20261118-ready-v1';
 // Client list as cards: three set-up pillars, one computed next step, one status badge.
 // Pure functions so the rules can be tested without a browser. The page passes in its own helpers.
@@ -10,9 +10,9 @@ export const CLIENT_STATES=[['all','All'],['action','Action needed'],['setup','S
 const cleanText=x=>String(x||'').trim();
 
 // Everything the card needs to decide. `readiness` is the async per-client mapping read (undefined until loaded).
-export function clientProgress({client:c,missing=[],compliance,contacts=[],taxProfiles=[],readiness,stagedTB=false}){
+export function clientProgress({client:c,missing=[],compliance,contacts=[],taxProfiles=[],readiness,stagedTB=false,registerFacts}){
  // Build 2846: the KYC and tax-profile facts come from the shared set-up spine, so the card and the guide cannot read them differently.
- const {kycOk,kycMissing,taxOk}=identityChecks({client:c,compliance,contacts,taxProfiles});
+ const {kycOk,kycMissing,taxOk}=identityChecks({client:c,compliance,contacts,taxProfiles,registerFacts});
  const profileOk=!missing.length;
  let activitiesOk=null; // null = still loading
  if(readiness){
