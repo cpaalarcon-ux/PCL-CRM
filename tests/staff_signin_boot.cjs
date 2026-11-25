@@ -30,9 +30,11 @@ const server = http.createServer((req, res) => {
     const page = await browser.newPage();
     const errors = [];
     let mainRequested = false, releaseChecks = 0, serverBuild = '', emailRecoveryEnabled = false, landingChecks = 0;
+    const workspaceStarts = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/staff-pilot.mjs*', route => {
       mainRequested = true;
+      workspaceStarts.push(landingChecks);
       return route.abort();
     });
     await page.route('https://yfjiculexbzpkvtapudk.supabase.co/**', async route => {
@@ -110,9 +112,14 @@ const server = http.createServer((req, res) => {
     assert.equal(mainRequested, false, 'My Work must render without the full workspace module');
     assert.equal(await page.getByRole('link', { name: 'Staff & access' }).count(), 0);
     await page.getByRole('link', { name: 'Open task' }).click();
-    await page.getByText('The workspace area could not load. Select it again to retry.').waitFor();
+    await page.getByRole('button', { name: 'Retry workspace area' }).waitFor();
     assert.equal(mainRequested, true, 'opening a task loads the full workspace module');
     assert.equal(await page.getByText('Prepare test work', { exact: true }).isVisible(), true, 'a load error keeps the dashboard usable');
+    await page.goto(`http://127.0.0.1:${server.address().port}/staff-pilot?from=bookmark#view=clients`);
+    await page.getByRole('button', { name: 'Retry workspace area' }).waitFor();
+    assert.deepEqual(workspaceStarts, [1, 2], 'opening a saved Clients link also requests the landing dashboard before loading full modules');
+    assert.equal(await page.getByText('Prepare test work', { exact: true }).isVisible(), true, 'a saved-link failure keeps Home visible');
+    assert.equal(await page.locator('#signin').isVisible(), false, 'a detail failure leaves the saved sign-in active');
     assert.deepEqual(errors, []);
     console.log('PASS Chromium: sign-in and My Work open without full ERP modules. Selecting a task loads the modules and keeps the dashboard usable if they fail.');
   } finally {
