@@ -6,16 +6,16 @@ export function clearWorkspaceTiming(){
  openedAreas.clear();
 }
 
-export function recordWorkspaceTiming({action,started,role,area='',mode='',error=false}){
+export function recordWorkspaceTiming(metric,{started,role,area='',mode='',error=false}){
  if(!Number.isFinite(started)||!role)return;
- timingRows.unshift({action,role,area,mode,error,at:new Date(),seconds:Math.max(0,(performance.now()-started)/1000)});
+ timingRows.unshift({action:metric,role,area,mode,error,at:new Date(),seconds:Math.max(0,(performance.now()-started)/1000)});
  if(timingRows.length>100)timingRows.pop();
 }
 
 export function recordAreaOpening({started,role,area}){
  const mode=openedAreas.has(area)?'Repeat open':'First open';
  openedAreas.add(area);
- recordWorkspaceTiming({action:'open_area',started,role,area,mode});
+ recordWorkspaceTiming('open_area',{started,role,area,mode});
 }
 
 export function summarizeWorkspaceTiming(rows){

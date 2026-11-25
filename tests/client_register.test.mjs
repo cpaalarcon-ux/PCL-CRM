@@ -32,10 +32,10 @@ test('page and server wiring',()=>{
 });
 test('timing summaries separate staff roles and opening modes, and count failures separately',()=>{
  clearWorkspaceTiming();
- recordWorkspaceTiming({action:'open_home',started:performance.now()-100,role:'MANAGER',area:'home',mode:'New sign-in'});
+ recordWorkspaceTiming('open_home',{started:performance.now()-100,role:'MANAGER',area:'home',mode:'New sign-in'});
  recordAreaOpening({started:performance.now()-200,role:'MANAGER',area:'clients'});
  recordAreaOpening({started:performance.now()-50,role:'MANAGER',area:'clients'});
- recordWorkspaceTiming({action:'open_area',started:performance.now()-450,role:'MANAGER',area:'clients',mode:'Repeat open',error:true});
+ recordWorkspaceTiming('open_area',{started:performance.now()-450,role:'MANAGER',area:'clients',mode:'Repeat open',error:true});
  const summary=summarizeWorkspaceTiming(timingRows);
  const repeat=summary.find(r=>r.mode==='Repeat open');
  assert.equal(repeat.count,1);assert.equal(repeat.failed,1);assert.equal(repeat.p50,repeat.p95);
