@@ -182,9 +182,11 @@ test('grouped statement-line review, Owner Matrix and My Approvals through the r
  const proposalAudit=await tx`select table_name from erp_private.audit_events where actor_auth_id=${actors.MANAGER.auth_user_id}
   and action='UPDATE' and record_key in (${rate.rate_id},'99974',${mapSeed.map_id}) order by table_name`;
  assert.deepEqual(proposalAudit.map(row=>row.table_name),['account_catalog','account_statement_map','tax_rates']);
- const result=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:[
+ const mixedSelections=[
   {queue_key:'approve_chart',items:[{id:'99974',revision:accountAfter.revision}]},
-  {queue_key:'approve_tax_rates',items:[{id:rate.rate_id,revision:taxAfter.revision}]}]});
+  {queue_key:'approve_tax_rates',items:[{id:rate.rate_id,revision:taxAfter.revision}]}];
+ await assert.rejects(own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,selections:mixedSelections}),/official Kenya Law, KRA, Gazette or competent regulator source/,'a tax rule batch needs the separate official-source confirmation');
+ const result=await own('PARTNER',{action:'settings_approval_batch_approve',review_confirmed:true,tax_source_review_confirmed:true,selections:mixedSelections});
  assert.equal(result.total,2);
  await map('PARTNER',{action:'ledger_statement_map_review_approve',scope:'group',map_ids:[mapSeed.map_id]});
  assert.equal((await tx`select reviewed_by from erp_private.account_statement_map where map_id=${mapSeed.map_id}`)[0].reviewed_by,actors.PARTNER.staff_id);
