@@ -140,3 +140,10 @@ test('the Edge Function applies the configured origin list before serving a pref
   assert.equal(handlePreflight(preflight(productionOrigin), allowedOrigin, []).status, 403);
   assert.equal(handlePreflight(preflight(stagingOrigin), allowedOrigin, null).status, 204);
 });
+
+test('the build stops, and deletes nothing, when the staff entry page is missing', () => {
+  assert.throws(() => reachable(['no-such-entry-page.html']), /entry page is missing/);
+  const src = fs.readFileSync(path.join(root, 'scripts/build-site.mjs'), 'utf8');
+  assert.ok(src.indexOf('const files = reachable()') < src.indexOf('fs.rmSync(dist'), 'the entry page is checked before the output folder is cleared');
+  assert.ok(reachable().includes('staff-pilot.html'), 'the real entry page is found');
+});
