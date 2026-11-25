@@ -23,7 +23,7 @@ test('Smart Back: filter a project by period, open a task, press Back, land on t
  assert.equal(location.hash,'#project='+id(3));
  assert.equal($('#content [name=workPeriod]').value,oct,'the period filter is still October');
  const again=[...document.querySelectorAll('#content .task-title')].map(x=>x.textContent);assert.ok(again.some(x=>/Upload weekly purchases/.test(x)));assert.ok(!again.some(x=>/September bank review/.test(x)));
- assert.ok(document.activeElement?.matches?.('[data-task-row],[data-open-task],.task-title,[data-task]')||document.activeElement===document.body,'focus returns to the task that was opened, or stays on the page');
+ assert.ok(document.activeElement?.matches?.('[data-task-row],[data-open-task],.task-title,[data-task],#greeting')||document.activeElement===document.body,'focus returns to the task that was opened, moves to the page heading, or stays on the page');
  // the browser's own Back button gives the same result
  await click('.task-title');history.back();await pause();
  assert.equal($('#content [name=workPeriod]').value,oct); // an address that is not one of the app's own routes is ignored

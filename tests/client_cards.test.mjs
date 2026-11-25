@@ -182,7 +182,7 @@ test('Review N tasks opens the client file on its Projects & Tasks tab, and the 
  const pilot=readFileSync(new URL('../staff-pilot.mjs',import.meta.url),'utf8'),profile=readFileSync(new URL('../staff-client-profile.mjs',import.meta.url),'utf8');
  assert.match(card(done(),{meta:{open_tasks:3}}),/data-client-open="c1" data-client-tab="projects">Review 3 tasks</);
  assert.doesNotMatch(card(done(),{meta:{open_tasks:0}}),/data-client-tab="projects"/);
- assert.match(pilot,/pendingClientTab=b\.dataset\.clientTab\|\|''/);assert.match(pilot,/clientTab=pendingClientTab\|\|'overview'/);
+ assert.match(pilot,/navigateWorkspace\('clientfile',b\.dataset\.clientOpen,\{tab:b\.dataset\.clientTab\}\)/);assert.match(pilot,/clientTab=tab\|\|'overview'/);
  assert.match(pilot,/status=cardStatus\(progress,\{flags:cardFlags\.get\(c\.client_id\)/);assert.doesNotMatch(pilot,/status=clientStatus\(/);
  assert.match(pilot,/void ensureCardFacts\(\[c\.client_id\]\)/);
  assert.match(profile,/data-client-status="\$\{id\}"/);

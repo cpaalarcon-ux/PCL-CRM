@@ -97,7 +97,7 @@ test('screens: buttons, the routing map leaves Settings, and the Configure link 
  assert.match(imp,/action:'client_setup_tasks_read'/);assert.match(imp,/a==='setup-tasks'\)await setupTasks\(\)/);assert.match(imp,/\$\{configurationHtml\(cfg,\{esc\}\)\}/);
  assert.match(rd('staff-client-profile.mjs'),/data-suite=\"routing-map-open\" data-id=\"\$\{id\}\"`,'Routing map'\)/);
  assert.equal((pilot.match(/data-v3="setup-tasks"/g)||[]).length,2,'on the Clients screen for everyone with client access');
- assert.match(pilot,/if\(b\.dataset\.clientOpen\)\{if\(b\.closest\('#editor'\)&&\$\('#editor'\)\.open\)\$\('#editor'\)\.close\(\)/);
+ assert.match(pilot,/if\(b\.dataset\.clientOpen\)\{await navigateWorkspace\('clientfile',b\.dataset\.clientOpen,\{tab:b\.dataset\.clientTab\}\)/);
  assert.doesNotMatch(suite,/routingMapCard/);assert.doesNotMatch(layout,/routingMapCard/);assert.doesNotMatch(rmap,/settingsCard|id:'routingMapCard'/);
  assert.match(rmap,/async function handle\(action,id\)/);assert.match(rmap,/if\(id\)\{if\(\$\('#editor'\)\?\.open\)\$\('#editor'\)\.close\(\);await open\(id\);return true;\}/);
  assert.equal(CONFIGURE_TARGETS.routing_map.view,'clients');assert.equal(CONFIGURE_TARGETS.routing_map.tab,undefined);assert.match(CONFIGURE_TARGETS.routing_map.where,/Tax & returns → Routing map/);
