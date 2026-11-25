@@ -412,7 +412,13 @@ const workCards=`<div class="work-board">
  async function imported(id,offset=0){return accounting.imported(id,{offset});}
 
  function bind(){
-  if($('#content [name=project]'))$('#content [name=project]').onchange=e=>{if(ctx.openProject)ctx.openProject(e.target.value);else{selected=e.target.value;ctx.render();}};
+  const projectPicker=$('#content [name=project]');
+  if(projectPicker)projectPicker.onchange=async()=>{
+   if(ctx.openProject){
+    const accepted=await ctx.openProject(projectPicker.value);
+    if(!accepted&&projectPicker.isConnected)projectPicker.value=selected;
+   }else{selected=projectPicker.value;ctx.render();}
+  };
   if($('#content [name=workPeriod]'))$('#content [name=workPeriod]').onchange=e=>{selectedPeriod=e.target.value;ctx.render();};
   const workInput=$('#content [name=workSearch]');if(workInput){let timer;workInput.oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>{workSearch=e.target.value;ctx.render();const again=$('#content [name=workSearch]');if(again){again.focus();again.setSelectionRange(again.value.length,again.value.length);}},250);};}
   for(const [name,set] of [['workFirm',v=>workFirm=v],['workShow',v=>workShow=v],['workYear',v=>workYear=v]])if($(`#content [name=${name}]`))$(`#content [name=${name}]`).onchange=e=>{set(e.target.value);ctx.render();};

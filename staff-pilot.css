@@ -229,6 +229,9 @@ body.workspace-active>footer{flex:0 0 auto;padding:7px 18px;border-top:1px solid
 .workspace-area-card.tone-purple .workspace-area-icon{background:#f5e6f4;color:#995092}
 .workspace-breadcrumb{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px;font-size:13px}
 .workspace-breadcrumb a{color:var(--green)}
+.workspace-context{padding:10px 14px;margin-bottom:12px}
+.workspace-context .section-head{margin:0}
+.workspace-context .actions{margin:0;flex-wrap:wrap}
 @media(max-width:1050px){#workspace nav#nav{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}
 @media(max-width:850px){
  body.workspace-active>footer{padding:6px 10px;font-size:9px}
