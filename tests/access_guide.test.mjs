@@ -91,7 +91,7 @@ test('workspace filtering limits client and tax detail to the permitted area and
  assert.deepEqual(noClientAccess.suite.compliance,[]);
 });
 
-test('supervisors see assigned and routed review work, not firm-wide client details',()=>{
+test('supervisors see and review every project and task in the firm',()=>{
  const workspace={me:{staff_id:'s1'},clients:[
   {client_id:'c1',company_name:'Assigned Client',kra_pin:'P000000001A'},
   {client_id:'c2',company_name:'Unassigned Client',kra_pin:'P000000002A'}
@@ -99,9 +99,8 @@ test('supervisors see assigned and routed review work, not firm-wide client deta
   tasks:[{task_id:'t1',project_id:'p1',assigned_to:'other',status:'Open'},{task_id:'t2',project_id:'p2',assigned_to:'other',status:'Open'}],
   assignments:[{project_id:'p1',staff_id:'s1'}],schedules:[],work_periods:[],work_period_tasks:[],task_procedures:[],sales_reviews:[],task_events:[],workbook_batches:[],documents:[],timesheets:[],notifications:[],suite:{tax_profiles:[]}};
  const scoped=scopeWorkspaceRecords(workspace,'SUPERVISOR','s1');
- assert.deepEqual(scoped.projects.map(x=>x.project_id),['p1']);
+ assert.deepEqual(scoped.projects.map(x=>x.project_id),['p1','p2']);
  assert.equal(scoped.clients.find(x=>x.client_id==='c1').details_visible,true);
  const other=scoped.clients.find(x=>x.client_id==='c2');
- assert.equal(other.details_visible,false);
- assert.equal(Object.hasOwn(other,'kra_pin'),false);
+ assert.equal(other.details_visible,true);
 });
