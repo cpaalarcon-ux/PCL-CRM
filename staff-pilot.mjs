@@ -885,7 +885,7 @@ export async function activateStaffWorkspace({firmId='',signOut=false}={}){
  if(!session.active)session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut});
  firm=firmId;
  view='home';
- await load({timeoutMs:20000,waitForPresence:signOut});
+ await load({timeoutMs:30000,waitForPresence:signOut});
  if(['Opening your secure workspace…','Opening workspace area…'].includes($('#notice').textContent))notice('');
  stopWatchingSession?.();
  stopWatchingSession=watchStaffActivity(session);

@@ -87,7 +87,7 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
   $('#content').innerHTML=paintWork(my_work);
  }
  async function openSection(hash,signOut=false){
-  if(opening||!session.check())return;
+  if(opening||events.signal.aborted||!session.check())return;
   opening=true;
   changingFirm++;
   pauseActivity();
@@ -103,7 +103,12 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
    if(previousHash!==hash)history.replaceState(null,'',previousHash||location.pathname+location.search);
    opening=false;
    watchActivity();
-   notice('The workspace area could not load. Select it again to retry.',true);
+   notice('This workspace area could not load. You can stay on Home or retry.',true);
+   const retry=document.createElement('button');
+   retry.type='button';
+   retry.textContent='Retry workspace area';
+   retry.onclick=()=>void openSection(hash,signOut);
+   $('#notice').append(' ',retry);
   }
  }
 
@@ -151,9 +156,14 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
    notice(error.message,true);
   }
  },options);
- window.addEventListener('hashchange',()=>{
-  if(location.hash&&location.hash!=='#view=home')void openSection(location.hash);
- },options);
+ function openRequestedArea(){
+  const route=new URLSearchParams(location.hash.slice(1));
+  const view=route.get('view');
+  if(['task','project','client','communication'].some(key=>route.has(key))||(view&&view!=='home'))void openSection(location.hash);
+ }
+ window.addEventListener('hashchange',openRequestedArea,options);
  watchActivity();
+ // Let Home paint before importing the full workspace for a saved link.
+ requestAnimationFrame(()=>requestAnimationFrame(openRequestedArea));
  return {end:()=>{if(!events.signal.aborted)session.end();}};
 }
