@@ -9,6 +9,7 @@ const BULK_KEYS=new Set(Object.keys(GROUP_TITLES));
 const groupItems=g=>g.key==='approve_statement_lines'?(g.items||[]).flatMap(x=>(x.items||[]).map(i=>({
  eligible:x.eligible,reason:x.reason,...i,group_label:x.label,group_id:x.group_id,group_kind:x.kind
 }))):(g.items||[]);
+const TAX_SOURCE_REQUIREMENT='Tax rule approval requires an official Kenya Law, KRA, Gazette or competent regulator source URL.';
 const REVIEW_CONFIRMATIONS={approve_tax_rates:'I checked the figures, statutory basis, eligibility conditions and effective dates against the linked sources for every selected tax rate.',approve_chart:'I checked the proposed account codes, names, categories, routes and statement placement.',approve_statement_lines:'I reviewed every selected account against its proposed statement line.'};
 const encoded=(key,id)=>`${key}|${id}`;
 const period=i=>[i.effective_from,i.effective_to].filter(Boolean).join(' to ');
@@ -151,6 +152,7 @@ export function batchPreviewView(groups,{esc=e0}={}){
   ${batchRows(groups,esc)}
   <div class="approval-drawer-confirm"><ul>${groups.map(g=>`<li>${esc(REVIEW_CONFIRMATIONS[g.key])}</li>`).join('')}</ul>
    <label><input type="checkbox" data-ap-confirm> I confirm that I completed each applicable review above.</label>
+   ${groups.some(g=>g.key==='approve_tax_rates')?`<p class="info">${esc(TAX_SOURCE_REQUIREMENT)}</p><label><input type="checkbox" data-ap-tax-source-confirm> I opened and checked the official source URL for every selected tax rule.</label>`:''}
    ${btn('ap-approve-selected',`Approve ${count} records`,'','class="primary" disabled')}</div></div>`;
 }
 export function batchReceiptView(result,{esc=e0}={}){
@@ -223,7 +225,7 @@ export function createMyApprovalsUI(ctx){
    for(const input of e.target.closest('[data-ap-section]').querySelectorAll('[data-ap-item]:not(:disabled)'))selectInput(input,e.target.checked);
    updateDrawerControls();return;
   }
-  if(e.target?.hasAttribute('data-ap-confirm')){const button=query('[data-suite="ap-approve-selected"]');if(button)button.disabled=!e.target.checked;}
+  if(e.target?.hasAttribute('data-ap-confirm')||e.target?.hasAttribute('data-ap-tax-source-confirm')){const button=query('[data-suite="ap-approve-selected"]'),tax=query('[data-ap-tax-source-confirm]');if(button)button.disabled=!(query('[data-ap-confirm]')?.checked&&(!tax||tax.checked));}
  });
  if(typeof document!=='undefined')document.addEventListener('input',e=>{if(e.target?.dataset?.ap!=='q'||!data)return;f={...f,q:e.target.value};const body=el('apRecordsBody');if(body)body.innerHTML=recordsView(visibleRecords(data.records,f),{esc:e0});});
  const keys=()=>drawerGroups.map(g=>g.key);
@@ -261,13 +263,15 @@ export function createMyApprovalsUI(ctx){
   if(!selections?.length||reviewNeedsReload||batchBusy)return;
   if(isPreview&&selectionCount()>maxBatch)return;
   if(!isPreview&&!query('[data-ap-confirm]')?.checked)return;
+  const taxBox=isPreview?null:query('[data-ap-tax-source-confirm]');
+  if(taxBox&&!taxBox.checked){notice(`${TAX_SOURCE_REQUIREMENT} Open and check the source for every selected rule, then confirm the source review.`,true);return;}
   if(isPreview)selectionView=selectionState();
   const editor=el('editor'),body=el('editorBody'),panel=body?.firstElementChild;
   const stillOpen=()=>!!editor?.open&&(!body?.firstElementChild||body.firstElementChild===panel);
   batchBusy=true;
   if(body){body.inert=true;body.setAttribute('aria-busy','true');}
   try{
-   const p=isPreview?{preview_only:true}:{review_confirmed:true,review_version:preview.version};
+   const p=isPreview?{preview_only:true}:{review_confirmed:true,review_version:preview.version,...(taxBox?{tax_source_review_confirmed:true}:{})};
    const result=await request({action:'settings_approval_batch_approve',selections,...p});
    if(isPreview){
     if(!result.review_version||!Array.isArray(result.groups))throw Error('The batch preview could not be verified.');

@@ -145,6 +145,9 @@ test('Quick review groups records, compares figures and lists the exact batch at
  assert.match(preview,/KE_VAT_STANDARD/);
  assert.match(preview,/I confirm that I completed each applicable review above/);
  assert.match(preview,/statutory basis, eligibility conditions and effective dates/);
+ assert.match(preview,/data-ap-tax-source-confirm/);assert.match(preview,/official Kenya Law, KRA, Gazette or competent regulator source URL/);
+ assert.doesNotMatch(MA.batchPreviewView([{key:'approve_chart',items:[{id:'a',code:'1000',label:'Cash'}]}]),/data-ap-tax-source-confirm/,'no source tick-box when no tax rule is selected');
+ assert.match(readFileSync(new URL('../supabase/functions/staff-workspace-v12/settings-owner-actions.ts',import.meta.url),'utf8'),/tax_source_review_confirmed!==true/);
 });
 
 test('Bulk review starts empty, selects eligible rows by group, and preserves selection through editing',async t=>{
@@ -198,6 +201,9 @@ test('Bulk review starts empty, selects eligible rows by group, and preserves se
  assert.equal($('#editorBody').textContent.includes('batch-reference'),false);
  check($('[data-ap-confirm]'));
  await ui.handle('ap-approve-selected');
+ assert.equal($('#editorBody').textContent.includes('batch-reference'),false,'a tax rule batch also needs the official source confirmation');
+ check($('[data-ap-tax-source-confirm]'));
+ await ui.handle('ap-approve-selected');
  assert.match($('#editorBody').textContent,/batch-reference/);
  assert.match($('#editorBody').textContent,/Reviewer/);
  assert.match($('#editorBody').textContent,/KE_FIRST/);
@@ -223,7 +229,7 @@ test('a timed-out approval requires a fresh list before retrying',async t=>{
  await ui.handle('ap-review','approve_tax_rates');
  check('[data-ap-item]');
  await ui.handle('ap-preview-selected');
- check('[data-ap-confirm]');
+ check('[data-ap-confirm]');check('[data-ap-tax-source-confirm]');
  await ui.handle('ap-approve-selected');
  assert.match(document.getElementById('apBatchError').textContent,/timed out/);
  assert.equal(document.querySelector('[data-suite="ap-preview-selected"]').disabled,true);
