@@ -793,6 +793,31 @@ html{scroll-padding-top:calc(var(--detail-bar-h,0px) + .5rem)}
  overflow-wrap: anywhere;
 }
 
+/* Client Set-up tab: ordered checklist */
+.setup-checklist{margin:0 0 1rem}
+.setup-summary{margin:.25rem 0 .75rem}
+.setup-steps{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.setup-step{border:1px solid #d9e2ec;border-radius:10px;padding:.75rem .9rem;background:#fff}
+.setup-step.done{border-color:#a6d8b8;background:#f4fbf7}
+.setup-step.waiting{border-color:#f0d58a;background:#fffbf0}
+.setup-step.todo{border-left:4px solid #b45f06}
+.step-head{display:flex;align-items:flex-start;gap:.7rem;flex-wrap:wrap}
+.step-num{flex:0 0 1.7rem;height:1.7rem;border-radius:50%;background:#e8eef5;color:#243b53;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem}
+.setup-step.done .step-num{background:#067647;color:#fff}
+.step-text{flex:1 1 12rem;min-width:0;display:grid;gap:.15rem}
+.step-text small{color:#52606d}
+.step-status{font-size:.8rem;font-weight:600;padding:.15rem .55rem;border-radius:999px;background:#eef2f6;color:#243b53;white-space:normal}
+.step-status.done{background:#dff3e7;color:#055d3a}
+.step-status.waiting{background:#fdf0c7;color:#7a4b00}
+.step-status.todo{background:#fde7d3;color:#8a4500}
+.step-actions{display:flex;flex-wrap:wrap;gap:.4rem;margin:.6rem 0 0 2.4rem}
+.setup-advanced{margin-top:1rem;border-top:1px solid #d9e2ec;padding-top:.5rem}
+.setup-advanced>summary{cursor:pointer;font-weight:600;padding:.4rem 0}
+@media (max-width:560px){.step-actions{margin-left:0}}
+.setup-part{margin:.7rem 0 0 2.4rem;padding-top:.6rem;border-top:1px dashed #d9e2ec}
+.part-head{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.setup-part .step-actions{margin:.4rem 0 0 0}
+@media (max-width:560px){.setup-part{margin-left:0}}
 /* Staff & access: one tab bar and a consistent page layout (build 2910) */
 .pcl-tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:14px 0 16px;overflow-x:auto}
 .pcl-tab{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;padding:10px 16px;color:#5d6d65;font-weight:600;cursor:pointer;white-space:nowrap}
