@@ -70,8 +70,9 @@ export function checkOnboardingTabs({aml,owners,contacts,tax},{now=today()}={}){
    own.push({line:owners.cell(row,O.line)||`Owner ${k+1}`,row,full_name:nameO.slice(0,160),identity_type:idt||null,kra_pin:opin||null,nationality:owners.cell(row,O.nat).slice(0,80)||null,ownership_percentage:Number.isFinite(pv as number)?pv:null,role:role||null,holding_type:hold||null,pep_status:pepO||'To confirm',sighted:sighted==='Yes',sighted_on:sighted==='Yes'?on:null,sighted_by:sighted==='Yes'?by.slice(0,120):null,notes:owners.cell(row,O.notes).slice(0,300)||null});
   }
   if(!own.length)err(errors,'Owners',first,'Full name',`${name||pin||'This client'} has no owner. At least one owner is required.`,'Fill Owner 1.');
-  if(total>100.0001)err(errors,'Owners',first,'Ownership %',`${name||pin}: the ownership adds to ${Math.round(total*100)/100}, more than 100.`,'Correct the percentages so they do not exceed 100.');
-  else if(own.length&&Math.abs(total-100)>0.0001)notices.push({row:first,column:'Owners · Ownership %',issue:`${name||pin}: the ownership adds to ${Math.round(total*100)/100}. The rest is held by someone not listed; say who in Notes.`,suggestion:null});
+  // The owners of a client must account for the whole of it: the shares total 100%.
+  if(total>100.02)err(errors,'Owners',first,'Ownership %',`${name||pin}: the ownership adds to ${Math.round(total*100)/100}, more than 100.`,'Correct the percentages so they total 100.');
+  else if(own.length&&own.every((x:any)=>x.ownership_percentage!==null)&&Math.abs(total-100)>0.02)err(errors,'Owners',first,'Ownership %',`${name||pin}: the owners’ shares add to ${Math.round(total*100)/100}%. They must total 100%.`,'Correct the shares, or add the owner who holds the rest.');
   const cn=contacts.cell(r,C.name),ce=contacts.cell(r,C.email),cp=contacts.cell(r,C.phone),cr=contacts.cell(r,C.role);let contact=null;
   if(cn||ce||cp||cr){
    if(!cn)err(errors,'Contacts',r,'Contact full name','The contact has details but no name.','Enter the contact’s name.');
