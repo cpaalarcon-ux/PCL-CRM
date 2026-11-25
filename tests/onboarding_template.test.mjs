@@ -31,6 +31,12 @@ test('every problem is reported with a row and a suggestion, and ownership over 
  const r=run(m);assert.ok(r.errors.length>=8);for(const e of r.errors){assert.ok(e.row>=1);assert.ok(e.column);assert.ok(e.issue)}
  const t=JSON.stringify(r.errors);assert.match(t,/not a valid KRA PIN/);assert.match(t,/more than 100/);assert.match(t,/Sighted by/);
 });
+test('the owners of a client must total 100%: a total short of 100 fails',()=>{
+ const m=base();m.owners=sheet(OH,[['Owner 1','Test Owner One','National ID','','Kenyan','60','Director','Direct','No','','','No',''],['Owner 2','Test Owner Two','National ID','','Kenyan','30','Director','Direct','No','','','No','']]);
+ const r=run(m);assert.equal(r.errors.length,1);assert.match(r.errors[0].issue,/shares add to 90%\. They must total 100%/);assert.equal(r.errors[0].column.includes('Ownership %'),true);
+ const ok=base();ok.owners=sheet(OH,[['Owner 1','Test Owner One','National ID','','Kenyan','33.33','Director','Direct','No','','','No',''],['Owner 2','Test Owner Two','National ID','','Kenyan','33.33','Director','Direct','No','','','No',''],['Owner 3','Test Owner Three','National ID','','Kenyan','33.34','Director','Direct','No','','','No','']]);
+ assert.deepEqual(run(ok).errors,[]);
+});
 test('a wrong template is refused up front',()=>{const m=base();m.owners=sheet(['Name'],[]);const r=run(m);assert.equal(r.errors.length,1);assert.match(r.errors[0].issue,/v3\.1/)});
 test('duplicate PIN and a future sighting date fail',()=>{
  const m=base();m.aml=sheet(AH,[['A','P000000001A','','','','','No','','Yes','','','',''],['B','P000000001A','','','','','No','','Yes','','','','']]);

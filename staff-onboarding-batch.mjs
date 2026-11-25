@@ -1,6 +1,6 @@
 // MLRO onboarding template screen. Preparers upload the onboarding form (v3.1). Supervisors, Managers and Partners check and approve the proposals it created.
 // The MLRO records the batch checks and each rating, accepts the complete clients, downloads the confirmation PDF and attaches the signed copy.
-import {batchIssuesHtml} from './staff-proposals.mjs?v=20261109-kyc-v1&create-client=20261122-v1&batch=20261124-v2';
+import {batchIssuesHtml} from './staff-proposals.mjs?v=20261109-kyc-v1&create-client=20261122-v1&batch=20261125-v3';
 export function createOnboardingBatchUI(ctx){
  const {esc,modal,request,form,field,options,data,notice}=ctx;
  const me=()=>data().me?.category_code,preparer=()=>['ASSISTANT','SUPERVISOR'].includes(me()),leader=()=>['PARTNER','MANAGER'].includes(me());
