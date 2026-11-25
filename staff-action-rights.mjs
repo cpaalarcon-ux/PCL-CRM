@@ -35,6 +35,7 @@ const groups=[
  ['contacts','clients','Client contacts',staff,{view:[],create:['contact_save']}],
  ['kycfile','clients','KYC and ownership',staff,{view:[],edit:['compliance_save','compliance_evidence_save','compliance_evidence_remove','owner_add','party_add','party_end','group_profile_save'],review:['compliance_verify'],approve:['edd_approve']},{review:leaders,approve:partner}],
  ['project','projects','Projects',team,{view:[],create:['project_save'],edit:[],post:['engagement_save_activate','engagement_activate']},{create:[...leaders,'SUPERVISOR'],edit:[...leaders,'SUPERVISOR'],post:leaders}],
+ ['teamqueue','projects','Team queue',[...leaders,'SUPERVISOR'],{view:['team_queue_read'],edit:[]}],
  ['task','projects','Tasks and assignments',team,{view:['task_workload_list','task_pool_list','task_recipients','task_handover_list'],create:['task_create'],edit:['task_workload_candidates','task_workload_apply','task_status','task_pool_send','task_handover_request','task_pool_claim'],review:['task_handover_decide','task_handover_reallocate']}],
  ['leave','time_hr','Leave',team,{view:[],create:['leave_request'],review:['leave_review']},{review:leaders}],
  ['attendance','time_hr','Attendance',team,{view:[],edit:['attendance_correct']},{edit:leaders}],
