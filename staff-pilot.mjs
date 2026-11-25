@@ -1,4 +1,4 @@
-import {clearWorkspaceTiming,recordAreaOpening,recordWorkspaceTiming,summarizeWorkspaceTiming,timingRows} from './staff-workspace-timing.mjs?v=20261125-v1';
+import {clearWorkspaceTiming,recordAreaOpening,recordWorkspaceTiming,summarizeWorkspaceTiming,timingRows} from './staff-workspace-timing.mjs?v=20261125-v2';
 let documentKind='Evidence';
 import {addClientButton,proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1&create-client=20261122-v1&batch=20261125-v3&fold=20261125-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
@@ -158,7 +158,7 @@ async function request(p,{auth=true,...options}={}){
  try{const result=await send(p,{...options,headers:ctx.headers});session.accept(ctx);if(/^(?:kra_|incoming_)/.test(String(p?.action||''))||options.uploadKind==='incoming')cardFacts.at=0;if(/^(?:compliance_|edd_|kyc_|engagement_|project_|client_save|client_setup_|client_status_policy_set)/.test(String(p?.action||'')))cardFacts.at=0;
   if(/^incoming_(accept|archive|kyc_approve|choose_client|set_handling)$/.test(String(p?.action||''))||options.uploadKind==='incoming')setTimeout(()=>refreshNavBadges(true),500);{const again=alreadyImportedNote(result,action);if(again)setTimeout(()=>notice(again),0);}return result;}
  catch(cause){error=true;session.reject(ctx,cause);if(isConnectionDrop(cause))throw Object.assign(Error(connectionDropMessage(action)),{cause,connection_dropped:true});throw cause;}
- finally{if(started!==null&&data?.me.staff_id===staffId)recordWorkspaceTiming({action,started,role,area,error});}
+ finally{if(started!==null&&data?.me.staff_id===staffId)recordWorkspaceTiming(action,{started,role,area,error});}
 }
 const load=createLoadQueue(options=>loadNow(options));
 async function loadNow({waitForPresence=false,...requestOptions}={}){data=await request({action:'workspace'},requestOptions);registerExtras.clear();clientProfileRequest=null;syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
@@ -670,7 +670,7 @@ function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='
    submitButton.removeAttribute('aria-busy');
    form.removeAttribute('aria-busy');
    finishWorkspaceSave(saved);
-   if(data?.me.staff_id===staffId)recordWorkspaceTiming({action:'update_screen',started,role,area,error:!saved});
+   if(data?.me.staff_id===staffId)recordWorkspaceTiming('update_screen',{started,role,area,error:!saved});
   }
  }
 }
