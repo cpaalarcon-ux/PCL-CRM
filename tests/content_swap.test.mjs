@@ -19,3 +19,16 @@ test('moving to another screen starts clean with no carried-over text',()=>{
 test('content replaced from outside is rebuilt rather than assumed unchanged',()=>{
  const {host,swap}=setup();swap('<p>x</p>','clients');host.innerHTML='<p>changed elsewhere</p>';assert.equal(swap('<p>x</p>','clients'),true);assert.equal(host.textContent,'x');
 });
+test('refreshing the client register restores the scrollable workspace position',()=>{
+ const {w,host,swap,getY}=setup(),scroller=w.document.createElement('div');
+ scroller.className='workspace-main-content';
+ host.before(scroller);scroller.append(host);
+ swap('<p>First results</p>','clients');
+ let position=575;
+ Object.defineProperty(scroller,'scrollTop',{get:()=>position,set:next=>{position=next;}});
+ const setHTML=Object.getOwnPropertyDescriptor(w.Element.prototype,'innerHTML').set;
+ Object.defineProperty(host,'innerHTML',{set(html){position=0;setHTML.call(host,html);}});
+ swap('<p>Updated results</p>','clients');
+ assert.equal(position,575);
+ assert.equal(getY(),0);
+});

@@ -1,7 +1,7 @@
 let documentKind='Evidence';
 import {addClientButton,proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1&create-client=20261122-v1&batch=20261124-v2';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
-import {createContentSwap} from './staff-content-swap.mjs?v=20261124-swap-v1';
+import {createContentSwap} from './staff-content-swap.mjs?v=20261125-scroll-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
 import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNote} from './staff-upload-retry.mjs?v=20261119-upload-v1';
 import {createOnboardingBatchUI} from './staff-onboarding-batch.mjs?v=20261214-ob-v1';
@@ -41,7 +41,7 @@ import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=2
 import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
-import {moduleLinks,GROUP_ENGAGEMENTS,GROUP_COMPLIANCE,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge} from './staff-nav.mjs?v=20261121-comply-v1';
+import {moduleLinks,GROUP_ENGAGEMENTS,GROUP_COMPLIANCE,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge,WORKSPACE_AREAS,WORKSPACE_ROLES as roles} from './staff-nav.mjs?v=20261121-comply-v1&landing=20261125-v1';
 import {statusPolicyCard} from './staff-work-ready.mjs?v=20261118-ready-v1';
 import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261119-tabs-v1&rev=20261119-nav';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
@@ -57,7 +57,6 @@ import {STAFF_RIGHTS} from './staff-rights-catalog.mjs?v=20261118-approval-board
 const API='https://yfjiculexbzpkvtapudk.supabase.co/functions/v1/staff-workspace-v12';
 const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const roles={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Audit Supervisor',ASSISTANT:'Audit Assistant',INTERN:'Intern',ADMIN:'System Administrator'};
 const sectors=['Agribusiness','Financial Services','Energy','Healthcare','NGO','Public Sector','SME/Startup','Legal','Education'];
 const branches=['Nairobi','Bungoma','Kisii','Other'],states=['Pending','In Progress','Waiting on client','Paused','In Review','Blocked','Completed','Cancelled'];
 let navFlags={forensic:false,mlro:false},pendingClientTab='',data=null,view='home',firm='',setupToken=null,presence=null,procedures=null,selectedTask='',selectedClient='',clientTab='overview',missingProject=false,clientMappingReadiness=null,clientMappingReadinessRequest=null,clientAccountReturn=null,clientAccountReturnLabel='Return to purchase mapping';
@@ -65,7 +64,7 @@ let navFlags={forensic:false,mlro:false},pendingClientTab='',data=null,view='hom
 if(!localStorage.getItem('pcl-staff-session-v2')&&sessionStorage.getItem('pcl-staff-session-v2'))localStorage.setItem('pcl-staff-session-v2',sessionStorage.getItem('pcl-staff-session-v2'));
 sessionStorage.removeItem('pcl-staff-session-v2');
 let drafts=null; // the form-draft helper, created further down once the screens it reopens exist
-const session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut});
+let session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut}),stopWatchingSession;
 const isLeader=()=>data&&['PARTNER','MANAGER'].includes(data.me.category_code);
 const readRouteKey='pcl-staff-read-route';
 const defaultReadRoute=()=>isLeader()?'mumbai':'automatic';
@@ -148,10 +147,10 @@ async function request(p,{auth=true,...options}={}){
  finally{if(started!==null&&data){timingRows.unshift({action,at:new Date(),seconds:(performance.now()-started)/1000,error});if(timingRows.length>100)timingRows.length=100;}}
 }
 const load=createLoadQueue(options=>loadNow(options));
-async function loadNow(requestOptions={}){data=await request({action:'workspace'},requestOptions);syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
+async function loadNow({waitForPresence=false,...requestOptions}={}){data=await request({action:'workspace'},requestOptions);syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
  $('#greeting').textContent='My workspace';$('#roleLabel').textContent=roles[data.me.category_code]+' · '+data.me.login_id;
  $('#firmFilter').innerHTML=options(data.firms.map(x=>[x.firm_id,x.firm_code+' · '+x.legal_name]),firm,'All authorised firms');
- $('.firm-picker').hidden=data.me.category_code==='INTERN';applyWorkspaceRoute(false);render();await openCommunicationHash();void presence.refresh();}
+ $('.firm-picker').hidden=data.me.category_code==='INTERN';applyWorkspaceRoute(false);render();await openCommunicationHash();if(waitForPresence)await presence.refresh();else void presence.refresh();}
 let viewStaff=VS_DEFAULT,viewStaffOpts=null,viewStaffFor='';
 function paintStaffPicker(){const w=$('#staffPicker');if(!w)return;const ok=hasPicker(viewStaffOpts);w.hidden=!ok;$('#staffFilter').innerHTML=ok?pickerOptions(viewStaffOpts,esc,viewStaff,data.me.staff_id):'';}
 async function loadViewStaff(){const who=data.me.staff_id;viewStaffFor=who;try{const o=await request({action:'view_staff_options'});if(viewStaffFor!==who)return;viewStaffOpts=o;}catch{viewStaffOpts=null;}paintStaffPicker();if(['time','team','projects','task'].includes(view))render();}
@@ -207,18 +206,7 @@ async function refreshForensicMenu(force=false){
  finally{forensicMenuBusy=false;}
 }
 function setNavDrawer(open){document.body.classList.toggle('nav-open',!!open);$('#navToggle')?.setAttribute('aria-expanded',String(!!open));}
-function nav(){const catalog=[
- {view:'clients',title:'Clients',area:'clients',icon:'▦',tone:'green',desc:'Client onboarding and records'},
- {view:'projects',title:'Projects & Tasks',area:'projects',icon:'▣',tone:'blue',desc:'Engagements, workpapers and tasks'},
- {view:'time',title:'Time & Attendance',area:'time_hr',icon:'◷',tone:'amber',desc:'Timesheets and attendance'},
- {view:'documents',title:'Documents',area:'documents',icon:'▤',tone:'violet',desc:'Source files and evidence'},
- {view:'communications',title:'Communications Hub',area:'communications',icon:'◉',tone:'teal',desc:'Client and team messages'},
- {view:'audit',title:'Audit & assurance',area:'audit',icon:'✓',tone:'rose',desc:'Audit work and review'},
- {view:'finance',title:'Finance & Reports',area:'billing_wip',icon:'£',tone:'orange',desc:'Billing and work in progress'},
- {view:'staff',title:'Staff & access',area:'staff_access',icon:'♙',tone:'cyan',desc:'Staff, teams and permissions'},
- {view:'firms',title:'Settings',area:'settings',icon:'⚙',tone:'slate',desc:'Firm and workspace setup'},
- {view:'leads',title:'Leads & Pipeline',area:'leads',icon:'＋',tone:'purple',desc:'Prospect handover'}
-],cards=catalog.filter(item=>canArea(item.area)).map(item=>`<button class="workspace-area-card tone-${item.tone}" type="button" data-view="${item.view}" data-area="${item.area}"><span class="workspace-area-icon" aria-hidden="true">${item.icon}</span><b>${esc(item.title)}</b><small>${esc(item.desc)}</small></button>`).join('');const by=v=>catalog.find(item=>item.view===v&&canArea(item.area)),leaf=(v,title,icon)=>{const it=by(v);return it?{view:v,title,icon:icon||it.icon}:null;},
+function nav(){const catalog=WORKSPACE_AREAS,cards=catalog.filter(item=>canArea(item.area)).map(item=>`<button class="workspace-area-card tone-${item.tone}" type="button" data-view="${item.view}" data-area="${item.area}"><span class="workspace-area-icon" aria-hidden="true">${item.icon}</span><b>${esc(item.title)}</b><small>${esc(item.desc)}</small></button>`).join('');const by=v=>catalog.find(item=>item.view===v&&canArea(item.area)),leaf=(v,title,icon)=>{const it=by(v);return it?{view:v,title,icon:icon||it.icon}:null;},
   team=['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code)&&canArea('time_hr')?{view:'team',title:'Team & HR',icon:'♙'}:null,
   lead=leaf('leads','Leads & Pipeline','＋'),audit=leaf('audit','Audit files','✓'),staffLeaf=leaf('staff','Staff & access','♙'),settingsLeaf=leaf('firms','Settings','⚙'),
   modLinks=v=>moduleLinks(data.me,v,canArea,navFlags),
@@ -264,7 +252,16 @@ function bindWorkspaceSearch(){const input=$('#workspaceSearch');if(!input)retur
  out.hidden=false;out.innerHTML=matches.slice(0,20).map(x=>`<div><small>${esc(x.text.split(' · ')[0])}</small>${x.html}</div>`).join('')||'<p>No matching authorised records loaded.</p>';};}
 
 function clientMappingLabel(s){const activities=Number(s?.activity_count||0),methods=Number(s?.stock_method_count||0),categories=Number(s?.category_count||0),accounts=Number(s?.approved_account_count||0),pending=Number(s?.pending_account_count||0),stock=activities?(methods&&categories?`${activities} activities · ${methods} stock methods · ${categories} categories`:`${activities} activities · stock setup incomplete`):'No activity saved';return [accounts?'good':'warn',`${accounts} general mappings active${pending?` · ${pending} awaiting review`:''} · ${stock}`];}
-function repaintClientCards(){const grid=document.querySelector('.client-grid');if(!grid)return;const tmp=document.createElement('div');tmp.innerHTML=clients();const fresh=tmp.querySelector('.client-grid'),chips=tmp.querySelector('.cc-chips'),old=document.querySelector('.cc-chips');if(fresh)grid.innerHTML=fresh.innerHTML;if(chips&&old)old.innerHTML=chips.innerHTML;bindClientChips();const search=document.querySelector('#search');if(search)search.dispatchEvent(new Event('input'));}
+function repaintClientCards(){
+ const grid=$('.client-grid');if(!grid)return;
+ const scroll=grid.closest('.workspace-main-content'),position=scroll?.scrollTop;
+ const tmp=document.createElement('div');tmp.innerHTML=clients();
+ const fresh=tmp.querySelector('.client-grid'),chips=tmp.querySelector('.cc-chips'),old=$('.cc-chips');
+ if(fresh&&grid.innerHTML!==fresh.innerHTML)grid.innerHTML=fresh.innerHTML;
+ if(chips&&old&&old.innerHTML!==chips.innerHTML){old.innerHTML=chips.innerHTML;bindClientChips();}
+ applyClientFilters();
+ if(scroll)scroll.scrollTop=position;
+}
 async function loadClientMappingReadiness(){if(!isLeader()||clientMappingReadiness||clientMappingReadinessRequest)return;clientMappingReadinessRequest=request({action:'v3_client_mapping_readiness'}).then(rows=>{clientMappingReadiness=new Map(rows.map(x=>[x.client_id,x]));if(view==='clients')repaintClientCards();}).catch(error=>{if(view==='clients')document.querySelectorAll('[data-client-status]').forEach(node=>{if(node.textContent==='Checking…')node.textContent='Status unavailable'});}).finally(()=>{clientMappingReadinessRequest=null;});await clientMappingReadinessRequest;}
 function classifyClients(){
  const list=unclassified(data.clients),rows=structureRows(data);
@@ -286,15 +283,36 @@ document.addEventListener('click',e=>{
  const b=e.target.closest('[data-status-policy]');if(!b||!statusPolicy)return;const turnOn=b.dataset.statusPolicy==='on';
  modal(turnOn?'Require the approved Chart of Accounts':'Stop requiring the approved Chart of Accounts',form(`<p class="info full">${turnOn?'From now on a client is Healthy only when its Chart of Accounts is also approved. Cards change on their next refresh.':'A client is Healthy again once KYC, PIN, engagement and signed letter are in place, whether or not the chart is approved.'} Your name, the date and your reason are recorded, and the earlier choice stays on record.</p><label class="full">Why is this being changed? *<textarea name="reason" required minlength="10" maxlength="500"></textarea></label>`,'Record this choice'),f=>request({action:'client_status_policy_set',require_chart:turnOn,reason:f.get('reason')}),()=>{cardFacts.at=0;void paintStatusPolicy();},{successMessage:'Recorded. Client cards will use this choice.'});
 });
-let clientStateFilter='all',bindClientChips=()=>{},clientQuery=DEFAULT_QUERY(),clientPage=null,clientPageLoading=false,searchTimer=0;
+let clientStateFilter='all',clientQuery=DEFAULT_QUERY(),clientPage=null,clientPageLoading=false,searchTimer=0;
+function applyClientFilters(){
+ const q=($('#search')?.value||'').toLowerCase(),sf=$('#clientStructureFilter')?.value||'';
+ for(const card of document.querySelectorAll('.client-grid [data-search]')){
+  const {state,structure,incomplete}=card.dataset,filter=clientStateFilter;
+  const stateMatches=filter==='all'||state==='all'||(filter==='setup'&&incomplete!==undefined?incomplete==='1':state===filter);
+  card.hidden=!card.dataset.search.includes(q)||!stateMatches||!!(sf&&(sf==='__missing'?structure!=='':structure!==sf));
+ }
+}
+function bindClientChips(){
+ for(const button of document.querySelectorAll('[data-client-state]'))button.onclick=()=>{
+  clientStateFilter=button.dataset.clientState;
+  document.querySelectorAll('[data-client-state]').forEach(chip=>{
+   const selected=chip.dataset.clientState===clientStateFilter;
+   chip.classList.toggle('on',selected);
+   chip.setAttribute('aria-pressed',String(selected));
+  });
+  applyClientFilters();
+ };
+}
 async function fetchClientPage(){
  if(clientPageLoading)return;clientPageLoading=true;const snap=JSON.stringify([clientQuery,firm]);
- try{const r=await request(queryToRequest(clientQuery,firm));if(JSON.stringify([clientQuery,firm])!==snap){clientPageLoading=false;return fetchClientPage();}
-  if(r.page>0&&r.page>=r.pages){clientQuery.page=r.pages-1;clientPageLoading=false;return fetchClientPage();}clientPage=r;}
- catch(e){clientPage={error:e.message,rows:[],total:0,page:0,pages:1,page_size:clientQuery.size};}
- clientPageLoading=false;if(view!=='clients')return;
- const el=document.activeElement,keep=el&&el.id==='search'?el.selectionStart:null;render();
- if(keep!==null){const n=$('#search');if(n){n.focus();n.setSelectionRange(keep,keep);}}
+ let page;
+ try{page=await request(queryToRequest(clientQuery,firm));}
+ catch(e){page={error:e.message,rows:[],total:0,page:0,pages:1,page_size:clientQuery.size};}
+ clientPageLoading=false;if(!data)return;
+ if(JSON.stringify([clientQuery,firm])!==snap){if(view==='clients')return fetchClientPage();return;}
+ if(page.page>0&&page.page>=page.pages){clientQuery.page=page.pages-1;return fetchClientPage();}
+ clientPage=page;
+ if(view==='clients')render();
 }
 // Extra facts for the cards on screen: KRA notices near their deadline, files waiting in Incoming review and WIP (Managers and Partners).
 // The database decides what each person may see; a failure leaves the cards as they are. Fetched at most once a minute for the same clients.
@@ -329,7 +347,7 @@ function clients(){
  });
  const counts=stateCounts(cards.map(x=>({status:isLeader()?cardStatus(x.progress,{flags:x.flags,meta:x.row,wr:x.wr}):{key:'all'},incomplete:x.wr?x.wr.progress.pct<100:undefined})));
  const body=cards.map(x=>x.card).join('');
- return assistantLockBanner(data,esc)+proposalsCard(data,esc,staffName)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks">Client Setup Tasks</button>'+addClientButton(data)+'<button type="button" data-onboarding-batches>Onboarding batches</button></div>'}</div><p class="muted">Use the setup guide to move each client through identity and year-end, opening TB import, period source posting, tax checks and project release. Create a draft project and client year first, then the preparer can upload, map and import the opening TB in one sitting. An independent Manager or Partner reviews the mappings and journal together and posts once. Complete Wholesale first, then repeat for Construction.</p>${isLeader()?'<p class="muted">Draft project setup does not unlock reporting or task release. Reports use posted entries only, and tasks stay locked until the opening balances are posted or confirmed not applicable and engagement checks are complete.</p><div class="actions"><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a></div>':''}<div class="actions">${structureFilter(structureRows(data),esc)}</div>${leaderView?registerBar(clientQuery,{sectors:(data.sectors||[]).map(x=>x.name),owners:data.staff.filter(x=>['MANAGER','PARTNER'].includes(x.category_code)&&x.access_status!=='Inactive')},esc):''}<input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients">${isLeader()?chipRow(counts,clientStateFilter,esc):''}<div class="client-grid">${body}</div>${leaderView&&!clientPage?'<p class="muted" role="status">Loading clients…</p>':''}${leaderView&&clientPage?.error?`<p class="info">${esc(clientPage.error)}</p>`:''}${!rows.length&&(!leaderView||(clientPage&&!clientPage.error))?empty(leaderView?'No clients match these filters.':'No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}${leaderView?registerPager(clientPage,esc):''}</div>`;
+ return assistantLockBanner(data,esc)+proposalsCard(data,esc,staffName)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks">Client Setup Tasks</button>'+addClientButton(data)+'<button type="button" data-onboarding-batches>Onboarding batches</button></div>'}</div><p class="muted">Use the setup guide to move each client through identity and year-end, opening TB import, period source posting, tax checks and project release. Create a draft project and client year first, then the preparer can upload, map and import the opening TB in one sitting. An independent Manager or Partner reviews the mappings and journal together and posts once. Complete Wholesale first, then repeat for Construction.</p>${isLeader()?'<p class="muted">Draft project setup does not unlock reporting or task release. Reports use posted entries only, and tasks stay locked until the opening balances are posted or confirmed not applicable and engagement checks are complete.</p><div class="actions"><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a></div>':''}<div class="actions">${structureFilter(structureRows(data),esc)}</div>${leaderView?registerBar(clientQuery,{sectors:(data.sectors||[]).map(x=>x.name),owners:data.staff.filter(x=>['MANAGER','PARTNER'].includes(x.category_code)&&x.access_status!=='Inactive')},esc):''}<input class="search" id="search" placeholder="Search client name or PIN" aria-label="Search clients" value="${leaderView?esc(clientQuery.q):''}">${isLeader()?chipRow(counts,clientStateFilter,esc):''}<div class="client-grid">${body}</div>${leaderView&&!clientPage?'<p class="muted" role="status">Loading clients…</p>':''}${leaderView&&clientPage?.error?`<p class="info">${esc(clientPage.error)}</p>`:''}${!rows.length&&(!leaderView||(clientPage&&!clientPage.error))?empty(leaderView?'No clients match these filters.':'No accessible clients yet. Your Manager can add incomplete existing profiles and complete the missing information later.'):''}${leaderView?registerPager(clientPage,esc):''}</div>`;
 }
 function renderClientProfile(){
  const c=data.clients.find(x=>x.client_id===selectedClient);let progress=null,step=null,status=null;
@@ -411,7 +429,20 @@ function paintCrumbs(){const el=$('#crumbs');if(!el)return;if(view==='home'||vie
 loadMyWorkMode(globalThis.localStorage);
 watchStickyBar($('#content'));
 let swapContent=null;
-function render(){swapContent||=createContentSwap($('#content'));bindWorkspaceSearch();const allowed=['home'];if(canArea('projects'))allowed.push('task','projects');if(canArea('clients'))allowed.push('clients','clientfile');if(canArea('time_hr'))allowed.push('time');if(canArea('time_hr')&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))allowed.push('team');if(canArea('documents'))allowed.push('documents');if(canArea('communications'))allowed.push('communications');for(const [area,target] of [['audit','audit'],['leads','leads'],['billing_wip','finance'],['staff_access','staff'],['settings','firms']])if(canArea(area))allowed.push(target);if(!allowed.includes(view))view='home';nav();paintCrumbs();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';swapContent(detailReturn()+({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,clientfile:renderClientProfile,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<details class="settings-fold section-space" id="taxWorkFold" name="projects-more"><summary>Tax compilation, approvals and KRA notices</summary><section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>${['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(data.me.category_code)?`<section class="card section-space" id="kraNoticesCard"><h2>KRA notices</h2><p class="muted">Log each notice KRA sends, see the verification task it creates, and clear its non-compliance flags.</p>${suite.button('kra-open','Open the KRA notice log')}</section>`:''}</details>`,audit:audit.render,team:teamUI.render,time:()=>staffAttendancePanel()+v6.time()+suite.hr(),staff,documents,firms:()=>suite.settings({access:policyCard(data,esc,shortDate)+otherPoliciesCard(data,esc,shortDate)+statusPolicyCard(statusPolicy,{esc,fmt:shortDate})+goLiveCard(data,esc),firm:holidaysUI.render()}),communications:suite.communications,finance:suite.finance}[view])(),view);applyItemViews($('#content'),{view,storage:globalThis.localStorage});v6.bind();presence.paint();bell.paint();if(view==='time')void paintStaffAttendance();if(view==='audit')audit.enter();if(view==='home'&&!['INTERN','ADMIN'].includes(data.me.category_code))void workQueue.mount();if(view==='home'&&(isLeader()||data.me.category_code==='SUPERVISOR'))void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='clientfile'&&clientTab==='credentials'&&$('#clientTabHost')?.dataset.tab==='credentials')mountClientVault($('#clientTabHost'),{clientId:selectedClient,request,esc,shortDate});if(view==='clientfile'&&clientTab==='documents')void paintDocRequests({request,esc,shortDate,data:()=>data});if(view==='clientfile'&&((isLeader()&&['setup','tax'].includes(clientTab))||['aml','understanding'].includes(clientTab)))void improvements.paintClientTab(clientTab,selectedClient).catch(e=>{const h=$('#clientTabHost');if(h)h.innerHTML='<p class="error" role="alert">'+esc(e.message)+'</p>';});if(view==='home'&&data.me.category_code==='PARTNER'){void v6.paintPartnerEscalations();void suite.kra.paintBanner();}if(view==='documents')void suite.incoming.paintCard();if(view==='documents')void suite.docReview.paintStates();if(view==='home'&&['PARTNER','MANAGER'].includes(data.me.category_code)){void teamUI.paintPool();void metricsUI.paint();}if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='staff')afterStaffRender();if(view==='firms')void paintStatusPolicy();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();if($('#search')){const runClientFilter=()=>{const q=($('#search').value||'').toLowerCase(),sf=$('#clientStructureFilter')?.value||'';document.querySelectorAll('[data-search]').forEach(r=>{const s=r.dataset.structure,st=clientStateFilter,stateHidden=st!=='all'&&r.dataset.state!=='all'&&!(st==='setup'&&r.dataset.incomplete!==undefined?r.dataset.incomplete==='1':r.dataset.state===st);r.hidden=!r.dataset.search.includes(q)||!!(sf&&(sf==='__missing'?s!=='':s!==sf))||stateHidden;});};bindClientChips=()=>document.querySelectorAll('[data-client-state]').forEach(b=>b.onclick=()=>{clientStateFilter=b.dataset.clientState;document.querySelectorAll('[data-client-state]').forEach(x=>{const on=x.dataset.clientState===clientStateFilter;x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});runClientFilter();});bindClientChips();runClientFilter();$('#search').oninput=runClientFilter;if(isLeader()){const el=$('#search');el.value=clientQuery.q;el.oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{const pos=el.selectionStart;clientQuery.q=el.value.trim();clientQuery.page=0;clientPage=null;render();const n=$('#search');if(n){n.focus();n.setSelectionRange(pos,pos);}},350);};runClientFilter();}if($('#clientStructureFilter'))$('#clientStructureFilter').onchange=runClientFilter;}}
+function render(){swapContent||=createContentSwap($('#content'));bindWorkspaceSearch();const allowed=['home'];if(canArea('projects'))allowed.push('task','projects');if(canArea('clients'))allowed.push('clients','clientfile');if(canArea('time_hr'))allowed.push('time');if(canArea('time_hr')&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))allowed.push('team');if(canArea('documents'))allowed.push('documents');if(canArea('communications'))allowed.push('communications');for(const [area,target] of [['audit','audit'],['leads','leads'],['billing_wip','finance'],['staff_access','staff'],['settings','firms']])if(canArea(area))allowed.push(target);if(!allowed.includes(view))view='home';nav();paintCrumbs();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';swapContent(detailReturn()+({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,clientfile:renderClientProfile,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<details class="settings-fold section-space" id="taxWorkFold" name="projects-more"><summary>Tax compilation, approvals and KRA notices</summary><section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>${['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(data.me.category_code)?`<section class="card section-space" id="kraNoticesCard"><h2>KRA notices</h2><p class="muted">Log each notice KRA sends, see the verification task it creates, and clear its non-compliance flags.</p>${suite.button('kra-open','Open the KRA notice log')}</section>`:''}</details>`,audit:audit.render,team:teamUI.render,time:()=>staffAttendancePanel()+v6.time()+suite.hr(),staff,documents,firms:()=>suite.settings({access:policyCard(data,esc,shortDate)+otherPoliciesCard(data,esc,shortDate)+statusPolicyCard(statusPolicy,{esc,fmt:shortDate})+goLiveCard(data,esc),firm:holidaysUI.render()}),communications:suite.communications,finance:suite.finance}[view])(),view);applyItemViews($('#content'),{view,storage:globalThis.localStorage});v6.bind();presence.paint();bell.paint();if(view==='time')void paintStaffAttendance();if(view==='audit')audit.enter();if(view==='home'&&!['INTERN','ADMIN'].includes(data.me.category_code))void workQueue.mount();if(view==='home'&&(isLeader()||data.me.category_code==='SUPERVISOR'))void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='clientfile'&&clientTab==='credentials'&&$('#clientTabHost')?.dataset.tab==='credentials')mountClientVault($('#clientTabHost'),{clientId:selectedClient,request,esc,shortDate});if(view==='clientfile'&&clientTab==='documents')void paintDocRequests({request,esc,shortDate,data:()=>data});if(view==='clientfile'&&((isLeader()&&['setup','tax'].includes(clientTab))||['aml','understanding'].includes(clientTab)))void improvements.paintClientTab(clientTab,selectedClient).catch(e=>{const h=$('#clientTabHost');if(h)h.innerHTML='<p class="error" role="alert">'+esc(e.message)+'</p>';});if(view==='home'&&data.me.category_code==='PARTNER'){void v6.paintPartnerEscalations();void suite.kra.paintBanner();}if(view==='documents')void suite.incoming.paintCard();if(view==='documents')void suite.docReview.paintStates();if(view==='home'&&['PARTNER','MANAGER'].includes(data.me.category_code)){void teamUI.paintPool();void metricsUI.paint();}if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='staff')afterStaffRender();if(view==='firms')void paintStatusPolicy();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();const search=$('#search');if(search){
+ bindClientChips();
+ applyClientFilters();
+ search.oninput=isLeader()?()=>{
+  clearTimeout(searchTimer);
+  const query=search.value.trim();
+  searchTimer=setTimeout(()=>{
+   if(view!=='clients'||query===clientQuery.q)return;
+   clientQuery.q=query;clientQuery.page=0;
+   void fetchClientPage();
+  },350);
+ }:applyClientFilters;
+ if($('#clientStructureFilter'))$('#clientStructureFilter').onchange=applyClientFilters;
+}}
 function detailReturn(){
  const route=workspaceRoute(location.hash)||{};
  if(route.returnTo&&(view==='clientfile'||view==='task'||view==='projects'&&route.id))return `<div class="detail-return"><button type="button" data-return-back="1">${esc(returnLabel(route.returnTo))}</button></div>`;
@@ -739,7 +770,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.clientOpen){if(b.closest('#editor')&&$('#editor').open)$('#editor').close();pendingClientTab=b.dataset.clientTab||'';navigateWorkspace('clientfile',b.dataset.clientOpen);return;}
  if(b.dataset.cprofileTab){clientTab=b.dataset.cprofileTab;render();return;}
  if(b.dataset.cregPage){clientQuery.page=Math.max(0,clientQuery.page+(b.dataset.cregPage==='next'?1:-1));clientPage=null;render();return;}
- if(b.dataset.cregClear!==undefined){clientQuery=DEFAULT_QUERY();clientPage=null;render();return;}
+ if(b.dataset.cregClear!==undefined){clearTimeout(searchTimer);if($('#search'))$('#search').value=$('#search').defaultValue;clientQuery=DEFAULT_QUERY();clientPage=null;render();return;}
  if(b.dataset.clientLife){const act=b.dataset.clientLife,cid=b.dataset.id,w=LIFECYCLE_WORDS[act];if(w){const c=data.clients.find(x=>x.client_id===cid);modal(w.title+(c?' · '+c.company_name:''),form(lifecycleForm(act,esc),w.verb),f=>request({action:'client_lifecycle',client_id:cid,lifecycle:act,reason:f.get('reason')}),()=>render(),{successMessage:'Client updated.'});}return;}
  if(b.dataset.client&&!b.dataset.myReview)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
  if(b.dataset.clientView){navigateWorkspace('clientfile',b.dataset.clientView);return;}
@@ -771,7 +802,6 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.disable){const id=b.dataset.disable;modal('Disable staff access',`<p>Disable ${esc(staffName(id))}? Historical work will remain, and the next request from this account will be blocked.</p><button id="confirmDisable" class="primary">Confirm disable</button>`);$('#confirmDisable').onclick=async()=>{try{await request({action:'staff_disable',staff_id:id});$('#editor').close();await load();notice('Staff access disabled.');}catch(err){$('#editorNotice').textContent=err.message;}};}
  if(b.dataset.download){b.disabled=true;try{const d=data.documents.find(x=>x.document_id===b.dataset.download),blob=await request({action:'download',document_id:d.document_id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=d.file_name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}finally{b.disabled=false;}}
  }catch(err){notice(err.message,true);}});
-watchStaffActivity(session);
 for(const button of document.querySelectorAll('[data-continue-session]'))button.onclick=()=>{if(session.activity())void session.pulse();};
 drafts=createDraftUI({$,esc,request,notice,document,sessionStorage,autosaveMs:2500,returnToQueue:()=>{if($('#editor').open)$('#editor').close();navigateWorkspace('home');}});
 const workQueue=createWorkQueueUI({$,esc,form,modal,request,notice,shortDate,data:()=>data});
@@ -846,7 +876,21 @@ if(!bootedByLightweightAuth){
  $('#setupForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return notice('Passwords do not match.',true);const b=e.target.querySelector('button[type=submit]'),current=setupToken;b.disabled=true;try{await request({action:'setup',token:current,password:f.get('password')},{auth:false});if(current!==setupToken)return;setupToken=null;e.target.reset();$('#setupForm').hidden=true;$('#loginForm').hidden=false;notice('Password saved. Sign in using the login ID provided with your link.');}catch(err){if(current===setupToken){notice(err.message,true);b.disabled=false;}}};
  setupWatcher=watchSetupLinks(openSetup);
 }
-if(!setupWatcher.hasSetup&&session.active)load().catch(e=>signedOut(e.message));
+if(!bootedByLightweightAuth){
+ stopWatchingSession=watchStaffActivity(session);
+ if(!setupWatcher.hasSetup&&session.active)load().catch(e=>signedOut(e.message));
+}
+
+export async function activateStaffWorkspace({firmId='',signOut=false}={}){
+ if(!session.active)session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut});
+ firm=firmId;
+ view='home';
+ await load({timeoutMs:20000,waitForPresence:signOut});
+ if(['Opening your secure workspace…','Opening workspace area…'].includes($('#notice').textContent))notice('');
+ stopWatchingSession?.();
+ stopWatchingSession=watchStaffActivity(session);
+ if(signOut)presence.requestLogout();
+}
 
 async function openCommunicationHash(){const ref=new URLSearchParams(location.hash.slice(1)).get('communication');if(!ref||!data)return;history.replaceState(null,'',location.pathname+location.search);try{await suite.openReference(ref);}catch(err){notice('This communication is unavailable or your account does not have permission to view it.',true);}}
 window.addEventListener('hashchange',()=>void openCommunicationHash());

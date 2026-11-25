@@ -37,7 +37,7 @@ import {accountingAction} from './accounting-actions.ts';
 import {ledgerAction} from './ledger-actions.ts';
 import {purchaseLedgerAction} from './purchase-ledger-actions.ts';
 import {taxConfigAction} from './tax-config-actions.ts';
-import {readWorkspace} from './workspace-read.ts';
+import {readWorkspace,readWorkspaceLanding} from './workspace-read.ts';
 import {setupLinkState,setupLinkMessages} from './setup-link-rules.mjs';
 import {managerResetTargets} from './manager-reset-targets.mjs';
 import {leadAction} from './lead-actions.ts';
@@ -549,6 +549,7 @@ async function action(id:any,p:any){
   await admin.auth.admin.signOut(id.jwt,'local');return {ok:true};
  }
  return scoped(id,async(tx,a)=>{
+  if(p.action==='workspace_landing')return readWorkspaceLanding(tx,a,typeof p.firm_id==='string'?p.firm_id:undefined);
   if(p.action==='workspace'){
    const w=await readWorkspace(tx,a),denied=await restrictedAreas(tx,a.staff_id),areas=effectiveStaffAreas(a.category_code,denied);
    const visibleStaff=Array.isArray(w.staff)?w.staff:[],staffIds=visibleStaff.map((s:any)=>s.staff_id);

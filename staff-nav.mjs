@@ -6,6 +6,19 @@
 // Build 2680 (the user's instruction of 10 Nov): service workflows live under one parent, "Engagements & Delivery". It is a group with no page of
 // its own. "Projects & Tasks" keeps the project and task manager. A link that gets a count carries badge:'<key>'.
 const LEADERS=['PARTNER','MANAGER','SUPERVISOR'];
+export const WORKSPACE_ROLES={PARTNER:'Engagement Partner',MANAGER:'Manager',SUPERVISOR:'Audit Supervisor',ASSISTANT:'Audit Assistant',INTERN:'Intern',ADMIN:'System Administrator'};
+export const WORKSPACE_AREAS=[
+ {view:'clients',title:'Clients',area:'clients',icon:'▦',tone:'green',desc:'Client onboarding and records'},
+ {view:'projects',title:'Projects & Tasks',area:'projects',icon:'▣',tone:'blue',desc:'Engagements, workpapers and tasks'},
+ {view:'time',title:'Time & Attendance',area:'time_hr',icon:'◷',tone:'amber',desc:'Timesheets and attendance'},
+ {view:'documents',title:'Documents',area:'documents',icon:'▤',tone:'violet',desc:'Source files and evidence'},
+ {view:'communications',title:'Communications Hub',area:'communications',icon:'◉',tone:'teal',desc:'Client and team messages'},
+ {view:'audit',title:'Audit & assurance',area:'audit',icon:'✓',tone:'rose',desc:'Audit work and review'},
+ {view:'finance',title:'Finance & Reports',area:'billing_wip',icon:'£',tone:'orange',desc:'Billing and work in progress'},
+ {view:'staff',title:'Staff & access',area:'staff_access',icon:'♙',tone:'cyan',desc:'Staff, teams and permissions'},
+ {view:'firms',title:'Settings',area:'settings',icon:'⚙',tone:'slate',desc:'Firm and workspace setup'},
+ {view:'leads',title:'Leads & Pipeline',area:'leads',icon:'＋',tone:'purple',desc:'Prospect handover'}
+];
 export const GROUP_ENGAGEMENTS={key:'engagements',title:'Engagements & Delivery',icon:'◈'};
 export const GROUP_COMPLIANCE={key:'compliance',title:'Compliance & Risk',icon:'⚖'};
 const EVERYONE=[...LEADERS,'ASSISTANT','INTERN','ADMIN'];
