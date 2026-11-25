@@ -23,15 +23,15 @@ test('the tab descriptions say where those cards went',()=>{
  assert.match(SETTINGS_TABS.find(t=>t.code==='access').about,/Partner policies and the go-live date/);assert.match(SETTINGS_TABS.find(t=>t.code==='firm').about,/public holidays/);
 });
 
-test('Accounting & Tax Rules is folded: one card open at a time, the first open, every card still present with its id',()=>{
+test('Accounting & Tax Rules starts closed, and the cards keep their links and one-at-a-time behavior',()=>{
  assert.deepEqual([...FOLD_TABS],['accounting']);
  for(const id of Object.keys(FOLD_TITLES))assert.equal(tabForCard(id),'accounting',id+' lives on the accounting tab');
- const a=fold('chartCard','<section id="chartCard">C</section>',{first:true}),b=fold('taxRatesCard','<section id="taxRatesCard">T</section>');
- assert.match(a,/<details class="settings-fold" name="settings-fold-accounting" data-fold="chartCard" open><summary>Chart of accounts<\/summary><section id="chartCard">C<\/section><\/details>/);
- assert.doesNotMatch(b,/ open>/);assert.match(b,/<summary>Tax rates and rules<\/summary>/);assert.match(b,/id="taxRatesCard"/);
+ const a=fold('chartCard','<section id="chartCard">C</section>'),b=fold('taxRatesCard','<section id="taxRatesCard">T</section>');
+ assert.match(a,/name="settings-fold-accounting".*<summary>Chart of accounts<\/summary><section id="chartCard">C<\/section>/);
+ assert.doesNotMatch(a+b,/\sopen(?:\s|>)/);assert.match(b,/<summary>Tax rates and rules<\/summary>/);assert.match(b,/id="taxRatesCard"/);
  assert.equal(fold('x',''),'','an empty card makes no empty fold');assert.match(fold('someNewCard','z'),/<summary>some New<\/summary>/);
  assert.match(fold('a','<b>',{tab:'x"y'}),/name="settings-fold-x&quot;y"/);
- const suite=rd('staff-suite.mjs');assert.match(suite,/if\(FOLD_TABS\.includes\(tab\)&&html\)\{panels\[tab\]\+=fold\(id,html,\{first:!seen\[tab\],tab\}\);seen\[tab\]=true;\}else panels\[tab\]\+=html;/);
+ assert.match(rd('staff-suite.mjs'),/panels\[tab\]\+=FOLD_TABS\.includes\(tab\)\?fold\(id,html,\{tab\}\):html/);
 });
 
 test('every card that was on the tab is still on it, and other tabs are not folded',()=>{

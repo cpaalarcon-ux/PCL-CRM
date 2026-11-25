@@ -16,8 +16,10 @@ function paintWork(work){
   <div class="card metric overdue-metric"><b>${esc(work.overdue_count)}</b><span>Overdue</span></div>
  </section><section class="card home-queue" aria-labelledby="landingMyWork">
   <div class="section-head"><h2 id="landingMyWork">My Work</h2>${details}</div>
-  ${rows||'<p class="empty">No open tasks are assigned to you.</p>'}
-  ${work.open_count>work.tasks.length?link('#view=projects','View all tasks','link'):''}
+  <details class="settings-fold"><summary>Assigned tasks <span class="badge info">${esc(work.open_count)} open</span></summary><div>
+   ${rows||'<p class="empty">No open tasks are assigned to you.</p>'}
+   ${work.open_count>work.tasks.length?link('#view=projects','View all tasks','link'):''}
+  </div></details>
  </section>`;
 }
 
