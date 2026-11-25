@@ -5,6 +5,7 @@ import {createContentSwap} from './staff-content-swap.mjs?v=20261124-swap-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
 import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNote} from './staff-upload-retry.mjs?v=20261119-upload-v1';
 import {createSetupPipelineUI} from './staff-setup-pipeline.mjs?v=20261125-pipe-v1';
+import {createMonthWorkUI} from './staff-month-work.mjs?v=20261125-month-v1';
 import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1&rev=20261119-2904';
@@ -364,6 +365,7 @@ function openingBalanceState(client,status){const resetting=status==='Pending';m
 function projectActions(){const off=new Set(data.me.restricted_rights||[]),leader=isLeader(),supervisor=data.me.category_code==='SUPERVISOR',buttons=[];
  if((leader||supervisor)&&!off.has('project.propose'))buttons.push(`<button data-new="project">${leader?'+ Draft project':'+ Propose project'}</button>`);
  if(leader)buttons.push('<button class="primary" data-new="task">+ Assign task</button>');
+ buttons.push('<button type="button" data-month-work>Monthly work</button>');
  return buttons.length?`<div class="actions">${buttons.join('')}</div>`:'';}
 function projects(){const f=filtered();return `<div class="card"><div class="section-head"><h2>Projects & assigned tasks</h2>${projectActions()}</div><p class="muted">One workspace across authorised firms. Each project retains its handling firm. A Supervisor proposes a project as a Draft; a Manager or Partner activates it and releases its tasks.</p>${f.projects.length?`<div class="scroll"><table><thead><tr><th>Project</th><th>Client</th><th>Handling firm</th><th>Status</th></tr></thead><tbody>${f.projects.map(p=>`<tr><td>${esc(p.project_name)}</td><td>${esc(clientName(p.client_id))}</td><td>${esc(firmName(p.handling_firm_id))}</td><td>${badge(p.status)}${p.status==='Draft'?'<small class="muted"> Proposed: waits for a Manager or Partner to activate</small>':''}</td></tr>`).join('')}</tbody></table></div>`:''}<h3 class="section-space">Tasks</h3>${taskRows(f.tasks)}</div>`;}
 let staffTab='people';
@@ -723,6 +725,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.myReview==='report'){notice('Opening the ledger: go to Reports, then choose Review beside the submitted report.');await v6.openLedger(b.dataset.project);}
  if(b.dataset.searchProject)navigateWorkspace('projects',b.dataset.searchProject);
  if(b.hasAttribute('data-classify-clients'))classifyClients();
+ if(b.hasAttribute('data-month-work'))void monthWork.open().catch(e=>notice(e.message||'Monthly work could not be loaded.'));
  if(b.hasAttribute('data-setup-pipeline'))void setupPipeline.open().catch(e=>notice(e.message||'The set-up status could not be loaded.'));
  if(b.closest('#workspaceSearchResults'))$('#workspaceSearchResults').hidden=true;
  if(b.dataset.view){if(b.closest('#editor')&&$('#editor').open)$('#editor').close();navigateWorkspace(b.dataset.view);}
@@ -769,6 +772,7 @@ for(const button of document.querySelectorAll('[data-continue-session]'))button.
 drafts=createDraftUI({$,esc,request,notice,document,sessionStorage,autosaveMs:2500,returnToQueue:()=>{if($('#editor').open)$('#editor').close();navigateWorkspace('home');}});
 const workQueue=createWorkQueueUI({$,esc,form,modal,request,notice,shortDate,data:()=>data});
 const setupPipeline=createSetupPipelineUI({esc,modal,request});
+const monthWork=createMonthWorkUI({esc,modal,request,notice,assistants:()=>(data.staff||[]).filter(x=>x.category_code==='ASSISTANT'&&x.access_status==='Active')});
 const improvements=createImprovementUI({$,esc,field,select,form,modal,request,notice,shortDate,today,projectName,data:()=>data,drafts:()=>drafts});
 const v6=createWorkspaceUI({drafts:()=>drafts,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openProject:id=>navigateWorkspace('projects',id),reviewImportRows:(rows,onReturn)=>suite.reviewImportRows(rows,onReturn),openClientSettings:improvements.client,openClientChart:improvements.chart,openClientAccounts:(id,options)=>clientAccountSetup(id,options)});
 // Resuming a saved draft reopens its own form. Every opener only refills what the person typed; the server checks the person's access again when the form is saved.
