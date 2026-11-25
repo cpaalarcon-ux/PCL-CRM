@@ -4,6 +4,7 @@ import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assist
 import {createContentSwap} from './staff-content-swap.mjs?v=20261124-swap-v1';
 import {applyItemViews,bindItemViews} from './staff-items-view.mjs?v=20261107-annualpack-v3';
 import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNote} from './staff-upload-retry.mjs?v=20261119-upload-v1';
+import {createSetupPipelineUI} from './staff-setup-pipeline.mjs?v=20261125-pipe-v1';
 import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1&rev=20261119-2904';
@@ -313,7 +314,7 @@ function clients(){
  if(leaderView&&!clientPage&&!clientPageLoading)void fetchClientPage();
  const rows=leaderView?(clientPage?.rows||[]).map(r=>byId.get(r.client_id)).filter(Boolean):filtered().clients.filter(c=>!isArchived(c));
  if(isLeader())void ensureCardFacts(rows.map(c=>c.client_id));
- const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button type="button" data-v3="bulk-setup">Bulk set-up</button><button type="button" data-v3="categories">Service categories</button><button data-v6="sector">+ Add sector</button>'+addClientButton(data)+(canUseAction(data.me?.restricted_rights,{action:'client_onboarding_alloc_read'},'clients')?'<button type="button" data-onb-open>Onboarding allocation</button>':'')+'<button data-suite="import-clients">Import clients from Excel</button></div>':'';
+ const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button type="button" data-setup-pipeline>Set-up status</button>'+'<button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button type="button" data-v3="bulk-setup">Bulk set-up</button><button type="button" data-v3="categories">Service categories</button><button data-v6="sector">+ Add sector</button>'+addClientButton(data)+(canUseAction(data.me?.restricted_rights,{action:'client_onboarding_alloc_read'},'clients')?'<button type="button" data-onb-open>Onboarding allocation</button>':'')+'<button data-suite="import-clients">Import clients from Excel</button></div>':'';
  const cards=rows.map(c=>{
   const missing=c.details_visible?clientMissing(c):[],stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);
   const progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB});
@@ -720,6 +721,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.myReview==='report'){notice('Opening the ledger: go to Reports, then choose Review beside the submitted report.');await v6.openLedger(b.dataset.project);}
  if(b.dataset.searchProject)navigateWorkspace('projects',b.dataset.searchProject);
  if(b.hasAttribute('data-classify-clients'))classifyClients();
+ if(b.hasAttribute('data-setup-pipeline'))void setupPipeline.open().catch(e=>notice(e.message||'The set-up status could not be loaded.'));
  if(b.closest('#workspaceSearchResults'))$('#workspaceSearchResults').hidden=true;
  if(b.dataset.view){if(b.closest('#editor')&&$('#editor').open)$('#editor').close();navigateWorkspace(b.dataset.view);}
  if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload,firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}
@@ -764,6 +766,7 @@ watchStaffActivity(session);
 for(const button of document.querySelectorAll('[data-continue-session]'))button.onclick=()=>{if(session.activity())void session.pulse();};
 drafts=createDraftUI({$,esc,request,notice,document,sessionStorage,autosaveMs:2500,returnToQueue:()=>{if($('#editor').open)$('#editor').close();navigateWorkspace('home');}});
 const workQueue=createWorkQueueUI({$,esc,form,modal,request,notice,shortDate,data:()=>data});
+const setupPipeline=createSetupPipelineUI({esc,modal,request});
 const improvements=createImprovementUI({$,esc,field,select,form,modal,request,notice,shortDate,today,projectName,data:()=>data,drafts:()=>drafts});
 const v6=createWorkspaceUI({drafts:()=>drafts,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,taskRows,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openProject:id=>navigateWorkspace('projects',id),reviewImportRows:(rows,onReturn)=>suite.reviewImportRows(rows,onReturn),openClientSettings:improvements.client,openClientChart:improvements.chart,openClientAccounts:(id,options)=>clientAccountSetup(id,options)});
 // Resuming a saved draft reopens its own form. Every opener only refills what the person typed; the server checks the person's access again when the form is saved.
