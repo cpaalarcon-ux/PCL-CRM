@@ -26,11 +26,13 @@ test('build 2855: the MLRO owns the POCAMLA lists, risk decision and gate',async
  // The MLRO right: only an Engagement Partner grants it, only to a Manager; until then a Manager is not the MLRO.
  await assert.rejects(()=>ax('MANAGER',{action:'aml_overview'}),/MLRO/);
  await assert.rejects(()=>ax('ASSISTANT',{action:'aml_lookup_add',category:'COUNTRY',value:'Fictionia',source:'Fictional source'}),/MLRO/);
- await assert.rejects(()=>as('PARTNER',()=>tx`select erp_private.staff_right_grant(${actors.SUPERVISOR.staff_id}::uuid,'MLRO','Appointed as the firm MLRO',current_date+30)`),/Manager/);
+ await assert.rejects(()=>as('PARTNER',()=>tx`select erp_private.staff_right_grant(${actors.ASSISTANT.staff_id}::uuid,'MLRO','Appointed as the firm MLRO',current_date+30)`),/Manager or Supervisor/);
  await assert.rejects(()=>as('MANAGER',()=>tx`select erp_private.staff_right_grant(${actors.SUPERVISOR.staff_id}::uuid,'MLRO','Appointed as the firm MLRO',current_date+30)`),/Partner/);
  await as('PARTNER',()=>tx`select erp_private.staff_right_grant(${actors.MANAGER.staff_id}::uuid,'MLRO','Appointed as the firm MLRO',current_date+30)`);
+ // A Supervisor can also be appointed; a second MLRO is allowed and is listed with the first.
+ await as('PARTNER',()=>tx`select erp_private.staff_right_grant(${actors.SUPERVISOR.staff_id}::uuid,'MLRO','Appointed as a second MLRO',current_date+30)`);
  const ov0=await ax('MANAGER',{action:'aml_overview'});
- assert.equal(ov0.mlro_holders.length,1);assert.ok(ov0.counts.starter_values>100,'starter values are marked until confirmed');assert.equal(ov0.counts.without_profile,1);
+ assert.equal(ov0.mlro_holders.length,2);assert.ok(ov0.counts.starter_values>100,'starter values are marked until confirmed');assert.equal(ov0.counts.without_profile,1);
 
  // Staff collect the facts; nothing is decided by them.
  const r0=await ax('ASSISTANT',{action:'aml_profile_read',client_id:C});
