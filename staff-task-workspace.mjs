@@ -1,13 +1,18 @@
 // Navigation and presentation use only the authenticated workspace's scoped records.
 import {safeReturnHash} from './staff-return-state.mjs?v=20261119-nav-v1';
 import {workspaceHeader} from './staff-workspace-header.mjs?v=20261119-nav-v1';
+import {readWorkspaceScope} from './staff-workspace-navigation.mjs?v=20261125-v1';
 export function workspaceRoute(hash){
  const p=new URLSearchParams(String(hash||'').replace(/^#/,''));
  const returnTo=safeReturnHash(p.get('returnTo')?'#'+p.get('returnTo'):''),back=returnTo?{returnTo}:{};
  if(p.has('task'))return {view:'task',id:p.get('task')||'',...back};
  if(p.has('client'))return {view:'clientfile',id:p.get('client')||'',...back};
  if(p.has('project'))return {view:'projects',id:p.get('project')||'',...back};
- if(p.has('view'))return {view:p.get('view')||'home'};
+ if(p.has('view')){
+  const view=p.get('view')||'home';
+  if(!p.has('scope'))return {view};
+  return {view,scope:readWorkspaceScope(view,p.get('scope')),scoped:true};
+ }
  return null;
 }
 export function taskPeriodLabel(d,taskId){

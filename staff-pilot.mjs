@@ -1,7 +1,7 @@
 let documentKind='Evidence';
 import {addClientButton,proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1&create-client=20261122-v1&batch=20261125-v3&fold=20261125-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
-import {createContentSwap} from './staff-content-swap.mjs?v=20261125-scroll-v1&fold=20261125-v1';
+import {createContentSwap} from './staff-content-swap.mjs?v=20261125-scroll-v1&fold=20261125-v1&single=20261125-v1';
 import {foldRecordLists,observeRecordLists} from './staff-record-lists.mjs?v=20261125-v1';
 import {applyItemViews,bindItemViews,loadViewMode,viewSwitch} from './staff-items-view.mjs?v=20261107-annualpack-v3';
 import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNote} from './staff-upload-retry.mjs?v=20261119-upload-v1';
@@ -10,7 +10,8 @@ import {createSetupPipelineUI} from './staff-setup-pipeline.mjs?v=20261125-pipe-
 import {createMonthWorkUI} from './staff-month-work.mjs?v=20261125-month-v1';
 import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
-import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1&rev=20261119-2904';
+import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1&rev=20261119-2904&single=20261125-v1';
+import {needsWorkspaceConfirmation,workspaceContext,workspaceRecordMatches,workspaceScopeHash} from './staff-workspace-navigation.mjs?v=20261125-v1';
 import {returnLabel,chooseReturn,createReturnStore} from './staff-return-state.mjs?v=20261119-nav-v1';
 import {clientProfile} from './staff-client-profile.mjs?v=20261121-und-v1&rev=20261119-nav&vault=20261122-v1&fold=20261125-v1';
 import {createTeamQueueUI} from './staff-team-queue.mjs?v=20261214-tq-v1';
@@ -33,12 +34,12 @@ import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {staffReadRequestUrl} from './staff-read-routing.mjs?v=20261124-mumbai-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1&team=20261212-v2&fold=20261125-v1';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1&team=20261212-v2&fold=20261125-v1&single=20261125-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261119-workspace';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
-import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1&imp=20261124-v1&fold=20261125-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1&imp=20261124-v1&fold=20261125-v1&single=20261125-v1';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
-import {createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905';
+import {ask,createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905&single=20261125-v1';
 import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
 import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
@@ -60,7 +61,7 @@ const KEY='sb_publishable_ibWMisivJ2reyfJl1eHP9A_HFuFY3Hc';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sectors=['Agribusiness','Financial Services','Energy','Healthcare','NGO','Public Sector','SME/Startup','Legal','Education'];
 const branches=['Nairobi','Bungoma','Kisii','Other'],states=['Pending','In Progress','Waiting on client','Paused','In Review','Blocked','Completed','Cancelled'];
-let navFlags={forensic:false,mlro:false},pendingClientTab='',data=null,view='home',firm='',setupToken=null,presence=null,procedures=null,selectedTask='',selectedClient='',clientTab='overview',missingProject=false,clientMappingReadiness=null,clientMappingReadinessRequest=null,clientAccountReturn=null,clientAccountReturnLabel='Return to purchase mapping';
+let navFlags={forensic:false,mlro:false},data=null,view='home',firm='',setupToken=null,presence=null,procedures=null,selectedTask='',selectedClient='',clientTab='overview',missingProject=false,clientMappingReadiness=null,clientMappingReadinessRequest=null,clientAccountReturn=null,clientAccountReturnLabel='Return to purchase mapping';
 // Preserve a renewable session across reloads; the server ends it after 30 minutes idle.
 if(!localStorage.getItem('pcl-staff-session-v2')&&sessionStorage.getItem('pcl-staff-session-v2'))localStorage.setItem('pcl-staff-session-v2',sessionStorage.getItem('pcl-staff-session-v2'));
 sessionStorage.removeItem('pcl-staff-session-v2');
@@ -80,9 +81,10 @@ const scheduleThrough=s=>{const start=String(s?.starts_on||today()).slice(0,10),
 const shortDate=v=>v?new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',day:'numeric',month:'short',year:'numeric'}).format(new Date(v)):'No date';
 const badge=v=>`<span class="badge ${['Completed','Active','Closed'].includes(v)?'good':['Blocked','Inactive','Pending client documents'].includes(v)?'red':['In Review','Waiting on client','Paused','Pending setup','Approved for testing','Awaiting client approval','Pending supervisor review'].includes(v)?'warn':''}">${esc(v)}</span>`;
 const options=(items,value,blank='Choose…')=>`<option value="">${esc(blank)}</option>`+items.map(x=>{let [v,l]=Array.isArray(x)?x:[x,x];return `<option value="${esc(v)}"${String(v)===String(value)?' selected':''}>${esc(l)}</option>`;}).join('');
+let lastRoute=null,activeWorkspaceHash=null,activeWorkspaceEntry=0,workspaceSwitchPending=false;
 function notice(message,error=false){$('#notice').textContent=message;$('#notice').className=error?'error':'';}
 function signedOut(message=''){session.end(message);}
-function showSignedOut(message=''){drafts?.detach();drafts?.clearAsides();timingRows.length=0;timingTargets.clear();data=null;navFlags={forensic:false,mlro:false};forensicMenuAt=0;mlroMenuAt=0;navBadges={};navOpenFor='';navBadgeAt=0;cardFlags=new Map();cardWip=new Map();workReady=new Map();workReadyLoaded=false;workReadyFailed=false;cardFacts.key='';cardFacts.at=0;document.body.classList.remove('nav-open');presence?.clear();if(typeof bell!=='undefined')bell.paint();if(typeof holidaysUI!=='undefined')holidaysUI.reset();if(typeof suite!=='undefined')suite.chat?.clear();if(typeof messenger!=='undefined')messenger.stop();document.body.classList.remove('workspace-active');$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));}
+function showSignedOut(message=''){drafts?.detach();drafts?.clearAsides();activeWorkspaceHash=null;lastRoute=null;timingRows.length=0;timingTargets.clear();data=null;navFlags={forensic:false,mlro:false};forensicMenuAt=0;mlroMenuAt=0;navBadges={};navOpenFor='';navBadgeAt=0;cardFlags=new Map();cardWip=new Map();workReady=new Map();workReadyLoaded=false;workReadyFailed=false;cardFacts.key='';cardFacts.at=0;document.body.classList.remove('nav-open');presence?.clear();if(typeof bell!=='undefined')bell.paint();if(typeof holidaysUI!=='undefined')holidaysUI.reset();if(typeof suite!=='undefined')suite.chat?.clear();if(typeof messenger!=='undefined')messenger.stop();document.body.classList.remove('workspace-active');$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));}
 async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},timeoutMs=0}={}){
  const headers={apikey:KEY,'x-region':'ap-south-1',...extra};if(uploadKind)headers['x-erp-upload-kind']=uploadKind;if(!file)headers['Content-Type']='application/json';
  const api=!file&&!blob&&data&&extra.Authorization?staffReadRequestUrl(API,p?.action,readRoutePreference()||defaultReadRoute()):API;
@@ -151,7 +153,12 @@ const load=createLoadQueue(options=>loadNow(options));
 async function loadNow({waitForPresence=false,...requestOptions}={}){data=await request({action:'workspace'},requestOptions);syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
  $('#greeting').textContent='My workspace';$('#roleLabel').textContent=roles[data.me.category_code]+' · '+data.me.login_id;
  $('#firmFilter').innerHTML=options(data.firms.map(x=>[x.firm_id,x.firm_code+' · '+x.legal_name]),firm,'All authorised firms');
- $('.firm-picker').hidden=data.me.category_code==='INTERN';applyWorkspaceRoute(false);render();await openCommunicationHash();if(waitForPresence)await presence.refresh();else void presence.refresh();}
+ $('.firm-picker').hidden=data.me.category_code==='INTERN';
+ const reference=activeWorkspaceHash===null?communicationReference(location.hash):null;
+ if(reference)writeWorkspaceAddress('#view=communications',true,0);
+ applyWorkspaceRoute();render();
+ if(reference&&view==='communications')await openCommunicationReference(reference);
+ if(waitForPresence)await presence.refresh();else void presence.refresh();}
 let viewStaff=VS_DEFAULT,viewStaffOpts=null,viewStaffFor='';
 function paintStaffPicker(){const w=$('#staffPicker');if(!w)return;const ok=hasPicker(viewStaffOpts);w.hidden=!ok;$('#staffFilter').innerHTML=ok?pickerOptions(viewStaffOpts,esc,viewStaff,data.me.staff_id):'';}
 async function loadViewStaff(){const who=data.me.staff_id;viewStaffFor=who;try{const o=await request({action:'view_staff_options'});if(viewStaffFor!==who)return;viewStaffOpts=o;}catch{viewStaffOpts=null;}paintStaffPicker();if(['time','team','projects','task'].includes(view))render();}
@@ -237,7 +244,10 @@ const sections=[
 $('#sideNav').innerHTML=groupHtml(sideItems[0])+sections.map(([title,keys])=>{
  const links=sideItems.filter(item=>keys.includes(itemKey(item)));
  return links.length?`<section aria-label="${title}"><h3 class="sidebar-section-title">${title}</h3>${links.map(groupHtml).join('')}</section>`:'';
-}).join('');$('#areasLauncher').hidden=view!=='home';$('#nav').innerHTML=cards||'<p class="empty">No workspace areas are assigned to this account. Ask your Manager to check access.</p>';const home=$('#areasHome');if(view==='home')home.setAttribute('aria-current','page');else home.removeAttribute('aria-current');refreshNavBadges();}
+}).join('');$('#areasLauncher').hidden=view!=='home';$('#nav').innerHTML=cards||'<p class="empty">No workspace areas are assigned to this account. Ask your Manager to check access.</p>';const home=$('#areasHome');const onHome=view==='home';
+ home.innerHTML=onHome?'<span aria-hidden="true">▦</span> All areas':'<span aria-hidden="true">⌂</span> Leave workspace';
+ home.setAttribute('aria-label',onHome?'Open all workspace areas':'Leave workspace and return to Home');
+ if(onHome)home.setAttribute('aria-current','page');else home.removeAttribute('aria-current');refreshNavBadges();}
 
 const empty=t=>`<div class="empty">${esc(t)}</div>`;
 function taskRows(tasks,opts={}){return tasks.length?tasks.map(t=>{let due=t.due_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(t.due_at));let overdue=due&&due<today()&&!['Completed','Cancelled'].includes(t.status);const workflow=data.task_procedures?.find(w=>w.task_id===t.task_id),taskStage=workflow&&workflow.profile!=='Supporting task'?workflow.stage:t.status;return `<div class="task task-selectable ${overdue?'overdue':''}" data-task-row="${t.task_id}"><div><a class="task-title" href="#task=${t.task_id}" data-open-task="${t.task_id}">${opts.inProject?'':overdue?'⚠ ':''}${esc(opts.inProject?String(t.task_name).replace(/ · \d{4}-W\d{2}.*$| · \d{4}-\d{2}-\d{2}$/,''):t.task_name)}</a>${(()=>{const preparer=workflow?.prepared_by||t.assigned_to,reviewer=workflow?.reviewer_id&&workflow.reviewer_id!==preparer?workflow.reviewer_id:null,people=`<span class="task-person"><i>Preparer</i> ${esc(staffName(preparer)||'Unassigned')}</span>${reviewer?`<span class="task-person"><i>Reviewer</i> ${esc(staffName(reviewer))}</span>`:''}${t.assigned_to&&t.assigned_to!==preparer&&t.assigned_to!==reviewer?`<span class="task-person"><i>With</i> ${esc(staffName(t.assigned_to))}</span>`:''}`;return opts.inProject?`<small class="task-meta">${people}<span>Due ${esc(shortDate(t.due_at))}</span>${overdue?'<span class="pill-late">Overdue</span>':''}</small>`:`<small class="task-meta"><a class="project-title" href="#project=${t.project_id}" data-open-project="${t.project_id}">${esc(projectName(t.project_id))}</a>${people}<span>Due ${esc(shortDate(t.due_at))}</span></small>`;})()}${t.blocked_reason?`<small>${esc(t.blocked_reason)}</small>`:''}</div><div class="actions task-row-actions">${badge(taskStage)} <button class="${opts.inProject?'primary':''}" data-task="${t.task_id}">${opts.inProject?'Open':'Open task workspace'}</button><button data-task-edit="${t.task_id}">${opts.inProject?'Status':'Update status'}</button> ${!['Completed','Cancelled'].includes(t.status)?`<button data-v6="escalate" data-id="${t.task_id}">${opts.inProject?'Forward':'Forward / Escalate'}</button>`:''}</div></div>`;}).join(''):empty('No tasks in this section.');}
@@ -430,20 +440,54 @@ function afterStaffRender(){
  if(staffTab==='people')bindStaffFilter(root);
  if(staffTab==='allocations'){const host=$('#allocHost');if(host)void improvements.mountAllocations(host).catch(e=>{host.innerHTML=`<p class="error" role="alert">${esc(e.message||'Allocations could not be loaded.')}</p>`;});}
 }
-function documents(){
+function documents(scope=null){
  const batchDocs=new Set((data.workbook_batches||[]).map(b=>b.document_id)),isImport=d=>d.is_import_source||d.category==='Import Sources'||batchDocs.has(d.document_id),archivedView=documentKind==='Archived sources';
- const rows=filtered().documents.filter(d=>archivedView?!!d.archived_at:!d.archived_at&&(isImport(d)===(documentKind==='Import Sources')));
+ const rows=filtered().documents.filter(d=>workspaceRecordMatches(d,scope,data)&&(archivedView?!!d.archived_at:!d.archived_at&&(isImport(d)===(documentKind==='Import Sources'))));
  const title=archivedView?'Archived import sources':documentKind==='Import Sources'?'Import sources':'Private evidence & reports';
- const uploadButton=archivedView?'':data.me.category_code==='INTERN'?'':documentKind==='Import Sources'?`<div class="actions"><button class="primary" data-new-source>+ Upload ledger source</button>${isLeader()?'<button data-open-opening>+ Stage opening TB</button>':''}</div>`:'<button class="primary" data-new="upload">+ Upload document</button>';
- return incomingCardHtml(data.me,suite.button)+'<div id="docGrantsCard"></div>'+`<div class="card"><div class="section-head"><h2>${title}</h2>${uploadButton}</div><div class="actions"><button data-document-kind="Evidence">Evidence & reports</button><button data-document-kind="Import Sources">Import sources</button><button data-document-kind="Archived sources">Archived sources</button>${documentKind==='Import Sources'?'<a class="button" href="/templates/Purchases_Monthly_Four_Sheet_Template.xlsx" download>Download purchases template (four sheets)</a><a class="button" href="/templates/Sales_Multi_Month_Template.xlsx" download>Download sales template (several months)</a><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a>':''}</div>${documentKind==='Import Sources'?'<p class="muted">Purchases use the four-sheet template (one sheet for each VAT category) for a month or a week. The routing code and TB code columns use ERP codes; a valid pair is checked by the ERP and preselects a suggestion for staff confirmation. Opening TB can be uploaded from the setup guide after the client year exists; it remains source data until mapped and imported as a draft journal.</p>':''}<details class="doc-note"><summary>Uploaded the wrong file?</summary><p class="muted">If you uploaded the wrong file, remove it from active mapping. The file and import history stay under Archived sources. Uploaders can remove unmapped data; a Partner or Manager must archive rows that have been mapped, reviewed or posted.</p></details><div class="scroll doc-roster"><table data-views="Category" aria-label="${esc(title)} list"><thead><tr><th>File</th><th>Client / task</th><th>Category</th><th>Added</th><th>Status / archive reason</th><th>Action</th></tr></thead><tbody>${rows.map(d=>{const imported=isImport(d),canArchive=!archivedView&&imported&&data.me.category_code!=='INTERN'&&(isLeader()||d.uploaded_by===data.me.staff_id),label=d.import_purpose==='Opening TB'?'Opening TB source — not evidence':imported?'Import source — feeds ledgers':d.category;return `<tr><td>${esc(d.file_name)}<small>Version ${d.version} · ${(d.file_size_bytes/1024).toFixed(1)} KB ${d.is_locked?'· Locked':''}</small></td><td>${esc(clientName(d.client_id))}<small>${esc(firmName(d.handling_firm_id))}</small></td><td>${label}${d.source_type&&d.source_type!=='Upload'?`<small>Received by ${esc(d.source_type)}${d.confidentiality==='Restricted'?' · Restricted':''}</small>`:d.confidentiality==='Restricted'?'<small>Restricted</small>':''}</td><td>${esc(shortDate(d.uploaded_at))}</td><td>${d.archived_at?`Archived ${esc(shortDate(d.archived_at))}<small>${esc(d.archive_reason||'')}</small>`:'Active'}${!archivedView&&!['INTERN','ADMIN'].includes(data.me.category_code)?`<div data-review-state="${d.document_id}"></div>`:''}</td><td><div class="actions"><button data-download="${d.document_id}">Download</button><button type="button" data-messenger-share-document="${d.document_id}">Share document</button>${(items=>items.length?`<details class="cc-more cc-more-wide"><summary aria-label="More actions for ${esc(d.file_name)}" title="More actions"><span aria-hidden="true">More ▾</span></summary><div class="cc-menu" role="menu" aria-label="More actions for ${esc(d.file_name)}">${items.join('')}</div></details>`:'')([!archivedView&&!['INTERN','ADMIN'].includes(data.me.category_code)?suite.button('docrev-open','Review & access',d.document_id):'',!archivedView&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code)&&!imported?suite.button('incoming-links','Linked records',d.document_id):'',!archivedView&&d.project_id&&/\.(xlsx|csv|zip)$/i.test(d.file_name)&&data.me.category_code!=='INTERN'?`<button type="button" data-v6="import" data-id="${d.document_id}">Review source</button>`:'',canArchive?`<button type="button" class="danger" data-archive-source="${d.document_id}">Remove upload</button>`:''].filter(Boolean))}</div></td></tr>`;}).join('')}</tbody></table></div>${!rows.length?empty(archivedView?'No archived import sources.':documentKind==='Import Sources'?'No active import sources.':'No evidence or reports available to your account yet.'):''}</div>`;
+ const uploadButton=archivedView?'':data.me.category_code==='INTERN'?'':documentKind==='Import Sources'?`<div class="actions"><button class="primary" data-new-source>+ Upload ledger source</button>${isLeader()&&scope?.kind!=='project'?'<button data-open-opening>+ Stage opening TB</button>':''}</div>`:'<button class="primary" data-new="upload">+ Upload document</button>';
+ return (scope?'':incomingCardHtml(data.me,suite.button)+'<div id="docGrantsCard"></div>')+`<div class="card"><div class="section-head"><h2>${title}</h2>${uploadButton}</div><div class="actions"><button data-document-kind="Evidence">Evidence & reports</button><button data-document-kind="Import Sources">Import sources</button><button data-document-kind="Archived sources">Archived sources</button>${documentKind==='Import Sources'?'<a class="button" href="/templates/Purchases_Monthly_Four_Sheet_Template.xlsx" download>Download purchases template (four sheets)</a><a class="button" href="/templates/Sales_Multi_Month_Template.xlsx" download>Download sales template (several months)</a><a class="button" href="/Opening_TB_Upload_Template.xlsx" download>Download opening TB template</a>':''}</div>${documentKind==='Import Sources'?'<p class="muted">Purchases use the four-sheet template (one sheet for each VAT category) for a month or a week. The routing code and TB code columns use ERP codes; a valid pair is checked by the ERP and preselects a suggestion for staff confirmation. Opening TB can be uploaded from the setup guide after the client year exists; it remains source data until mapped and imported as a draft journal.</p>':''}<details class="doc-note"><summary>Uploaded the wrong file?</summary><p class="muted">If you uploaded the wrong file, remove it from active mapping. The file and import history stay under Archived sources. Uploaders can remove unmapped data; a Partner or Manager must archive rows that have been mapped, reviewed or posted.</p></details><div class="scroll doc-roster"><table data-views="Category" aria-label="${esc(title)} list"><thead><tr><th>File</th><th>Client / task</th><th>Category</th><th>Added</th><th>Status / archive reason</th><th>Action</th></tr></thead><tbody>${rows.map(d=>{const imported=isImport(d),canArchive=!archivedView&&imported&&data.me.category_code!=='INTERN'&&(isLeader()||d.uploaded_by===data.me.staff_id),label=d.import_purpose==='Opening TB'?'Opening TB source — not evidence':imported?'Import source — feeds ledgers':d.category;return `<tr><td>${esc(d.file_name)}<small>Version ${d.version} · ${(d.file_size_bytes/1024).toFixed(1)} KB ${d.is_locked?'· Locked':''}</small></td><td>${esc(clientName(d.client_id))}<small>${esc(firmName(d.handling_firm_id))}</small></td><td>${label}${d.source_type&&d.source_type!=='Upload'?`<small>Received by ${esc(d.source_type)}${d.confidentiality==='Restricted'?' · Restricted':''}</small>`:d.confidentiality==='Restricted'?'<small>Restricted</small>':''}</td><td>${esc(shortDate(d.uploaded_at))}</td><td>${d.archived_at?`Archived ${esc(shortDate(d.archived_at))}<small>${esc(d.archive_reason||'')}</small>`:'Active'}${!archivedView&&!['INTERN','ADMIN'].includes(data.me.category_code)?`<div data-review-state="${d.document_id}"></div>`:''}</td><td><div class="actions"><button data-download="${d.document_id}">Download</button><button type="button" data-messenger-share-document="${d.document_id}">Share document</button>${(items=>items.length?`<details class="cc-more cc-more-wide"><summary aria-label="More actions for ${esc(d.file_name)}" title="More actions"><span aria-hidden="true">More ▾</span></summary><div class="cc-menu" role="menu" aria-label="More actions for ${esc(d.file_name)}">${items.join('')}</div></details>`:'')([!archivedView&&!['INTERN','ADMIN'].includes(data.me.category_code)?suite.button('docrev-open','Review & access',d.document_id):'',!archivedView&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code)&&!imported?suite.button('incoming-links','Linked records',d.document_id):'',!archivedView&&d.project_id&&/\.(xlsx|csv|zip)$/i.test(d.file_name)&&data.me.category_code!=='INTERN'?`<button type="button" data-v6="import" data-id="${d.document_id}">Review source</button>`:'',canArchive?`<button type="button" class="danger" data-archive-source="${d.document_id}">Remove upload</button>`:''].filter(Boolean))}</div></td></tr>`;}).join('')}</tbody></table></div>${!rows.length?empty(archivedView?'No archived import sources.':documentKind==='Import Sources'?'No active import sources.':'No evidence or reports available to your account yet.'):''}</div>`;
 }
 function firms(){return policyCard(data,esc,shortDate)+otherPoliciesCard(data,esc,shortDate)+`<div class="card"><div class="section-head"><h2>Handling firms</h2><button class="primary" data-new="firm">+ Add firm</button></div><p class="muted">Add the correct registered names. A client may work with several firms, while each project belongs to one firm.</p>${data.firms.map(f=>`<div class="task"><div><b>${esc(f.legal_name)}</b><small>${esc(f.firm_code)}</small></div></div>`).join('')||empty('No firms registered yet.')}</div>`;}
 async function paintMyReviews(){const box=$('#homeMyReviews');if(!box)return;let items=[];try{items=(await request({action:'v3_review_queue'})).items||[];}catch(e){box.querySelector('.compact-empty').textContent='The review list could not be loaded. Refresh to try again.';return;}
  const head=box.querySelector('.section-head').outerHTML,row=x=>`<div class="home-exception-row"><div><b>${esc(x.client_name)}</b><small>${esc(x.title)} · submitted ${esc(shortDate(x.submitted_at))}${x.stage?` · <strong>${esc(x.stage)}</strong>`:''}${x.sent_to_me?' · <strong>sent to you</strong>':''}</small>${x.detail?`<span class="preserve-lines">${esc(x.detail)}</span>`:''}</div><button data-my-review="${esc(x.kind)}" data-id="${esc(x.id)}" data-client="${esc(x.client_id)}" data-project="${esc(x.project_id||'')}" data-period="${esc(x.period_id||'')}">${x.kind==='escalation'?'Answer':x.action==='check'?'Open to check':'Open to review'}</button></div>`;
  box.innerHTML=head.replace('</div></div>',`</div><span class="badge ${items.length?'warn':''}">${items.length}</span></div>`)+(items.map(row).join('')||`<p class="muted compact-empty">${data.me.category_code==='SUPERVISOR'?'Nothing is waiting for your check.':'Nothing is waiting for your review.'}</p>`);}
 const crumbLabels={clients:'Clients',projects:'Projects & Tasks',time:'Time & Attendance',team:'Team & HR',documents:'Documents',communications:'Communications Hub',audit:'Audit & assurance',leads:'Leads & Pipeline',finance:'Finance & Reports',staff:'Administration · Staff & access',firms:'Administration · Settings'};
-// One breadcrumb for every top-level area. Task workspaces and audit files draw their own deeper trail, so the shared bar stops at the area name for those.
-function paintCrumbs(){const el=$('#crumbs');if(!el)return;if(view==='home'||view==='task'||view==='clientfile'||!crumbLabels[view]){el.hidden=true;el.replaceChildren();return;}el.hidden=false;el.innerHTML=`<a href="#view=home" data-view="home">Home</a><span aria-hidden="true">/</span><span aria-current="page">${esc(crumbLabels[view])}</span>`;}
+const workspaceAreas={clientfile:'clients',task:'projects',time:'time_hr',team:'time_hr',finance:'billing_wip',staff:'staff_access',firms:'settings'};
+function canOpenWorkspace(target){
+ if(target==='home')return true;
+ if(!Object.hasOwn(workspaceAreas,target)&&!Object.hasOwn(crumbLabels,target))return false;
+ return canArea(workspaceAreas[target]||target)&&(target!=='team'||['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code));
+}
+function workspaceUnavailable(){
+ return '<section class="card"><h2>Workspace unavailable</h2><p>This client or project is not available to your account.</p><button type="button" data-view="home">Back to Home</button></section>';
+}
+function workspaceContextBar(route,context){
+ if(!context)return '';
+ const {client,project}=context,isIntern=data.me.category_code==='INTERN';
+ const links=[
+  client&&!isIntern&&canOpenWorkspace('clientfile')&&view!=='clientfile'?'<button type="button" data-client-open="'+esc(client.client_id)+'">Client profile</button>':'',
+  project&&(view!=='projects'||!route.id)&&route.returnTo!=='#project='+project.project_id?'<button type="button" data-open-project="'+esc(project.project_id)+'">Back to project</button>':'',
+  ...[['documents','Documents'],['finance','Finance & Reports']].map(([area,label])=>canOpenWorkspace(area)&&view!==area?`<button type="button" data-context-view="${area}">${esc(label)}</button>`:'')
+ ].join('');
+ if(!links)return '';
+ const contextTitle=route.scoped?'':[!isIntern?client?.company_name:null,project?.project_name].filter(Boolean).map(esc).join(' <span aria-hidden="true">/</span> ');
+ return `<section class="card workspace-context" aria-label="Current client or project"><div class="section-head">${contextTitle?`<strong>${contextTitle}</strong>`:''}<nav class="actions" aria-label="Related workspace screens">${links}</nav></div></section>`;
+}
+function documentUploadScope(){
+ const route=currentRoute();
+ if(view!=='documents'||!route.scope)return {};
+ const {client,project}=workspaceContext(route,data)||{};
+ return {scope:route.scope,client_id:client?.client_id||project?.client_id,project_id:project?.project_id,firm_id:project?.handling_firm_id};
+}
+function paintCrumbs(){
+ const el=$('#crumbs');
+ if(!el)return;
+ if(!crumbLabels[view]){el.hidden=true;el.replaceChildren();return;}
+ const route=currentRoute(),context=route.scoped?workspaceContext(route,data):null,separator='<span aria-hidden="true">/</span>';
+ const path=[data.me.category_code!=='INTERN'?context?.client?.company_name:null,context?.project?.project_name].filter(Boolean);
+ el.hidden=false;
+ el.innerHTML=['<a href="#view=home" data-view="home">Home</a>',...path.map(name=>'<span>'+esc(name)+'</span>'),`<span aria-current="page">${esc(crumbLabels[view])}</span>`].join(separator);
+}
 loadMyWorkMode(globalThis.localStorage);
 watchStickyBar($('#content'));
 let swapContent=null;
@@ -457,7 +501,11 @@ function render(){
    listObserver.takeRecords();
   }});
  }
- bindWorkspaceSearch();const allowed=['home'];if(canArea('projects'))allowed.push('task','projects');if(canArea('clients'))allowed.push('clients','clientfile');if(canArea('time_hr'))allowed.push('time');if(canArea('time_hr')&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))allowed.push('team');if(canArea('documents'))allowed.push('documents');if(canArea('communications'))allowed.push('communications');for(const [area,target] of [['audit','audit'],['leads','leads'],['billing_wip','finance'],['staff_access','staff'],['settings','firms']])if(canArea(area))allowed.push(target);if(!allowed.includes(view))view='home';nav();paintCrumbs();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';swapContent(detailReturn()+({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,clientfile:renderClientProfile,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<details class="settings-fold section-space" id="taxWorkFold" name="projects-more"><summary>Tax compilation, approvals and KRA notices</summary><section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>${['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(data.me.category_code)?`<section class="card section-space" id="kraNoticesCard"><h2>KRA notices</h2><p class="muted">Log each notice KRA sends, see the verification task it creates, and clear its non-compliance flags.</p>${suite.button('kra-open','Open the KRA notice log')}</section>`:''}</details>`,audit:audit.render,team:teamUI.render,time:()=>staffAttendancePanel()+v6.time()+suite.hr(),staff,documents,firms:()=>suite.settings({access:policyCard(data,esc,shortDate)+otherPoliciesCard(data,esc,shortDate)+statusPolicyCard(statusPolicy,{esc,fmt:shortDate})+goLiveCard(data,esc),firm:holidaysUI.render()}),communications:suite.communications,finance:suite.finance}[view])(),view,loadViewMode(globalThis.localStorage,view));v6.bind();presence.paint();bell.paint();if(view==='time')void paintStaffAttendance();if(view==='audit')audit.enter();if(view==='home'&&!['INTERN','ADMIN'].includes(data.me.category_code))void workQueue.mount();if(view==='home'&&(isLeader()||data.me.category_code==='SUPERVISOR'))void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='clientfile'&&clientTab==='credentials'&&$('#clientTabHost')?.dataset.tab==='credentials')mountClientVault($('#clientTabHost'),{clientId:selectedClient,request,esc,shortDate});if(view==='clientfile'&&clientTab==='documents')void paintDocRequests({request,esc,shortDate,data:()=>data});if(view==='clientfile'&&((isLeader()&&['setup','tax'].includes(clientTab))||['aml','understanding'].includes(clientTab)))void improvements.paintClientTab(clientTab,selectedClient).catch(e=>{const h=$('#clientTabHost');if(h)h.innerHTML='<p class="error" role="alert">'+esc(e.message)+'</p>';});if(view==='home'&&data.me.category_code==='PARTNER'){void v6.paintPartnerEscalations();void suite.kra.paintBanner();}if(view==='documents')void suite.incoming.paintCard();if(view==='documents')void suite.docReview.paintStates();if(view==='home'&&['PARTNER','MANAGER'].includes(data.me.category_code)){void teamUI.paintPool();void metricsUI.paint();}if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='staff')afterStaffRender();if(view==='firms')void paintStatusPolicy();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();const search=$('#search');if(search){
+ bindWorkspaceSearch();
+ if(!canOpenWorkspace(view))view='home';
+ const route=currentRoute(),context=workspaceContext(route,data);
+ const scopedUnavailable=route.scoped&&(!route.scope||!context);
+ nav();paintCrumbs();$('#greeting').textContent=view==='task'?'Task workspace':view==='audit'?'Audit & assurance':'My workspace';swapContent(workspaceContextBar(route,context)+detailReturn()+(scopedUnavailable?workspaceUnavailable():({home,task:()=>taskWorkspace({data,taskId:selectedTask,esc,shortDate,badge,staffName,clientName,firmName}),leads:leads.render,clients,clientfile:renderClientProfile,projects:()=>missingProject?'<section class="card"><h2>Project workspace unavailable</h2><p>This project is not available in your current workspace.</p><button data-view="projects">Back to projects & tasks</button></section>':v6.projects()+`<details class="settings-fold section-space" id="taxWorkFold" name="projects-more"><summary>Tax compilation, approvals and KRA notices</summary><section class="card section-space"><h2>Tax compilation & approvals</h2>${suite.button('tax-list','Open tax periods')}</section>${['PARTNER','MANAGER','SUPERVISOR','ASSISTANT'].includes(data.me.category_code)?`<section class="card section-space" id="kraNoticesCard"><h2>KRA notices</h2><p class="muted">Log each notice KRA sends, see the verification task it creates, and clear its non-compliance flags.</p>${suite.button('kra-open','Open the KRA notice log')}</section>`:''}</details>`,audit:audit.render,team:teamUI.render,time:()=>staffAttendancePanel()+v6.time()+suite.hr(),staff,documents:()=>documents(route.scope),firms:()=>suite.settings({access:policyCard(data,esc,shortDate)+otherPoliciesCard(data,esc,shortDate)+statusPolicyCard(statusPolicy,{esc,fmt:shortDate})+goLiveCard(data,esc),firm:holidaysUI.render()}),communications:suite.communications,finance:()=>suite.finance(route.scope)}[view])()),view,loadViewMode(globalThis.localStorage,view),route.id||(route.scope?route.scope.kind+'.'+route.scope.id:''));v6.bind();presence.paint();bell.paint();if(view==='time')void paintStaffAttendance();if(view==='audit')audit.enter();if(view==='home'&&!['INTERN','ADMIN'].includes(data.me.category_code))void workQueue.mount();if(view==='home'&&(isLeader()||data.me.category_code==='SUPERVISOR'))void paintMyReviews();if(view==='home'&&['PARTNER','MANAGER','SUPERVISOR'].includes(data.me.category_code))void v6.paintHandovers();if(view==='clientfile'&&clientTab==='credentials'&&$('#clientTabHost')?.dataset.tab==='credentials')mountClientVault($('#clientTabHost'),{clientId:selectedClient,request,esc,shortDate});if(view==='clientfile'&&clientTab==='documents')void paintDocRequests({request,esc,shortDate,data:()=>data});if(view==='clientfile'&&((isLeader()&&['setup','tax'].includes(clientTab))||['aml','understanding'].includes(clientTab)))void improvements.paintClientTab(clientTab,selectedClient).catch(e=>{const h=$('#clientTabHost');if(h)h.innerHTML='<p class="error" role="alert">'+esc(e.message)+'</p>';});if(view==='home'&&data.me.category_code==='PARTNER'){void v6.paintPartnerEscalations();void suite.kra.paintBanner();}if(view==='documents'&&!route.scoped)void suite.incoming.paintCard();if(view==='documents')void suite.docReview.paintStates();if(view==='home'&&['PARTNER','MANAGER'].includes(data.me.category_code)){void teamUI.paintPool();void metricsUI.paint();}if(view==='task')void v6.paintTaskHandovers(selectedTask);if(view==='clients'&&isLeader())void loadClientMappingReadiness();if(view==='staff')afterStaffRender();if(view==='firms')void paintStatusPolicy();if(view==='task'&&procedures)void procedures.paint(selectedTask);if(view==='communications')void suite.chat?.paint();const search=$('#search');if(search){
  bindClientChips();
  applyClientFilters();
  search.oninput=isLeader()?()=>{
@@ -472,7 +520,7 @@ function render(){
  if($('#clientStructureFilter'))$('#clientStructureFilter').onchange=applyClientFilters;
 }}
 function detailReturn(){
- const route=workspaceRoute(location.hash)||{};
+ const route=currentRoute();
  if(route.returnTo&&(view==='clientfile'||view==='task'||view==='projects'&&route.id))return `<div class="detail-return"><button type="button" data-return-back="1">${esc(returnLabel(route.returnTo))}</button></div>`;
  if(view==='clientfile')return '<div class="detail-return"><button type="button" data-view="clients">Return to clients</button></div>';
  if(view==='task'||view==='projects'&&route.id)return '<div class="detail-return"><button type="button" data-view="projects">Return to project list</button></div>';
@@ -530,6 +578,8 @@ function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='
   if(issues.length){status.textContent=fieldSummary(issues);issues[0].el.focus();return;}
   const label=submitButton.textContent;
   editorPending=true;
+  const finishWorkspaceSave=trackWorkspaceSave(form);
+  let saved=false;
   back.disabled=true;
   submitButton.disabled=true;
   submitButton.textContent=pendingLabel;
@@ -547,6 +597,7 @@ function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='
    notice(successMessage);
    if(refreshWorkspace)await load();
    if(afterSave&&revision===editorRevision)await afterSave(result);
+   saved=true;
   }catch(err){
    if($('#editForm')===form&&editor.open)status.textContent=applyServerError(form,err.message).notice;
    else notice(err.message,true);
@@ -556,6 +607,7 @@ function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='
    submitButton.textContent=label;
    submitButton.removeAttribute('aria-busy');
    form.removeAttribute('aria-busy');
+   finishWorkspaceSave(saved);
   }
  }
 }
@@ -649,10 +701,13 @@ function editTask(t){modal('Update assigned task',form(`<div class="full"><h3>${
 function addProject(){modal('Create draft project',form(field('project_name','Project name *','','text','required maxlength="200"')+select('client_id','Client *',data.clients.map(c=>[c.client_id,c.company_name]))+select('firm_id','Handling firm *',data.firms.map(f=>[f.firm_id,f.firm_code]))+select('service_code','Service *',data.services.map(s=>[s.service_code,s.service_name]))+select('staff_id','Initial team member',data.staff.map(s=>[s.staff_id,s.full_name]),data.me.staff_id)+`<p class="info full">This creates a draft project for the pilot. Activation requires verified onboarding and engagement approval.</p>`),f=>request({...Object.fromEntries(f),action:'project_save'}));}
 function addTask(){modal('Assign task',form(field('task_name','Task name *','','text','required maxlength="200"')+select('project_id','Project *',data.projects.map(p=>[p.project_id,p.project_name]))+select('assigned_to','Assign to an Assistant *',data.staff.filter(s=>s.category_code==='ASSISTANT'&&s.access_status!=='Inactive').map(s=>[s.staff_id,s.full_name]),'','Select an Assistant…')+field('due_date','Due date (5:00 PM EAT)','','date','required')+`<label class="full">Instructions<textarea name="description" maxlength="2000"></textarea></label>`),f=>request({...Object.fromEntries(f),action:'task_create'}));const sel=document.querySelector('#editForm select[name="assigned_to"]');if(sel){sel.required=true;const save=document.querySelector('#editForm button[type="submit"]');const sync=()=>{if(save)save.disabled=!sel.value;};sel.addEventListener('change',sync);sync();}}
 function upload(preset={}){
+ const isScoped=!!preset.scope;
+ const scopedData=isScoped?{...data,projects:data.projects.filter(p=>workspaceRecordMatches(p,preset.scope,data)),
+  firms:data.firms.filter(f=>!preset.project_id||f.firm_id===preset.firm_id)}:data;
  const isOpeningTB=!!preset.openingTB;
  const cats=isLeader()?['Permanent File','Signed Engagement Letters','Current Year Audit','Tax Returns','Working Papers','PBC Documents','BRS Receipts','Final Reports','Correspondence','KRA Notices','Import Sources']:data.me.category_code==='SUPERVISOR'?['Current Year Audit','Tax Returns','Working Papers','PBC Documents','Correspondence','KRA Notices','Import Sources']:['Working Papers','Import Sources'];
  const help=isOpeningTB?`<p class="info full">Client-level Import Source for the six-column opening TB template. Choose the ERP routing code and TB item code per source account. This is source data, not evidence and not a posted journal. After the project financial year is created, import it to prepare an opening draft for independent review.</p>`:`<p class="muted full">Import Sources provide data for client ledgers; they are not completed working papers. The original source stays private for traceability. Permanent-file documents, engagement letters, BRS receipts and final reports lock automatically.</p>`;
- modal(isOpeningTB?'Stage opening TB before project':preset.excelOnly?'Upload ledger source data':'Upload private document',form(select('client_id','Client *',data.clients.map(c=>[c.client_id,c.company_name]))+select('firm_id','Handling firm *',[])+select('project_id',isLeader()&&!preset.excelOnly?'Project (optional)':'Project *',[])+select('task_id',data.me.category_code==='ASSISTANT'?'Assigned task *':'Task (optional)',[])+`<p id="uploadScopeHint" class="info full" role="status"></p>`+select('category','Folder / purpose *',cats,isOpeningTB||preset.excelOnly?'Import Sources':'Working Papers')+`<input type="hidden" name="import_purpose" value="${isOpeningTB?'Opening TB':'General'}">`+field('file','File *','','file',`required accept="${isOpeningTB||preset.excelOnly?'.xlsx':'.csv,.xlsx,.zip,.pdf,.png,.jpg,.jpeg'}"`)+help,'Upload'),async f=>{if(isOpeningTB){f.set('client_id',preset.client_id||f.get('client_id'));if(preset.firm_id)f.set('firm_id',preset.firm_id);f.delete('project_id');f.delete('task_id');f.set('category','Import Sources');f.set('import_purpose','Opening TB');}else if(preset.task_id)for(const [key,value] of Object.entries({client_id:preset.client_id,firm_id:preset.firm_id,project_id:preset.project_id,task_id:preset.task_id,category:preset.excelOnly?'Import Sources':preset.category||'Working Papers'}))f.set(key,value);const result=await request(f,{file:true});return result;},isOpeningTB?r=>notice('Opening TB staged as a client Import Source. It is not evidence and no journal has been posted.'):preset.excelOnly?r=>v6.importWorkbook(r.document_id,{default_dataset:preset.dataset,default_start:preset.period_start,default_end:preset.period_end}):undefined);
+ modal(isOpeningTB?'Stage opening TB before project':preset.excelOnly?'Upload ledger source data':'Upload private document',form(select('client_id','Client *',data.clients.filter(c=>!isScoped||c.client_id===preset.client_id).map(c=>[c.client_id,c.company_name]))+select('firm_id','Handling firm *',[])+select('project_id',isLeader()&&!preset.excelOnly?'Project (optional)':'Project *',[])+select('task_id',data.me.category_code==='ASSISTANT'?'Assigned task *':'Task (optional)',[])+`<p id="uploadScopeHint" class="info full" role="status"></p>`+select('category','Folder / purpose *',cats,isOpeningTB||preset.excelOnly?'Import Sources':'Working Papers')+`<input type="hidden" name="import_purpose" value="${isOpeningTB?'Opening TB':'General'}">`+field('file','File *','','file',`required accept="${isOpeningTB||preset.excelOnly?'.xlsx':'.csv,.xlsx,.zip,.pdf,.png,.jpg,.jpeg'}"`)+help,'Upload'),async f=>{if(isOpeningTB){f.set('client_id',preset.client_id||f.get('client_id'));if(preset.firm_id)f.set('firm_id',preset.firm_id);f.delete('project_id');f.delete('task_id');f.set('category','Import Sources');f.set('import_purpose','Opening TB');}else if(preset.task_id)for(const [key,value] of Object.entries({client_id:preset.client_id,firm_id:preset.firm_id,project_id:preset.project_id,task_id:preset.task_id,category:preset.excelOnly?'Import Sources':preset.category||'Working Papers'}))f.set(key,value);const result=await request(f,{file:true});return result;},isOpeningTB?r=>notice('Opening TB staged as a client Import Source. It is not evidence and no journal has been posted.'):preset.excelOnly?r=>v6.importWorkbook(r.document_id,{default_dataset:preset.dataset,default_start:preset.period_start,default_end:preset.period_end}):undefined);
  const formEl=$('#editForm'),controls=Object.fromEntries(['client_id','firm_id','project_id','task_id'].map(name=>[name,formEl.elements.namedItem(name)]));
  controls.client_id.required=true;controls.firm_id.required=true;
  controls.project_id.required=!isLeader()||preset.excelOnly&&!isOpeningTB;controls.task_id.required=data.me.category_code==='ASSISTANT';
@@ -662,12 +717,12 @@ function upload(preset={}){
   if(['client_id','firm_id'].includes(changed))controls.project_id.value='';
   if(['client_id','firm_id','project_id'].includes(changed))controls.task_id.value='';
   let selection=Object.fromEntries(Object.entries(controls).map(([name,el])=>[name,el.value]));
-  let choices=uploadChoices(data,selection);
+  let choices=uploadChoices(scopedData,selection);
   const selectedFirm=choices.firms.some(f=>f.firm_id===selection.firm_id)?selection.firm_id:choices.firms.length===1?choices.firms[0].firm_id:'';
   controls.firm_id.innerHTML=options(choices.firms.map(f=>[f.firm_id,f.firm_code]),selectedFirm,'Choose handling firm…');
-  selection.firm_id=controls.firm_id.value;choices=uploadChoices(data,selection);
-  controls.project_id.innerHTML=options(choices.projects.map(p=>[p.project_id,p.project_name]),selection.project_id,isLeader()?'Client-level document (no project)':'Choose project…');
-  selection.project_id=controls.project_id.value;choices=uploadChoices(data,selection);
+  selection.firm_id=controls.firm_id.value;choices=uploadChoices(scopedData,selection);
+  controls.project_id.innerHTML=options(choices.projects.map(p=>[p.project_id,p.project_name]),preset.scope?.kind==='project'?preset.project_id:selection.project_id,isLeader()&&preset.scope?.kind!=='project'?'Client-level document (no project)':'Choose project…');
+  selection.project_id=controls.project_id.value;choices=uploadChoices(scopedData,selection);
   controls.task_id.innerHTML=options(choices.tasks.map(t=>[t.task_id,t.task_name]),selection.task_id,data.me.category_code==='ASSISTANT'?'Choose assigned task…':'No task link');
   controls.firm_id.disabled=!selection.client_id||!choices.firms.length;
   if(!isOpeningTB)controls.project_id.disabled=!selection.firm_id||!choices.projects.length;
@@ -730,7 +785,7 @@ $('#editor').addEventListener('cancel',event=>{
 });
 // Closing the tab or leaving the page with an unsaved form open triggers the browser's own warning.
 globalThis.addEventListener?.('beforeunload',event=>{
- if(!$('#editor').open||editorPending||!editorEdited||drafts?.current()?.saved())return;
+ if(!editorPending&&!savingWorkspaceForms.size&&!inlineWorkspaceFormChanged()&&(!$('#editor').open||!editorEdited||drafts?.current()?.saved()))return;
  event.preventDefault();event.returnValue='';
 });
 // Native close events are queued. A replacement workspace may already be open.
@@ -748,8 +803,8 @@ $('#firmFilter').onchange=e=>{firm=e.target.value;clientPage=null;render();};
 $('#staffFilter').onchange=e=>{viewStaff=e.target.value;teamUI.reset();render();};
 document.addEventListener('click',e=>{if(e.target.closest?.('[data-staff-att]'))void paintStaffAttendance();});
 document.addEventListener('change',e=>{const t=e.target,k=t.dataset?.creg;if(!k)return;clientQuery[k]=t.type==='checkbox'?t.checked:k==='size'?Number(t.value):t.value;if(k!=='size'||true)clientQuery.page=0;clientPage=null;render();});
-document.addEventListener('submit',async e=>{const f=e.target.closest?.('form[data-comm-form]');if(!f)return;e.preventDefault();const b=f.querySelector('button[type=submit]');b.disabled=true;try{await request({action:'client_comm_access_save',client_id:f.dataset.commForm,level:f.elements.level.value,reason:f.elements.reason.value});await load();notice('Communication access saved.');}catch(err){notice(err.message,true);}finally{b.disabled=false;}});
-document.addEventListener('submit',async e=>{const f=e.target.closest?.('form[data-routing-form]');if(!f)return;e.preventDefault();const b=f.querySelector('button[type=submit]');b.disabled=true;try{await request({action:'client_routing_save',client_id:f.dataset.routingForm,doc_request_contact_id:f.elements.doc_request_contact_id.value||null,report_delivery_contact_id:f.elements.report_delivery_contact_id.value||null});await load();notice('Contact routing saved.');}catch(err){notice(err.message,true);}finally{b.disabled=false;}});
+document.addEventListener('submit',async e=>{const f=e.target.closest?.('form[data-comm-form]');if(!f)return;e.preventDefault();const b=f.querySelector('button[type=submit]');if(savingWorkspaceForms.has(f))return;b.disabled=true;const finish=trackWorkspaceSave(f);let saved=false;try{await request({action:'client_comm_access_save',client_id:f.dataset.commForm,level:f.elements.level.value,reason:f.elements.reason.value});changedWorkspaceForms.delete(f);await load();saved=true;notice('Communication access saved.');}catch(err){notice(err.message,true);}finally{b.disabled=false;finish(saved);}});
+document.addEventListener('submit',async e=>{const f=e.target.closest?.('form[data-routing-form]');if(!f)return;e.preventDefault();const b=f.querySelector('button[type=submit]');if(savingWorkspaceForms.has(f))return;b.disabled=true;const finish=trackWorkspaceSave(f);let saved=false;try{await request({action:'client_routing_save',client_id:f.dataset.routingForm,doc_request_contact_id:f.elements.doc_request_contact_id.value||null,report_delivery_contact_id:f.elements.report_delivery_contact_id.value||null});changedWorkspaceForms.delete(f);await load();saved=true;notice('Contact routing saved.');}catch(err){notice(err.message,true);}finally{b.disabled=false;finish(saved);}});
 $('#navToggle')?.addEventListener('click',()=>setNavDrawer(!document.body.classList.contains('nav-open')));
 $('#navBackdrop')?.addEventListener('click',()=>setNavDrawer(false));
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('nav-open')){setNavDrawer(false);$('#navToggle')?.focus();}});
@@ -773,8 +828,9 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  }
  if(await audit.handle(b))return;
  if(b.dataset.openTask)navigateWorkspace('task',b.dataset.openTask);
- if(b.dataset.openProject){if($('#editor').open)$('#editor').close();navigateWorkspace('projects',b.dataset.openProject);if(b.dataset.workPeriod){v6.selectPeriod(b.dataset.workPeriod);render();}}
- if(b.dataset.returnBack){goBack();return;}
+ if(b.dataset.openProject){await navigateWorkspace('projects',b.dataset.openProject,{period:b.dataset.workPeriod});return;}
+ if(b.dataset.returnBack){await goBack();return;}
+ if(b.dataset.contextView){const context=workspaceContext(currentRoute(),data),scope=context?.project?{kind:'project',id:context.project.project_id}:context?.client?{kind:'client',id:context.client.client_id}:null;if(scope)await navigateWorkspace(b.dataset.contextView,'',{scope});return;}
  if(b.dataset.workspaceView)navigateWorkspace(b.dataset.workspaceView);
  if(b.dataset.dashboard==='read-alert'){await request({action:'notification_read',notification_id:b.dataset.id});await load();}
  if(b.dataset.drill)drillHome(b.dataset.drill);
@@ -791,11 +847,11 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.hasAttribute('data-month-work'))void monthWork.open().catch(e=>notice(e.message||'Monthly work could not be loaded.'));
  if(b.hasAttribute('data-setup-pipeline'))void setupPipeline.open().catch(e=>notice(e.message||'The set-up status could not be loaded.'));
  if(b.closest('#workspaceSearchResults'))$('#workspaceSearchResults').hidden=true;
- if(b.dataset.view){if(b.closest('#editor')&&$('#editor').open)$('#editor').close();navigateWorkspace(b.dataset.view);}
- if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload,firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}
+ if(b.dataset.view&&!(await navigateWorkspace(b.dataset.view)))return;
+ if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload:()=>upload(documentUploadScope()),firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}
  if(b.dataset.clientSetup)await improvements.client(b.dataset.clientSetup);
  if(b.dataset.setupGuide)await setupGuide.open(b.dataset.setupGuide);
- if(b.dataset.clientOpen){if(b.closest('#editor')&&$('#editor').open)$('#editor').close();pendingClientTab=b.dataset.clientTab||'';navigateWorkspace('clientfile',b.dataset.clientOpen);return;}
+ if(b.dataset.clientOpen){await navigateWorkspace('clientfile',b.dataset.clientOpen,{tab:b.dataset.clientTab});return;}
  if(b.dataset.cprofileTab){clientTab=b.dataset.cprofileTab;render();return;}
  if(b.dataset.cregPage){clientQuery.page=Math.max(0,clientQuery.page+(b.dataset.cregPage==='next'?1:-1));clientPage=null;render();return;}
  if(b.dataset.cregClear!==undefined){clearTimeout(searchTimer);if($('#search'))$('#search').value=$('#search').defaultValue;clientQuery=DEFAULT_QUERY();clientPage=null;render();return;}
@@ -822,16 +878,20 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.taskEdit&&canUseAction(data.me.restricted_rights,{action:'task_status'})){const t=data.tasks.find(x=>x.task_id===b.dataset.taskEdit);if(t)editTask(t);}
  if(b.dataset.documentKind){documentKind=b.dataset.documentKind;render();}
  if(b.dataset.archiveSource)removeImportSource(b.dataset.archiveSource);
- if(b.hasAttribute('data-new-source'))upload({category:'Import Sources',excelOnly:true});
- if(b.hasAttribute('data-open-opening'))upload({openingTB:true});
+ if(b.hasAttribute('data-new-source'))upload({...documentUploadScope(),category:'Import Sources',excelOnly:true});
+ if(b.hasAttribute('data-open-opening'))upload({...documentUploadScope(),openingTB:true});
  if(b.dataset.taskExcel){const t=data.tasks.find(x=>x.task_id===b.dataset.taskExcel),p=data.projects.find(x=>x.project_id===t?.project_id);if(t&&p)upload({client_id:p.client_id,firm_id:p.handling_firm_id,project_id:p.project_id,task_id:t.task_id,category:'Import Sources',excelOnly:true,dataset:/bank/i.test(t.task_name)&&!/purchases|mapping/i.test(t.task_name)?'Bank':/sales/i.test(t.task_name)?'Sales':'Purchases',period_start:t.period_start?.slice(0,10),period_end:t.period_end?.slice(0,10)});}
  if(b.dataset.taskUpload){const t=data.tasks.find(x=>x.task_id===b.dataset.taskUpload),p=data.projects.find(x=>x.project_id===t?.project_id);if(t&&p)upload({client_id:p.client_id,firm_id:p.handling_firm_id,project_id:p.project_id,task_id:t.task_id,category:'Working Papers'});}
  if(b.dataset.link)await credentials(b.dataset.link);
  if(b.dataset.disable){const id=b.dataset.disable;modal('Disable staff access',`<p>Disable ${esc(staffName(id))}? Historical work will remain, and the next request from this account will be blocked.</p><button id="confirmDisable" class="primary">Confirm disable</button>`);$('#confirmDisable').onclick=async()=>{try{await request({action:'staff_disable',staff_id:id});$('#editor').close();await load();notice('Staff access disabled.');}catch(err){$('#editorNotice').textContent=err.message;}};}
  if(b.dataset.download){b.disabled=true;try{const d=data.documents.find(x=>x.document_id===b.dataset.download),blob=await request({action:'download',document_id:d.document_id},{blob:true}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=d.file_name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}finally{b.disabled=false;}}
  }catch(err){notice(err.message,true);}});
+for(const eventName of ['input','change'])document.addEventListener(eventName,event=>{
+ const form=event.target.closest?.('#content form');
+ if(form)changedWorkspaceForms.add(form);
+});
 for(const button of document.querySelectorAll('[data-continue-session]'))button.onclick=()=>{if(session.activity())void session.pulse();};
-drafts=createDraftUI({$,esc,request,notice,document,sessionStorage,autosaveMs:2500,returnToQueue:()=>{if($('#editor').open)$('#editor').close();navigateWorkspace('home');}});
+drafts=createDraftUI({$,esc,request,notice,document,sessionStorage,autosaveMs:2500,returnToQueue:()=>navigateWorkspace('home')});
 const workQueue=createWorkQueueUI({$,esc,form,modal,request,notice,shortDate,data:()=>data});
 const onboardingBatches=createOnboardingBatchUI({esc,modal,request,form,field,options,notice,data:()=>data});
 const teamQueue=createTeamQueueUI({esc,modal,request,shortDate,openTask:id=>navigateWorkspace('task',id)});
@@ -880,7 +940,7 @@ bindGoLive({esc,form,modal,request,field});
 // Build 2846: the guide's KYC and Tax profile buttons open through the same suite buttons the card menu uses (openSuite below), so there is no second copy of that logic.
 const setupGuide=createSetupGuideUI({$,esc,modal,request,notice,shortDate,data:()=>data,filtered,openClientSettings:improvements.client,openClientAccounts:(id,options)=>clientAccountSetup(id,options),stageOpening:stageOpeningTB,openLedger:id=>v6.openLedger(id),openOpeningImport:(id,settings)=>v6.openOpeningImport(id,settings),uploadOpeningAndImport,removeOpeningSource:(id,after)=>removeImportSource(id,after),openOpeningJournal:(id,periodId,journalId)=>v6.openOpeningJournal(id,periodId,journalId),openPurchases:id=>v6.openPurchases(id),openPeriodImports:id=>v6.openPeriodImports(id),openTaxPeriods:()=>suite.taxList(),openProject:id=>navigateWorkspace('projects',id),openProjects:()=>navigateWorkspace('projects'),openClients:()=>navigateWorkspace('clients'),openClientChart:improvements.chart,
  openSuite:(name,id)=>{const b=document.createElement('button');b.type='button';b.hidden=true;b.dataset.suite=name;b.dataset.id=id;document.body.appendChild(b);b.click();b.remove();}});
-const audit=createAuditUI({esc,field,select,form,modal,request,notice,shortDate,empty,render,data:()=>data,openClients:()=>navigateWorkspace('clients'),openProjects:()=>navigateWorkspace('projects'),createAuditProject:()=>{navigateWorkspace('projects');v6.editProject(null,{service_code:'AUD-STAT'});}});
+const audit=createAuditUI({esc,field,select,form,modal,request,notice,shortDate,empty,render,data:()=>data,openClients:()=>navigateWorkspace('clients'),openProjects:()=>navigateWorkspace('projects'),createAuditProject:async()=>{if(!await navigateWorkspace('projects'))return;v6.editProject(null,{service_code:'AUD-STAT'});}});
 presence=createPresenceUI({$,esc,modal,form,field,select,request,load,notice,logout:async()=>{if(await drafts.beforeSignOut({editorEdited:editorEdited&&$('#editor').open}))signedOut('Signed out.');},logTime:(id,taskId,suggest)=>v6.editTime(id,taskId,suggest),data:()=>data});
 procedures=createProcedureUI({$,esc,field,select,form,modal,request,notice,today,data:()=>data});
 const bootedByLightweightAuth=document.documentElement.dataset.staffPilotAuthBoot==='true';
@@ -920,15 +980,27 @@ export async function activateStaffWorkspace({firmId='',signOut=false}={}){
  if(signOut)presence.requestLogout();
 }
 
-async function openCommunicationHash(){const ref=new URLSearchParams(location.hash.slice(1)).get('communication');if(!ref||!data)return;history.replaceState(null,'',location.pathname+location.search);try{await suite.openReference(ref);}catch(err){notice('This communication is unavailable or your account does not have permission to view it.',true);}}
-window.addEventListener('hashchange',()=>void openCommunicationHash());
+const communicationReference=hash=>new URLSearchParams(hash.slice(1)).get('communication');
+async function openCommunicationReference(ref){
+ try{await suite.openReference(ref);}
+ catch{notice('This communication is unavailable or your account does not have permission to view it.',true);}
+}
 
-// Smart Back: opening a task, project or client from a list remembers that list, so Back puts the person where they were.
+// The active route also drives rendering while the browser address points at an unconfirmed history entry.
 const returnStore=createReturnStore(globalThis.sessionStorage);
-let lastRoute=null;
-const currentRoute=()=>workspaceRoute(location.hash)||{view:'home'};
+const workspaceEntryKey='pclWorkspaceEntry';
+const currentRoute=()=>lastRoute||{view:'home'};
 const openerSelector=(next,id)=>{const q=globalThis.CSS?.escape?globalThis.CSS.escape(id):id;return next==='task'?`[data-task-row="${q}"],[data-open-task="${q}"],[data-task="${q}"]`:next==='clientfile'?`[data-client-open="${q}"],[data-client-view="${q}"]`:`[data-open-project="${q}"],[data-search-project="${q}"]`;};
-function captureListState(opener){return {v6:v6.getState(),clients:{query:{...clientQuery},stateFilter:clientStateFilter},scroll:{y:window.scrollY||0,content:$('#content')?.scrollTop||0},opener};}
+const workspaceScroller=()=>$('.workspace-main-content');
+function captureListState(opener){
+ const host=$('#content');
+ return {
+  v6:v6.getState(),clients:{query:{...clientQuery},stateFilter:clientStateFilter},
+  scroll:{y:window.scrollY||0,content:workspaceScroller()?.scrollTop||0},
+  open:[...host.querySelectorAll('details[id][data-preserve-open][open]')].map(el=>el.id),
+  opener
+ };
+}
 function restoreListState(saved){
  if(!saved)return;
  v6.setState(saved.v6);
@@ -936,43 +1008,166 @@ function restoreListState(saved){
 }
 function restoreScroll(saved){
  if(!saved)return;
- const put=()=>{window.scrollTo(0,saved.scroll?.y||0);const c=$('#content');if(c)c.scrollTop=saved.scroll?.content||0;};
- const focusOpener=()=>{if(!saved.opener)return;const el=document.querySelector(saved.opener);if(el?.focus)el.focus({preventScroll:true});};
- requestAnimationFrame(()=>{put();focusOpener();});
- setTimeout(()=>{put();focusOpener();},250);
+ const route=activeWorkspaceHash;
+ const put=()=>{
+  if(activeWorkspaceHash!==route)return;
+  const host=$('#content');
+  for(const id of saved.open||[]){
+   const panel=document.getElementById(id);
+   if(panel&&host.contains(panel)&&panel.matches('details[data-preserve-open]'))panel.open=true;
+  }
+  const scroller=workspaceScroller();
+  window.scrollTo(0,saved.scroll?.y||0);
+  if(scroller)scroller.scrollTop=saved.scroll?.content||0;
+  const el=saved.opener&&host.querySelector(saved.opener);
+  if(el?.getClientRects().length)el.focus({preventScroll:true});
+ };
+ requestAnimationFrame(put);
+ setTimeout(put,250);
 }
-function navigateWorkspace(next,id='',{back=false}={}){
- const key=id?(next==='task'?'task':next==='clientfile'?'client':'project'):'view',params=new URLSearchParams(id?{[key]:id}:{view:next});
- if(!back&&id&&data){
-  const cur=currentRoute(),sameProject=next==='projects'&&cur.view==='projects'&&cur.id,curDetail=cur.view==='task'||cur.view==='clientfile'||sameProject,from=chooseReturn({currentHash:location.hash,currentIsDetail:curDetail,carried:cur.returnTo?'#'+cur.returnTo:'',nextIsDetail:true});
-  if(from&&from!=='#'+key+'='+id){params.set('returnTo',from.slice(1));if(!curDetail)returnStore.save(from,captureListState(openerSelector(next,id)));}
+function writeWorkspaceAddress(hash,replace,index){
+ history[replace?'replaceState':'pushState']({...history.state,[workspaceEntryKey]:index},'',location.pathname+location.search+hash);
+}
+function restoreWorkspaceAddress(){
+ const shown=history.state?.[workspaceEntryKey];
+ if(location.hash===activeWorkspaceHash)return;
+ if(Number.isInteger(shown)&&shown!==activeWorkspaceEntry)history.go(activeWorkspaceEntry-shown);
+ else writeWorkspaceAddress(activeWorkspaceHash||'',true,activeWorkspaceEntry);
+}
+
+const changedWorkspaceForms=new WeakSet(),savingWorkspaceForms=new Map();
+function trackWorkspaceSave(form){
+ let settle;
+ savingWorkspaceForms.set(form,new Promise(resolve=>{settle=resolve;}));
+ return saved=>{savingWorkspaceForms.delete(form);settle(saved);};
+}
+function inlineWorkspaceFormChanged(){
+ return [...document.querySelectorAll('#content form')].some(form=>changedWorkspaceForms.has(form));
+}
+function workspaceLabel(route){
+ const area=route.view==='clientfile'?'Clients':route.view==='task'?'Projects & Tasks':crumbLabels[route.view]||'Home';
+ const context=workspaceContext(route,data);
+ const label=context?.project?.project_name||context?.client?.company_name;
+ return label?`${area} (${label})`:area;
+}
+async function confirmWorkspaceSwitch(to){
+ const editor=$('#editor');
+ if(savingWorkspaceForms.size){
+  const results=await Promise.all(savingWorkspaceForms.values());
+  if(results.some(saved=>!saved)||!data)return false;
  }
- const hash='#'+params;
- if(location.hash!==hash)history.pushState(null,'',location.pathname+location.search+hash);
- applyWorkspaceRoute();
+ const from=currentRoute();
+ const title=to.view==='home'?'Leave this workspace?':`Leave ${workspaceLabel(from)} and open ${workspaceLabel(to)}?`;
+ const editorDirty=editor.open&&editorEdited&&!drafts.current()?.saved();
+ if(editorDirty&&!await drafts.confirmLeave(title))return false;
+ const dirtyForm=inlineWorkspaceFormChanged();
+ if(!dirtyForm&&(editorDirty||!needsWorkspaceConfirmation(from,to,data)))return true;
+ const confirmed=await ask(document,{title,text:dirtyForm?'Changes in this workspace have not been saved.':`The current workspace will close before ${workspaceLabel(to)} opens.`,choices:[
+  {id:'stay',label:dirtyForm?'Keep editing':'Stay here'},
+  {id:'switch',label:dirtyForm?'Leave without saving':'Switch area'}
+ ]});
+ return confirmed==='switch';
+}
+async function moveWorkspace(hash,{fromHistory=false,tab,period,back=false,opener,reference}={}){
+ if(!data)return false;
+ if(workspaceSwitchPending)return false;
+ if(document.querySelector('dialog.leave-dialog[open]')){
+  if(fromHistory)restoreWorkspaceAddress();
+  return false;
+ }
+ const to=workspaceRoute(hash)||{view:'home'};
+ if(!canOpenWorkspace(to.view)){
+  if(fromHistory)restoreWorkspaceAddress();
+  notice('This workspace area is not available to your account.',true);
+  return false;
+ }
+ const oldHash=activeWorkspaceHash,account=data.me.staff_id;
+ const changed=hash!==oldHash;
+ if(!changed&&!tab&&!period&&!reference&&!$('#editor').open){render();return true;}
+ workspaceSwitchPending=true;
+ try{
+  if(!await confirmWorkspaceSwitch(to)){
+   if(location.hash!==oldHash)restoreWorkspaceAddress();
+   return false;
+  }
+  if(data?.me.staff_id!==account||activeWorkspaceHash!==oldHash)return false;
+  if($('#editor').open)$('#editor').close();
+  drafts?.detach();
+  if(opener) returnStore.save(opener.hash,captureListState(opener.selector));
+  const incoming=history.state?.[workspaceEntryKey];
+  const index=fromHistory&&Number.isInteger(incoming)?incoming:activeWorkspaceEntry+(changed?1:0);
+  if(fromHistory||changed)writeWorkspaceAddress(hash,fromHistory,index);
+  activeWorkspaceEntry=index;
+  const saved=back?returnStore.peek(hash):null;
+  applyWorkspaceRoute({hash,tab,period});
+  if(saved)restoreListState(saved);
+  render();
+  if(changed){
+   const scroll=workspaceScroller();
+   if(scroll)scroll.scrollTop=0;
+   const heading=$('#taskWorkspaceTitle')||$('#greeting');
+   heading.tabIndex=-1;heading.focus({preventScroll:true});
+  }
+  if(saved)restoreScroll(saved);
+  if(reference)await openCommunicationReference(reference);
+  return true;
+ }finally{workspaceSwitchPending=false;}
+}
+function navigateWorkspace(next,id='',{tab,period,scope}={}){
+ if(scope)return moveWorkspace(workspaceScopeHash(next,scope));
+ const key=id?(next==='task'?'task':next==='clientfile'?'client':'project'):'view';
+ const params=new URLSearchParams(id?{[key]:id}:{view:next});
+ let opener;
+ if(id&&data){
+  const cur=currentRoute(),sameProject=cur.view==='projects'&&cur.id,curDetail=cur.view==='task'||cur.view==='clientfile'||!!sameProject;
+  const carried=cur.returnTo?'#'+cur.returnTo:'';
+  const origin=next==='task'&&sameProject?'#project='+cur.id:chooseReturn({currentHash:activeWorkspaceHash,currentIsDetail:curDetail,carried,nextIsDetail:true});
+  if(origin&&origin!=='#'+key+'='+id){
+   params.set('returnTo',origin.slice(1));
+   if(!curDetail||next==='task'&&sameProject)opener={hash:origin,selector:openerSelector(next,id)};
+  }
+ }
+ return moveWorkspace('#'+params,{tab,period,opener});
 }
 function goBack(){
- const route=currentRoute(),target=route.returnTo||(view==='clientfile'?'#view=clients':'#view=projects'),saved=returnStore.peek(target);
- if(location.hash!==target)history.pushState(null,'',location.pathname+location.search+target);
- applyWorkspaceRoute(false);
- restoreListState(saved);
- render();
- restoreScroll(saved);
+ const route=currentRoute();
+ return moveWorkspace(route.returnTo||(view==='clientfile'?'#view=clients':'#view=projects'),{back:true});
 }
-function applyWorkspaceRoute(paint=true){
- if(!data)return;const route=workspaceRoute(location.hash);if(!route)return;
- const cameBack=lastRoute&&(lastRoute.view==='task'||lastRoute.view==='clientfile')&&lastRoute.returnTo&&lastRoute.returnTo===location.hash,saved=cameBack?returnStore.peek(location.hash):null;
- lastRoute=route;
+function applyWorkspaceRoute({hash=activeWorkspaceHash??location.hash,tab,period}={}){
+ if(!data)return;
+ const route=workspaceRoute(hash)||{view:'home'};
+ if(!canOpenWorkspace(route.view)){route.view='home';delete route.scope;delete route.scoped;hash='#view=home';}
+ const changed=hash!==activeWorkspaceHash;
+ if(activeWorkspaceHash===null){
+  activeWorkspaceEntry=history.state?.[workspaceEntryKey]??0;
+  writeWorkspaceAddress(hash,true,activeWorkspaceEntry);
+ }
+ activeWorkspaceHash=hash;lastRoute=route;
  view=route.view;missingProject=false;
- if(view==='task')selectedTask=route.id;
- if(view==='clientfile'){selectedClient=route.id;clientTab=pendingClientTab||'overview';pendingClientTab='';}
- const projectId=route.view==='task'?data.tasks.find(t=>t.task_id===route.id)?.project_id:route.id;
- if(projectId){const p=data.projects.find(p=>p.project_id===projectId);if(p){if(firm&&firm!==p.handling_firm_id){firm=p.handling_firm_id;$('#firmFilter').value=firm;}v6.selectProject(p.project_id);}else if(view==='projects')v6.selectProject(projectId);}
- else if(view==='projects')v6.selectProject('');
- if(saved)restoreListState(saved);
- if(paint){render();const heading=$('#taskWorkspaceTitle');if(heading)heading.focus();if(saved)restoreScroll(saved);}
+ selectedTask=view==='task'?route.id:'';
+ if(view==='clientfile'){
+  selectedClient=route.id;
+  if(changed||tab)clientTab=tab||'overview';
+ }else selectedClient='';
+ const context=workspaceContext(route,data);
+ const firmPicker=$('#firmFilter');
+ firmPicker.disabled=Boolean(route.scope&&context?.project);
+ if(context?.project&&(firmPicker.disabled||firm)&&firm!==context.project.handling_firm_id){
+  firm=context.project.handling_firm_id;
+  firmPicker.value=firm;
+ }
+ const projectId=context?.project?.project_id||(view==='projects'?route.id:'');
+ if(view==='projects'||view==='task')v6.selectProject(projectId||'');
+ if(period)v6.selectPeriod(period);
 }
-window.addEventListener('hashchange',()=>applyWorkspaceRoute());
+window.addEventListener('hashchange',()=>{
+ if(!data||location.hash===activeWorkspaceHash)return;
+ const reference=communicationReference(location.hash);
+ const hash=reference?'#view=communications':location.hash;
+ const route=workspaceRoute(hash);
+ const back=!!route&&currentRoute().returnTo===hash;
+ void moveWorkspace(hash,{fromHistory:true,reference,back}).catch(error=>notice(error.message,true));
+});
 document.dispatchEvent(new document.defaultView.Event('pcl-staff-pilot-ready'));
 
 

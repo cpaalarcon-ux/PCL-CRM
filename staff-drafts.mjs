@@ -66,9 +66,11 @@ export function ask(doc,{title,text,choices}){
  return new Promise(resolve=>{
   const dlg=doc.createElement('dialog');dlg.className='leave-dialog';dlg.setAttribute('aria-labelledby','leaveTitle');
   dlg.innerHTML=`<h2 id="leaveTitle">${e0(title)}</h2><p>${e0(text)}</p><div class="actions">${choices.map((c,i)=>`<button type="button" data-leave="${e0(c.id)}"${i===0?' class="primary" autofocus':''}>${e0(c.label)}</button>`).join('')}</div>`;
-  const done=id=>{dlg.close();dlg.remove();resolve(id);};
+  const sessionEnded=()=>done(choices[0].id);
+  const done=id=>{doc.removeEventListener('pcl-staff-session-ended',sessionEnded);dlg.close();dlg.remove();resolve(id);};
   dlg.addEventListener('click',ev=>{const b=ev.target.closest?.('[data-leave]');if(b)done(b.dataset.leave);});
   dlg.addEventListener('cancel',ev=>{ev.preventDefault();done(choices[0].id);});
+  doc.addEventListener('pcl-staff-session-ended',sessionEnded);
   doc.body.appendChild(dlg);dlg.showModal();
  });
 }
@@ -84,7 +86,7 @@ export function createDraftUI(ctx){
   bar.innerHTML=`<p class="draft-status" role="status" aria-live="polite"></p><button type="button" class="draft-return">Save draft &amp; return to queue</button>`;
   form.parentNode.insertBefore(bar,form);
   const status=bar.querySelector('.draft-status'),returnBtn=bar.querySelector('.draft-return');
-  let timer=null,dirty=false,savedAt=spec.savedAt||null,busy=null,failed='';
+  let timer=null,dirty=false,savedAt=spec.savedAt||null,busy=null,failed='',editVersion=0;
   const text=()=>{
    status.classList.toggle('error',!!failed);status.setAttribute('role',failed?'alert':'status');
    status.textContent=failed?`Not saved yet: ${failed}`:dirty?UNSAVED_LABEL:savedAt?savedLabel(savedAt):'No changes yet.';
@@ -93,21 +95,22 @@ export function createDraftUI(ctx){
   const payload=()=>({meta:spec.meta||{},fields:fieldsOf(),...(spec.collect?spec.collect(form):{}),...(spec.aside?{aside:spec.aside()}:{})});
   async function saveNow(explicit=false){
    clearTimeout(timer);timer=null;
-   if(busy)await busy.catch(()=>{});
+   while(busy)await busy.catch(()=>{});
    if(!dirty&&!explicit&&savedAt)return true;
+   const savingVersion=editVersion;
    const run=(async()=>{
     try{
      const r=await request({action:'form_draft_save',form_kind:spec.kind,subject_key:spec.key,title:typeof spec.title==='function'?spec.title(form):spec.title,project_id:spec.project_id||undefined,client_id:spec.client_id||undefined,payload:payload(),explicit:explicit||undefined});
-     dirty=false;failed='';savedAt=r.saved_at||new Date().toISOString();text();return true;
+     dirty=savingVersion!==editVersion;failed='';savedAt=r.saved_at||new Date().toISOString();text();return true;
     }catch(err){failed=err.message||'The draft could not be saved.';text();return false;}
    })();
    busy=run;const ok=await run;busy=null;return ok;
   }
-  const changed=()=>{dirty=true;failed='';text();clearTimeout(timer);timer=setTimeout(()=>{void saveNow(false);},ctx.autosaveMs??AUTOSAVE_MS);};
+  const changed=()=>{editVersion++;dirty=true;failed='';text();clearTimeout(timer);timer=setTimeout(()=>{void saveNow(false);},ctx.autosaveMs??AUTOSAVE_MS);};
   form.addEventListener('input',changed);form.addEventListener('change',changed);
   // Rows added or removed by script (journal lines) do not fire input events, so those buttons count as a change too.
   form.addEventListener('click',ev=>{if(ev.target.closest?.('button[type=button]:not(.draft-return)'))changed();});
-  returnBtn.onclick=async()=>{returnBtn.disabled=true;const ok=await saveNow(true);returnBtn.disabled=false;if(ok){ctx.returnToQueue?.();notice?.('Draft saved. Find it under To do on Home.');}};
+  returnBtn.onclick=async()=>{returnBtn.disabled=true;const ok=await saveNow(true);returnBtn.disabled=false;if(ok&&!dirty){ctx.returnToQueue?.();notice?.('Draft saved. Find it under To do on Home.');}};
   const c={spec,saved:()=>!dirty&&!!savedAt&&!failed,dirty:()=>dirty,saveNow,markSaved(at){savedAt=at||new Date().toISOString();dirty=false;failed='';text();},
    async submitted(){clearTimeout(timer);timer=null;if(busy)await busy.catch(()=>{});try{await request({action:'form_draft_discard',form_kind:spec.kind,subject_key:spec.key,reason:'submitted'});}catch{/* a stale draft is harmless and can be discarded from the queue */}active=null;},
    stop(){clearTimeout(timer);timer=null;}};
@@ -117,13 +120,13 @@ export function createDraftUI(ctx){
  const current=()=>active;
 
  // Leave a form that holds changes. Returns true when it is safe to close.
- async function confirmLeave(){
+ async function confirmLeave(title='Leave this form?'){
   const c=active;
   if(c?.saved())return true;
   const choices=c?[{id:'stay',label:'Keep editing'},{id:'save',label:'Save draft and leave'},{id:'leave',label:'Leave without saving'}]:[{id:'stay',label:'Keep editing'},{id:'leave',label:'Leave without saving'}];
-  const pick=await ask(doc,{title:'Leave this form?',text:LEAVE_TEXT+(c?' You can save it as a draft first.':''),choices});
+  const pick=await ask(doc,{title,text:LEAVE_TEXT+(c?' You can save it as a draft first.':''),choices});
   if(pick==='stay')return false;
-  if(pick==='save'){const ok=await c.saveNow(true);if(!ok){notice?.('The draft could not be saved, so the form stays open.',true);return false;}}
+  if(pick==='save'){const ok=await c.saveNow(true);if(!ok||!c.saved()){notice?.('The latest changes are still unsaved. The form stays open.',true);return false;}}
   return true;
  }
 
