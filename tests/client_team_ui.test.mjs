@@ -91,7 +91,7 @@ test('a person who cannot edit sees the team but no controls',async()=>{
 });
 test('the Set-up tab and the project menu open it',async t=>{t.after(()=>dom.window.close());
  const imp=await readFile(new URL('../staff-improvements.mjs',import.meta.url),'utf8'),v6=await readFile(new URL('../staff-workspace-v6.mjs',import.meta.url),'utf8'),pilot=await readFile(new URL('../staff-pilot.mjs',import.meta.url),'utf8');
- assert.match(imp,/button\('team','Client team',id\)/);assert.match(imp,/if\(a==='team'\)\{await team\.open\(id,b\.dataset\.project\|\|''\)/);
+ assert.match(await readFile(new URL('../staff-setup-checklist.mjs',import.meta.url),'utf8'),/\['team','Client team'\]/);assert.match(imp,/if\(a==='team'\)\{await team\.open\(id,b\.dataset\.project\|\|''\)/);
  assert.match(v6,/data-v3=\\"team\\"|data-v3="team"/);assert.match(v6,/Project team/);
  assert.match(v6,/client_team_defaults/);assert.match(v6,/teamDefaults\(client,firm\)/);assert.match(v6,/projectTeamHint/);
  assert.match(imp,/staff-client-team\.mjs\?v=20261212-team-v2/);assert.match(pilot,/team=20261212-v2/);
