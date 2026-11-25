@@ -39,7 +39,7 @@ const PREFIX_AREAS=[
   [/^(?:staff_save|staff_disable|staff_access_|staff_right_|staff_rights_|account_link|manager_password_reset_targets|master_staff_)/,'staff_access'],
   [/^(?:firm_save|firm_details|practice_|firm_logo|sector_save|settings_hub_|settings_overview_|settings_record_|settings_owners_|settings_approval(?:s)?_|settings_starter_|bank_starter_confirm_|reference_|holiday_|deadline_|go_live_|policy_(?:sign|revoke)|rate_(?:save|approve|impact|test|legal_confirm)|tax_manager_|tax_role_|annual_due_rule_|release_(?:check_save|read))/, 'settings'],
   [/^(?:client_save|onboarding_batch_|onboarding_template_|client_lifecycle|client_routing_|client_vault_|client_master_|aml_|client_setup_|bulk_setup_|client_year_rollover_|client_holder_|client_template_|client_comm_|client_scope_|client_onboarding_alloc_|client_team_|client_batch_|client_understanding_|client_pf_|client_register_|client_card_flags$|client_work_ready$|client_status_policy_|kyc_proposal_|client_proposal_|client_classify_|compliance_|edd_approve|owner_add|party_add|party_end|group_profile_save|licence_add|licence_end|contact_save|tax_profile_|v3_client_|v3_identity_|v3_activity_|v3_activities_|v3_stock_|v3_books_pack_|v3_vat_|v3_category_|v3_bank_|v3_opening_balance|v3_partners_add)/,'clients'],
-  [/^(?:search_all$|calendar_read$|payroll_access_|target_measure_|bank_totals_|routing_map_|purchase_accounts_|payroll_register_|payroll_review_|payroll_confirmation_|statutory_file_|wording_library_|export_profile_|kra_csv_|eligibility_|whtvat_|template_library_|record_reopen_|delete_redo_|period_pack_|obligation_|service_template_|service_category_|task_|partner_escalation_|project_|schedule_|excise_schedule_|generate_tasks|engagement_|aup_|kra_|procedure_|accounting_|ledger_|purchase_ledger_|non_etims_|workbook_|period_import_|wht_|tax_|due_date_|work_|form_draft_|sales_|v3_mapping_|v3_project_|v3_review_|v3_export_|v3_period_add|v3_suggestions|suite_export)/,'projects'],
+  [/^(?:month_work_|search_all$|calendar_read$|payroll_access_|target_measure_|bank_totals_|routing_map_|purchase_accounts_|payroll_register_|payroll_review_|payroll_confirmation_|statutory_file_|wording_library_|export_profile_|kra_csv_|eligibility_|whtvat_|template_library_|record_reopen_|delete_redo_|period_pack_|obligation_|service_template_|service_category_|task_|partner_escalation_|project_|schedule_|excise_schedule_|generate_tasks|engagement_|aup_|kra_|procedure_|accounting_|ledger_|purchase_ledger_|non_etims_|workbook_|period_import_|wht_|tax_|due_date_|work_|form_draft_|sales_|v3_mapping_|v3_project_|v3_review_|v3_export_|v3_period_add|v3_suggestions|suite_export)/,'projects'],
   [/^(?:audit_|forensic_)/, 'audit'],
   [/^(?:presence_|view_staff_|timer_|clock$|attendance_|leave_|roster_|performance_|credential_|timesheet_)/,'time_hr'],
   [/^(?:document_|doc_request_|physical_file_|incoming_|evidence_|upload$|download$|master_preview$|master_import$)/,'documents'],
@@ -89,8 +89,8 @@ export function filterWorkspaceAccess(workspace,areas){
 }
 
 export function scopeWorkspaceRecords(workspace,role,staffId){
-  // Supervisors see only assigned or explicitly routed review work. Firm-wide
-  // visibility is reserved for Partners and Managers; RLS still limits both.
+  // Partners and Managers see everything. Supervisors see and can work on every project and task in their firms (they review; Assistants do the
+  // work) but keep the narrower rows for leave, attendance and reviews. RLS still limits all of them to the firms they belong to.
   const fullAccess=['PARTNER','MANAGER'].includes(role);
   const projects=Array.isArray(workspace.projects)?workspace.projects:[];
   const tasks=Array.isArray(workspace.tasks)?workspace.tasks:[];
@@ -101,7 +101,7 @@ export function scopeWorkspaceRecords(workspace,role,staffId){
   if(fullAccess)return {...workspace,clients:clients.map(c=>({...c,details_visible:true}))};
   const intern=role==='INTERN';
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date());
-  const allocatedProjectIds=new Set(intern?[]:assignments.filter(a=>a.staff_id===staffId&&(!a.start_date||String(a.start_date).slice(0,10)<=today)&&(!a.end_date||String(a.end_date).slice(0,10)>=today)).map(a=>a.project_id));
+  const allocatedProjectIds=new Set(role==='SUPERVISOR'?projects.map(p=>p.project_id):intern?[]:assignments.filter(a=>a.staff_id===staffId&&(!a.start_date||String(a.start_date).slice(0,10)<=today)&&(!a.end_date||String(a.end_date).slice(0,10)>=today)).map(a=>a.project_id));
   const ownedTaskIds=new Set(tasks.filter(t=>t.assigned_to===staffId).map(t=>t.task_id));
   const reviewTaskIds=new Set(intern?[]:procedures.filter(p=>p.reviewer_id===staffId&&p.prepared_by!==staffId).map(p=>p.task_id));
   const reviewProjects=new Set(intern?[]:schedules.filter(s=>s.reviewer_id===staffId).map(s=>s.project_id));

@@ -109,6 +109,7 @@ test('full migration replay and scoped vault and workload transactions',async t 
   try {await db.exec(sql);}
   catch (error) {throw Error('Migration failed: '+name+' · '+error.message,{cause:error});}
  }
+ await db.exec('alter table erp_private.tasks disable trigger task_assignee_guard;alter table erp_private.project_schedules disable trigger schedule_assignee_guard;'); // fixture: this test exercises the older unassigned pool and Manager-held tasks; the assignment rule is tested in assistant_only_assignment.test.mjs. The pool screen is removed; its database functions are retired in a follow-up.
  const staff = {};
  const firm=id(), client=id(), project=id(), otherClient=id(), otherProject=id();
  await tx`insert into erp_private.firms(firm_id,firm_code,legal_name) values(${firm},'VAULTQA','Test firm')`;

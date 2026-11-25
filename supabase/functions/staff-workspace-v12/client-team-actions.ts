@@ -69,6 +69,7 @@ export async function clientTeamAction(tx:any,a:any,p:any):Promise<any>{
   const clash=(await tx`select 1 from erp_private.client_team_members where client_id=${cid} and staff_id=${staffId} and ended_at is null
    and (${role==='REVIEWER'||role==='MLRO'} and role in('PREPARER','WORKSTREAM_OWNER') or ${role==='PREPARER'||role==='WORKSTREAM_OWNER'} and role in('REVIEWER','MLRO')) limit 1`)[0];
   if(clash)fail(409,person.full_name+' already holds a role that cannot be combined with this one. The person who prepares the work cannot also review it or act as the MLRO for the same client.');
+  if((role==='PREPARER'||role==='WORKSTREAM_OWNER')&&person.category_code!=='ASSISTANT')fail(400,'Preparers and workstream owners are Assistants, because tasks are assigned to Assistants only. Choose an Assistant.');
   const dup=(await tx`select 1 from erp_private.client_team_members where client_id=${cid} and coalesce(project_id,'00000000-0000-0000-0000-000000000000'::uuid)=${projectId||'00000000-0000-0000-0000-000000000000'}::uuid and staff_id=${staffId} and role=${role} and coalesce(workstream,'')=${workstream||''} and ended_at is null`)[0];
   if(dup)fail(409,person.full_name+' already holds that role.');
   const row=(await tx`insert into erp_private.client_team_members(client_id,project_id,staff_id,role,workstream,assigned_by,note) values(${cid},${projectId},${staffId},${role},${workstream},${a.staff_id},${note||null}) returning team_member_id`)[0];

@@ -25,13 +25,14 @@ test('Partners and Managers see all work in their firms; Supervisors and Assista
  assert.deepEqual(await projects('MANAGER2'),['Mlima Traders accounts']);
  assert.deepEqual(await clients('OTHERFIRM'),['Bonde Foods','Pwani Fresh'],'a Manager of another firm does not see this firm\'s client, but does see an unlinked new one');
  assert.deepEqual(await projects('OTHERFIRM'),[]);
- for(const role of ['SUPERVISOR','ASSISTANT','ASSISTANT2','INTERN']){assert.deepEqual(await clients(role),[],role+' sees nothing that is not assigned');assert.deepEqual(await projects(role),[]);}
- assert.equal((await as('SUPERVISOR',()=>tx`select count(*)::int n from erp_private.client_firm_links`))[0].n,0,'a Supervisor who is not assigned sees no client in the firm, and no firm link');
+ assert.deepEqual(await projects('SUPERVISOR'),['Mlima Traders accounts'],'a Supervisor sees every project of their firm, assigned or not');
+ for(const role of ['ASSISTANT','ASSISTANT2','INTERN']){assert.deepEqual(await clients(role),[],role+' sees nothing that is not assigned');assert.deepEqual(await projects(role),[]);}
+ assert.deepEqual(await clients('SUPERVISOR'),['Mlima Traders'],'and the client of each of those projects, not clients that have no project');
 
  // Work inside the project: a Supervisor assigned to it sees all of it, like a Manager; an Assistant sees only the client, project and task assigned to them.
- await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors.ASSISTANT.staff_id},${F},'ASSISTANT'),(${P},${actors.MANAGER.staff_id},${F},'MANAGER'),(${P},${actors.SUPERVISOR.staff_id},${F},'SUPERVISOR')`;
+ await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${P},${actors.ASSISTANT.staff_id},${F},'ASSISTANT'),(${P},${actors.MANAGER.staff_id},${F},'MANAGER'),(${P},${actors.SUPERVISOR.staff_id},${F},'SUPERVISOR'),(${P},${actors.ASSISTANT2.staff_id},${F},'ASSISTANT')`;
  const TA=id(),TM=id();
- await tx`insert into erp_private.tasks(task_id,project_id,task_name,assigned_to) values(${TA},${P},'Mlima bank reconciliation',${actors.ASSISTANT.staff_id}),(${TM},${P},'Mlima VAT return',${actors.MANAGER.staff_id})`;
+ await tx`insert into erp_private.tasks(task_id,project_id,task_name,assigned_to) values(${TA},${P},'Mlima bank reconciliation',${actors.ASSISTANT.staff_id}),(${TM},${P},'Mlima VAT return',${actors.ASSISTANT2.staff_id})`;
  const tasks=role=>names(role,'tasks','task_name');
  assert.deepEqual(await tasks('MANAGER2'),['Mlima VAT return','Mlima bank reconciliation']);
  assert.deepEqual(await tasks('SUPERVISOR'),['Mlima VAT return','Mlima bank reconciliation'],'a Supervisor sees the work inside the project they are assigned to');
@@ -41,7 +42,7 @@ test('Partners and Managers see all work in their firms; Supervisors and Assista
  assert.deepEqual(await tasks('ASSISTANT'),['Mlima bank reconciliation'],'an Assistant sees only their own task');
  assert.deepEqual(await clients('ASSISTANT'),['Mlima Traders'],'and only the client and project they are assigned to');
  assert.deepEqual(await projects('ASSISTANT'),['Mlima Traders accounts']);
- assert.deepEqual(await tasks('ASSISTANT2'),[]);assert.deepEqual(await clients('ASSISTANT2'),[]);
+ assert.deepEqual(await tasks('ASSISTANT2'),['Mlima VAT return'],'a second Assistant sees only their own task');assert.deepEqual(await clients('ASSISTANT2'),['Mlima Traders']);
 
  // Overall rights: a Manager who did not create the work can change the client and the project.
  await as('MANAGER2',async()=>{await tx`update erp_private.clients set company_name='Mlima Traders Limited' where client_id=${C}`;await tx`update erp_private.projects set project_name='Mlima Traders annual accounts' where project_id=${P}`;});
