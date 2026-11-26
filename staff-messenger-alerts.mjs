@@ -21,7 +21,8 @@ export function incomingChats(prev,next,meId,{viewing=null}={}){
   return old?grew&&newer:Number(c.unread||0)>0;
  });
 }
-export const shouldBeep=(chats,prefs)=>!!prefs.sound&&chats.some(c=>!prefs.muted[c.channel_id]);
+// A mention sounds even in a muted chat: someone asked for this person by name.
+export const shouldBeep=(chats,prefs)=>!!prefs.sound&&chats.some(c=>!prefs.muted[c.channel_id]||Number(c.unread_mentions)>0);
 
 export function titleWithCount(base,n){const count=Number(n)||0;return count>0?`(${count>99?'99+':count}) ${base}`:base;}
 
