@@ -1,5 +1,6 @@
 import {fail,text,uuid,date,revision,choice} from './validation.mjs';
 import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate} from './workspace-rules.mjs';
+import {allocatedHours,hoursBlock,periods,compare} from './time-budget-rules.mjs';
 import {requireObligationsAllowed} from './obligation-check-actions.ts';
 import {requireRightChart} from './legal-structure-actions.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'This record is not available to your account.');return r[0];};
@@ -48,6 +49,13 @@ async function previewSchedule(tx:any,s:any,cid:string){
  const breakdown=[...grouped.values()];
  const total=breakdown.reduce((sum:number,row:any)=>sum+Number(row.total),0),due_now=breakdown.reduce((sum:number,row:any)=>sum+Number(row.due_now),0);
  return {enabled:true,total,due_now,upcoming:total-due_now,breakdown,catchup_task,financial_year_end:{month:client.year_end_month,day:client.year_end_day},periods:occurrences.slice(0,3).map((x:any)=>({start:x.period_start,end:x.period_end}))};
+}
+// Allocated hours on a project's tasks against the project's budgeted hours. A warning only: the project budget is set by a Manager or Partner.
+async function projectHoursPosition(tx:any,pid:string){
+ const [s]=await tx`select coalesce(sum(allocated_hours),0) h from erp_private.tasks where project_id=${pid} and deleted_at is null and status<>'Cancelled'`;
+ const [b]=await tx`select budgeted_hours from erp_private.project_budgets where project_id=${pid} and effective_from<=current_date order by effective_from desc limit 1`;
+ const allocated=Math.round(Number(s.h)*100)/100,budget=b?Number(b.budgeted_hours):null;
+ return {project_allocated_hours:allocated,project_budgeted_hours:budget,project_warning:budget!==null&&allocated>budget?`The tasks on this project now add up to ${allocated} allocated hours, more than the project budget of ${budget} hours.`:null};
 }
 export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='sector_save'){
@@ -248,18 +256,64 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   if(assignee.category_code!=='ASSISTANT'||assignee.access_status!=='Active')fail(400,'Tasks are assigned to active Assistants only. Supervisors, Managers and Partners review, edit and reassign tasks.');
   if(!due)fail(400,'Choose a due date.');const project=one(await tx`select client_id,handling_firm_id,status from erp_private.projects where project_id=${pid}`);
   if(project.status==='Archived')fail(400,'Choose an open project.');
+  const hours=allocatedHours(p.allocated_hours);
   const gate=await projectTaskGate(tx,pid,project.client_id,due);if(!gate.ready)fail(400,gate.reason);await assign(tx,pid,project.handling_firm_id,sid);
-  return one(await tx`insert into erp_private.tasks(project_id,assigned_to,task_name,description,due_at,requires_document) values(${pid},${sid},${text(p.task_name,200)},${text(p.description||'',2000,false)},${due+'T17:00:00+03:00'},${p.requires_document===true}) returning task_id`);
+  const made=one(await tx`insert into erp_private.tasks(project_id,assigned_to,task_name,description,due_at,requires_document,allocated_hours) values(${pid},${sid},${text(p.task_name,200)},${text(p.description||'',2000,false)},${due+'T17:00:00+03:00'},${p.requires_document===true},${hours}) returning task_id`);
+  await tx`insert into erp_private.task_hour_changes(task_id,old_hours,new_hours,reason,changed_by) values(${made.task_id},null,${hours},'Hours allocated when the task was created.',${a.staff_id})`;
+  return {...made,...(await projectHoursPosition(tx,pid))};
  }
  if(p.action==='task_recipients')return {recipients:await tx`select * from erp_private.task_recipient_candidates(${uuid(p.task_id)}::uuid)`};
  if(p.action==='task_escalate'){
   const message=text(p.reason,1000);if(message.length<3)fail(400,'Enter a forwarding or escalation message (at least 3 characters).');
   await tx`select erp_private.route_task(${uuid(p.task_id)}::uuid,${uuid(p.assigned_to)}::uuid,${choice(p.operation||'Escalate',['Forward','Escalate'])},${message},${revision(p.revision)}::bigint)`;return {ok:true};
  }
+ if(p.action==='task_hours_set'){
+  // A Supervisor, Manager or Partner sets or changes the hours allocated to a task, with a reason. They cannot go below the hours already logged.
+  if(!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'A Supervisor, Manager or Partner sets the hours allocated to a task.');
+  const tk=uuid(p.task_id),hours=allocatedHours(p.allocated_hours),reason=text(p.reason,1000);if(reason.length<10)fail(400,'Give the reason in at least 10 characters.');
+  await tx`select pg_advisory_xact_lock(hashtextextended(${tk+':hours'},0))`;
+  const t=one(await tx`select task_id,project_id,allocated_hours,status from erp_private.tasks where task_id=${tk} and deleted_at is null for update`);
+  if(['Completed','Cancelled'].includes(t.status))fail(400,'This task is closed. Reopen it before changing its hours.');
+  const [lg]=await tx`select erp_private.task_logged_hours(${tk}::uuid) h`,logged=Number(lg.h||0);
+  if(hours<logged-0.000001)fail(400,`${Math.round(logged*100)/100} hours are already logged on this task. The allocated hours cannot be lower than that.`);
+  if(t.allocated_hours!==null&&Number(t.allocated_hours)===hours)fail(400,'The task already has these allocated hours.');
+  await tx`update erp_private.tasks set allocated_hours=${hours} where task_id=${tk}`;
+  await tx`insert into erp_private.task_hour_changes(task_id,old_hours,new_hours,reason,changed_by) values(${tk},${t.allocated_hours},${hours},${reason},${a.staff_id})`;
+  return {ok:true,task_id:tk,allocated_hours:hours,logged_hours:Math.round(logged*100)/100,...(await projectHoursPosition(tx,t.project_id))};
+ }
+ if(p.action==='timesheet_summary'){
+  // Expected against actual time for one person: the day, the week and the month that contain a date. A leader may look at someone else; what they can read still follows the usual access rules.
+  const sid=p.staff_id?uuid(p.staff_id):a.staff_id;if(sid!==a.staff_id&&!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'You can see your own time summary.');
+  const on=date(p.date)||nairobiDate();if(!on)fail(400,'Choose a date.');
+  const person=one(await tx`select staff_id,full_name,expected_daily_hours,expected_weekly_hours from erp_private.staff_members where staff_id=${sid} and deleted_at is null`);
+  const pr=periods(on),from=pr.month.from<pr.week.from?pr.month.from:pr.week.from,to=pr.month.to>pr.week.to?pr.month.to:pr.week.to,day=(x:any)=>new Date(x).toISOString().slice(0,10);
+  const holidays=(await tx`select holiday_date from erp_private.public_holidays where holiday_date between ${from} and ${to} and coalesce(is_working_day,false)=false`).map((h:any)=>day(h.holiday_date));
+  const att=await tx`select work_date,status,clock_in,clock_out,break_minutes from erp_private.attendance where staff_id=${sid} and work_date between ${from} and ${to} and deleted_at is null`;
+  const sheets=await tx`select work_date,hours,status from erp_private.timesheets where staff_id=${sid} and work_date between ${from} and ${to} and deleted_at is null and status<>'Rejected'`;
+  const tasks=await tx`select due_at,allocated_hours from erp_private.tasks where assigned_to=${sid} and deleted_at is null and status<>'Cancelled' and due_at is not null and (due_at at time zone 'Africa/Nairobi')::date between ${from} and ${to}`;
+  const out:any={staff_id:sid,full_name:person.full_name,date:on,expected_daily_hours:Number(person.expected_daily_hours),expected_weekly_hours:Number(person.expected_weekly_hours)};
+  const nbi=(x:any)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(x));
+  for(const kind of ['day','week','month'] as const){const r=pr[kind],inR=(d:string)=>d>=r.from&&d<=r.to;
+   out[kind]=compare({range:r,kind,daily:person.expected_daily_hours,weekly:person.expected_weekly_hours,holidays,
+    leaveDates:att.filter((x:any)=>x.status==='On leave').map((x:any)=>day(x.work_date)),
+    allocated:tasks.filter((t:any)=>inR(nbi(t.due_at))).reduce((s:number,t:any)=>s+Number(t.allocated_hours||0),0),
+    logged:sheets.filter((t:any)=>inR(day(t.work_date))).reduce((s:number,t:any)=>s+Number(t.hours),0),
+    approved:sheets.filter((t:any)=>t.status==='Approved'&&inR(day(t.work_date))).reduce((s:number,t:any)=>s+Number(t.hours),0),
+    attended:att.filter((x:any)=>x.clock_in&&x.clock_out&&inR(day(x.work_date))).reduce((s:number,x:any)=>s+Math.max(0,(new Date(x.clock_out).getTime()-new Date(x.clock_in).getTime())/3600000-Number(x.break_minutes||0)/60),0)});
+   out[kind].tasks_without_hours=tasks.filter((t:any)=>t.allocated_hours===null&&inR(nbi(t.due_at))).length;}
+  return out;
+ }
  if(p.action==='timesheet_save'){
   const v=timeInput(p),tid=p.timesheet_id?uuid(p.timesheet_id):null;
-  const task=one(await tx`select task_id,project_id,assigned_to from erp_private.tasks where task_id=${v.task_id} and deleted_at is null`);
+  const task=one(await tx`select task_id,project_id,assigned_to,allocated_hours from erp_private.tasks where task_id=${v.task_id} and deleted_at is null`);
   if(task.assigned_to!==a.staff_id)fail(403,'Log time against your own assigned task.');
+  // Hard block: time on a task may not pass the hours allocated to it. A task created before allocated hours existed has none and is not blocked until they are set.
+  if(task.allocated_hours!==null){
+   await tx`select pg_advisory_xact_lock(hashtextextended(${v.task_id+':hours'},0))`;
+   const [lg]=await tx`select erp_private.task_logged_hours(${v.task_id}::uuid) h`;let already=Number(lg.h||0);
+   if(tid){const [own]=await tx`select hours,status from erp_private.timesheets where timesheet_id=${tid} and staff_id=${a.staff_id} and deleted_at is null`;if(own&&own.status!=='Rejected')already-=Number(own.hours);}
+   const stop=hoursBlock(Number(task.allocated_hours),already,v.hours);if(stop)fail(400,stop);
+  }
   await tx`select pg_advisory_xact_lock(hashtextextended(${a.staff_id+':'+v.work_date},0))`;
   const [total]=await tx`select coalesce(sum(hours),0) hours from erp_private.timesheets where staff_id=${a.staff_id} and work_date=${v.work_date} and deleted_at is null and status<>'Rejected' and timesheet_id<>coalesce(${tid}::uuid,'00000000-0000-0000-0000-000000000000'::uuid)`;
   if(Number(total.hours)+v.hours>24)fail(400,'Total time for a day cannot exceed 24 hours.');
