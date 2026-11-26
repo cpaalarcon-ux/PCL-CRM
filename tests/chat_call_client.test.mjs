@@ -97,3 +97,45 @@ test('the louder button is remembered per browser and survives blocked storage',
  assert.equal(loadLouder({getItem(){throw new Error('blocked');}}),false);saveLouder(true,{setItem(){throw new Error('blocked');}});
  assert.equal(LOUD_GAIN,2);
 });
+
+test('Agora media publishes native tracks, rejects third-party tracks and renews only while the call is open',async()=>{
+ const {createAgoraMedia}=await import('../staff-agora-call.mjs');
+ class FakeStream{
+  tracks=[];
+  getTracks(){return this.tracks;}
+  addTrack(track){this.tracks.push(track);}
+  removeTrack(track){this.tracks=this.tracks.filter(item=>item!==track);}
+ }
+ const calls=[],listeners=new Map();
+ const client={
+  on:(event,fn)=>listeners.set(event,fn),removeAllListeners:()=>listeners.clear(),
+  join:async(...args)=>calls.push(['join',...args]),
+  publish:async tracks=>calls.push(['publish',tracks.length]),
+  subscribe:async(user,kind)=>calls.push(['subscribe',user.uid,kind]),
+  renewToken:async token=>calls.push(['renew',token]),
+  leave:async()=>calls.push(['leave']),
+ };
+ const sdk={createClient:()=>client,createCustomAudioTrack:()=>({close:()=>calls.push(['close'])})};
+ const grant={app_id:'test-app',channel:'call',token:'first',uid:1};
+ const audio={kind:'audio'};
+ let release;
+ const media=createAgoraMedia({
+  sdk,grant,renew:()=>new Promise(resolve=>{release=resolve;}),
+  stream:{getAudioTracks:()=>[audio],getVideoTracks:()=>[]},win:{MediaStream:FakeStream},
+  onRemote:stream=>calls.push(['remote',stream.getTracks().length]),
+  onState:state=>calls.push(['state',state]),onError:assert.fail,
+ });
+ await media.connect();
+ const publish= listeners.get('user-published');
+ await publish({uid:9},'audio');
+ await publish({uid:2,audioTrack:{getMediaStreamTrack:()=>audio}},'audio');
+ listeners.get('token-privilege-will-expire')();
+ release({...grant,token:'second'});
+ await new Promise(resolve=>setImmediate(resolve));
+ listeners.get('token-privilege-will-expire')();
+ media.close();
+ release({...grant,token:'after-close'});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(calls,[['join','test-app','call','first',1],['publish',1],['subscribe',2,'audio'],['remote',1],['state','connected'],['renew','second'],['close'],['leave']]);
+ assert.equal(listeners.size,0);
+});
