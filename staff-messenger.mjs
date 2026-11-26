@@ -226,7 +226,7 @@ export function createMessenger(ctx){
    if(!/^[\w-]+\.[\w-]+\.[\w-]+$/.test(raw.access_token))return;
    if(userSub&&raw.access_token===userToken)return;
    client??=newClient();await client.realtime.setAuth(raw.access_token);userToken=raw.access_token;
-   if(!userSub)userSub=client.channel('pcl-user:'+d().me.staff_id,{config:{private:true}}).on('broadcast',{event:'call'},()=>calls.poke()).subscribe(st=>{userOk=st==='SUBSCRIBED';});
+   if(!userSub)userSub=client.channel('pcl-user:'+d().me.staff_id,{config:{private:true}}).on('broadcast',{event:'call'},()=>calls.poke()).on('broadcast',{event:'chat'},()=>{void refreshList();}).subscribe(st=>{userOk=st==='SUBSCRIBED';});
   }catch{ /* The checks in start() keep calls ringing without realtime. */ }
  }
  async function live(channel){
