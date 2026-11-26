@@ -24,12 +24,12 @@ export const PROJECT_STEPS=Object.freeze([
 const clean=x=>String(x||'').trim();
 
 // The two client-level facts the card and the guide both need. One definition, used by clientProgress and by the guide.
-export function identityChecks({client,compliance,contacts=[],taxProfiles=[]}){
+export function identityChecks({client,compliance,contacts=[],taxProfiles=[],registerFacts}){
  const kycMissing=[];
  if(!clean(client?.kra_pin))kycMissing.push('KRA PIN');
- if(!compliance?.verified_at)kycMissing.push('KYC verification');
- if(!contacts.length)kycMissing.push('a contact');
- const taxOk=taxProfiles.some(x=>x.client_id===client?.client_id&&x.status==='Verified');
+ if(!(registerFacts?.kyc_verified??compliance?.verified_at))kycMissing.push('KYC verification');
+ if(!(registerFacts?.has_contact??contacts.length))kycMissing.push('a contact');
+ const taxOk=registerFacts?.tax_verified??taxProfiles.some(x=>x.client_id===client?.client_id&&x.status==='Verified');
  return {kycOk:!kycMissing.length,kycMissing,taxOk};
 }
 

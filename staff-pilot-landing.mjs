@@ -1,5 +1,6 @@
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {WORKSPACE_AREAS,WORKSPACE_ROLES} from './staff-nav.mjs?v=20261121-comply-v1&landing=20261125-v1';
+import {clearWorkspaceTiming,recordAreaOpening,recordWorkspaceTiming} from './staff-workspace-timing.mjs?v=20261125-v2';
 
 const $=selector=>document.querySelector(selector);
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -23,11 +24,12 @@ function paintWork(work){
  </section>`;
 }
 
-export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEnded}){
+export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEnded,started,mode}){
  const events=new AbortController();
  const hiddenUntilOpen=[$('.workspace-search'),$('#openTimingLog')];
  let data,stopWatching,heartbeatTimer,attendance=null,changingFirm=0,opening=false;
  const session=createStaffSession({storage:localStorage,send,onEnd:message=>{
+  clearWorkspaceTiming();
   dispose();
   document.body.classList.remove('workspace-active');
   $('#workspace').hidden=true;
@@ -90,6 +92,10 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
  }
  async function openSection(hash,signOut=false){
   if(opening||events.signal.aborted||!session.check())return;
+  const sectionStarted=performance.now();
+  const route=new URLSearchParams(hash.slice(1));
+  const area=WORKSPACE_AREAS.find(item=>item.view===route.get('view'))?.view||
+   (route.has('client')?'clientfile':route.has('project')?'projects':route.has('task')?'task':route.has('communication')?'communications':'home');
   opening=true;
   changingFirm++;
   pauseActivity();
@@ -99,9 +105,11 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
   if(previousHash!==hash)history.pushState(null,'',hash);
   try{
    await openFullWorkspace({firmId:data.firm_id||'',signOut});
+   if(!signOut)recordAreaOpening({started:sectionStarted,role:data.me.category_code,area});
    if(!events.signal.aborted)dispose();
   }catch{
    if(!session.check())return;
+   recordWorkspaceTiming('open_area',{started:sectionStarted,role:data.me.category_code,area,error:true});
    if(previousHash!==hash)history.replaceState(null,'',previousHash||location.pathname+location.search);
    opening=false;
    watchActivity();
@@ -121,6 +129,7 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
  document.body.classList.add('workspace-active');
  $('#signin').hidden=true;
  $('#workspace').hidden=false;
+ recordWorkspaceTiming('open_home',{started,role:data.me.category_code,area:'home',mode});
  notice('');
  const options={capture:true,signal:events.signal};
  document.addEventListener('click',event=>{

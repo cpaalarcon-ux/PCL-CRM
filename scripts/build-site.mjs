@@ -39,8 +39,11 @@ export function loadEnvironment(name, file = '') {
   return cfg;
 }
 
-export function reachable() {
-  const seen = new Set(), queue = [...ENTRY];
+export function reachable(entry = ENTRY) {
+  // Fail closed: if the approved staff entry page is missing, stop instead of publishing an almost empty site.
+  const missing = entry.filter(rel => { const abs = path.join(root, rel); return !fs.existsSync(abs) || !fs.statSync(abs).isFile(); });
+  if (missing.length) throw new Error('The staff app entry page is missing: ' + missing.join(', ') + '. Refusing to build.');
+  const seen = new Set(), queue = [...entry];
   while (queue.length) {
     const rel = queue.pop();
     if (seen.has(rel)) continue;
@@ -64,8 +67,8 @@ export function build({env, out, file = ''}) {
   const cfg = loadEnvironment(env, file);
   const dist = path.resolve(root, out);
   if (dist === root || !dist.startsWith(root + path.sep)) throw new Error('The output directory must be a new folder inside the repository.');
+  const files = reachable(); // checked before anything is deleted
   fs.rmSync(dist, {recursive: true, force: true});
-  const files = reachable();
   for (const rel of files) {
     const to = path.join(dist, rel);
     fs.mkdirSync(path.dirname(to), {recursive: true});

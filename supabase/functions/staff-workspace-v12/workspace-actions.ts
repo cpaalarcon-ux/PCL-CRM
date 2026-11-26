@@ -1,5 +1,6 @@
 import {fail,text,uuid,date,revision,choice} from './validation.mjs';
 import {projectEditor,scheduleInput,defaultProjectName,timeInput,nairobiDate} from './workspace-rules.mjs';
+import {expectedHours,taskPosition,periods,compare} from './time-budget-rules.mjs';
 import {requireObligationsAllowed} from './obligation-check-actions.ts';
 import {requireRightChart} from './legal-structure-actions.ts';
 const one=(r:any[])=>{if(!r.length)fail(403,'This record is not available to your account.');return r[0];};
@@ -48,6 +49,26 @@ async function previewSchedule(tx:any,s:any,cid:string){
  const breakdown=[...grouped.values()];
  const total=breakdown.reduce((sum:number,row:any)=>sum+Number(row.total),0),due_now=breakdown.reduce((sum:number,row:any)=>sum+Number(row.due_now),0);
  return {enabled:true,total,due_now,upcoming:total-due_now,breakdown,catchup_task,financial_year_end:{month:client.year_end_month,day:client.year_end_day},periods:occurrences.slice(0,3).map((x:any)=>({start:x.period_start,end:x.period_end}))};
+}
+// Expected hours are seen and set only by Engagement Partners and Managers a Partner has selected (the TIME_BUDGET right).
+async function seesTimeBudget(tx:any){return (await tx`select erp_private.sees_time_budget() ok`)[0].ok===true;}
+async function needTimeBudget(tx:any){if(!(await seesTimeBudget(tx)))fail(403,'Expected hours are seen and set by Engagement Partners and the Managers they have selected.');}
+async function setTaskHours(tx:any,a:any,taskId:string,hours:number,reason:string){
+ await tx`select pg_advisory_xact_lock(hashtextextended(${taskId+':hours'},0))`;
+ const [old]=await tx`select expected_hours from erp_private.task_expected_hours where task_id=${taskId} for update`;
+ if(old&&Number(old.expected_hours)===hours)fail(400,'The task already has these expected hours.');
+ if(old)await tx`update erp_private.task_expected_hours set expected_hours=${hours},source='Set',set_by=${a.staff_id},updated_at=now() where task_id=${taskId}`;
+ else await tx`insert into erp_private.task_expected_hours(task_id,expected_hours,source,set_by) values(${taskId},${hours},'Set',${a.staff_id})`;
+ await tx`insert into erp_private.task_hour_changes(task_id,old_hours,new_hours,reason,changed_by) values(${taskId},${old?old.expected_hours:null},${hours},${reason},${a.staff_id})`;
+ const [lg]=await tx`select erp_private.task_logged_hours(${taskId}::uuid) h`;
+ return {ok:true,task_id:taskId,...taskPosition(hours,Number(lg.h||0))};
+}
+// Expected hours on a project's tasks against the project's budgeted hours. A note for the person setting hours, not a block.
+async function projectHoursPosition(tx:any,pid:string){
+ const [s]=await tx`select coalesce(sum(e.expected_hours),0) h from erp_private.tasks t join erp_private.task_expected_hours e using(task_id) where t.project_id=${pid} and t.deleted_at is null and t.status<>'Cancelled'`;
+ const [b]=await tx`select budgeted_hours from erp_private.project_budgets where project_id=${pid} and effective_from<=current_date order by effective_from desc limit 1`;
+ const expected=Math.round(Number(s.h)*100)/100,budget=b?Number(b.budgeted_hours):null;
+ return {project_expected_hours:expected,project_budgeted_hours:budget,project_warning:budget!==null&&expected>budget?`The tasks on this project now add up to ${expected} expected hours, more than the project budget of ${budget} hours.`:null};
 }
 export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
  if(p.action==='sector_save'){
@@ -248,13 +269,88 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   if(assignee.category_code!=='ASSISTANT'||assignee.access_status!=='Active')fail(400,'Tasks are assigned to active Assistants only. Supervisors, Managers and Partners review, edit and reassign tasks.');
   if(!due)fail(400,'Choose a due date.');const project=one(await tx`select client_id,handling_firm_id,status from erp_private.projects where project_id=${pid}`);
   if(project.status==='Archived')fail(400,'Choose an open project.');
+  // Every task has an expected time. The creator chooses a task type, which carries standard hours they are not shown.
+  // Someone who may see expected hours can enter the hours directly instead.
+  const sees=await seesTimeBudget(tx),direct=sees&&p.expected_hours!==undefined&&p.expected_hours!==null&&p.expected_hours!==''?expectedHours(p.expected_hours):null;
+  const typeId=p.task_type_id?uuid(p.task_type_id):null;
+  // Until the first task type is added there is nothing to choose, so work is not stopped: the task is created and listed for the selected Managers and Partners as having no expected hours.
+  if(!typeId&&direct===null&&(await tx`select 1 from erp_private.task_type_names() limit 1`).length)fail(400,'Choose the task type. Every task needs one so that its expected time is set.');
+  if(typeId&&!(await tx`select 1 from erp_private.task_type_names() where standard_id=${typeId}`).length)fail(400,'Choose a task type from the list.');
   const gate=await projectTaskGate(tx,pid,project.client_id,due);if(!gate.ready)fail(400,gate.reason);await assign(tx,pid,project.handling_firm_id,sid);
-  return one(await tx`insert into erp_private.tasks(project_id,assigned_to,task_name,description,due_at,requires_document) values(${pid},${sid},${text(p.task_name,200)},${text(p.description||'',2000,false)},${due+'T17:00:00+03:00'},${p.requires_document===true}) returning task_id`);
+  const made=one(await tx`insert into erp_private.tasks(project_id,assigned_to,task_name,description,due_at,requires_document,task_type_id) values(${pid},${sid},${text(p.task_name,200)},${text(p.description||'',2000,false)},${due+'T17:00:00+03:00'},${p.requires_document===true},${typeId}) returning task_id`);
+  if(direct!==null)await setTaskHours(tx,a,made.task_id,direct,'Expected hours entered when the task was created.');
+  return made;
  }
  if(p.action==='task_recipients')return {recipients:await tx`select * from erp_private.task_recipient_candidates(${uuid(p.task_id)}::uuid)`};
  if(p.action==='task_escalate'){
   const message=text(p.reason,1000);if(message.length<3)fail(400,'Enter a forwarding or escalation message (at least 3 characters).');
   await tx`select erp_private.route_task(${uuid(p.task_id)}::uuid,${uuid(p.assigned_to)}::uuid,${choice(p.operation||'Escalate',['Forward','Escalate'])},${message},${revision(p.revision)}::bigint)`;return {ok:true};
+ }
+ if(p.action==='task_types_list'){
+  // Task type names for anyone creating a task. Hours are included only for the people who may see them.
+  if(await seesTimeBudget(tx))return {can_see_hours:true,types:await tx`select standard_id,kind,match_key,label,expected_hours,active,revision from erp_private.standard_task_hours order by kind,label`};
+  return {can_see_hours:false,types:(await tx`select standard_id,label from erp_private.task_type_names()`).map((t:any)=>({standard_id:t.standard_id,label:t.label}))};
+ }
+ if(p.action==='task_standard_save'){
+  // The standard list: a task type chosen when a task is created by hand, or the standard time of a recurring task matched by its template key.
+  await needTimeBudget(tx);const hours=expectedHours(p.expected_hours),label=text(p.label,200),kind=choice(p.kind||'Task type',['Task type','Recurring task']);
+  if(label.length<3)fail(400,'Give the name in at least 3 characters.');
+  if(p.standard_id){
+   const rows=await tx`update erp_private.standard_task_hours set label=${label},expected_hours=${hours},active=${p.active!==false},updated_by=${a.staff_id},updated_at=now() where standard_id=${uuid(p.standard_id)} and revision=${revision(p.revision)} returning standard_id`;
+   if(!rows.length)fail(409,'This standard was changed by someone else. Refresh first.');return {ok:true,standard_id:rows[0].standard_id};
+  }
+  const key=kind==='Recurring task'?text(p.match_key,200):label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  if(key.length<2)fail(400,kind==='Recurring task'?'Choose the recurring task this standard is for.':'Use letters or numbers in the name.');
+  if((await tx`select 1 from erp_private.standard_task_hours where kind=${kind} and lower(match_key)=lower(${key})`).length)fail(400,'A standard with this name already exists. Edit that one.');
+  const made=one(await tx`insert into erp_private.standard_task_hours(kind,match_key,label,expected_hours,created_by) values(${kind},${key},${label},${hours},${a.staff_id}) returning standard_id`);
+  // A new recurring standard also fills open tasks of that kind that have no expected hours yet.
+  let filled=0;if(kind==='Recurring task')filled=(await tx`insert into erp_private.task_expected_hours(task_id,expected_hours,source,standard_id) select t.task_id,${hours},'Standard',${made.standard_id} from erp_private.tasks t where lower(t.template_key)=lower(${key}) and t.deleted_at is null and t.status not in('Completed','Cancelled') and not exists(select 1 from erp_private.task_expected_hours e where e.task_id=t.task_id) returning task_id`).length;
+  return {ok:true,standard_id:made.standard_id,tasks_filled:filled};
+ }
+ if(p.action==='task_hours_set'){
+  // Expected hours on one task, with a reason. With save_as_standard, the same hours become the standard for that recurring task from now on.
+  await needTimeBudget(tx);const tk=uuid(p.task_id),hours=expectedHours(p.expected_hours),reason=text(p.reason,1000);if(reason.length<10)fail(400,'Give the reason in at least 10 characters.');
+  const t=one(await tx`select task_id,project_id,task_name,template_key from erp_private.tasks where task_id=${tk} and deleted_at is null`);
+  const out=await setTaskHours(tx,a,tk,hours,reason);let standard:any=null;
+  if(p.save_as_standard===true){
+   if(!t.template_key)fail(400,'Only a recurring task can be saved as a standard. For other tasks, add a task type.');
+   const label=String(t.task_name).split(' · ')[0].slice(0,200);
+   const [had]=await tx`select standard_id from erp_private.standard_task_hours where kind='Recurring task' and lower(match_key)=lower(${t.template_key})`;
+   if(had)await tx`update erp_private.standard_task_hours set expected_hours=${hours},active=true,updated_by=${a.staff_id},updated_at=now() where standard_id=${had.standard_id}`;
+   const sid=had?had.standard_id:one(await tx`insert into erp_private.standard_task_hours(kind,match_key,label,expected_hours,created_by) values('Recurring task',${t.template_key},${label},${hours},${a.staff_id}) returning standard_id`).standard_id;
+   const filled=await tx`insert into erp_private.task_expected_hours(task_id,expected_hours,source,standard_id) select x.task_id,${hours},'Standard',${sid} from erp_private.tasks x where lower(x.template_key)=lower(${t.template_key}) and x.deleted_at is null and x.status not in('Completed','Cancelled') and not exists(select 1 from erp_private.task_expected_hours e where e.task_id=x.task_id) returning task_id`;
+   standard={standard_id:sid,tasks_filled:filled.length};
+  }
+  return {...out,standard,...(await projectHoursPosition(tx,t.project_id))};
+ }
+ if(p.action==='task_hours_review'){
+  // For the people who may see expected hours: open tasks with none, and tasks whose logged time has passed the expected time.
+  await needTimeBudget(tx);
+  const rows=await tx`select t.task_id,t.task_name,t.project_id,t.assigned_to,t.status,t.due_at,t.template_key,e.expected_hours,e.source,erp_private.task_logged_hours(t.task_id) logged
+   from erp_private.tasks t left join erp_private.task_expected_hours e using(task_id) where t.deleted_at is null and (t.status not in('Completed','Cancelled') or e.expected_hours is not null) order by t.due_at nulls last limit 2000`;
+  const all=rows.map((r:any)=>({task_id:r.task_id,task_name:r.task_name,project_id:r.project_id,assigned_to:r.assigned_to,status:r.status,due_at:r.due_at,recurring:!!r.template_key,source:r.source||null,...taskPosition(r.expected_hours,r.logged)}));
+  return {missing:all.filter((r:any)=>r.expected_hours===null),over:all.filter((r:any)=>r.over_hours>0).sort((x:any,y:any)=>y.over_hours-x.over_hours),with_hours:all.filter((r:any)=>r.expected_hours!==null).length};
+ }
+ if(p.action==='timesheet_summary'){
+  // Expected against actual time for one person: the day, the week and the month that contain a date. Task expected hours are added only for the people who may see them.
+  const sid=p.staff_id?uuid(p.staff_id):a.staff_id;if(sid!==a.staff_id&&!['PARTNER','MANAGER','SUPERVISOR'].includes(a.category_code))fail(403,'You can see your own time summary.');
+  const on=date(p.date)||nairobiDate();if(!on)fail(400,'Choose a date.');
+  const person=one(await tx`select staff_id,full_name,expected_daily_hours,expected_weekly_hours from erp_private.staff_members where staff_id=${sid} and deleted_at is null`);
+  const pr=periods(on),from=pr.month.from<pr.week.from?pr.month.from:pr.week.from,to=pr.month.to>pr.week.to?pr.month.to:pr.week.to,day=(x:any)=>new Date(x).toISOString().slice(0,10);
+  const holidays=(await tx`select holiday_date from erp_private.public_holidays where holiday_date between ${from} and ${to} and coalesce(is_working_day,false)=false`).map((h:any)=>day(h.holiday_date));
+  const att=await tx`select work_date,status,clock_in,clock_out,break_minutes from erp_private.attendance where staff_id=${sid} and work_date between ${from} and ${to} and deleted_at is null`;
+  const sheets=await tx`select work_date,hours,status from erp_private.timesheets where staff_id=${sid} and work_date between ${from} and ${to} and deleted_at is null and status<>'Rejected'`;
+  const sees=await seesTimeBudget(tx),nbi=(x:any)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Nairobi'}).format(new Date(x));
+  const tasks=sees?await tx`select t.due_at,e.expected_hours from erp_private.tasks t left join erp_private.task_expected_hours e using(task_id) where t.assigned_to=${sid} and t.deleted_at is null and t.status<>'Cancelled' and t.due_at is not null and (t.due_at at time zone 'Africa/Nairobi')::date between ${from} and ${to}`:[];
+  const out:any={staff_id:sid,full_name:person.full_name,date:on,expected_daily_hours:Number(person.expected_daily_hours),expected_weekly_hours:Number(person.expected_weekly_hours),shows_task_hours:sees};
+  for(const kind of ['day','week','month'] as const){const r=pr[kind],inR=(d:string)=>d>=r.from&&d<=r.to,mine=tasks.filter((t:any)=>inR(nbi(t.due_at)));
+   out[kind]=compare({range:r,kind,daily:person.expected_daily_hours,weekly:person.expected_weekly_hours,holidays,
+    leaveDates:att.filter((x:any)=>x.status==='On leave').map((x:any)=>day(x.work_date)),
+    logged:sheets.filter((t:any)=>inR(day(t.work_date))).reduce((s:number,t:any)=>s+Number(t.hours),0),
+    approved:sheets.filter((t:any)=>t.status==='Approved'&&inR(day(t.work_date))).reduce((s:number,t:any)=>s+Number(t.hours),0),
+    attended:att.filter((x:any)=>x.clock_in&&x.clock_out&&inR(day(x.work_date))).reduce((s:number,x:any)=>s+Math.max(0,(new Date(x.clock_out).getTime()-new Date(x.clock_in).getTime())/3600000-Number(x.break_minutes||0)/60),0),
+    taskHours:sees?{expected:mine.reduce((s:number,t:any)=>s+Number(t.expected_hours||0),0),missing:mine.filter((t:any)=>t.expected_hours===null).length}:null});}
+  return out;
  }
  if(p.action==='timesheet_save'){
   const v=timeInput(p),tid=p.timesheet_id?uuid(p.timesheet_id):null;

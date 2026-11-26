@@ -1,3 +1,4 @@
+import {clearWorkspaceTiming,recordAreaOpening,recordWorkspaceTiming,summarizeWorkspaceTiming,timingRows} from './staff-workspace-timing.mjs?v=20261125-v2';
 let documentKind='Evidence';
 import {addClientButton,proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1&create-client=20261122-v1&batch=20261125-v3&fold=20261125-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
@@ -34,8 +35,8 @@ import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {staffReadRequestUrl} from './staff-read-routing.mjs?v=20261124-mumbai-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1&team=20261212-v2&fold=20261125-v1&single=20261125-v1';
-import {createMessenger} from './staff-messenger.mjs?v=20261119-workspace';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1&team=20261212-v2&fold=20261125-v1&single=20261125-v1&hours=20261126-v2';
+import {createMessenger} from './staff-messenger.mjs?v=20261126-realtime-final';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
 import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1&imp=20261124-v1&fold=20261125-v1&single=20261125-v1';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
@@ -45,7 +46,7 @@ import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {moduleLinks,GROUP_ENGAGEMENTS,GROUP_COMPLIANCE,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge,WORKSPACE_AREAS,WORKSPACE_ROLES as roles} from './staff-nav.mjs?v=20261121-comply-v1&landing=20261125-v1';
 import {statusPolicyCard} from './staff-work-ready.mjs?v=20261118-ready-v1';
-import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261119-tabs-v1&rev=20261119-nav';
+import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261119-tabs-v1&rev=20261119-nav&register=20261125-v1';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261110-taxrole-v3&rev=20261119-nav';
@@ -84,7 +85,7 @@ const options=(items,value,blank='Choose…')=>`<option value="">${esc(blank)}</
 let lastRoute=null,activeWorkspaceHash=null,activeWorkspaceEntry=0,workspaceSwitchPending=false;
 function notice(message,error=false){$('#notice').textContent=message;$('#notice').className=error?'error':'';}
 function signedOut(message=''){session.end(message);}
-function showSignedOut(message=''){drafts?.detach();drafts?.clearAsides();activeWorkspaceHash=null;lastRoute=null;timingRows.length=0;timingTargets.clear();data=null;navFlags={forensic:false,mlro:false};forensicMenuAt=0;mlroMenuAt=0;navBadges={};navOpenFor='';navBadgeAt=0;cardFlags=new Map();cardWip=new Map();workReady=new Map();workReadyLoaded=false;workReadyFailed=false;cardFacts.key='';cardFacts.at=0;document.body.classList.remove('nav-open');presence?.clear();if(typeof bell!=='undefined')bell.paint();if(typeof holidaysUI!=='undefined')holidaysUI.reset();if(typeof suite!=='undefined')suite.chat?.clear();if(typeof messenger!=='undefined')messenger.stop();document.body.classList.remove('workspace-active');$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));}
+function showSignedOut(message=''){drafts?.detach();drafts?.clearAsides();activeWorkspaceHash=null;lastRoute=null;clearWorkspaceTiming();timingTargets.clear();registerExtras.clear();clientProfileRequest=null;data=null;navFlags={forensic:false,mlro:false};forensicMenuAt=0;mlroMenuAt=0;navBadges={};navOpenFor='';navBadgeAt=0;cardFlags=new Map();cardWip=new Map();workReady=new Map();workReadyLoaded=false;workReadyFailed=false;cardFacts.key='';cardFacts.at=0;document.body.classList.remove('nav-open');presence?.clear();if(typeof bell!=='undefined')bell.paint();if(typeof holidaysUI!=='undefined')holidaysUI.reset();if(typeof suite!=='undefined')suite.chat?.clear();if(typeof messenger!=='undefined')messenger.stop();document.body.classList.remove('workspace-active');$('#workspace').hidden=true;$('#signin').hidden=false;$('#account').replaceChildren();$('#content').replaceChildren();if($('#workspaceSearch'))$('#workspaceSearch').value='';if($('#workspaceSearchResults')){$('#workspaceSearchResults').replaceChildren();$('#workspaceSearchResults').hidden=true;}$('#editor').close();$('#editorBody').replaceChildren();if(message)notice(message,true);document.dispatchEvent(new CustomEvent('pcl-staff-session-ended',{detail:message}));}
 async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},timeoutMs=0}={}){
  const headers={apikey:KEY,'x-region':'ap-south-1',...extra};if(uploadKind)headers['x-erp-upload-kind']=uploadKind;if(!file)headers['Content-Type']='application/json';
  const api=!file&&!blob&&data&&extra.Authorization?staffReadRequestUrl(API,p?.action,readRoutePreference()||defaultReadRoute()):API;
@@ -96,6 +97,10 @@ async function send(p,{file=false,blob=false,uploadKind='',headers:extra={},time
  return blob?res.blob():res.json();
 }
 const measuredActions={
+ open_home:'Sign-in to Home',
+ open_area:'Open workspace area',
+ update_screen:'Save to updated screen',
+ client_register_page:'Load Clients register data',
  workbook_preview:'Check source upload',
  workbook_commit:'Import source',
  workbook_rows:'Open purchase mapping',
@@ -108,24 +113,29 @@ const measuredActions={
  ledger_read:'Load financial report data',
  ledger_report_gate:'Check financial report readiness'
 };
-const timingRows=[],timingTargets=new Map();
+const timingTargets=new Map();
 function openTimingLog(){
  const selectedAction=$('#timingAction')?.value||'workbook_rows';
  const targetInput=field('timing_seconds','Target time in seconds',timingTargets.get(selectedAction)??'','number','min="0.01" step="0.01"');
- const heading='<tr><th>Time (Nairobi)</th><th>Action</th><th>Elapsed</th><th>Target</th><th>Result</th></tr>';
+ const context=r=>[roles[r.role]||r.role,crumbLabels[r.area]||({home:'Home',task:'Task',clientfile:'Client profile'}[r.area])||r.area,r.mode].filter(Boolean).join(' · ');
+ const elapsed=seconds=>seconds==null?'—':seconds.toFixed(2)+' s';
+ const summary=summarizeWorkspaceTiming(timingRows.filter(r=>['open_home','open_area','update_screen'].includes(r.action))).map(r=>
+  `<tr><td>${esc(measuredActions[r.action])}</td><td>${esc(context(r))}</td><td>${r.count}</td><td>${elapsed(r.p50)}</td><td>${elapsed(r.p95)}</td><td>${r.failed}</td></tr>`).join('');
+ const heading='<tr><th>Time (Nairobi)</th><th>Action</th><th>Context</th><th>Elapsed</th><th>Target</th><th>Result</th></tr>';
  const rows=timingRows.map(r=>{
   const target=timingTargets.get(r.action);
   const result=r.error?'Failed':target?(r.seconds<=target?'Within target':'Over target'):'Target not set';
   const local=new Intl.DateTimeFormat('en-KE',{timeZone:'Africa/Nairobi',dateStyle:'short',timeStyle:'medium'}).format(r.at);
-  return `<tr><td>${esc(local)}</td><td>${esc(measuredActions[r.action])}</td><td>${r.seconds.toFixed(2)} s</td><td>${target?target.toFixed(2)+' s':'—'}</td><td>${result}</td></tr>`;
+  return `<tr><td>${esc(local)}</td><td>${esc(measuredActions[r.action])}</td><td>${esc(context(r))}</td><td>${elapsed(r.seconds)}</td><td>${target?target.toFixed(2)+' s':'—'}</td><td>${result}</td></tr>`;
  }).join('');
  const routeOptions=options([['automatic','Automatic'],['mumbai','Mumbai']],readRoutePreference(),
   defaultReadRoute()==='mumbai'?'Rollout default (Mumbai)':'Rollout default (Automatic)');
- modal('Import and review timings',
-  '<p>Elapsed times for this sign-in. Enter the agreed target for each action to compare results. Targets and timings clear on sign-out.</p>'+
+ modal('Workspace timings',
+  '<p>Area timings end at the first view. The Clients register read is measured separately. Targets and timings clear on sign-out.</p>'+
   `<div class="filters"><label>Settings and Financial Reports read routing for this browser<select id="staffReadRoute">${routeOptions}</select></label></div>`+
   `<div class="filters" id="timingSettings"><label>Action<select id="timingAction">${options(Object.entries(measuredActions),selectedAction)}</select></label>${targetInput}<button type="button" id="timingSet">Set target</button></div>`+
-  `<div class="scroll"><table><thead>${heading}</thead><tbody>${rows||'<tr><td colspan="5">No measured actions yet.</td></tr>'}</tbody></table></div>`);
+  (summary?`<div class="scroll"><table><caption>Screen timings this session</caption><thead><tr><th>Action</th><th>Context</th><th>Runs</th><th>Typical (p50)</th><th>Slow (p95)</th><th>Failed</th></tr></thead><tbody>${summary}</tbody></table></div>`:'')+
+  `<div class="scroll"><table><thead>${heading}</thead><tbody>${rows||'<tr><td colspan="6">No measured actions yet.</td></tr>'}</tbody></table></div>`);
  $('#staffReadRoute').onchange=e=>{
   if(e.target.value)localStorage.setItem(readRouteKey,e.target.value);
   else localStorage.removeItem(readRouteKey);
@@ -143,20 +153,22 @@ async function request(p,{auth=true,...options}={}){
  if(!auth)return send(p,options);
  const ctx=await session.beforeRequest();
  const action=p?.action,started=Object.hasOwn(measuredActions,action)?performance.now():null;
+ const staffId=data?.me.staff_id,role=data?.me.category_code,area=view;
  let error=false;
  try{const result=await send(p,{...options,headers:ctx.headers});session.accept(ctx);if(/^(?:kra_|incoming_)/.test(String(p?.action||''))||options.uploadKind==='incoming')cardFacts.at=0;if(/^(?:compliance_|edd_|kyc_|engagement_|project_|client_save|client_setup_|client_status_policy_set)/.test(String(p?.action||'')))cardFacts.at=0;
   if(/^incoming_(accept|archive|kyc_approve|choose_client|set_handling)$/.test(String(p?.action||''))||options.uploadKind==='incoming')setTimeout(()=>refreshNavBadges(true),500);{const again=alreadyImportedNote(result,action);if(again)setTimeout(()=>notice(again),0);}return result;}
  catch(cause){error=true;session.reject(ctx,cause);if(isConnectionDrop(cause))throw Object.assign(Error(connectionDropMessage(action)),{cause,connection_dropped:true});throw cause;}
- finally{if(started!==null&&data){timingRows.unshift({action,at:new Date(),seconds:(performance.now()-started)/1000,error});if(timingRows.length>100)timingRows.length=100;}}
+ finally{if(started!==null&&data?.me.staff_id===staffId)recordWorkspaceTiming(action,{started,role,area,error});}
 }
 const load=createLoadQueue(options=>loadNow(options));
-async function loadNow({waitForPresence=false,...requestOptions}={}){data=await request({action:'workspace'},requestOptions);syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
+async function loadNow({waitForPresence=false,...requestOptions}={}){data=await request({action:'workspace'},requestOptions);registerExtras.clear();clientProfileRequest=null;syncViewStaff();clientPage=null;clientMappingReadiness=null;clientMappingReadinessRequest=null;document.body.classList.add('workspace-active');$('#signin').hidden=true;$('#workspace').hidden=false;$('#uatScopeNotice').hidden=!data.uat_client_scope;$('#account').innerHTML=`<span>${esc(data.me.full_name)}</span><button id="logout">Sign out</button>`;$('#logout').onclick=()=>presence.requestLogout();if(canArea('communications')&&canUseAction(data.me.restricted_rights,{action:'discussion_list'}))messenger.start();else messenger.stop();
  $('#greeting').textContent='My workspace';$('#roleLabel').textContent=roles[data.me.category_code]+' · '+data.me.login_id;
  $('#firmFilter').innerHTML=options(data.firms.map(x=>[x.firm_id,x.firm_code+' · '+x.legal_name]),firm,'All authorised firms');
  $('.firm-picker').hidden=data.me.category_code==='INTERN';
  const reference=activeWorkspaceHash===null?communicationReference(location.hash):null;
  if(reference)writeWorkspaceAddress('#view=communications',true,0);
  applyWorkspaceRoute();render();
+ if(view==='clientfile'&&clientProfileRequest?.id===selectedClient)await clientProfileRequest.promise;
  if(reference&&view==='communications')await openCommunicationReference(reference);
  if(waitForPresence)await presence.refresh();else void presence.refresh();}
 let viewStaff=VS_DEFAULT,viewStaffOpts=null,viewStaffFor='';
@@ -314,16 +326,58 @@ function bindClientChips(){
   applyClientFilters();
  };
 }
+const registerExtras=new Set();
+let clientProfileRequest=null;
+function adoptRegisterClients(records,{replacePage=false}={}){
+ if(replacePage){
+  data.clients=data.clients.filter(c=>!registerExtras.has(c.client_id));
+  data.client_firms=data.client_firms.filter(link=>!registerExtras.has(link.client_id));
+  registerExtras.clear();
+ }
+ const byId=new Map(data.clients.map(c=>[c.client_id,c]));
+ const linksToReplace=new Set(records.filter(c=>Array.isArray(c.firm_ids)).map(c=>c.client_id));
+ data.client_firms=data.client_firms.filter(link=>!linksToReplace.has(link.client_id));
+ for(const c of records){
+  if(!byId.has(c.client_id))registerExtras.add(c.client_id);
+  byId.set(c.client_id,{...byId.get(c.client_id),...c});
+  data.client_firms.push(...(c.firm_ids||[]).map(firm_id=>({client_id:c.client_id,firm_id})));
+ }
+ data.clients=[...byId.values()];
+}
+function loadRegisterProfile(id){
+ if(!isLeader()||!id)return null;
+ if(clientProfileRequest?.id===id&&clientProfileRequest.workspace===data)return clientProfileRequest;
+ const lookup={id,workspace:data,error:'',promise:null};
+ clientProfileRequest=lookup;
+ const current=()=>clientProfileRequest===lookup&&data===lookup.workspace&&view==='clientfile'&&selectedClient===id;
+ lookup.promise=request({action:'client_register_page',client_id:id}).then(({client})=>{
+  if(!current())return;
+  if(client?.client_id!==id||client.details_visible!==true)throw Error('This client is not available in your workspace.');
+  adoptRegisterClients([client]);
+  render();
+ }).catch(error=>{
+  if(!current())return;
+  lookup.error=error.message;
+  render();
+ });
+ return lookup;
+}
 async function fetchClientPage(){
- if(clientPageLoading)return;clientPageLoading=true;const snap=JSON.stringify([clientQuery,firm]);
+ if(clientPageLoading)return;clientPageLoading=true;const snap=JSON.stringify([clientQuery,firm]),workspace=data;
  let page;
- try{page=await request(queryToRequest(clientQuery,firm));}
+ try{
+  page=await request(queryToRequest(clientQuery,firm));
+  if(!Array.isArray(page?.rows))throw Error('The Clients register could not be loaded.');
+ }
  catch(e){page={error:e.message,rows:[],total:0,page:0,pages:1,page_size:clientQuery.size};}
  clientPageLoading=false;if(!data)return;
+ if(data!==workspace){if(view==='clients')return fetchClientPage();return;}
  if(JSON.stringify([clientQuery,firm])!==snap){if(view==='clients')return fetchClientPage();return;}
  if(page.page>0&&page.page>=page.pages){clientQuery.page=page.pages-1;return fetchClientPage();}
+ if(view!=='clients')return;
+ if(!page.error)adoptRegisterClients(page.rows.map(row=>row.client).filter(Boolean),{replacePage:true});
  clientPage=page;
- if(view==='clients')render();
+ render();
 }
 // Extra facts for the cards on screen: KRA notices near their deadline, files waiting in Incoming review and WIP (Managers and Partners).
 // The database decides what each person may see; a failure leaves the cards as they are. Fetched at most once a minute for the same clients.
@@ -344,15 +398,17 @@ async function ensureCardFacts(ids){
 function clients(){
  const leaderView=isLeader(),byId=new Map(data.clients.map(c=>[c.client_id,c])),meta=new Map((clientPage?.rows||[]).map(r=>[r.client_id,r]));
  if(leaderView&&!clientPage&&!clientPageLoading)void fetchClientPage();
- const rows=leaderView?(clientPage?.rows||[]).map(r=>byId.get(r.client_id)).filter(Boolean):filtered().clients.filter(c=>!isArchived(c)).sort((a,b)=>String(a.company_name||'').localeCompare(String(b.company_name||'')));
+ const rows=leaderView?(clientPage?.rows||[]).map(r=>r.client||byId.get(r.client_id)).filter(Boolean):filtered().clients.filter(c=>!isArchived(c)).sort((a,b)=>String(a.company_name||'').localeCompare(String(b.company_name||'')));
  if(isLeader())void ensureCardFacts(rows.map(c=>c.client_id));
  const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button type="button" data-setup-pipeline>Set-up status</button><button type="button" data-onboarding-batches>Onboarding batches</button>'+'<button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button type="button" data-v3="bulk-setup">Bulk set-up</button><button type="button" data-v3="categories">Service categories</button><button data-v6="sector">+ Add sector</button>'+addClientButton(data)+(canUseAction(data.me?.restricted_rights,{action:'client_onboarding_alloc_read'},'clients')?'<button type="button" data-onb-open>Onboarding allocation</button>':'')+'<button data-suite="import-clients">Import clients from Excel</button></div>':'';
  const cards=rows.map(c=>{
-  const missing=c.details_visible?clientMissing(c):[],stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);
-  const progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB});
+  const row=meta.get(c.client_id)||null;
+  const registerFacts=row?.client?{kyc_verified:c.kyc_verified,has_contact:c.has_contact,tax_verified:row.tax_verified}:undefined;
+  const missing=c.details_visible?clientMissing(c):[],stagedTB=c.staged_tb??data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);
+  const progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB,registerFacts});
   const light=isLeader()?'':(data.me.category_code==='ASSISTANT'&&!assistantEntryOpen(data)?'':proposeButtons(c.client_id,data.me.category_code,suite.button,esc));
   const searchText=(c.company_name+' '+(c.details_visible?c.kra_pin||'':'')+' '+(c.legal_structure||'')+' '+(c.legal_subtype||'')).toLowerCase();
-  const flags=cardFlags.get(c.client_id)||null,row=meta.get(c.client_id)||null,wip=cardWip.get(c.client_id)||null;
+  const flags=cardFlags.get(c.client_id)||null,wip=cardWip.get(c.client_id)||null;
   const wr=workReadyOf(c.client_id);
   return {c,progress,flags,row,wr,card:clientCard({client:c,progress,esc,structureLabel,leader:isLeader(),lightActions:light,searchText,detailsVisible:!!c.details_visible,extra:leaderView?rowMeta(row,esc,shortDate,wip):'',flags,meta:row,wr})};
  });
@@ -379,7 +435,12 @@ function clients(){
 }
 function renderClientProfile(){
  const c=data.clients.find(x=>x.client_id===selectedClient);let progress=null,step=null,status=null;
- if(c&&isLeader()){const missing=c.details_visible?clientMissing(c):[],stagedTB=data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB});step=nextStep(progress);void ensureCardFacts([c.client_id]);status=cardStatus(progress,{flags:cardFlags.get(c.client_id)||null,meta:(clientPage?.rows||[]).find(r=>r.client_id===c.client_id)||null,wr:workReadyOf(c.client_id)});}
+ if(!c){
+  const pending=loadRegisterProfile(selectedClient);
+  if(pending&&!pending.error)return '<section class="card"><p role="status">Loading client profile…</p></section>';
+  if(pending?.error)return `<section class="card"><h2>Client unavailable</h2><p role="alert">${esc(pending.error)}</p><button type="button" data-client-profile-retry>Retry</button></section>`;
+ }
+ if(c&&isLeader()){const missing=c.details_visible?clientMissing(c):[],stagedTB=c.staged_tb??data.documents.some(d=>d.client_id===c.client_id&&d.import_purpose==='Opening TB'&&!d.archived_at&&!d.deleted_at);progress=clientProgress({client:c,missing,compliance:(data.suite?.compliance||[]).find(x=>x.client_id===c.client_id),contacts:(data.suite?.contacts||[]).filter(x=>x.client_id===c.client_id),taxProfiles:data.suite?.tax_profiles||[],readiness:clientMappingReadiness?.get(c.client_id),stagedTB,registerFacts:c});step=nextStep(progress);void ensureCardFacts([c.client_id]);status=cardStatus(progress,{flags:cardFlags.get(c.client_id)||null,meta:(clientPage?.rows||[]).find(r=>r.client_id===c.client_id)||null,wr:workReadyOf(c.client_id)});}
  return clientProfile({category:data.me.category_code,data,clientId:selectedClient,tab:clientTab,esc,shortDate,badge,staffName,structureLabel,progress,status,step,leader:isLeader(),wr:c?workReadyOf(c.client_id):undefined,requireChart:workReadyChart});
 }
 async function removeImportSource(documentId,after){const d=data.documents.find(x=>x.document_id===documentId);if(!d){notice('That upload is no longer available. Refresh and try again.',true);return;}let bank=null;if(d.project_id){try{bank=(await request({action:'delete_redo_plan',project_id:d.project_id,document_id:d.document_id})).bank||null;}catch{bank=null;}}if(bank&&!bank.allowed){modal('This bank statement cannot be removed',`<div class="form-grid">${bankRemovalHtml(bank,esc)}</div>`);return;}modal('Remove incorrect import upload',form(bankRemovalHtml(bank,esc)+`<p class="info full"><b>${esc(d.file_name)}</b><br>This removes the source and its imported rows from active mapping. It does not permanently delete the file, imported data or accounting history. They remain available in Archived sources. If any row has been mapped, reviewed or posted, a Partner or Manager must archive it as a controlled correction.</p><label class="full">Why is this upload being removed? *<textarea name="reason" required minlength="3" maxlength="1000" placeholder="For example, the wrong client workbook was uploaded"></textarea></label><label class="full"><input name="confirm_remove" type="checkbox" required> I confirm this is the wrong upload and want to remove it from active mapping.</label>`,'Confirm removal'),f=>request({action:'document_archive',document_id:d.document_id,reason:f.get('reason'),confirmed:f.has('confirm_remove')}),result=>{documentKind='Archived sources';render();notice(`Removed from active mapping. ${result.retained_rows||0} imported row(s) and the original file remain available in Archived sources.`);if(after)after();});}
@@ -579,6 +640,7 @@ function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='
   const label=submitButton.textContent;
   editorPending=true;
   const finishWorkspaceSave=trackWorkspaceSave(form);
+  const started=performance.now(),staffId=data?.me.staff_id,role=data?.me.category_code,area=view;
   let saved=false;
   back.disabled=true;
   submitButton.disabled=true;
@@ -608,6 +670,7 @@ function modal(title,html,submit,afterSave,{refreshWorkspace=true,pendingLabel='
    submitButton.removeAttribute('aria-busy');
    form.removeAttribute('aria-busy');
    finishWorkspaceSave(saved);
+   if(data?.me.staff_id===staffId)recordWorkspaceTiming('update_screen',{started,role,area,error:!saved});
   }
  }
 }
@@ -699,7 +762,7 @@ async function editStaffAccess(staffId){
 }
 function editTask(t){modal('Update assigned task',form(`<div class="full"><h3>${esc(t.task_name)}</h3><p>${esc(t.description||'')}</p>${data.task_events.filter(e=>e.task_id===t.task_id).slice(0,10).map(e=>`<small>${shortDate(e.created_at)} · ${esc(e.event_type)}: ${esc(e.reason)}</small>`).join('')}</div>`+select('status','Task status',states,t.status)+field('filing_date','Actual filing date (required for filing tasks)',t.filing_date?.slice(0,10)||'','date',`max="${today()}"`)+`<label class="full">Work note / reason (required for Blocked, Waiting on client, Paused and Cancelled)<textarea name="blocked_reason" maxlength="1000">${esc(t.blocked_reason||'')}</textarea></label>`),f=>request({...Object.fromEntries(f),action:'task_status',task_id:t.task_id,revision:t.revision}));}
 function addProject(){modal('Create draft project',form(field('project_name','Project name *','','text','required maxlength="200"')+select('client_id','Client *',data.clients.map(c=>[c.client_id,c.company_name]))+select('firm_id','Handling firm *',data.firms.map(f=>[f.firm_id,f.firm_code]))+select('service_code','Service *',data.services.map(s=>[s.service_code,s.service_name]))+select('staff_id','Initial team member',data.staff.map(s=>[s.staff_id,s.full_name]),data.me.staff_id)+`<p class="info full">This creates a draft project for the pilot. Activation requires verified onboarding and engagement approval.</p>`),f=>request({...Object.fromEntries(f),action:'project_save'}));}
-function addTask(){modal('Assign task',form(field('task_name','Task name *','','text','required maxlength="200"')+select('project_id','Project *',data.projects.map(p=>[p.project_id,p.project_name]))+select('assigned_to','Assign to an Assistant *',data.staff.filter(s=>s.category_code==='ASSISTANT'&&s.access_status!=='Inactive').map(s=>[s.staff_id,s.full_name]),'','Select an Assistant…')+field('due_date','Due date (5:00 PM EAT)','','date','required')+`<label class="full">Instructions<textarea name="description" maxlength="2000"></textarea></label>`),f=>request({...Object.fromEntries(f),action:'task_create'}));const sel=document.querySelector('#editForm select[name="assigned_to"]');if(sel){sel.required=true;const save=document.querySelector('#editForm button[type="submit"]');const sync=()=>{if(save)save.disabled=!sel.value;};sel.addEventListener('change',sync);sync();}}
+function addTask(){modal('Assign task',form(field('task_name','Task name *','','text','required maxlength="200"')+select('project_id','Project *',data.projects.map(p=>[p.project_id,p.project_name]))+select('assigned_to','Assign to an Assistant *',data.staff.filter(s=>s.category_code==='ASSISTANT'&&s.access_status!=='Inactive').map(s=>[s.staff_id,s.full_name]),'','Select an Assistant…')+`<label>Task type *<select name="task_type_id" required><option value="">Loading…</option></select></label>`+field('due_date','Due date (5:00 PM EAT)','','date','required')+`<label class="full">Instructions<textarea name="description" maxlength="2000"></textarea></label>`),f=>request({...Object.fromEntries(f),action:'task_create'}));request({action:'task_types_list'}).then(r=>{const el=document.querySelector('#editForm select[name="task_type_id"]'),types=(r.types||[]).filter(t=>(t.kind||'Task type')==='Task type'&&t.active!==false);if(!el)return;el.innerHTML=types.length?'<option value="">Choose the task type…</option>'+types.map(t=>`<option value="${esc(t.standard_id)}">${esc(t.label)}</option>`).join(''):'<option value="">No task types yet</option>';el.required=types.length>0;}).catch(()=>{});const sel=document.querySelector('#editForm select[name="assigned_to"]');if(sel){sel.required=true;const save=document.querySelector('#editForm button[type="submit"]');const sync=()=>{if(save)save.disabled=!sel.value;};sel.addEventListener('change',sync);sync();}}
 function upload(preset={}){
  const isScoped=!!preset.scope;
  const scopedData=isScoped?{...data,projects:data.projects.filter(p=>workspaceRecordMatches(p,preset.scope,data)),
@@ -851,6 +914,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.new){({client:()=>editClient(),staff:()=>editStaff(),project:()=>v6.editProject(),task:()=>v6.newTask(),upload:()=>upload(documentUploadScope()),firm:()=>modal('Add handling firm',form(field('firm_code','Firm code *','','text','required maxlength="16"')+field('legal_name','Registered legal name *','','text','required maxlength="200"')),f=>request({...Object.fromEntries(f),action:'firm_save'}))}[b.dataset.new])();}
  if(b.dataset.clientSetup)await improvements.client(b.dataset.clientSetup);
  if(b.dataset.setupGuide)await setupGuide.open(b.dataset.setupGuide);
+ if(b.hasAttribute('data-client-profile-retry')){clientProfileRequest=null;render();return;}
  if(b.dataset.clientOpen){await navigateWorkspace('clientfile',b.dataset.clientOpen,{tab:b.dataset.clientTab});return;}
  if(b.dataset.cprofileTab){clientTab=b.dataset.cprofileTab;render();return;}
  if(b.dataset.cregPage){clientQuery.page=Math.max(0,clientQuery.page+(b.dataset.cregPage==='next'?1:-1));clientPage=null;render();return;}
@@ -1091,6 +1155,7 @@ async function moveWorkspace(hash,{fromHistory=false,tab,period,back=false,opene
    return false;
   }
   if(data?.me.staff_id!==account||activeWorkspaceHash!==oldHash)return false;
+  const started=performance.now();
   if($('#editor').open)$('#editor').close();
   drafts?.detach();
   if(opener) returnStore.save(opener.hash,captureListState(opener.selector));
@@ -1103,6 +1168,7 @@ async function moveWorkspace(hash,{fromHistory=false,tab,period,back=false,opene
   if(saved)restoreListState(saved);
   render();
   if(changed){
+   recordAreaOpening({started,role:data.me.category_code,area:view});
    const scroll=workspaceScroller();
    if(scroll)scroll.scrollTop=0;
    const heading=$('#taskWorkspaceTitle')||$('#greeting');
@@ -1146,9 +1212,10 @@ function applyWorkspaceRoute({hash=activeWorkspaceHash??location.hash,tab,period
  view=route.view;missingProject=false;
  selectedTask=view==='task'?route.id:'';
  if(view==='clientfile'){
+  if(clientProfileRequest?.id!==route.id)clientProfileRequest=null;
   selectedClient=route.id;
   if(changed||tab)clientTab=tab||'overview';
- }else selectedClient='';
+ }else{selectedClient='';clientProfileRequest=null;}
  const context=workspaceContext(route,data);
  const firmPicker=$('#firmFilter');
  firmPicker.disabled=Boolean(route.scope&&context?.project);

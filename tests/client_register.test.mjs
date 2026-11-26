@@ -1,6 +1,8 @@
 // Build .1081: paged Client Register with server-side filters. The database decides which clients match; the screens only show the page.
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 import {DEFAULT_QUERY,queryToRequest,filterCount,toolbar,pager,rowMeta} from '../staff-client-register.mjs';
+import {clientRegisterAction} from '../supabase/functions/staff-workspace-v12/client-register-actions.ts';
+import {clearWorkspaceTiming,recordAreaOpening,recordWorkspaceTiming,summarizeWorkspaceTiming,timingRows} from '../staff-workspace-timing.mjs';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const root=path.resolve(import.meta.dirname,'..'),rd=f=>fs.readFileSync(path.join(root,f),'utf8'),fx='supabase/functions/staff-workspace-v12/';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -27,6 +29,20 @@ test('page and server wiring',()=>{
  assert.match(rd('staff-client-cards.mjs'),/extra=''/);
  const act=rd(fx+'client-register-actions.ts');assert.match(act,/client_register_page/);assert.match(act,/erp_private\.client_register\(/);
  assert.match(rd(fx+'index.ts'),/clientRegisterAction\(tx,a,p\)/);assert.match(rd(fx+'staff-access-control.mjs'),/client_register_/);
+});
+test('timing summaries separate staff roles and opening modes, and count failures separately',()=>{
+ clearWorkspaceTiming();
+ recordWorkspaceTiming('open_home',{started:performance.now()-100,role:'MANAGER',area:'home',mode:'New sign-in'});
+ recordAreaOpening({started:performance.now()-200,role:'MANAGER',area:'clients'});
+ recordAreaOpening({started:performance.now()-50,role:'MANAGER',area:'clients'});
+ recordWorkspaceTiming('open_area',{started:performance.now()-450,role:'MANAGER',area:'clients',mode:'Repeat open',error:true});
+ const summary=summarizeWorkspaceTiming(timingRows);
+ const repeat=summary.find(r=>r.mode==='Repeat open');
+ assert.equal(repeat.count,1);assert.equal(repeat.failed,1);assert.equal(repeat.p50,repeat.p95);
+ assert.ok(summary.find(r=>r.mode==='First open').p50>repeat.p50);
+ assert.equal(timingRows.length,4);
+ clearWorkspaceTiming();
+ assert.equal(timingRows.length,0);
 });
 const id=()=>crypto.randomUUID(),db=new PGlite(),actors={},F=id(),F2=id();
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.array=x=>'{'+x.join(',')+'}';
@@ -90,4 +106,24 @@ test('the register filters, sorts and pages in the database',async t=>{
  assert.deepEqual(await nm('MANAGER',{projects:'some',kyc:'outstanding'}),['bravo']);
  // The server action is leader-only and validates its input.
  const act=rd(fx+'client-register-actions.ts');assert.match(act,/Manager or Partner/);
+ await db.query(`with seed as (
+  insert into erp_private.clients(company_name,owner_staff_id)
+  select 'Volume Register '||lpad(n::text,4,'0'),$1::uuid from generate_series(1,1001) n
+  returning client_id
+ ) insert into erp_private.client_firm_links(client_id,firm_id)
+   select client_id,$2::uuid from seed`,[M,F]);
+ const page=(n)=>as('MANAGER',actor=>clientRegisterAction(tx,actor,{action:'client_register_page',q:'Volume Register',page:n,page_size:100,firm_id:F}));
+ const last=await page(10);
+ assert.equal(last.total,1001);assert.equal(last.rows.length,1);
+ const projected=last.rows[0].client;
+ assert.equal(projected.company_name,'Volume Register 1001');
+ assert.equal(projected.details_visible,true);assert.deepEqual(projected.firm_ids,[F]);
+ assert.equal(projected.kyc_verified,false);
+ const emptyPage=await page(11);
+ assert.equal(emptyPage.total,1001,'a page removed by a concurrent change retains the real count');
+ assert.deepEqual(emptyPage.rows,[]);
+ const direct=await as('MANAGER',actor=>clientRegisterAction(tx,actor,{action:'client_register_page',client_id:projected.client_id}));
+ assert.deepEqual(direct.client,projected);
+ await assert.rejects(clientRegisterAction(tx,{category_code:'ASSISTANT'},{action:'client_register_page',client_id:projected.client_id}),/Only a Manager or Partner/);
+ await assert.rejects(as('MANAGER',actor=>clientRegisterAction(tx,actor,{action:'client_register_page',client_id:id()})),/not available/);
 });

@@ -16,6 +16,8 @@ suite.tickets=[{ticket_id:id(36),ticket_number:'2026-0001',subject:'Training wor
 const data={me:staff[0],firms:[{firm_id:fid,firm_code:'FA',legal_name:'Training Firm A',invoice_prefix:'INV/FA',is_active:true},{firm_id:id(11),firm_code:'FB',legal_name:'Training Firm B',invoice_prefix:'INV/FB',is_active:true},{firm_id:id(12),firm_code:'FC',legal_name:'Training Firm C',invoice_prefix:'INV/FC',is_active:true}],staff,staff_firms:staff.map(s=>({staff_id:s.staff_id,firm_id:fid})),clients:[{client_id:cid,company_name:'Example Trading Limited',primary_sector:'Wholesale and retail',branch_location:'Nairobi',missing_fields:['KRA PIN','Primary contact'],kra_pin:null,client_category:'Corporate'}],client_firms:[{client_id:cid,firm_id:fid}],projects:[project],assignments:[],candidates:staff.map(s=>({...s,firm_id:fid})),tasks,documents:[{document_id:id(20),client_id:cid,handling_firm_id:fid,project_id:pid,task_id:tid,file_name:'Training_Purchases.xlsx',version:1,category:'Working Papers',uploaded_at:'2026-10-24T10:00:00Z',file_size_bytes:12000,is_locked:false}],services:[{service_code:'TAX-COMP',service_name:'Tax compilation'},{service_code:'AUDIT',service_name:'Statutory Audit'}],sectors:[{sector_id:id(13),name:'Wholesale and retail'}],schedules:[{project_id:pid,frequency:'Weekly + Monthly + Annually',pack:'Tax Compilation',starts_on:'2026-10-01',ends_on:'2026-12-31',assigned_to:sid,reviewer_id:rid,obligations:['VAT','PAYE'],enabled:true}],timesheets:[{timesheet_id:id(21),staff_id:sid,task_id:tid,project_id:pid,work_date:'2026-10-23',hours:2.5,description:'Training purchase mapping',billable:true,status:'Draft'}],notifications:[{notification_id:id(22),message:'Training review note: confirm the period before importing.',created_at:'2026-10-25T06:00:00Z'}],task_events:[],workbook_batches:[],task_procedures:[],sales_reviews:[],suite};
 data.documents.push({...data.documents[0],document_id:id(71),client_id:id(72),project_id:id(73),task_id:null,file_name:'Unrelated bank document.pdf'});
 suite.invoices.push({...suite.invoices[0],invoice_id:id(74),client_id:id(72),project_id:id(73),invoice_number:'INV/UNRELATED/2026'});
+const overflowClient={client_id:id(95),company_name:'Register-only volume client',details_visible:true,firm_ids:[fid],missing_fields:[]};
+const savedLinkClient={...overflowClient,client_id:id(96),company_name:'Saved-link volume client'};
 data.proposals=[{proposal_id:id(70),status:'Approved',summary:'Approved test client change',proposed_by:aid}];
 const accounts=JSON.parse(fs.readFileSync(path.join(root,'supabase/functions/staff-workspace-v6/account-catalog.json'))).accounts.map(a=>({...a,status:'Active'}));
 const rows=[['TR-INV-001','Example supplier A',100000,16000],['TR-INV-002','Example supplier A',25000,4000],['TR-INV-003','Example supplier B',15000,2400]].map((a,i)=>({row_id:id(50+i),dataset:'Purchases',revision:1,source_row:i+9,sheet_name:'B02A',normalized:{date:'2026-10-21',invoice:a[0],party:a[1],party_pin:'A000000000A',description:'Training purchases',amount:a[2],vat:a[3]},raw_values:{Invoice:a[0]},warnings:[]}));
@@ -32,7 +34,10 @@ const server=http.createServer((req,res)=>{let f=path.join(siteRoot,decodeURICom
  if(a==='workspace_landing')r={me:{...data.me,allowed_areas:['clients','projects','time_hr','documents','communications','audit','leads','staff_access','settings','billing_wip']},firms:data.firms,firm_id:null,my_work:{open_count:0,overdue_count:0,tasks:[]}};
  if(a==='v3_client_mapping_readiness'){await new Promise(resolve=>setTimeout(resolve,300));r=[];}
  if(a==='client_card_flags'||a==='client_card_wip'||a==='client_work_ready')r={rows:[]};
- if(a==='workspace')r=data;if(a==='client_register_page')r={total:data.clients.length,page:0,page_size:25,pages:1,rows:data.clients.map(c=>({client_id:c.client_id,active_projects:0,open_tasks:0,overdue_tasks:0,next_deadline:null,kyc_complete:false,tax_verified:false,opening_done:false}))};if(a==='presence_heartbeat')r={status:'Not clocked in',server_time:'2026-10-26T06:15:00Z',attendance:null,presence:null,timer:null};if(a==='procedure_read')r={record:{...workflow,task_id:body.task_id},events:[]};
+ if(a==='workspace')r=data;if(a==='client_register_page'){
+  if(body.client_id)r={client:body.client_id===savedLinkClient.client_id?savedLinkClient:overflowClient};
+  else r={total:data.clients.length+1,page:0,page_size:25,pages:1,rows:[...data.clients,overflowClient].map(c=>({client_id:c.client_id,client:c,active_projects:0,open_tasks:0,overdue_tasks:0,next_deadline:null,kyc_complete:false,tax_verified:false,opening_done:false}))};
+ }if(a==='presence_heartbeat')r={status:'Not clocked in',server_time:'2026-10-26T06:15:00Z',attendance:null,presence:null,timer:null};if(a==='procedure_read')r={record:{...workflow,task_id:body.task_id},events:[]};
  if(a==='workbook_rows')r={rows,total:205,accounts,client_account_mappings:[{erp_account_code:'61010',effective_from:'2026-01-01',effective_to:null},{erp_account_code:'10190',effective_from:'2026-01-01',effective_to:null},{erp_account_code:'50000',effective_from:'2026-01-01',effective_to:null}],policy:{inventory_method:'Periodic'},policies:[policy],activities:[activity],stock_categories:[{activity_id:activity.activity_id,inventory_use:'Goods for resale',stock_class:'Merchandise held for resale'}],rejections:[]};
  if(a==='v3_client_chart_read')r={client:{client_id:cid,company_name:'Example Trading Limited',legal_entity_type:'Limited company'},packs:['Wholesale'],accounts:[{code:'10000',name:'Cash on hand',layer:'Core',entity_types:[],industry_packs:[]},{code:'30000',name:'Share capital - companies',layer:'Entity',entity_types:['Limited company'],industry_packs:[]}],exceptions:[{code:'21608',name:'Catering / tourism levy payable',sources:['Client account mapping'],reason:'Industry pack Hospitality not among the client activities'}],awaiting_partner_approval:[{code:'40150',name:'Trade discounts'}],effective_from:'2026-01-01',versions:[],draft:null,current:null,status:'Not approved',stale_packs:[],extra_choices:[{code:'40070',name:'Rental income - operating'}]};
  if(a==='v3_client_read')r={client:{...data.clients[0],revision:1},activities:[activity],policies:[policy],partners:[],periods:[]};
@@ -59,6 +64,7 @@ const server=http.createServer((req,res)=>{let f=path.join(siteRoot,decodeURICom
  await proposals.locator('summary').click();
  await register.locator('summary').first().click();
  await page.locator('.client-card').first().waitFor();
+ await register.getByRole('button',{name:'Register-only volume client',exact:true}).waitFor();
  assert.equal(await register.locator('.client-register-list').count(),1,'the compact list is the default');
  await register.getByRole('button',{name:'Cards',exact:true}).click();
  assert.equal(await clientRow.isVisible(),true,'switching display modes keeps the register open');
@@ -134,6 +140,14 @@ const server=http.createServer((req,res)=>{let f=path.join(siteRoot,decodeURICom
  await page.evaluate(()=>{location.hash='view=documents&scope=project.unavailable';});
  await page.getByRole('heading',{name:'Workspace unavailable'}).waitFor();
  assert.equal(await page.locator('.doc-roster').count(),0,'an unavailable scope does not open the firm-wide register');
+ await page.getByRole('button',{name:'Leave workspace and return to Home'}).click();
+ await page.waitForSelector('#areasLauncher:not([hidden])');
+ await page.evaluate(id=>{location.hash='client='+id;},savedLinkClient.client_id);
+ await page.getByRole('heading',{name:'Saved-link volume client',exact:true}).waitFor();
+ assert.ok(calls.some(c=>c.action==='client_register_page'&&c.client_id===savedLinkClient.client_id));
+ await page.locator('#openTimingLog').click();
+ const log=await page.locator('#editorBody').textContent();
+ for(const label of ['Sign-in to Home','Open workspace area','Save to updated screen','Typical (p50)','Slow (p95)','New sign-in','First open','Repeat open'])assert.ok(log.includes(label),label);
  assert.deepEqual(errors,[]);
  console.log('PASS Chromium: workspace switching, browser Back, draft protection, scoped records, client setup and purchase mapping.');
 }finally{await browser.close();server.close();}})().catch(e=>{console.error(e);server.close();process.exitCode=1;});
