@@ -1,6 +1,6 @@
 import {createClient} from './vendor/supabase-discussion.mjs';
 import {loadPrefs,savePrefs,incomingChats,shouldBeep,titleWithCount,createBeeper,tickFor} from './staff-messenger-alerts.mjs?v=20261105-check-v1';
-import {createCalls,callsSupported} from './staff-chat-call.mjs?v=20261119-workspace';
+import {createCalls,callsSupported} from './staff-chat-call.mjs?v=20261126-agora';
 // The staff workspace keeps private conversations and related work together: direct chats, administrator-managed groups,
 // and the existing project / task discussions in one list. Messages stay immutable and private; a System Administrator
 // manages groups and members but never reads a chat they are not in.

@@ -1,7 +1,7 @@
-// One-to-one voice and video calls inside the staff chat, built on WebRTC.
-// Sound and picture travel straight between the two browsers; the server only sets the call up (who is calling whom, ringing,
-// answered, ended) and passes each browser the other's connection details. Nothing is recorded.
-// The screen is built here and not in the messenger so a call survives the chat panel being closed or repainted.
+import {createAgoraMedia,loadAgoraRtc} from './staff-agora-call.mjs?v=1';
+
+// One-to-one calls share the ERP's ringing and call status, with WebRTC or Agora carrying the media.
+// The call overlay lives outside the messenger so it survives a panel being closed or repainted.
 const LOUD_KEY='pcl-call-louder-v1';
 const STUN=[{urls:['stun:stun.cloudflare.com:3478']}];
 const END_STATES=['Declined','Missed','Ended','Failed'];
@@ -51,7 +51,7 @@ export function gatherComplete(pc,ms=GATHER_MS,win=globalThis,{want=null,grace=G
  });
 }
 
-export function createCalls({request,notice,beeper=null,onChange=()=>{},win=globalThis,doc=globalThis.document,host=()=>doc.body}){
+export function createCalls({request,notice,beeper=null,onChange=()=>{},win=globalThis,doc=globalThis.document,host=()=>doc.body,loadAgora=loadAgoraRtc}){
  let cur=null,checking=false,endedTimer=null,overlay=null,gone=false,lastMarks=null;
  const $=sel=>overlay?.querySelector(sel);
  const initials=name=>String(name||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]?.toUpperCase()||'').join('')||'?';
@@ -103,7 +103,7 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
  let cfg=null,cfgAt=0;
  async function loadConfig(){
   if(cfg&&Date.now()-cfgAt<CONFIG_MS)return cfg;
-  try{const c=await request({action:'discussion_call_config'});if(Array.isArray(c?.ice_servers)&&c.ice_servers.length){cfg={ice_servers:c.ice_servers,relay:!!c.relay};cfgAt=Date.now();return cfg;}}catch{ /* Fall back to the public server. */ }
+  try{const c=await request({action:'discussion_call_config'});if(Array.isArray(c?.ice_servers)&&c.ice_servers.length){cfg={ice_servers:c.ice_servers,relay:!!c.relay,agora:c.agora===true};cfgAt=Date.now();return cfg;}}catch{ /* Fall back to the public server. */ }
   return {ice_servers:STUN,relay:false};
  }
  const prepare=()=>{if(callsSupported(win))void loadConfig();};
@@ -133,14 +133,45 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
  function connection(call){
   if(cur!==call||!call.pc)return;
   const s=call.pc.connectionState;
-  if(s==='connected'){
-   win.clearTimeout(call.weakTimer);win.clearTimeout(call.connectTimer);call.weakTimer=null;
-   if(!call.since){call.since=Date.now();call.marks.up=call.since;lastMarks=call.marks;watch(call,POLL_ACTIVE_MS);call.clock=win.setInterval(()=>{if(cur===call)setText('#callTimer',clockText((Date.now()-call.since)/1000));},1000);setText('#callTimer','0:00');capBitrate(call);if(loadLouder())setLoud(call,true);}
-   call.status='active';paint();
-  }else if(s==='disconnected'){
-   if(call.status==='active'){call.status='weak';paint();}
-   if(!call.weakTimer)call.weakTimer=win.setTimeout(()=>{if(cur===call&&call.pc?.connectionState!=='connected')void hangup(call,'failed');},WEAK_MS);
-  }else if(s==='failed')void hangup(call,'failed');
+  if(s==='connected')connected(call);
+  else if(s==='disconnected')disconnected(call);
+  else if(s==='failed')void hangup(call,'failed');
+ }
+ function connected(call){
+  if(cur!==call||call.ending)return;
+  win.clearTimeout(call.weakTimer);win.clearTimeout(call.connectTimer);call.weakTimer=null;
+  if(!call.since){
+   call.since=Date.now();call.marks.up=call.since;lastMarks=call.marks;watch(call,POLL_ACTIVE_MS);
+   call.clock=win.setInterval(()=>{if(cur===call)setText('#callTimer',clockText((Date.now()-call.since)/1000));},1000);
+   setText('#callTimer','0:00');
+   if(call.pc)capBitrate(call);
+   if(loadLouder())setLoud(call,true);
+  }
+  call.status='active';paint();
+ }
+ function disconnected(call){
+  if(cur!==call||call.ending||(!call.since&&!call.pc))return;
+  if(call.status==='active'){call.status='weak';paint();}
+  if(!call.weakTimer)call.weakTimer=win.setTimeout(()=>{if(cur===call&&(call.pc?call.pc.connectionState!=='connected':call.status==='weak'))void hangup(call,'failed');},WEAK_MS);
+ }
+ async function joinAgora(call){
+  const token=()=>request({action:'discussion_call_agora_token',call_id:call.id});
+  call.connectTimer=win.setTimeout(()=>{if(cur===call&&!call.since)void hangup(call,'failed');},CONNECT_MS);
+  const [sdk,grant]=await Promise.all([loadAgora(win,doc),token()]);
+  if(cur!==call||call.ending)return;
+  call.agoraMedia=createAgoraMedia({
+   sdk,grant,renew:token,stream:call.local,win,
+   onRemote:stream=>{
+    if(cur!==call||call.ending)return;
+    call.remote=stream;
+    const el=$('#callRemote');if(el){if(el.srcObject!==stream)el.srcObject=stream;void el.play?.()?.catch?.(()=>{});}
+    if(call.loud&&!call.audio&&stream.getAudioTracks().length)setLoud(call,true);
+    paint();
+   },
+   onState:state=>state==='connected'?connected(call):disconnected(call),
+   onError:()=>void hangup(call,'failed'),
+  });
+  await call.agoraMedia.connect();
  }
  // Keep the picture modest so a call works on ordinary office and mobile internet.
  function capBitrate(call){
@@ -156,6 +187,7 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
  function stopMedia(call){
   for(const k of ['pollTimer','ringTimer','connectTimer','weakTimer','toneTimer'])if(call[k]){win.clearTimeout(call[k]);win.clearInterval(call[k]);call[k]=null;}
   if(call.clock){win.clearInterval(call.clock);call.clock=null;}
+  call.agoraMedia?.close();
   try{call.local?.getTracks().forEach(t=>t.stop());}catch{ /* Already stopped. */ }
   try{void call.audio?.ctx.close?.();call.audio=null;}catch{ /* Already closed. */ }
   try{if(call.pc){call.pc.ontrack=null;call.pc.onconnectionstatechange=null;call.pc.close();}}catch{ /* Already closed. */ }
@@ -178,8 +210,14 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
  async function apply(call,v){
   if(!v||cur!==call)return;
   if(END_STATES.includes(v.status)){stopMedia(call);return finish(call,v.status);}
-  if(call.role==='caller'&&v.status==='Answered'&&v.answer_sdp&&!call.answered){
+  if(call.role==='caller'&&v.status==='Answered'&&!call.answered){
+   if(call.transport!=='agora'&&!v.answer_sdp)return;
    call.answered=true;call.status='connecting';win.clearTimeout(call.ringTimer);paint();
+   if(call.transport==='agora'){
+    // Don't block status polling while the SDK loads or connects.
+    void joinAgora(call).catch(()=>{if(cur===call)void hangup(call,'failed');});
+    return;
+   }
    call.connectTimer=win.setTimeout(()=>{if(cur===call&&call.pc?.connectionState!=='connected')void hangup(call,'failed');},CONNECT_MS);
    await call.pc.setRemoteDescription({type:'answer',sdp:v.answer_sdp});
   }
@@ -224,12 +262,18 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
    // The microphone (and camera) and the connection servers are asked for at the same time.
    const configP=loadConfig();call.local=await getMedia(media==='video').catch(e=>{void configP;throw e;});if(cur!==call){stopMedia(call);return;}
    const config=await configP;if(cur!==call){stopMedia(call);return;}
-   const pc=makePc(call,config);attachLocal(call);
-   call.local.getTracks().forEach(t=>pc.addTrack(t,call.local));
-   await pc.setLocalDescription(await pc.createOffer());await gather(pc,call);
-   if(cur!==call){stopMedia(call);return;}
-   call.marks.ready=Date.now();
-   const r=await request({action:'discussion_call_start',channel_id:channelId,offer_sdp:pc.localDescription.sdp,media});
+   const payload={action:'discussion_call_start',channel_id:channelId,media};
+   call.transport=config.agora?'agora':'webrtc';
+   if(config.agora){payload.transport='agora';}
+   else{
+    const pc=makePc(call,config);
+    call.local.getTracks().forEach(t=>pc.addTrack(t,call.local));
+    await pc.setLocalDescription(await pc.createOffer());await gather(pc,call);
+    if(cur!==call){stopMedia(call);return;}
+    payload.offer_sdp=pc.localDescription.sdp;
+   }
+   attachLocal(call);call.marks.ready=Date.now();
+   const r=await request(payload);
    call.marks.sent=Date.now();call.id=r.call_id;
    if(cur!==call||call.ending){await request({action:'discussion_call_end',call_id:call.id,outcome:'hangup'}).catch(()=>{});return;}
    call.status='ringing';paint();watch(call);ringback(call);
@@ -245,12 +289,12 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
  async function check(){
   if(cur||checking)return;checking=true;gone=false;
   try{
-   const r=await request({action:'discussion_call_pending'});if(cur)return;
-   const v=r?.call;if(!v||!v.offer_sdp)return;
+   const r=await request({action:'discussion_call_pending',agora:true});if(cur)return;
+   const v=r?.call;if(!v||(v.transport!=='agora'&&!v.offer_sdp))return;
    if(!callsSupported(win)){await request({action:'discussion_call_end',call_id:v.call_id,outcome:'decline'}).catch(()=>{});notice('A colleague tried to call you, but this browser does not support calls.',true);return;}
    build();win.clearTimeout(endedTimer);
-   const call=cur={role:'callee',id:v.call_id,media:v.media,other:v.other_name,offer:v.offer_sdp,status:'incoming'};
-   paint();watch(call);tone(call);$('#callButtons button')?.focus?.();warm(call);
+   const call=cur={role:'callee',id:v.call_id,media:v.media,other:v.other_name,offer:v.offer_sdp,transport:v.transport,status:'incoming'};
+   paint();watch(call);tone(call);$('#callButtons button')?.focus?.();if(call.transport!=='agora')warm(call);
   }catch{ /* The next check retries. */ }
   finally{checking=false;}
  }
@@ -267,6 +311,14 @@ export function createCalls({request,notice,beeper=null,onChange=()=>{},win=glob
   try{
    call.marks={t0:Date.now()};
    call.local=await getMedia(call.media==='video',{fallback:true});if(cur!==call){stopMedia(call);return;}
+   if(call.transport==='agora'){
+    attachLocal(call);call.marks.ready=Date.now();
+    await request({action:'discussion_call_answer',call_id:call.id,transport:'agora'});
+    if(cur!==call||call.ending)return;
+    call.marks.sent=Date.now();call.answered=true;
+    await joinAgora(call);
+    return;
+   }
    await call.warming;if(cur!==call){stopMedia(call);return;}
    if(!call.pc?.remoteDescription){try{call.pc?.close();}catch{ /* Replaced below. */ }call.pc=null;const config=await loadConfig();if(cur!==call){stopMedia(call);return;}makePc(call,config);await call.pc.setRemoteDescription({type:'offer',sdp:call.offer});}
    const pc=call.pc;attachLocal(call);

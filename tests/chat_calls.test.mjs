@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
+const {AccessToken2,ServiceRtc}=require('agora-token/src/AccessToken2');
 const {discussionAction}=await import('../supabase/functions/staff-workspace-v12/discussion-actions.ts');
 const {defaultStaffAreas,areaForStaffAction,staffAreaCanUse}=await import('../supabase/functions/staff-workspace-v12/staff-access-control.mjs');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),C=id(),P=id(),actors={};
@@ -91,4 +92,46 @@ test('one-to-one voice and video calls: set-up, answer, decline, missed, busy, p
  assert.equal(await count('ASSISTANT','chat_calls')>0,true);
  assert.deepEqual(defaultStaffAreas('INTERN').includes('communications'),true);
  assert.equal(staffAreaCanUse('INTERN',[],areaForStaffAction('discussion_call_start')),true);
+ const agora={transport:'agora'};
+ assert.equal(cfg.agora,false);
+ await assert.rejects(()=>call('INTERN',{action:'discussion_call_start',channel_id:dmIntern,media:'audio',...agora}),/not available in this workspace/);
+ const originalDeno=globalThis.Deno;
+ const env={SUPABASE_URL:'https://yfjiculexbzpkvtapudk.supabase.co',AGORA_APP_ID:'a'.repeat(32),AGORA_APP_CERTIFICATE:'b'.repeat(32)};
+ globalThis.Deno={env:{get:key=>env[key]}};
+ t.after(()=>{globalThis.Deno=originalDeno;});
+ assert.equal((await call('INTERN',{action:'discussion_call_config'})).agora,true);
+ for(const role of ['ADMIN','PARTNER','MANAGER','SUPERVISOR','ASSISTANT','INTERN']){
+  assert.ok(staffAreaCanUse(role,[],areaForStaffAction('discussion_call_agora_token')),role+' can use the call token action');
+ }
+ const agId=(await call('INTERN',{action:'discussion_call_start',channel_id:dmIntern,media:'video',...agora})).call_id;
+ const token=(role,fields={})=>call(role,{action:'discussion_call_agora_token',call_id:agId,...fields});
+ assert.equal((await call('PARTNER',{action:'discussion_call_pending'})).call,null,'older clients ignore Agora invitations');
+ const invitation=(await call('PARTNER',{action:'discussion_call_pending',agora:true})).call;
+ assert.equal(invitation.transport,'agora');
+ assert.equal(invitation.offer_sdp,null);
+ await assert.rejects(()=>token('INTERN'),/not available to your account/);
+ await assert.rejects(()=>call('INTERN',{action:'discussion_call_answer',call_id:agId,...agora}),/no longer ringing/);
+ await assert.rejects(()=>call('PARTNER',{action:'discussion_call_answer',call_id:agId,answer_sdp:sdp('video')}),/no longer ringing/);
+ await call('PARTNER',{action:'discussion_call_answer',call_id:agId,...agora});
+ await assert.rejects(()=>token('MANAGER'),/not available to your account/);
+ const grants=[await token('INTERN',{uid:99,channel:'caller-supplied'}),await token('PARTNER')];
+ for(const [i,grant] of grants.entries()){
+  assert.deepEqual(Object.keys(grant).sort(),['app_id','channel','token','uid']);
+  assert.equal(grant.uid,i+1);
+  assert.equal(grant.channel,'pcl-'+agId);
+  const parsed=new AccessToken2();
+  assert.equal(parsed.from_string(grant.token),true);
+  assert.equal(parsed.appId.toString(),env.AGORA_APP_ID);
+  assert.equal(parsed.expire,300);
+  const [rtc]=parsed.getServices(new ServiceRtc().service_type());
+  assert.equal(rtc.__channel_name.toString(),grant.channel);
+  assert.equal(rtc.__uid.toString(),String(grant.uid));
+ }
+ env.SUPABASE_URL='https://different-project.supabase.co';
+ await assert.rejects(()=>token('INTERN'),/not available in this workspace/);
+ env.SUPABASE_URL='https://yfjiculexbzpkvtapudk.supabase.co';
+ assert.ok((await token('INTERN')).token,'active calls can renew');
+ await call('PARTNER',{action:'discussion_call_end',call_id:agId,outcome:'hangup'});
+ await assert.rejects(()=>token('INTERN'),/not available to your account/);
+
 });

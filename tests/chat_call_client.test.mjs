@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 import {clockText,mediaProblem,endMessage,gatherComplete,callsSupported,loadLouder,saveLouder,LOUD_GAIN} from '../staff-chat-call.mjs';
 import {createBeeper} from '../staff-messenger-alerts.mjs';
 const env={};globalThis.Deno={env:{get:k=>env[k]}};
-const {iceConfig}=await import('../supabase/functions/staff-workspace-v12/call-actions.ts');
+const {callAction,iceConfig}=await import('../supabase/functions/staff-workspace-v12/call-actions.ts');
 
 test('call timer text and plain-language media problems',()=>{
  assert.equal(clockText(0),'0:00');assert.equal(clockText(65.9),'1:05');assert.equal(clockText(3600),'60:00');assert.equal(clockText(-4),'0:00');assert.equal(clockText('x'),'0:00');
@@ -48,6 +48,28 @@ test('connection servers: public server only without a relay account, short-live
  for(const bad of [async()=>({ok:false,status:403}),async()=>{throw new Error('timeout');},async()=>({ok:true,json:async()=>({iceServers:[{urls:['stun:x:3478']}]})})]){
   const r=await iceConfig(bad);assert.equal(r.relay,false);assert.equal(r.relay_error,true);assert.match(r.ice_servers[0].urls[0],/^stun:/);
  }
+});
+
+test('Agora requires a production rollout flag and valid credentials',async t=>{
+ const previousDeno=globalThis.Deno;
+ const settings={SUPABASE_URL:'https://tafrrmcxrsorffkonrxq.supabase.co',AGORA_APP_ID:'a'.repeat(32),AGORA_APP_CERTIFICATE:'b'.repeat(32)};
+ globalThis.Deno={env:{get:key=>settings[key]}};
+ t.after(()=>{globalThis.Deno=previousDeno;});
+ const enabled=async()=>(await callAction(null,null,{action:'discussion_call_config'})).agora;
+
+ assert.equal(await enabled(),false);
+ settings.PCL_AGORA_RTC_ENABLED='true';
+ assert.equal(await enabled(),true);
+ settings.AGORA_APP_CERTIFICATE='invalid';
+ assert.equal(await enabled(),false);
+ settings.AGORA_APP_CERTIFICATE='b'.repeat(32);
+ settings.SUPABASE_URL='https://other.supabase.co';
+ assert.equal(await enabled(),false);
+ settings.SUPABASE_URL='https://yfjiculexbzpkvtapudk.supabase.co';
+ delete settings.PCL_AGORA_RTC_ENABLED;
+ assert.equal(await enabled(),true);
+ settings.PCL_AGORA_RTC_ENABLED='false';
+ assert.equal(await enabled(),false);
 });
 
 test('the chat shows call buttons in one-to-one chats only and makes the call controls available over the messenger and the ERP',()=>{
@@ -96,4 +118,46 @@ test('the louder button is remembered per browser and survives blocked storage',
  assert.equal(loadLouder(store),false);saveLouder(true,store);assert.equal(loadLouder(store),true);saveLouder(false,store);assert.equal(loadLouder(store),false);
  assert.equal(loadLouder({getItem(){throw new Error('blocked');}}),false);saveLouder(true,{setItem(){throw new Error('blocked');}});
  assert.equal(LOUD_GAIN,2);
+});
+
+test('Agora media publishes native tracks, rejects third-party tracks and renews only while the call is open',async()=>{
+ const {createAgoraMedia}=await import('../staff-agora-call.mjs');
+ class FakeStream{
+  tracks=[];
+  getTracks(){return this.tracks;}
+  addTrack(track){this.tracks.push(track);}
+  removeTrack(track){this.tracks=this.tracks.filter(item=>item!==track);}
+ }
+ const calls=[],listeners=new Map();
+ const client={
+  on:(event,fn)=>listeners.set(event,fn),removeAllListeners:()=>listeners.clear(),
+  join:async(...args)=>calls.push(['join',...args]),
+  publish:async tracks=>calls.push(['publish',tracks.length]),
+  subscribe:async(user,kind)=>calls.push(['subscribe',user.uid,kind]),
+  renewToken:async token=>calls.push(['renew',token]),
+  leave:async()=>calls.push(['leave']),
+ };
+ const sdk={createClient:()=>client,createCustomAudioTrack:()=>({close:()=>calls.push(['close'])})};
+ const grant={app_id:'test-app',channel:'call',token:'first',uid:1};
+ const audio={kind:'audio'};
+ let release;
+ const media=createAgoraMedia({
+  sdk,grant,renew:()=>new Promise(resolve=>{release=resolve;}),
+  stream:{getAudioTracks:()=>[audio],getVideoTracks:()=>[]},win:{MediaStream:FakeStream},
+  onRemote:stream=>calls.push(['remote',stream.getTracks().length]),
+  onState:state=>calls.push(['state',state]),onError:assert.fail,
+ });
+ await media.connect();
+ const publish= listeners.get('user-published');
+ await publish({uid:9},'audio');
+ await publish({uid:2,audioTrack:{getMediaStreamTrack:()=>audio}},'audio');
+ listeners.get('token-privilege-will-expire')();
+ release({...grant,token:'second'});
+ await new Promise(resolve=>setImmediate(resolve));
+ listeners.get('token-privilege-will-expire')();
+ media.close();
+ release({...grant,token:'after-close'});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(calls,[['join','test-app','call','first',1],['publish',1],['subscribe',2,'audio'],['remote',1],['state','connected'],['renew','second'],['close'],['leave']]);
+ assert.equal(listeners.size,0);
 });
