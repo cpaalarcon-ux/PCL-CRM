@@ -8,6 +8,9 @@ import {observeMessengerThread} from './staff-messenger-thread.mjs?v=20261119-wo
 
 const filters=['All','Unread','Direct','Groups'];
 const fileTypes='.pdf,.csv,.xlsx,.docx,.png,.jpg,.jpeg';
+const voiceTypes=['webm','ogg','m4a'];
+const audioType=mime=>['audio/webm','audio/ogg','audio/mp4'].includes(mime);
+const voiceLimitMs=5*60*1000;
 const sizeLabel=size=>size>=1024*1024?`${(size/(1024*1024)).toFixed(1)} MB`:`${Math.max(1,Math.round(size/1024))} KB`;
 const imageType=mime=>['image/png','image/jpeg'].includes(mime);
 
@@ -19,7 +22,7 @@ export function createMessenger(ctx){
  const REACTIONS=['👍','❤️','😂','😮','🙏','✅'];
  const drafts=new Map(),images=new Map();
  const getDraft=(id=state.selected)=>{
-  if(!drafts.has(id))drafts.set(id,{text:'',files:[],shared:null,reply:null,error:'',sending:false,request:null});
+  if(!drafts.has(id))drafts.set(id,{text:'',files:[],shared:null,reply:null,mentions:new Map(),error:'',sending:false,request:null});
   return drafts.get(id);
  };
  let threadDisplay=null,threadRequest=null,markedRead=null,opener=null,pendingShare=null,dragDepth=0;
@@ -89,7 +92,7 @@ export function createMessenger(ctx){
   muteButton=id=>`<button type="button" class="messenger-icon" data-msgr="mute-chat" data-id="${esc(id)}" aria-pressed="${!!prefs.muted[id]}" aria-label="${prefs.muted[id]?'This chat is muted. Unmute it':'Mute sound for this chat'}" title="${prefs.muted[id]?'Muted':'Mute this chat'}">${prefs.muted[id]?'🔕':'🔔'}</button>`;
  function chatRow(c){
   const mine=c.last_author_id&&c.last_author_id===d().me.staff_id,who=mine?'You':(c.last_author_name||'Staff'),preview=c.last_body?c.last_body:'No messages yet';
-  return `<button type="button" class="messenger-row ${state.selected===c.channel_id?'selected':''}" data-msgr="open" data-id="${esc(c.channel_id)}"${state.selected===c.channel_id?' aria-current="true"':''}><span class="messenger-avatar ${c.kind==='Group'?'group':''}" aria-hidden="true">${esc(icon(c))}</span><span class="messenger-row-main"><span class="messenger-row-top"><b>${esc(label(c))}${prefs.muted[c.channel_id]?' <span class="messenger-muted" role="img" aria-label="Muted" title="Muted">🔕</span>':''}</b><small>${esc(listTime(c.last_message_at))}</small></span><span class="messenger-row-bottom"><span class="messenger-preview">${c.last_body?`<b class="messenger-who">${esc(who)}:</b> `:''}${esc(preview)}</span>${Number(c.unread)?`<span class="messenger-unread" aria-label="${Number(c.unread)} unread">${Number(c.unread)}</span>`:''}</span></span></button>`;
+  return `<button type="button" class="messenger-row ${state.selected===c.channel_id?'selected':''}" data-msgr="open" data-id="${esc(c.channel_id)}"${state.selected===c.channel_id?' aria-current="true"':''}><span class="messenger-avatar ${c.kind==='Group'?'group':''}" aria-hidden="true">${esc(icon(c))}</span><span class="messenger-row-main"><span class="messenger-row-top"><b>${esc(label(c))}${prefs.muted[c.channel_id]?' <span class="messenger-muted" role="img" aria-label="Muted" title="Muted">🔕</span>':''}</b><small>${esc(listTime(c.last_message_at))}</small></span><span class="messenger-row-bottom"><span class="messenger-preview">${c.last_body?`<b class="messenger-who">${esc(who)}:</b> `:''}${esc(preview)}</span>${Number(c.unread_mentions)?'<span class="messenger-at" role="img" aria-label="You were mentioned" title="You were mentioned">@</span>':''}${Number(c.unread)?`<span class="messenger-unread" aria-label="${Number(c.unread)} unread">${Number(c.unread)}</span>`:''}</span></span></button>`;
  }
  function listView(){
   const cancel=pendingShare?'<button type="button" data-msgr="cancel-share">Cancel sharing</button>':'';
@@ -118,11 +121,12 @@ export function createMessenger(ctx){
   return `<div id="messengerThreadHead">${header(label(state.thread.listing||c),sub,true,callButtons(c)+muteButton(c.channel_id))}</div>
    <div class="messenger-thread-frame"><div class="messenger-messages" id="messengerMessages" tabindex="0" aria-label="Conversation messages"><div id="messengerTimeline"></div></div>
    <button type="button" id="messengerNewMessages" class="messenger-new-messages" data-msgr="bottom" hidden>↓ New messages</button></div>
-   ${state.thread.read_only?'<p class="messenger-note">This conversation is closed and read-only.</p>':`<form id="messengerSend" class="messenger-composer"><div id="messengerAttachments" class="messenger-attachments"></div>
-   <div class="messenger-compose-row"><button type="button" data-msgr="attach" class="messenger-attach" title="Attach files" aria-label="Attach files">📎</button><input type="file" id="messengerFiles" aria-label="Choose attachments" multiple accept="${fileTypes}" hidden>
+   ${state.thread.read_only?'<p class="messenger-note">This conversation is closed and read-only.</p>':`<form id="messengerSend" class="messenger-composer"><div id="messengerAttachments" class="messenger-attachments"></div><div id="messengerMention" class="messenger-mention-list" role="listbox" aria-label="Mention a colleague" hidden></div>
+   <div class="messenger-compose-row"><button type="button" data-msgr="attach" class="messenger-attach" title="Attach files" aria-label="Attach files">📎</button><button type="button" data-msgr="record" class="messenger-attach" title="Record a voice note" aria-label="Record a voice note">🎙</button><input type="file" id="messengerFiles" aria-label="Choose attachments" multiple accept="${fileTypes}" hidden>
    <textarea name="body" rows="2" maxlength="4000" placeholder="Write a message" aria-label="Message or caption"></textarea><button type="submit" class="messenger-primary" aria-label="Send message">Send</button></div><p id="messengerState" class="messenger-error" role="alert"></p></form>`}`;
  }
  function fileCard(f){
+  if(audioType(f.mime_type))return `<div class="messenger-voice"><button type="button" data-msgr="play" data-id="${esc(f.attachment_id)}">▶ Voice note · ${esc(sizeLabel(f.size_bytes))}</button></div>`;
   const thumbnail=imageType(f.mime_type)?`<img class="messenger-thumbnail" alt="" data-msgr-image="${esc(f.attachment_id)}" width="160" height="100">`:fileTile(f.file_name);
   return `<button type="button" class="messenger-file" data-msgr="download" data-id="${esc(f.attachment_id)}" data-name="${esc(f.file_name)}">${thumbnail}<span><b>${esc(f.file_name)}</b><small>${esc(sizeLabel(f.size_bytes))} · Download</small></span></button>`;
  }
@@ -168,7 +172,7 @@ export function createMessenger(ctx){
    const own=m.author_id===me,t=tickFor(m,me,positions);
    const shared=m.shared_kind?`<button type="button" class="messenger-file messenger-record" data-msgr="shared" data-id="${esc(m.message_id)}"><span><b>${esc(m.shared_title|| (m.shared_kind==='task'?'Shared task':'Shared ERP document'))}</b><small>${m.shared_kind==='task'?'Open ERP task':'Open ERP document'}</small></span></button>`:'';
    const existingDocument=m.document_id&&m.file_name?`<button type="button" class="messenger-file" data-msgr="erp-download" data-id="${esc(m.document_id)}" data-name="${esc(m.file_name)}">${esc(m.file_name)}</button>`:'';
-   html+=`<article class="messenger-bubble ${own?'own':''}" data-message-id="${esc(m.message_id)}"><div class="messenger-meta"><b class="messenger-author">${own?'You':esc(m.author_name||'Staff')}</b><small>${esc(clock(m.created_at))}${t?` <span class="messenger-tick ${t.state}" role="img" aria-label="${esc(t.label)}" title="${esc(t.label)}">${t.glyph}</span>`:''}</small></div>${quoteHtml(m)}${m.body?`<p>${esc(m.body)}</p>`:''}${shared}${existingDocument}${(m.attachments||[]).map(fileCard).join('')}${reactionChips(m)}${state.thread.read_only?'':messageTools(m)}${m.message_id===lastOwn&&t?`<small class="messenger-tick-label">${esc(t.label)}</small>`:''}</article>`;
+   html+=`<article class="messenger-bubble ${own?'own':''}" data-message-id="${esc(m.message_id)}"><div class="messenger-meta"><b class="messenger-author">${own?'You':esc(m.author_name||'Staff')}</b><small>${esc(clock(m.created_at))}${t?` <span class="messenger-tick ${t.state}" role="img" aria-label="${esc(t.label)}" title="${esc(t.label)}">${t.glyph}</span>`:''}</small></div>${quoteHtml(m)}${m.body?`<p>${bodyHtml(m)}</p>`:''}${shared}${existingDocument}${(m.attachments||[]).map(fileCard).join('')}${reactionChips(m)}${state.thread.read_only?'':messageTools(m)}${m.message_id===lastOwn&&t?`<small class="messenger-tick-label">${esc(t.label)}</small>`:''}</article>`;
   }
   html=(state.thread.has_older?'<button type="button" class="messenger-older" data-msgr="older">Load earlier messages</button>':'')+(html||'<p class="messenger-empty">No messages yet.</p>');
   if(timeline.dataset.lastHtml===html){if(threadDisplay.isAtBottom())markRead(Number(state.thread.messages.at(-1)?.sequence||0));return;}
@@ -320,6 +324,79 @@ export function createMessenger(ctx){
   }catch(e){f.status='failed';f.error=e.message;}
   finally{f.controller=null;if(state.selected===id)paintComposer();}
  }
+ const bodyHtml=m=>{
+  let html=esc(m.body);
+  for(const x of m.mentions||[]){const tag='@'+esc(x.name);html=html.split(tag).join(`<mark class="messenger-mention">${tag}</mark>`);}
+  return html;
+ };
+ const mentionIds=(draft,body)=>[...draft.mentions].filter(([,name])=>body.includes('@'+name)).map(([id])=>id);
+ const people=new Map();
+ async function mentionPeople(channel){
+  if(!people.has(channel))people.set(channel,request({action:'discussion_mentionable',channel_id:channel}).then(r=>r.people||[]).catch(()=>{people.delete(channel);return [];}));
+  return people.get(channel);
+ }
+ // The text right before the caret that looks like "@Gra": the part after @ is what the person has typed so far.
+ const mentionQuery=area=>{
+  const upto=area.value.slice(0,area.selectionStart??area.value.length),hit=/(^|\s)@([^\s@]{0,30}(?: [^\s@]{0,30})?)$/u.exec(upto);
+  return hit?{query:hit[2],start:upto.length-hit[2].length-1}:null;
+ };
+ async function paintMention(){
+  const form=currentComposer(),list=document.querySelector('#messengerMention');if(!form||!list)return;
+  const q=mentionQuery(form.elements.body),channel=state.selected;
+  if(!q||getDraft().sending){list.hidden=true;list.innerHTML='';return;}
+  const all=await mentionPeople(channel);
+  if(state.selected!==channel||!list.isConnected)return;
+  const want=q.query.toLowerCase(),found=all.filter(x=>x.full_name.toLowerCase().includes(want)).slice(0,6);
+  list.innerHTML=found.map(x=>`<button type="button" role="option" data-msgr="mention-pick" data-id="${esc(x.staff_id)}" data-name="${esc(x.full_name)}">${esc(x.full_name)}</button>`).join('');
+  list.hidden=!found.length;
+ }
+ function pickMention(btn){
+  const form=currentComposer();if(!form)return;
+  const area=form.elements.body,q=mentionQuery(area),draft=getDraft();if(!q)return;
+  const name=btn.dataset.name,before=area.value.slice(0,q.start),after=area.value.slice(area.selectionStart??area.value.length);
+  area.value=before+'@'+name+' '+after;draft.text=area.value;draft.mentions.set(btn.dataset.id,name);
+  const pos=(before+'@'+name+' ').length;area.setSelectionRange?.(pos,pos);area.focus();
+  const list=document.querySelector('#messengerMention');if(list){list.hidden=true;list.innerHTML='';}
+  paintComposer();
+ }
+ let recording=null;
+ const stopTracks=r=>{for(const track of r.stream.getTracks())track.stop();};
+ async function toggleRecording(btn){
+  if(recording){recording.recorder.stop();return;}
+  if(!state.selected||!currentComposer()||getDraft().sending)return;
+  const id=state.selected,draft=getDraft();
+  if(!globalThis.MediaRecorder||!navigator.mediaDevices?.getUserMedia){draft.error='Voice notes are not supported in this browser.';paintComposer();return;}
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}
+  catch{draft.error='Allow microphone access in your browser to record a voice note.';paintComposer();return;}
+  const mime=['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/mp4'].find(m=>MediaRecorder.isTypeSupported?.(m))||'';
+  const recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream),chunks=[];
+  const label=btn?.closest?.('form')?.querySelector('[data-msgr="record"]')||btn;
+  const rec={recorder,stream,chunks,id,timer:null};recording=rec;
+  recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};
+  recorder.onstop=()=>{
+   clearTimeout(rec.timer);stopTracks(rec);if(recording===rec)recording=null;
+   if(label?.isConnected){label.textContent='🎙';label.setAttribute('aria-label','Record a voice note');}
+   const type=(recorder.mimeType||mime||'audio/webm').split(';')[0];
+   const ext=type==='audio/ogg'?'ogg':type==='audio/mp4'?'m4a':'webm';
+   const blob=new Blob(chunks,{type});
+   if(rec.cancelled||state.selected!==id||!currentComposer())return;
+   if(blob.size<5){getDraft().error='Nothing was recorded. Try again.';paintComposer();return;}
+   addFiles([new File([blob],'voice-note-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.'+ext,{type})]);
+  };
+  recorder.start();
+  rec.timer=setTimeout(()=>{if(recording===rec)recorder.stop();},voiceLimitMs);
+  label.textContent='⏹';label.setAttribute('aria-label','Stop recording');
+ }
+ async function playVoice(btn){
+  const id=btn.dataset.id;
+  try{
+   btn.disabled=true;
+   const blob=await request({action:'discussion_attachment_download',attachment_id:id},{blob:true});
+   const audio=document.createElement('audio');audio.controls=true;audio.src=URL.createObjectURL(blob);
+   btn.replaceWith(audio);void audio.play?.()?.catch?.(()=>{});
+  }catch{btn.disabled=false;btn.textContent='Could not load. Tap to retry';}
+ }
  function addFiles(files){
   if(!state.selected||!currentComposer())return;
   const id=state.selected,draft=getDraft();if(draft.sending)return;
@@ -327,7 +404,7 @@ export function createMessenger(ctx){
   for(const file of files){
    if(draft.files.length>=8){draft.error='Attach up to eight files per message.';break;}
    const extension=file.name.toLowerCase().split('.').pop();
-   if(!fileTypes.split(',').includes('.'+extension)||file.size<5||file.size>10*1024*1024){draft.error='Choose a supported document or photo up to 10 MB.';continue;}
+   if(!(fileTypes.split(',').includes('.'+extension)||voiceTypes.includes(extension))||file.size<5||file.size>10*1024*1024){draft.error='Choose a supported document or photo up to 10 MB.';continue;}
    const f={id:crypto.randomUUID(),file,preview:imageType(file.type)?URL.createObjectURL(file):null,status:'uploading',progress:0,error:''};
    draft.files.push(f);void uploadFile(id,draft,f);
   }
@@ -349,6 +426,7 @@ export function createMessenger(ctx){
   const body=form.elements.body.value.trim();
   if(!body&&!draft.files.length&&!draft.shared)return;
   const payload={channel_id:id,body,reply_to:draft.reply?.id||null,attachment_ids:draft.files.map(f=>f.id),
+   mention_ids:mentionIds(draft,body),
    shared_task_id:draft.shared?.kind==='task'?draft.shared.id:null,shared_document_id:draft.shared?.kind==='document'?draft.shared.id:null};
   const signature=JSON.stringify(payload);
   if(draft.request?.signature!==signature)draft.request={signature,id:crypto.randomUUID()};
@@ -408,7 +486,10 @@ export function createMessenger(ctx){
    paintBody();return;
   }
   if(a==='bottom'){threadDisplay?.toBottom();document.querySelector('#messengerMessages')?.focus({preventScroll:true});return;}
+  if(a==='mention-pick'){pickMention(b);return;}
   if(a==='attach'){document.querySelector('#messengerFiles')?.click();return;}
+  if(a==='record'){void toggleRecording(b);return;}
+  if(a==='play'){void playVoice(b);return;}
   if(a==='retry'||a==='remove'){
    const draft=getDraft(),f=draft.files.find(x=>x.id===id);
    if(f&&a==='retry'&&!draft.sending)return uploadFile(state.selected,draft,f);
@@ -534,7 +615,7 @@ export function createMessenger(ctx){
   if(e.target.id==='messengerContactSearch')paintContacts(e.target.value);
   if(e.target.id==='messengerPickSearch')paintPick(e.target.value);
   if(e.target.matches?.('#messengerPick input[type=checkbox]')){if(e.target.checked)picked.add(e.target.value);else picked.delete(e.target.value);}
-  if(e.target.matches?.('#messengerSend textarea')){getDraft().text=e.target.value;paintComposer();}
+  if(e.target.matches?.('#messengerSend textarea')){getDraft().text=e.target.value;paintComposer();void paintMention();}
  });
  document.addEventListener('change',e=>{if(e.target.id==='messengerFiles'){addFiles(e.target.files);e.target.value='';}if(e.target.matches?.('#messengerPick input[type=checkbox]')){if(e.target.checked)picked.add(e.target.value);else picked.delete(e.target.value);}});
  document.addEventListener('submit',e=>{
@@ -557,6 +638,7 @@ export function createMessenger(ctx){
   imageObserver?.disconnect();imageObserver=null;
   for(const image of images.values())void image.then(src=>{if(src)URL.revokeObjectURL(src);},()=>{});
   images.clear();
+  if(recording){recording.cancelled=true;recording.recorder.state!=='inactive'&&recording.recorder.stop();}
   for(const draft of drafts.values())for(const f of draft.files){f.controller?.abort();if(f.preview)URL.revokeObjectURL(f.preview);}
   drafts.clear();pendingShare=null;opener=null;panel()?.remove();mounted=false;
   Object.assign(state,{open:false,view:'list',tab:'chats',channels:[],selected:null,thread:null,groups:[],directory:[],contacts:[],query:'',filter:'All'});picked=new Set();editing=null;

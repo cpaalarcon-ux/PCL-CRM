@@ -3,6 +3,17 @@ import {fail,fileType,text,uuid} from './validation.mjs';
 export const attachmentLimit=8;
 const maxBytes=10*1024*1024;
 const documentTypes=new Set(['pdf','csv','xlsx','docx','png','jpg','jpeg']);
+// Voice notes: recorded in the browser as WebM/Opus (Chrome, Firefox, Edge), Ogg, or MP4/M4A (Safari).
+// The signature is checked, so a renamed file is refused. Other ERP uploads do not accept audio.
+const audioTypes=new Set(['webm','ogg','m4a']);
+export function audioType(name:string,bytes:Uint8Array){
+ const ext=name.toLowerCase().split('.').pop()||'';
+ if(bytes.length<5||bytes.length>maxBytes)fail(400,'A voice note must be up to 10 MB.');
+ if(ext==='webm'&&bytes[0]===0x1a&&bytes[1]===0x45&&bytes[2]===0xdf&&bytes[3]===0xa3)return 'audio/webm';
+ if(ext==='ogg'&&new TextDecoder().decode(bytes.slice(0,4))==='OggS')return 'audio/ogg';
+ if(ext==='m4a'&&bytes.length>=12&&new TextDecoder().decode(bytes.slice(4,8))==='ftyp')return 'audio/mp4';
+ fail(400,'This voice note could not be read. Record it again.');
+}
 const objectKey=(row:any)=>`messenger/${row.channel_id}/${row.author_id}/${row.attachment_id}`;
 
 export async function lockAttachment(tx:any,id:string){
@@ -13,10 +24,11 @@ export async function readAttachmentUpload(form:FormData){
  const file=form.get('file');
  if(!(file instanceof File)||file.size<5||file.size>maxBytes)fail(400,'Choose a file up to 10 MB.');
  const name=text(file.name,180).replace(/[\x00-\x1f/\\]/g,'_');
- if(!documentTypes.has(name.toLowerCase().split('.').pop()||''))fail(400,'Choose a PDF, CSV, Excel, Word, PNG or JPEG file.');
+ const ext=name.toLowerCase().split('.').pop()||'';
+ if(!documentTypes.has(ext)&&!audioTypes.has(ext))fail(400,'Choose a PDF, CSV, Excel, Word, PNG or JPEG file, or record a voice note.');
  const bytes=new Uint8Array(await file.arrayBuffer());
  return {channel_id:uuid(form.get('channel_id')),attachment_id:uuid(form.get('attachment_id')),file_name:name,
-  mime_type:fileType(name,bytes),size_bytes:bytes.length,bytes};
+  mime_type:audioTypes.has(ext)?audioType(name,bytes):fileType(name,bytes),size_bytes:bytes.length,bytes};
 }
 
 export async function storeAttachment(tx:any,a:any,file:any,digest:string,storage:any){
