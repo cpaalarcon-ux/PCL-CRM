@@ -11,16 +11,16 @@ import {checkOwnerRows,checkContactRows,NOT_SIGHTED,SHARE_TOLERANCE,MAX_OWNER_RO
 // a different Supervisor, Manager or Partner checks each proposal, and a Manager or Partner who neither prepared nor checked it approves it.
 // No identity-document number is read or kept, and the screening columns of the sheet are not loaded: screening is recorded by the MLRO.
 const ACTIONS=['owner_batch_check','owner_batch_approve'];
-const KINDS=['owner_add','contact_save'];
-class Rollback extends Error{}
+const KINDS=['owner_add','owner_share_amend','contact_save'];
+export class Rollback extends Error{}
 const plain=(e:any,fallback:string)=>e?.status?String(e.message):e?.code==='23505'?'This record already exists for the client.':fallback;
-async function attempt(tx:any,keep:boolean,fn:(t:any)=>Promise<any>):Promise<{ok:boolean,out?:any,reason?:string}>{
+export async function attempt(tx:any,keep:boolean,fn:(t:any)=>Promise<any>):Promise<{ok:boolean,out?:any,reason?:string}>{
  let out:any;
  try{await tx.savepoint(async(t:any)=>{out=await fn(t);if(!keep)throw new Rollback();});return {ok:true,out};}
  catch(e:any){if(e instanceof Rollback)return {ok:true,out};if(!e?.status)console.error('Owner batch row failed',{code:e?.code||'INTERNAL',type:e?.name||'Error'});return {ok:false,reason:plain(e,'This row could not be saved. Check it and try it on its own.')};}
 }
 const key=(h:any)=>cleanCell(h).toLowerCase().replaceAll(' ','_').replaceAll('&','and');
-function sheetRows(sheet:any,max:number){
+export function sheetRows(sheet:any,max:number){
  const heads=Array.from({length:sheet.columnCount},(_,i)=>key(sheet.getRow(1).getCell(i+1).value)),out:any[]=[];
  for(let r=2;r<=sheet.rowCount&&out.length<=max;r++){
   const raw=Array.from({length:sheet.columnCount},(_,i)=>sheet.getRow(r).getCell(i+1).value);if(raw.every(v=>v==null||String(v).trim()===''))continue;
@@ -103,7 +103,7 @@ export async function ownerBatchAction(tx:any,a:any,p:any,run:(p:any)=>Promise<a
  if(!rows.length)fail(409,checking?'No proposals in this batch are waiting for a check.':'No proposals in this batch are checked and waiting for approval.');
  const done:any[]=[],held:any[]=[];
  for(const r of rows){
-  const name=String(r.payload.full_name||'entry');
+  const name=String(r.payload.full_name||r.payload.owner_name||'entry');
   const res=await attempt(tx,true,()=>run({action:checking?'client_proposal_check':'client_proposal_approve',proposal_id:r.proposal_id,note}));
   (res.ok?done:held).push(res.ok?{proposal_id:r.proposal_id,name}:{proposal_id:r.proposal_id,name,reason:res.reason});
  }

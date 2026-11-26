@@ -11,7 +11,7 @@ export function addClientButton(data){
  if(rights?.includes('client.details')||!canUseAction(rights,{action:'client_save'},'clients'))return '';
  if(['MANAGER','PARTNER'].includes(role))return '<button type="button" class="primary" data-new="client">+ Add client</button>';
  if(!canPropose(role)||!data.firms?.length||(role==='ASSISTANT'&&!assistantEntryOpen(data)))return '';
- return '<button type="button" class="primary" data-propose="new-client">+ Add client</button><button type="button" class="secondary" data-propose="client-batch">Propose clients from Excel</button><button type="button" class="secondary" data-propose="owner-batch">Propose owners and contacts from Excel</button>';
+ return '<button type="button" class="primary" data-propose="new-client">+ Add client</button><button type="button" class="secondary" data-propose="client-batch">Propose clients from Excel</button><button type="button" class="secondary" data-propose="owner-batch">Propose owners and contacts from Excel</button><button type="button" class="secondary" data-propose="owner-amend">Propose owner share changes from Excel</button>';
 }
 export const PROPOSAL_HELP='Your entry is saved as a proposal and nothing on the client record changes yet. Every proposal is checked by a Supervisor, Manager or Partner other than the person who proposed it; a Manager or Partner who neither prepared nor checked it then approves it. Each step needs a note of at least 10 characters.';
 export const KYC_HELP='The file is stored where only Managers and Partners can open it. It becomes KYC evidence only after a Supervisor, Manager or Partner checks it and a different Manager or Partner approves it. The client must already have a saved KYC profile.';
@@ -26,13 +26,13 @@ export function proposalActions(p,me){
  if(!mine&&checker)out.push('return');
  return out;
 }
-const OWNER_BATCH_ACTIONS=['owner_add','contact_save'];
+const OWNER_BATCH_ACTIONS=['owner_add','owner_share_amend','contact_save'];
 const LABEL={check:'Check',approve:'Approve and apply',return:'Return',withdraw:'Withdraw'};
 // One batch is the set of proposals created from one workbook. The buttons run the same single-proposal check or approval for each, so no rule is skipped.
 export function batchGroups(list,me){
  const lead=['PARTNER','MANAGER'].includes(me.category_code),checker=['SUPERVISOR','MANAGER','PARTNER'].includes(me.category_code),map=new Map();
  // A client batch (CB-) holds "Add client" proposals; an owners batch (OW-) holds "Add owner" and "Add contact" proposals from the client workbook.
- const kindOf=p=>p.action==='client_save'?'client':OWNER_BATCH_ACTIONS.includes(p.action)&&String(p.payload?.batch_ref||'').startsWith('OW-')?'owner':null;
+ const kindOf=p=>p.action==='client_save'?'client':OWNER_BATCH_ACTIONS.includes(p.action)&&/^O[WA]-/.test(String(p.payload?.batch_ref||''))?'owner':null;
  for(const p of list){const ref=p.payload?.batch_ref;if(!ref||!kindOf(p)||!OPEN.includes(p.status))continue;map.set(ref,[...(map.get(ref)||[]),p]);}
  return [...map].map(([ref,items])=>({ref,kind:kindOf(items[0]),total:items.length,
   check:checker?items.filter(p=>p.status==='Proposed'&&p.proposed_by!==me.staff_id).length:0,
@@ -125,6 +125,21 @@ export function bindProposals(ctx){
     const out=await request(up,{file:true,uploadKind:'owner_batch'});
     if(out.status==='VALIDATION_FAILED'){setTimeout(()=>modal('Nothing was proposed',batchIssuesHtml(out,esc)),20);return;}
     setTimeout(()=>modal(out.proposed.length?'Proposals sent for review':'Nothing new to propose',ownerBatchResultHtml(out,esc)),20);
+   },undefined,{successMessage:'Workbook checked. See the result.'});
+   return;
+  }
+  if(e.target.closest('[data-propose="owner-amend"]')){
+   if(!canPropose(data().me?.category_code))return;
+   modal('Propose owner share changes from an Excel workbook',form(
+    '<p class="info full">Use the workbook\'s “Owner Amendments” sheet. Each row changes the share of an owner who is already on the client\'s record, matched by client KRA PIN and the owner\'s name. Every row needs the new share, the evidence it rests on (for example “CR12 dated 20 Nov 2026”), who saw it and the date. After the changes, each client\'s owners must total 100%. Nothing changes on a client record until a different person checks the proposals and a Manager or Partner approves them.</p>'+
+    field('file','Workbook (.xlsx) *','','file','required accept=".xlsx"'),
+    'Check and propose'
+   ),async f=>{
+    const file=f.get('file');if(!file||!file.name)throw Error('Choose the workbook.');
+    const up=new FormData();up.set('file',file);up.set('mode','amend');
+    const out=await request(up,{file:true,uploadKind:'owner_batch'});
+    if(out.status==='VALIDATION_FAILED'){setTimeout(()=>modal('Nothing was proposed',batchIssuesHtml(out,esc)),20);return;}
+    setTimeout(()=>modal(out.proposed.length?'Proposals sent for review':'Nothing to propose',ownerBatchResultHtml(out,esc)),20);
    },undefined,{successMessage:'Workbook checked. See the result.'});
    return;
   }

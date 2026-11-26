@@ -6,7 +6,7 @@
 export const STAFF_RIGHTS=Object.freeze([
  {code:'client.details',area:'clients',group:'Client records',label:'Change client details (name, PIN, sector, legal structure)',roles:['PARTNER','MANAGER'],actions:['client_save','client_classify_save','v3_identity_save']},
  {code:'client.contacts',area:'clients',group:'Client records',label:'Add or change client contacts',roles:['PARTNER','MANAGER'],actions:['contact_save']},
- {code:'client.owners',area:'clients',group:'Client records',label:'Record owners, beneficial owners, partners, directors, shareholders, trustees, the group profile, and licences and permits',roles:['PARTNER','MANAGER'],actions:['owner_add','party_add','party_end','group_profile_save','licence_add','licence_end','v3_partners_add']},
+ {code:'client.owners',area:'clients',group:'Client records',label:'Record owners, beneficial owners, partners, directors, shareholders, trustees, the group profile, and licences and permits',roles:['PARTNER','MANAGER'],actions:['owner_add','owner_share_amend','party_add','party_end','group_profile_save','licence_add','licence_end','v3_partners_add']},
  {code:'client.setup',area:'clients',group:'Client records',label:'Client set-up: activities, VAT categories and the draft tax profile',roles:['PARTNER','MANAGER'],actions:['tax_profile_save','tax_profile_dependency_preview','v3_activity_add','v3_activities_preview','v3_activities_submit','v3_vat_categories_save']},
  {code:'client.tax_verify',area:'clients',group:'Client records',label:'Verify the client tax profile',roles:['PARTNER','MANAGER'],actions:['tax_profile_verify']},
  {code:'templates.library_publish',area:'projects',group:'Template library',label:'Publish or retire an upload template (not one you uploaded, unless you are the firm\'s only Partner)',roles:['PARTNER','MANAGER'],actions:['template_library_publish','template_library_retire']},
@@ -63,5 +63,5 @@ export const isRightCode=code=>RIGHT_CODES.includes(code);
 
 // Entries an Assistant or Supervisor may propose instead of saving directly. A proposal is checked and then approved by a Manager or Partner,
 // and the approver's own account applies it, so every existing validation still runs. Verification and approval actions are never proposable.
-export const PROPOSABLE_ACTIONS=Object.freeze(['client_save','contact_save','owner_add','compliance_evidence_save']);
+export const PROPOSABLE_ACTIONS=Object.freeze(['client_save','contact_save','owner_add','owner_share_amend','compliance_evidence_save']);
 export const isProposableAction=action=>PROPOSABLE_ACTIONS.includes(action);
