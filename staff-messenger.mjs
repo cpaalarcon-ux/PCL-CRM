@@ -8,6 +8,9 @@ import {observeMessengerThread} from './staff-messenger-thread.mjs?v=20261119-wo
 
 const filters=['All','Unread','Direct','Groups'];
 const fileTypes='.pdf,.csv,.xlsx,.docx,.png,.jpg,.jpeg';
+const voiceTypes=['webm','ogg','m4a'];
+const audioType=mime=>['audio/webm','audio/ogg','audio/mp4'].includes(mime);
+const voiceLimitMs=5*60*1000;
 const sizeLabel=size=>size>=1024*1024?`${(size/(1024*1024)).toFixed(1)} MB`:`${Math.max(1,Math.round(size/1024))} KB`;
 const imageType=mime=>['image/png','image/jpeg'].includes(mime);
 
@@ -119,10 +122,11 @@ export function createMessenger(ctx){
    <div class="messenger-thread-frame"><div class="messenger-messages" id="messengerMessages" tabindex="0" aria-label="Conversation messages"><div id="messengerTimeline"></div></div>
    <button type="button" id="messengerNewMessages" class="messenger-new-messages" data-msgr="bottom" hidden>↓ New messages</button></div>
    ${state.thread.read_only?'<p class="messenger-note">This conversation is closed and read-only.</p>':`<form id="messengerSend" class="messenger-composer"><div id="messengerAttachments" class="messenger-attachments"></div><div id="messengerMention" class="messenger-mention-list" role="listbox" aria-label="Mention a colleague" hidden></div>
-   <div class="messenger-compose-row"><button type="button" data-msgr="attach" class="messenger-attach" title="Attach files" aria-label="Attach files">📎</button><input type="file" id="messengerFiles" aria-label="Choose attachments" multiple accept="${fileTypes}" hidden>
+   <div class="messenger-compose-row"><button type="button" data-msgr="attach" class="messenger-attach" title="Attach files" aria-label="Attach files">📎</button><button type="button" data-msgr="record" class="messenger-attach" title="Record a voice note" aria-label="Record a voice note">🎙</button><input type="file" id="messengerFiles" aria-label="Choose attachments" multiple accept="${fileTypes}" hidden>
    <textarea name="body" rows="2" maxlength="4000" placeholder="Write a message" aria-label="Message or caption"></textarea><button type="submit" class="messenger-primary" aria-label="Send message">Send</button></div><p id="messengerState" class="messenger-error" role="alert"></p></form>`}`;
  }
  function fileCard(f){
+  if(audioType(f.mime_type))return `<div class="messenger-voice"><button type="button" data-msgr="play" data-id="${esc(f.attachment_id)}">▶ Voice note · ${esc(sizeLabel(f.size_bytes))}</button></div>`;
   const thumbnail=imageType(f.mime_type)?`<img class="messenger-thumbnail" alt="" data-msgr-image="${esc(f.attachment_id)}" width="160" height="100">`:fileTile(f.file_name);
   return `<button type="button" class="messenger-file" data-msgr="download" data-id="${esc(f.attachment_id)}" data-name="${esc(f.file_name)}">${thumbnail}<span><b>${esc(f.file_name)}</b><small>${esc(sizeLabel(f.size_bytes))} · Download</small></span></button>`;
  }
@@ -355,6 +359,44 @@ export function createMessenger(ctx){
   const list=document.querySelector('#messengerMention');if(list){list.hidden=true;list.innerHTML='';}
   paintComposer();
  }
+ let recording=null;
+ const stopTracks=r=>{for(const track of r.stream.getTracks())track.stop();};
+ async function toggleRecording(btn){
+  if(recording){recording.recorder.stop();return;}
+  if(!state.selected||!currentComposer()||getDraft().sending)return;
+  const id=state.selected,draft=getDraft();
+  if(!globalThis.MediaRecorder||!navigator.mediaDevices?.getUserMedia){draft.error='Voice notes are not supported in this browser.';paintComposer();return;}
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:true});}
+  catch{draft.error='Allow microphone access in your browser to record a voice note.';paintComposer();return;}
+  const mime=['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/mp4'].find(m=>MediaRecorder.isTypeSupported?.(m))||'';
+  const recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream),chunks=[];
+  const label=btn?.closest?.('form')?.querySelector('[data-msgr="record"]')||btn;
+  const rec={recorder,stream,chunks,id,timer:null};recording=rec;
+  recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};
+  recorder.onstop=()=>{
+   clearTimeout(rec.timer);stopTracks(rec);if(recording===rec)recording=null;
+   if(label?.isConnected){label.textContent='🎙';label.setAttribute('aria-label','Record a voice note');}
+   const type=(recorder.mimeType||mime||'audio/webm').split(';')[0];
+   const ext=type==='audio/ogg'?'ogg':type==='audio/mp4'?'m4a':'webm';
+   const blob=new Blob(chunks,{type});
+   if(rec.cancelled||state.selected!==id||!currentComposer())return;
+   if(blob.size<5){getDraft().error='Nothing was recorded. Try again.';paintComposer();return;}
+   addFiles([new File([blob],'voice-note-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.'+ext,{type})]);
+  };
+  recorder.start();
+  rec.timer=setTimeout(()=>{if(recording===rec)recorder.stop();},voiceLimitMs);
+  label.textContent='⏹';label.setAttribute('aria-label','Stop recording');
+ }
+ async function playVoice(btn){
+  const id=btn.dataset.id;
+  try{
+   btn.disabled=true;
+   const blob=await request({action:'discussion_attachment_download',attachment_id:id},{blob:true});
+   const audio=document.createElement('audio');audio.controls=true;audio.src=URL.createObjectURL(blob);
+   btn.replaceWith(audio);void audio.play?.()?.catch?.(()=>{});
+  }catch{btn.disabled=false;btn.textContent='Could not load. Tap to retry';}
+ }
  function addFiles(files){
   if(!state.selected||!currentComposer())return;
   const id=state.selected,draft=getDraft();if(draft.sending)return;
@@ -362,7 +404,7 @@ export function createMessenger(ctx){
   for(const file of files){
    if(draft.files.length>=8){draft.error='Attach up to eight files per message.';break;}
    const extension=file.name.toLowerCase().split('.').pop();
-   if(!fileTypes.split(',').includes('.'+extension)||file.size<5||file.size>10*1024*1024){draft.error='Choose a supported document or photo up to 10 MB.';continue;}
+   if(!(fileTypes.split(',').includes('.'+extension)||voiceTypes.includes(extension))||file.size<5||file.size>10*1024*1024){draft.error='Choose a supported document or photo up to 10 MB.';continue;}
    const f={id:crypto.randomUUID(),file,preview:imageType(file.type)?URL.createObjectURL(file):null,status:'uploading',progress:0,error:''};
    draft.files.push(f);void uploadFile(id,draft,f);
   }
@@ -446,6 +488,8 @@ export function createMessenger(ctx){
   if(a==='bottom'){threadDisplay?.toBottom();document.querySelector('#messengerMessages')?.focus({preventScroll:true});return;}
   if(a==='mention-pick'){pickMention(b);return;}
   if(a==='attach'){document.querySelector('#messengerFiles')?.click();return;}
+  if(a==='record'){void toggleRecording(b);return;}
+  if(a==='play'){void playVoice(b);return;}
   if(a==='retry'||a==='remove'){
    const draft=getDraft(),f=draft.files.find(x=>x.id===id);
    if(f&&a==='retry'&&!draft.sending)return uploadFile(state.selected,draft,f);
@@ -594,6 +638,7 @@ export function createMessenger(ctx){
   imageObserver?.disconnect();imageObserver=null;
   for(const image of images.values())void image.then(src=>{if(src)URL.revokeObjectURL(src);},()=>{});
   images.clear();
+  if(recording){recording.cancelled=true;recording.recorder.state!=='inactive'&&recording.recorder.stop();}
   for(const draft of drafts.values())for(const f of draft.files){f.controller?.abort();if(f.preview)URL.revokeObjectURL(f.preview);}
   drafts.clear();pendingShare=null;opener=null;panel()?.remove();mounted=false;
   Object.assign(state,{open:false,view:'list',tab:'chats',channels:[],selected:null,thread:null,groups:[],directory:[],contacts:[],query:'',filter:'All'});picked=new Set();editing=null;
