@@ -4,7 +4,7 @@
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Permissions-Policy: camera=(self), microphone=(self), geolocation=()
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; connect-src https://yfjiculexbzpkvtapudk.supabase.co wss://yfjiculexbzpkvtapudk.supabase.co; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/agora-rtc-sdk-ng@4.24.10/AgoraRTC_N-production.js; worker-src 'self' blob:; style-src 'self'; connect-src https://yfjiculexbzpkvtapudk.supabase.co wss://yfjiculexbzpkvtapudk.supabase.co https://*.agora.io wss://*.agora.io https://*.sd-rtn.com wss://*.sd-rtn.com https://*.rtnsvc.com wss://*.rtnsvc.com https://*.rtesvc.com wss://*.rtesvc.com; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 /staff-workspace-v6.mjs
   Cache-Control: no-store
