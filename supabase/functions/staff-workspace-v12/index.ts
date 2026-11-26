@@ -117,6 +117,7 @@ import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts
 import {clientBatchAction,clientBatchStage} from './client-batch-actions.ts';
 import {onboardingTemplateAction,onboardingTemplateStage} from './onboarding-template-actions.ts';
 import {ownerBatchAction,ownerBatchStage} from './owner-batch-actions.ts';
+import {ownerAmendStage} from './owner-amend-actions.ts';
 import {monthWorkAction} from './month-work-actions.ts';
 import {clientSetupPipelineAction} from './client-setup-pipeline-actions.ts';
 import {handlingFirmIds,readClientEntry} from './client-entry.ts';
@@ -851,7 +852,7 @@ Deno.serve(async(req:Request)=>{
    if(req.headers.get('x-erp-upload-kind')==='reference'){const result=await referenceUpload(req,id);return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='onboarding_template'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'clients');await requireActionRight(tx,a,{action:'onboarding_template_propose'});return onboardingTemplateStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='client_batch'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'clients');await requireActionRight(tx,a,{action:'client_batch_propose'});return clientBatchStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
-   if(req.headers.get('x-erp-upload-kind')==='owner_batch'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'clients');await requireActionRight(tx,a,{action:'owner_batch_propose'});return ownerBatchStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
+   if(req.headers.get('x-erp-upload-kind')==='owner_batch'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'clients');await requireActionRight(tx,a,{action:'owner_batch_propose'});return form.get('mode')==='amend'?ownerAmendStage(tx,a,form):ownerBatchStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData(),dataset=String(form.get('dataset')||''),area=dataset==='Staff'?'staff_access':'clients';const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,area);await requireActionRight(tx,a,{action:dataset==='Staff'?'master_staff_import':'client_master_import'});return masterImport(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
   }
