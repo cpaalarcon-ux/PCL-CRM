@@ -10,9 +10,11 @@ export async function discussionAction(tx:any,a:any,p:any,canArea:(area:string)=
  const documentLink=async(id:string)=>await canArea('documents')?(await tx`select document_id,file_name from erp_private.documents where document_id=${id}::uuid and deleted_at is null`)[0]:null;
  if(!String(p.action).startsWith('discussion_'))return undefined;
  if(String(p.action).startsWith('discussion_call_')){const call=await callAction(tx,a,p);if(call!==undefined)return call;fail(400,'Unknown call action.');}
+ if(p.action==='discussion_mentionable')return {people:await tx`select staff_id,full_name from erp_private.discussion_mentionable(${uuid(p.channel_id)}::uuid)`}
  if(p.action==='discussion_candidates')return {candidates:await tx`select * from erp_private.discussion_candidates() order by full_name`};
  if(p.action==='discussion_list')return {channels:await tx`select c.*,coalesce(m.sequence,0) last_sequence,m.created_at last_message_at,left(coalesce(nullif(m.body,''),case when m.shared_task_id is not null then 'Shared task' when m.shared_document_id is not null then 'Shared document' when m.sequence is not null then 'Attachment' end),120) last_body,m.author_id last_author_id,(select p.full_name from erp_private.chat_people(c.channel_id) p where p.staff_id=m.author_id) last_author_name,
  (select count(*)::int from erp_private.discussion_messages x where x.channel_id=c.channel_id and x.author_id<>${a.staff_id} and x.sequence>coalesce(r.last_sequence,0)) unread,
+ (select count(*)::int from erp_private.discussion_mentions dm join erp_private.discussion_messages x on x.message_id=dm.message_id where dm.channel_id=c.channel_id and dm.staff_id=${a.staff_id} and x.sequence>coalesce(r.last_sequence,0)) unread_mentions,
  case when c.kind='Direct' then (select p.full_name from erp_private.chat_people(c.channel_id) p where p.staff_id=case when c.dm_low=${a.staff_id} then c.dm_high else c.dm_low end) else c.title end display_title
  from erp_private.discussion_channels c left join lateral(select sequence,created_at,body,author_id,shared_task_id,shared_document_id from erp_private.discussion_messages where channel_id=c.channel_id order by sequence desc limit 1)m on true
  left join erp_private.discussion_reads r on r.channel_id=c.channel_id and r.staff_id=${a.staff_id} order by m.created_at desc nulls last,c.created_at desc limit 100`};
@@ -63,7 +65,7 @@ export async function discussionAction(tx:any,a:any,p:any,canArea:(area:string)=
    coalesce(t.task_name,sd.file_name) shared_title,
    coalesce(files.items,'[]'::jsonb) attachments,
    left(rm.body,140) reply_body,rs.full_name reply_author_name,coalesce(rm.has_attachments,false) reply_has_files,
-   coalesce(rx.items,'[]'::jsonb) reactions
+   coalesce(rx.items,'[]'::jsonb) reactions,coalesce(mn.items,'[]'::jsonb) mentions
    from (select * from erp_private.discussion_messages where channel_id=${c.channel_id} and (${before}::bigint is null or sequence<${before}) order by sequence desc limit 60) m
    left join erp_private.chat_people(${c.channel_id}) s on s.staff_id=m.author_id
    left join erp_private.documents d on d.document_id=m.document_id
@@ -73,6 +75,8 @@ export async function discussionAction(tx:any,a:any,p:any,canArea:(area:string)=
     from (select r.emoji,count(*)::int n,bool_or(r.staff_id=${a.staff_id}) mine,min(r.created_at) first_at,(array_agg(coalesce(pp.full_name,'Staff') order by r.created_at))[1:8] names
      from erp_private.discussion_reactions r left join erp_private.chat_people(${c.channel_id}) pp on pp.staff_id=r.staff_id
      where r.message_id=m.message_id group by r.emoji) g) rx on true
+   left join lateral(select jsonb_agg(jsonb_build_object('staff_id',dm.staff_id,'name',coalesce(pm.full_name,'Staff')) order by dm.created_at) items
+    from erp_private.discussion_mentions dm left join erp_private.chat_people(${c.channel_id}) pm on pm.staff_id=dm.staff_id where dm.message_id=m.message_id) mn on true
    left join erp_private.tasks t on ${showTasks}::boolean and t.task_id=m.shared_task_id and t.deleted_at is null
    left join erp_private.documents sd on ${showDocuments}::boolean and sd.document_id=m.shared_document_id and sd.deleted_at is null
    left join lateral(select jsonb_agg(jsonb_build_object('attachment_id',f.attachment_id,'file_name',f.file_name,'mime_type',f.mime_type,'size_bytes',f.size_bytes) order by f.created_at,f.attachment_id) items
@@ -109,6 +113,8 @@ export async function discussionAction(tx:any,a:any,p:any,canArea:(area:string)=
    values(${c.channel_id},${rid},${a.staff_id},${body},${reply},${doc},${task},${sharedDoc},${ids.length>0}) returning message_id,sequence`);
   for(const id of ids)await tx`update erp_private.discussion_attachments set message_id=${m.message_id} where attachment_id=${id}`;
   await tx`select erp_private.discussion_notify(${m.message_id}::uuid)`;
+  const mentionIds=[...new Set<string>((Array.isArray(p.mention_ids)?p.mention_ids:[]).slice(0,11).map(uuid))];
+  if(mentionIds.length)await tx`select erp_private.discussion_mention(${m.message_id}::uuid,${mentionIds}::uuid[])`;
   return m;
  }
  if(p.action==='discussion_react'){
