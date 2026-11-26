@@ -367,8 +367,8 @@ async function managerPasswordResetTargets(id:any,p:any){
 }
 async function bucket(){
  const r=await admin.storage.getBucket(BUCKET);
- if(r.data){if(r.data.public)throw new Error('Private storage configuration required');const updated=await admin.storage.updateBucket(BUCKET,{public:false,fileSizeLimit:10*1024*1024,allowedMimeTypes:['application/pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document','image/png','image/jpeg']});if(updated.error)throw new Error('Private upload settings unavailable');return;}
- const made=await admin.storage.createBucket(BUCKET,{public:false,fileSizeLimit:10*1024*1024,allowedMimeTypes:['application/pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document','image/png','image/jpeg']});
+ if(r.data){if(r.data.public)throw new Error('Private storage configuration required');const updated=await admin.storage.updateBucket(BUCKET,{public:false,fileSizeLimit:10*1024*1024,allowedMimeTypes:['application/pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document','image/png','image/jpeg','audio/webm','audio/ogg','audio/mp4']});if(updated.error)throw new Error('Private upload settings unavailable');return;}
+ const made=await admin.storage.createBucket(BUCKET,{public:false,fileSizeLimit:10*1024*1024,allowedMimeTypes:['application/pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document','image/png','image/jpeg','audio/webm','audio/ogg','audio/mp4']});
  if(made.error){const retry=await admin.storage.getBucket(BUCKET);if(!retry.data||retry.data.public)throw new Error('Private storage unavailable');}
 }
 async function referenceUpload(req:Request,id:any){

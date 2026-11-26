@@ -854,3 +854,4 @@ html{scroll-padding-top:calc(var(--detail-bar-h,0px) + .5rem)}
 .messenger-replying{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:6px 8px;margin-bottom:6px;border-left:3px solid #0b7a5a;background:rgba(11,122,90,.09);border-radius:4px}
 .messenger-replying small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;color:#475569}
 .messenger-flash{animation:messenger-flash 1.4s ease-out}@keyframes messenger-flash{0%{background:#fef3c7}100%{background:transparent}}
+.messenger-voice{margin:.25rem 0}.messenger-voice button{border:1px solid var(--line,#d0d5dd);background:#fff;border-radius:999px;padding:.4rem .9rem;cursor:pointer}.messenger-bubble audio{max-width:100%;height:40px}
