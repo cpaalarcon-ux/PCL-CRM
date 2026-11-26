@@ -42,6 +42,14 @@ export function batchBar(list,me,esc=v=>String(v??'')){
  const groups=batchGroups(list,me).filter(g=>g.check||g.approve);if(!groups.length)return '';
  return '<div class="info" id="clientBatches">'+groups.map(g=>`<p><b>Batch ${esc(g.ref)}</b> · ${g.total} ${g.kind==='owner'?'owner or contact entr'+(g.total===1?'y':'ies'):'client'+(g.total===1?'':'s')} waiting ${g.check?`<button type="button" class="secondary" data-batch="check" data-kind="${g.kind}" data-ref="${esc(g.ref)}">Check all (${g.check})</button> `:''}${g.approve?`<button type="button" class="primary" data-batch="approve" data-kind="${g.kind}" data-ref="${esc(g.ref)}">Approve all (${g.approve})</button>`:''}</p>`).join('')+'</div>';
 }
+export function pickBar(list,me){
+ const can=list.some(p=>proposalActions(p,me).some(a=>a==='check'||a==='approve'));if(!can)return '';
+ return '<div class="info" id="pickBar" hidden><span id="pickCount">0 ticked</span> <button type="button" class="secondary" data-pick-run="check" hidden>Check ticked</button> <button type="button" class="primary" data-pick-run="approve" hidden>Approve ticked</button></div>';
+}
+export function pickState(boxes){
+ const on=[...boxes].filter(b=>b.checked),checks=on.filter(b=>b.dataset.pickFor==='check'),approves=on.filter(b=>b.dataset.pickFor==='approve');
+ return {count:on.length,check:checks.map(b=>b.dataset.pick),approve:approves.map(b=>b.dataset.pick)};
+}
 export function batchIssuesHtml(out,esc=v=>String(v??'')){
  const rows=(items,limit)=>`<table><thead><tr><th>Row</th><th>Column</th><th>Problem</th><th>Suggestion</th></tr></thead><tbody>${items.slice(0,limit).map(x=>`<tr><td>${esc(x.row)}</td><td>${esc(x.column)}</td><td>${esc(x.issue)}</td><td>${esc(x.suggestion||'')}</td></tr>`).join('')}</tbody></table>${items.length>limit?`<p class="muted">Showing the first ${limit} of ${items.length}.</p>`:''}`;
  return `<p class="missing">${esc(out.message||'Nothing was proposed.')}</p>${rows(out.errors||[],100)}`;
@@ -57,19 +65,26 @@ export function proposalsCard(data,esc=v=>String(v??''),nameOf=()=>''){
   const lead=['PARTNER','MANAGER'].includes(data.me.category_code),file=lead&&p.action==='compliance_evidence_save'&&p.payload?.document_id?` <button type="button" class="secondary" data-kyc-file="${esc(p.payload.document_id)}">View file</button>`:'';
   const trail=[`Proposed by ${esc(p.proposed_by_name||nameOf(p.proposed_by)||'a colleague')}`,p.checked_by?`checked by ${esc(p.checked_by_name||nameOf(p.checked_by)||'a colleague')}`:'',p.decided_by?`${p.status==='Returned'?'returned':'approved'} by ${esc(p.decided_by_name||nameOf(p.decided_by)||'a colleague')}`:''].filter(Boolean).join(' · ');
   const note=p.decision_note?`<small class="muted">Note: ${esc(p.decision_note)}</small>`:p.check_note?`<small class="muted">Check note: ${esc(p.check_note)}</small>`:p.reason?`<small class="muted">Reason: ${esc(p.reason)}</small>`:'';
-  return `<tr><td><b>${esc(p.summary)}</b>${p.company_name?`<small class="muted">${esc(p.company_name)}</small>`:''}${note}</td><td><span class="badge ${p.status==='Approved'?'good':p.status==='Returned'||p.status==='Withdrawn'?'warn':'info'}">${esc(p.status)}</span></td><td><small>${trail}</small></td><td class="actions">${acts}${file}</td></tr>`;
+  const pick=acts&&(proposalActions(p,data.me).includes('check')||proposalActions(p,data.me).includes('approve'))?`<input type="checkbox" data-pick="${esc(p.proposal_id)}" data-pick-for="${proposalActions(p,data.me).includes('approve')?'approve':'check'}" aria-label="Tick ${esc(p.summary)}">`:'';
+  return `<tr><td class="pick">${pick}</td><td><b>${esc(p.summary)}</b>${p.company_name?`<small class="muted">${esc(p.company_name)}</small>`:''}${note}</td><td><span class="badge ${p.status==='Approved'?'good':p.status==='Returned'||p.status==='Withdrawn'?'warn':'info'}">${esc(p.status)}</span></td><td><small>${trail}</small></td><td class="actions">${acts}${file}</td></tr>`;
  }).join('');
  const waiting=list.filter(p=>OPEN.includes(p.status)).length;
  return `<details class="settings-fold" id="proposalsCard" data-preserve-open>
   <summary id="proposalsSummary">Proposals <span class="badge ${waiting?'warn':'good'}">${waiting} waiting</span></summary>
-  <div><p class="muted">${esc(PROPOSAL_HELP)}</p>${batchBar(list,data.me,esc)}
-   <table><thead><tr><th>Change</th><th>Status</th><th>Who</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+  <div><p class="muted">${esc(PROPOSAL_HELP)}</p>${batchBar(list,data.me,esc)}${pickBar(list,data.me)}
+   <table><thead><tr><th><input type="checkbox" data-pick-all aria-label="Tick every proposal you can handle"></th><th>Change</th><th>Status</th><th>Who</th><th></th></tr></thead><tbody>${rows}</tbody></table>
   </div>
  </details>`;
 }
 export function proposeButtons(clientId,role,suiteButton,esc=v=>String(v??'')){
  if(!canPropose(role))return '';
  return `<button type="button" class="secondary" data-propose="client" data-id="${esc(clientId)}">Propose details change</button>`+`<button type="button" class="secondary" data-propose="kyc" data-id="${esc(clientId)}">Propose KYC file</button>`+suiteButton('contact-new','Propose contact',clientId)+suiteButton('owner-new','Propose owner',clientId);
+}
+function syncPick(){
+ const bar=document.getElementById('pickBar');if(!bar)return;
+ const st=pickState(document.querySelectorAll('#proposalsCard [data-pick]'));
+ bar.hidden=!st.count;document.getElementById('pickCount').textContent=`${st.count} ticked`;
+ bar.querySelector('[data-pick-run="check"]').hidden=!st.check.length;bar.querySelector('[data-pick-run="approve"]').hidden=!st.approve.length;
 }
 export function bindProposals(ctx){
  const {esc,field,select,options,form,modal,request,data}=ctx;
@@ -141,6 +156,20 @@ export function bindProposals(ctx){
     if(out.status==='VALIDATION_FAILED'){setTimeout(()=>modal('Nothing was proposed',batchIssuesHtml(out,esc)),20);return;}
     setTimeout(()=>modal(out.proposed.length?'Proposals sent for review':'Nothing to propose',ownerBatchResultHtml(out,esc)),20);
    },undefined,{successMessage:'Workbook checked. See the result.'});
+   return;
+  }
+  if(e.target.closest('[data-pick-all]')){
+   const on=e.target.closest('[data-pick-all]').checked;document.querySelectorAll('#proposalsCard [data-pick]').forEach(b=>{b.checked=on;});syncPick();return;
+  }
+  if(e.target.closest('[data-pick]')){syncPick();return;}
+  const pr=e.target.closest('[data-pick-run]');
+  if(pr){
+   const kind=pr.dataset.pickRun,st=pickState(document.querySelectorAll('#proposalsCard [data-pick]')),ids=st[kind];if(!ids.length)return;
+   const title=kind==='check'?`Check ${ids.length} ticked proposal${ids.length===1?'':'s'}`:`Approve ${ids.length} ticked proposal${ids.length===1?'':'s'}`;
+   modal(title,form('<p class="info full">This runs the same check or approval that one proposal would get, one at a time, under your name. An entry you are not allowed to handle is skipped and listed.</p>'+field('note',kind==='check'?'Check conclusion * (at least 10 characters)':'Approval note * (at least 10 characters)','','text','required minlength="10" maxlength="500"'),title),async f=>{
+    const out=await request({action:kind==='check'?'client_proposal_check_selected':'client_proposal_approve_selected',proposal_ids:ids,note:f.get('note')});
+    setTimeout(()=>modal('Result',`<p>${kind==='check'?'Checked':'Approved'}: <b>${out.done.length}</b> · Held back: <b>${out.held.length}</b></p>${out.held.length?`<ul>${out.held.map(x=>`<li>${esc(x.name)}: ${esc(x.reason)}</li>`).join('')}</ul>`:''}`),20);
+   },undefined,{successMessage:kind==='check'?'Ticked proposals checked.':'Ticked proposals approved.'});
    return;
   }
   const bb=e.target.closest('[data-batch]');
