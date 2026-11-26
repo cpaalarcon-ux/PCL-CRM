@@ -36,7 +36,7 @@ import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261
 import {staffReadRequestUrl} from './staff-read-routing.mjs?v=20261124-mumbai-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
 import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1&team=20261212-v2&fold=20261125-v1&single=20261125-v1';
-import {createMessenger} from './staff-messenger.mjs?v=20261119-workspace';
+import {createMessenger} from './staff-messenger.mjs?v=20261126-replies';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
 import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1&imp=20261124-v1&fold=20261125-v1&single=20261125-v1';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';

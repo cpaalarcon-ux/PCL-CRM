@@ -16,9 +16,10 @@ export function createMessenger(ctx){
  const panel=()=>document.querySelector('#messengerPanel');
  const currentComposer=()=>document.querySelector('#messengerSend');
  const fileTile=name=>`<span class="messenger-file-format" aria-hidden="true">${esc(name.split('.').pop()?.toUpperCase()||'FILE')}</span>`;
+ const REACTIONS=['👍','❤️','😂','😮','🙏','✅'];
  const drafts=new Map(),images=new Map();
  const getDraft=(id=state.selected)=>{
-  if(!drafts.has(id))drafts.set(id,{text:'',files:[],shared:null,error:'',sending:false,request:null});
+  if(!drafts.has(id))drafts.set(id,{text:'',files:[],shared:null,reply:null,error:'',sending:false,request:null});
   return drafts.get(id);
  };
  let threadDisplay=null,threadRequest=null,markedRead=null,opener=null,pendingShare=null,dragDepth=0;
@@ -142,6 +143,21 @@ export function createMessenger(ctx){
   },{root:document.querySelector('#messengerMessages'),rootMargin:'100px'});
   for(const img of thumbnails)imageObserver.observe(img);
  }
+ // Replies quote the earlier message; reactions are small removable marks beside an immutable message.
+ const snippet=m=>m.body?m.body:m.has_attachments||m.attachments?.length?'Attachment':'Message';
+ function quoteHtml(m){
+  if(!m.reply_to)return '';
+  const who=m.reply_author_name||'Earlier message',text=m.reply_body||(m.reply_has_files?'Attachment':'');
+  return `<button type="button" class="messenger-quote" data-msgr="jump" data-id="${esc(m.reply_to)}" aria-label="Go to the message from ${esc(who)}"><b>${esc(who)}</b><span>${esc(text)}</span></button>`;
+ }
+ function reactionChips(m){
+  const list=Array.isArray(m.reactions)?m.reactions:[];
+  if(!list.length)return '';
+  return `<div class="messenger-reactions">${list.map(r=>`<button type="button" class="messenger-reaction${r.mine?' mine':''}" data-msgr="react" data-id="${esc(m.message_id)}" data-emoji="${esc(r.emoji)}" aria-pressed="${!!r.mine}" aria-label="${esc(r.emoji)} ${Number(r.count)}. ${esc((r.names||[]).join(', '))}${r.mine?'. Remove your reaction':'. Add your reaction'}" title="${esc((r.names||[]).join(', '))}">${esc(r.emoji)} ${Number(r.count)}</button>`).join('')}</div>`;
+ }
+ function messageTools(m){
+  return `<div class="messenger-tools"><button type="button" class="messenger-tool" data-msgr="reply" data-id="${esc(m.message_id)}" aria-label="Reply to this message">Reply</button><span class="messenger-react-bar" role="group" aria-label="React to this message">${REACTIONS.map(e=>`<button type="button" class="messenger-tool" data-msgr="react" data-id="${esc(m.message_id)}" data-emoji="${esc(e)}" aria-label="React ${esc(e)}">${esc(e)}</button>`).join('')}</span></div>`;
+ }
  function paintMessages({older=false}={}){
   const timeline=document.querySelector('#messengerTimeline');
   if(!timeline||!state.thread)return;
@@ -152,7 +168,7 @@ export function createMessenger(ctx){
    const own=m.author_id===me,t=tickFor(m,me,positions);
    const shared=m.shared_kind?`<button type="button" class="messenger-file messenger-record" data-msgr="shared" data-id="${esc(m.message_id)}"><span><b>${esc(m.shared_title|| (m.shared_kind==='task'?'Shared task':'Shared ERP document'))}</b><small>${m.shared_kind==='task'?'Open ERP task':'Open ERP document'}</small></span></button>`:'';
    const existingDocument=m.document_id&&m.file_name?`<button type="button" class="messenger-file" data-msgr="erp-download" data-id="${esc(m.document_id)}" data-name="${esc(m.file_name)}">${esc(m.file_name)}</button>`:'';
-   html+=`<article class="messenger-bubble ${own?'own':''}" data-message-id="${esc(m.message_id)}"><div class="messenger-meta"><b class="messenger-author">${own?'You':esc(m.author_name||'Staff')}</b><small>${esc(clock(m.created_at))}${t?` <span class="messenger-tick ${t.state}" role="img" aria-label="${esc(t.label)}" title="${esc(t.label)}">${t.glyph}</span>`:''}</small></div>${m.body?`<p>${esc(m.body)}</p>`:''}${shared}${existingDocument}${(m.attachments||[]).map(fileCard).join('')}${m.message_id===lastOwn&&t?`<small class="messenger-tick-label">${esc(t.label)}</small>`:''}</article>`;
+   html+=`<article class="messenger-bubble ${own?'own':''}" data-message-id="${esc(m.message_id)}"><div class="messenger-meta"><b class="messenger-author">${own?'You':esc(m.author_name||'Staff')}</b><small>${esc(clock(m.created_at))}${t?` <span class="messenger-tick ${t.state}" role="img" aria-label="${esc(t.label)}" title="${esc(t.label)}">${t.glyph}</span>`:''}</small></div>${quoteHtml(m)}${m.body?`<p>${esc(m.body)}</p>`:''}${shared}${existingDocument}${(m.attachments||[]).map(fileCard).join('')}${reactionChips(m)}${state.thread.read_only?'':messageTools(m)}${m.message_id===lastOwn&&t?`<small class="messenger-tick-label">${esc(t.label)}</small>`:''}</article>`;
   }
   html=(state.thread.has_older?'<button type="button" class="messenger-older" data-msgr="older">Load earlier messages</button>':'')+(html||'<p class="messenger-empty">No messages yet.</p>');
   if(timeline.dataset.lastHtml===html){if(threadDisplay.isAtBottom())markRead(Number(state.thread.messages.at(-1)?.sequence||0));return;}
@@ -281,7 +297,8 @@ export function createMessenger(ctx){
    ${f.status==='uploading'?`<progress max="100" value="${f.progress}" aria-label="Upload progress for ${esc(f.file.name)}"></progress>`:''}
    ${f.error?`<small class="messenger-error-inline">${esc(f.error)}</small>`:''}</div>
    ${f.status==='failed'?button('retry',f.id,'Retry',draft.sending):''}${button('remove',f.id,'Remove',draft.sending)}</div>`).join('');
-  const html=(draft.shared?`<div class="messenger-file-draft"><div><b>${esc(draft.shared.title)}</b><small>${draft.shared.kind==='task'?'ERP task':'ERP document'}</small></div>${button('remove-share','','Remove',draft.sending)}</div>`:'')+contents;
+  const replyBar=draft.reply?`<div class="messenger-replying"><div><b>Replying to ${esc(draft.reply.author)}</b><small>${esc(draft.reply.text)}</small></div>${button('cancel-reply','','Cancel',draft.sending)}</div>`:'';
+  const html=replyBar+(draft.shared?`<div class="messenger-file-draft"><div><b>${esc(draft.shared.title)}</b><small>${draft.shared.kind==='task'?'ERP task':'ERP document'}</small></div>${button('remove-share','','Remove',draft.sending)}</div>`:'')+contents;
   if(box.dataset.lastHtml!==html){box.dataset.lastHtml=html;box.innerHTML=html;}
   out.textContent=draft.error;
   area.readOnly=draft.sending;attach.disabled=draft.sending;
@@ -331,7 +348,7 @@ export function createMessenger(ctx){
   if(!id||draft.sending||draft.files.some(f=>f.status!=='ready'))return;
   const body=form.elements.body.value.trim();
   if(!body&&!draft.files.length&&!draft.shared)return;
-  const payload={channel_id:id,body,attachment_ids:draft.files.map(f=>f.id),
+  const payload={channel_id:id,body,reply_to:draft.reply?.id||null,attachment_ids:draft.files.map(f=>f.id),
    shared_task_id:draft.shared?.kind==='task'?draft.shared.id:null,shared_document_id:draft.shared?.kind==='document'?draft.shared.id:null};
   const signature=JSON.stringify(payload);
   if(draft.request?.signature!==signature)draft.request={signature,id:crypto.randomUUID()};
@@ -399,6 +416,25 @@ export function createMessenger(ctx){
    return;
   }
   if(a==='remove-share'){getDraft().shared=null;paintComposer();return;}
+  if(a==='cancel-reply'){getDraft().reply=null;paintComposer();focusComposer();return;}
+  if(a==='reply'){
+   const m=state.thread?.messages.find(x=>x.message_id===id);if(!m)return;
+   getDraft().reply={id:m.message_id,author:m.author_id===d().me.staff_id?'yourself':(m.author_name||'Staff'),text:snippet(m).slice(0,140)};
+   paintComposer();focusComposer();return;
+  }
+  if(a==='jump'){
+   const target=Array.from(document.querySelectorAll('#messengerTimeline [data-message-id]')).find(x=>x.dataset.messageId===id);
+   if(!target){report('That message is further back. Load earlier messages to see it.');return;}
+   target.scrollIntoView?.({block:'center'});target.classList.add('messenger-flash');setTimeout(()=>target.classList.remove('messenger-flash'),1600);return;
+  }
+  if(a==='react'){
+   const chat=state.selected,emoji=b.dataset.emoji,m=state.thread?.messages.find(x=>x.message_id===id);
+   if(!chat||!m||!emoji)return;
+   const mine=!!(m.reactions||[]).find(r=>r.emoji===emoji&&r.mine);
+   try{await request({action:'discussion_react',channel_id:chat,message_id:id,emoji,on:!mine});if(state.selected===chat)await loadThread(chat,{quiet:true});}
+   catch(e){report(e.message);}
+   return;
+  }
   if(a==='cancel-share'){pendingShare=null;report('');paint();document.querySelector('#messengerSearch')?.focus();return;}
   if(a==='shared')return openShared(id);
   if(a==='download'||a==='erp-download'){
