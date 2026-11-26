@@ -3,9 +3,10 @@ import {mandatoryState,buildClientTasks,clientConfigurationItems,TASK_ORDER} fro
 import {clientReadiness} from './work-ready-rules.mjs';
 import {today} from './suite-actions.ts';
 import {SECTIONS,SECTION_CODES,SOURCE_KINDS,sourceProblem,submitPlan,decidePlan,sectionState,sectionLabel,milestones} from './setup-review-rules.mjs';
+import {attempt} from './owner-batch-actions.ts';
 // Build 2828: deferred review of client set-up sections. The preparer submits and carries on; a Manager or Partner reviews later, all at once.
 // The Chart of Accounts and Opening Trial Balance keep their own blocking approvals; here they are only reported so the whole picture is on one screen.
-const ACTIONS=['client_setup_tasks_read','client_setup_review_read','client_setup_section_submit','client_setup_review_queue','client_setup_section_decide','client_work_ready','client_status_policy_read','client_status_policy_set'];
+const ACTIONS=['client_setup_tasks_read','client_setup_review_read','client_setup_section_submit','client_setup_section_submit_many','client_setup_review_queue','client_setup_section_decide','client_work_ready','client_status_policy_read','client_status_policy_set'];
 const LEADERS=['PARTNER','MANAGER'];
 
 async function mandatory(tx:any,cid:string){
@@ -16,6 +17,21 @@ async function mandatory(tx:any,cid:string){
  return {chart:{status:m.chart,label:'Chart of Accounts'},opening:{status:m.opening,label:'Opening Trial Balance',not_applicable:m.opening_not_applicable}};
 }
 const digest=async(tx:any,cid:string,code:string)=>String((await tx`select erp_private.client_setup_section_digest(${cid}::uuid,${code}) d`)[0].d);
+
+
+// A section with nothing recorded yet is not sent for review: there is nothing for a reviewer to look at.
+export const MAX_MANY=100;
+async function sectionHasData(tx:any,cid:string,code:string):Promise<boolean>{
+ const n=async(q:any)=>Number((await q)[0]?.n||0)>0;
+ if(code==='identity')return !!(await tx`select 1 from erp_private.clients where client_id=${cid} and legal_entity_type is not null`).length;
+ if(code==='year_end')return !!(await tx`select 1 from erp_private.clients where client_id=${cid} and year_end_month is not null`).length;
+ if(code==='tax')return await n(tx`select (select count(*) from erp_private.client_tax_profiles where client_id=${cid} and deleted_at is null)+(select count(*) from erp_private.client_tax_obligations where client_id=${cid}) n`);
+ if(code==='ownership')return await n(tx`select (select count(*) from erp_private.beneficial_owners where client_id=${cid} and deleted_at is null)+(select count(*) from erp_private.client_parties where client_id=${cid})+(select count(*) from erp_private.client_office_holders where client_id=${cid}) n`);
+ if(code==='contacts')return await n(tx`select (select count(*) from erp_private.client_contacts where client_id=${cid} and deleted_at is null)+(select count(*) from erp_private.client_field_facts where client_id=${cid} and status<>'Superseded' and field_key in('contact_person','contact_phone','contact_email')) n`);
+ // The other sections are lists: nothing recorded means an empty list.
+ return (await digest(tx,cid,code))!==md5Empty;
+}
+const md5Empty='d751713988987e9331980363e24189ce';
 
 async function readClient(tx:any,cid:string){
  const rows=await tx`select s.*,sb.full_name submitted_by_name,rb.full_name reviewed_by_name from erp_private.client_setup_sections s left join erp_private.staff_members sb on sb.staff_id=s.submitted_by left join erp_private.staff_members rb on rb.staff_id=s.reviewed_by where s.client_id=${cid}`;
@@ -32,6 +48,30 @@ async function readClient(tx:any,cid:string){
 export async function clientSetupReviewAction(tx:any,a:any,p:any):Promise<any>{
  if(!ACTIONS.includes(p.action))return undefined;
  if(['INTERN','ADMIN'].includes(a.category_code))fail(403,'Client set-up review is kept by staff with client access.');
+
+ if(p.action==='client_setup_section_submit_many'){
+  // Several clients at once: each client goes through the same single-client submission in its own savepoint.
+  const ids=[...new Set((Array.isArray(p.client_ids)?p.client_ids:[]).map((x:any)=>uuid(x)))];
+  if(!ids.length)fail(400,'Tick the clients to submit.');
+  if(ids.length>MAX_MANY)fail(400,`Choose at most ${MAX_MANY} clients at a time.`);
+  const list=Array.isArray(p.sections)?p.sections:[];
+  if(!list.length||list.length>SECTION_CODES.length)fail(400,'Choose the sections to submit.');
+  const seen=new Set<string>();
+  for(const item of list){const code=String(item?.section_code||'');if(!SECTION_CODES.includes(code))fail(400,'Unknown set-up section.');if(seen.has(code))fail(400,'A section appears twice.');seen.add(code);const problem=sourceProblem(String(item?.source_kind||''),text(item?.source_note||'',500,false));if(problem)fail(400,`${sectionLabel(code)}: ${problem}`);}
+  const submitted:any[]=[],skipped:any[]=[],held:any[]=[];
+  for(const id of ids){
+   const c=(await tx`select client_id,company_name from erp_private.clients where client_id=${id} and deleted_at is null and record_status<>'Archived'`)[0];
+   if(!c){held.push({client_id:id,name:'Client',reason:'This client is not available to your account.'});continue;}
+   const have:any[]=[];
+   for(const item of list){if(await sectionHasData(tx,id,String(item.section_code)))have.push(item);else skipped.push({client_id:id,name:c.company_name,section:sectionLabel(String(item.section_code)),reason:'Nothing recorded yet'});}
+   if(!have.length)continue;
+   const res=await attempt(tx,true,t=>clientSetupReviewAction(t,a,{action:'client_setup_section_submit',client_id:id,sections:have}));
+   if(res.ok)for(const r of res.out?.results||[])submitted.push({client_id:id,name:c.company_name,section:sectionLabel(r.section_code),result:r.result});
+   else held.push({client_id:id,name:c.company_name,reason:res.reason});
+  }
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_setup_sections','SETUP_SECTIONS_SUBMITTED_MANY',${crypto.randomUUID()},${tx.json({clients:ids.length,submitted:submitted.length,skipped:skipped.length,held:held.length})})`;
+  return {ok:true,submitted,skipped,held};
+ }
 
  if(p.action==='client_setup_tasks_read'){
   // One set-based read per table, all under the caller's client access. Only clients that are active and not archived have tasks.

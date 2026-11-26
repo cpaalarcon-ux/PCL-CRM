@@ -12,7 +12,8 @@ import {createKycGridUI} from './staff-kyc-grid.mjs?v=20261122-loc-v1';
 import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
 import {createAmlUI} from './staff-aml.mjs?v=20261121-fill-v1';
 import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261121-wiz-v1';
-import {panelHtml,queueHtml,collectSubmit,collectDecisions} from './staff-setup-review.mjs?v=20261116-setupreview-v1&rev=20261119-nav';
+import {panelHtml,queueHtml,collectSubmit,collectDecisions} from './staff-setup-review.mjs?v=20261116-setupreview-v1&rev=20261119-nav&all=20261126-v1';
+import {bulkSubmitHtml,collectBulk,bulkResultHtml,filterRows,tickShown} from './staff-setup-bulk.mjs?v=20261126-v1';
 import {setupChecklistHtml} from './staff-setup-checklist.mjs?v=20261125-checklist-v1';
 import {queueHtml as tasksQueueHtml,queueBody as tasksQueueBody,configurationHtml} from './staff-setup-tasks.mjs?v=20261116-choices-v1';
 import {createClientChoicesUI} from './staff-client-choices.mjs?v=20261116-choices-v1';
@@ -65,11 +66,23 @@ export function createImprovementUI(ctx){
   const host=$('#editorBody'),repaint=()=>{const list=host.querySelector('#setupTaskList');if(list)list.innerHTML=tasksQueueBody(res,{esc,search:host.querySelector('#setupTaskSearch')?.value||'',who:host.querySelector('#setupTaskWho')?.value||''});};
   host.querySelector('#setupTaskSearch')?.addEventListener('input',repaint);host.querySelector('#setupTaskWho')?.addEventListener('change',repaint);
  }
+
+ async function setupBulk(){
+  const list=(d().clients||[]).filter(c=>c.record_status!=='Archived').slice().sort((x,y)=>String(x.company_name).localeCompare(String(y.company_name)));
+  show('Submit set-up for review',bulkSubmitHtml(list,esc));
+  const host=$('#editorBody'),f=host.querySelector('#setupBulkForm'),count=()=>{host.querySelector('#setupBulkCount').textContent=[...f.querySelectorAll('input[name="bulk_client"]')].filter(x=>x.checked).length+' ticked';};
+  host.querySelector('#setupBulkSearch')?.addEventListener('input',e=>filterRows(host,e.target.value));
+  host.querySelector('#setupBulkAll')?.addEventListener('change',e=>{tickShown(host,e.target.checked);count();});
+  f?.addEventListener('change',e=>{if(e.target.name==='bulk_client')count();});
+  if(f)f.onsubmit=async e=>{e.preventDefault();const body=collectBulk(f);if(!body.client_ids.length){notice('Tick at least one client.',true);return;}if(!body.sections.length){notice('Tick at least one section.',true);return;}
+   try{const out=await request({action:'client_setup_section_submit_many',...body});show('Submitted for review',bulkResultHtml(out,esc));}catch(err){notice(err.message,true);}};
+ }
  async function setupQueue(){
   const q=await request({action:'client_setup_review_queue'});
   show('Review pending setup',queueHtml(q,{esc,shortDate}));
   const host=$('#editorBody'),act=async outcome=>{const groups=collectDecisions(host,outcome);if(!groups.length){notice('Tick at least one section.',true);return;}
    try{for(const g of groups)await request({action:'client_setup_section_decide',client_id:g.client_id,decisions:g.decisions});notice(outcome==='Approved'?'Approved.':'Returned with your comments.');await setupQueue();}catch(err){notice(err.message,true);}};
+  const all=$('#setupPickAll');if(all)all.onchange=()=>host.querySelectorAll('input[data-pick]:not(:disabled)').forEach(b=>{b.checked=all.checked;});
   const ok=$('#setupApprove'),back=$('#setupReturn');if(ok)ok.onclick=()=>act('Approved');if(back)back.onclick=()=>act('Returned');
  }
  async function loadClient(id){const r=await request({action:'v3_client_read',client_id:id});clientData=r;return r;}
@@ -179,7 +192,7 @@ function period(){const id=clientData.client.client_id;show('Add verified report
  function readiness(pid){show('KRA return export readiness',form(select('kind','Return type',['VAT3','IT1','IT2P','IT2C','P10'])+field('starts_on','Period start *','','date','required')+field('ends_on','Period end *','','date','required'),'Check readiness'),send('v3_export_readiness',{project_id:pid}),r=>show('Return export readiness',`<p class="info">${esc(r.label)}</p><ul>${r.issues.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><p>No portal submission or KRA import file has been generated.</p>`));}
  document.addEventListener('click',async e=>{const b=e.target.closest('[data-v3]');if(!b)return;b.disabled=true;try{const a=b.dataset.v3,id=b.dataset.id;
   if(['identity','vat-cats','activity','period','partners','stock-policy','stock-policy-step'].includes(a)&&clientData?.client?.client_id!==id)await loadClient(id);
-  if(a==='team'){await team.open(id,b.dataset.project||'');}if(a==='client')await client(id);if(a==='setup-review')await setupReview(id);if(a==='setup-queue')await setupQueue();if(a==='setup-tasks')await setupTasks();if(a==='bulk-setup')await bulk.open();if(a==='categories')await categories.open();if(a==='returns')await choices.returns(id);if(a==='exceptions')await choices.exceptions(id);if(a==='skip-step')await afterStep(id,b.dataset.key);if(a==='master')await grid.open(id);if(a==='master-list')await master.open(id);if(a==='aml')await aml.open(id);if(a==='aml-queue')await aml.openOverview();if(a==='setup')await setup.open(id);if(master.isAction(a))await master.handle(a,id,b.dataset.key);if(a==='identity')identity();if(a==='vat-cats')vatCats();if(a==='chart')await chart(id);if(a==='activity')activity();if(a==='activity-review')reviewActivity(id);if(a==='period')period();if(a==='partners')partners();if(a==='stock-policy')policy();if(a==='stock-policy-step')policy({step:true});if(a==='project')await project(id);if(a==='stock-vat')stockVat();if(a==='stock-new')stockNew();if(a==='stock-open')await stockOpen(b.dataset.project,id);if(a==='stock-edit')stockEdit();
+  if(a==='team'){await team.open(id,b.dataset.project||'');}if(a==='client')await client(id);if(a==='setup-review')await setupReview(id);if(a==='setup-queue')await setupQueue();if(a==='setup-bulk')await setupBulk();if(a==='setup-tasks')await setupTasks();if(a==='bulk-setup')await bulk.open();if(a==='categories')await categories.open();if(a==='returns')await choices.returns(id);if(a==='exceptions')await choices.exceptions(id);if(a==='skip-step')await afterStep(id,b.dataset.key);if(a==='master')await grid.open(id);if(a==='master-list')await master.open(id);if(a==='aml')await aml.open(id);if(a==='aml-queue')await aml.openOverview();if(a==='setup')await setup.open(id);if(master.isAction(a))await master.handle(a,id,b.dataset.key);if(a==='identity')identity();if(a==='vat-cats')vatCats();if(a==='chart')await chart(id);if(a==='activity')activity();if(a==='activity-review')reviewActivity(id);if(a==='period')period();if(a==='partners')partners();if(a==='stock-policy')policy();if(a==='stock-policy-step')policy({step:true});if(a==='project')await project(id);if(a==='stock-vat')stockVat();if(a==='stock-new')stockNew();if(a==='stock-open')await stockOpen(b.dataset.project,id);if(a==='stock-edit')stockEdit();
   if(a==='stock-submit'){const {pid,record:c}=stockData;await request({action:'v3_stock_submit',project_id:pid,control_id:c.control_id,revision:c.revision});await stockOpen(pid,c.control_id);}
   if(a==='stock-review'){const {pid,record:c}=stockData;show('Independent stock review',form(select('status','Decision',['Approved','Returned'],'Returned')+area('review_note','Review conclusion and evidence')+select('variance_evidence_id','Independent variance evidence if applicable',docs(pid))+'<p class="info full">Approval retains the source snapshot. A margin estimate remains provisional after approval and cannot certify annual stock.</p>'),send('v3_stock_review',{project_id:pid,control_id:c.control_id,revision:c.revision}),()=>stockOpen(pid,c.control_id));}
   if(a==='category-decide')await categoryDecide(id);if(a==='bank')await bank(b.dataset.project,id);if(a==='bank-defer')bankDefer();if(a==='bank-add')bankAdd();

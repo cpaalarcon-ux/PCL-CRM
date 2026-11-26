@@ -9,7 +9,7 @@ import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNo
 import {createOnboardingBatchUI} from './staff-onboarding-batch.mjs?v=20261214-ob-v1';
 import {createSetupPipelineUI} from './staff-setup-pipeline.mjs?v=20261125-pipe-v1';
 import {createMonthWorkUI} from './staff-month-work.mjs?v=20261125-month-v1';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2&bulk=20261126-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1&rev=20261119-2904&single=20261125-v1';
 import {needsWorkspaceConfirmation,workspaceContext,workspaceRecordMatches,workspaceScopeHash} from './staff-workspace-navigation.mjs?v=20261125-v1';
@@ -416,7 +416,7 @@ function clients(){
  const body=cards.map(x=>x.card).join('');
  const layout=loadViewMode(globalThis.localStorage,'clients')==='cards'?'cards':'list';
  const total=leaderView?clientPage?.total:rows.length;
- return assistantLockBanner(data,esc)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks">Client Setup Tasks</button>'+addClientButton(data)+'<button type="button" data-onboarding-batches>Onboarding batches</button></div>'}</div>
+ return assistantLockBanner(data,esc)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button type="button" data-v3="setup-bulk">Submit set-up for review</button>'+addClientButton(data)+'<button type="button" data-onboarding-batches>Onboarding batches</button></div>'}</div>
   <details class="settings-fold section-space" id="clientRegister" data-preserve-open><summary id="clientRegisterSummary">Client register${Number.isFinite(total)?` <span class="badge info">${total} client${total===1?'':'s'}</span>`: ''}</summary>
    <div class="client-register-${layout}">${viewSwitch(layout,false)}<div class="actions">${structureFilter(structureRows(data),esc)}</div>
     ${leaderView?registerBar(clientQuery,{sectors:(data.sectors||[]).map(x=>x.name),owners:data.staff.filter(x=>['MANAGER','PARTNER'].includes(x.category_code)&&x.access_status!=='Inactive')},esc):''}
