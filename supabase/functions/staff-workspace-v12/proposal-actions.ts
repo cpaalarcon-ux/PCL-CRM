@@ -13,6 +13,7 @@ export function proposalSummary(action:string,p:any):string{
  if(action==='client_save')return (p.client_id?'Change client details: ':'Add client: ')+(v(p.company_name)||'client');
  if(action==='contact_save')return 'Add client contact: '+(v(p.full_name)||'contact');
  if(action==='owner_add')return 'Add owner or controller: '+(v(p.full_name)||'person');
+ if(action==='owner_share_amend')return 'Change owner share: '+(v(p.owner_name)||'owner')+(p.ownership_percentage!==undefined?' to '+v(p.ownership_percentage)+'%':'');
  if(action==='compliance_evidence_save')return 'Add KYC file: '+(v(p.document_type)||'evidence')+(p.file_name?' ('+v(p.file_name)+')':'');
  return 'Change: '+action.replace(/_/g,' ');
 }

@@ -67,7 +67,7 @@ async function addEvidence(tx:any,a:any,cid:string,p:any,rules:any[]){
   values(${cid},${type},${form},${tx.array(covered)},${doc},${ref},${evidenceDate},${expires},${location},${copy},${form==='physical'?a.staff_id:null},${form==='physical'?evidenceDate:null},${onlineSource},${onlineRef},${form==='online'?a.staff_id:null},${form==='online'?evidenceDate:null},${a.staff_id}) returning evidence_id,covered_items`);
 }
 export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
- if(!['compliance_save','compliance_evidence_save','compliance_evidence_remove','compliance_verify','edd_approve','owner_add','party_add','party_end','group_profile_save','licence_add','licence_end','engagement_checklist','reference_service_add','reference_service_confirm','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
+ if(!['compliance_save','compliance_evidence_save','compliance_evidence_remove','compliance_verify','edd_approve','owner_add','owner_share_amend','party_add','party_end','group_profile_save','licence_add','licence_end','engagement_checklist','reference_service_add','reference_service_confirm','engagement_read','engagement_save','engagement_save_activate','engagement_activate','engagement_finalize'].includes(p.action))return undefined;
  leader(a);
  if(p.action==='owner_add'){
   const cid=uuid(p.client_id);one(await tx`select client_id from erp_private.clients where client_id=${cid}`);const before=await kycSnapshot(tx,cid);
@@ -77,6 +77,22 @@ export async function engagementAction(tx:any,a:any,p:any):Promise<any>{
   if(sighted&&(!sightedOn||sightedOn>today()||String(sightedBy||'').trim().length<2))fail(400,'Say when and by whom the identity document was sighted (the date cannot be in the future).');
   await tx`insert into erp_private.beneficial_owners(client_id,full_name,identity_reference,kra_pin,ownership_percentage,control_basis,identity_type,nationality,holding_type,pep_status,identity_sighted,identity_sighted_on,identity_sighted_by,created_by) values(${cid},${text(p.full_name,160)},${text(p.identity_reference,100)},${text(p.kra_pin||'',11,false)||null},${number(p.ownership_percentage,0,100)},${text(p.control_basis,1000)},${idType},${text(p.nationality||'',80,false)||null},${holding},${pepStatus},${sightKnown?sighted:null},${sightedOn},${sightedBy?.trim()||null},${a.staff_id})`;
   await kycChanged(tx,a,cid,before,['BENEFICIAL_OWNERSHIP'],text(p.change_reason||'',2000,false)||'Owner or controller added');return {ok:true};
+ }
+ // Change the share of an owner already on the record. The new share, the evidence it rests on and who sighted it are recorded with the change.
+ // The owners of a client may not add up to more than 100%. A client that is verified goes back for re-verification (kycChanged).
+ if(p.action==='owner_share_amend'){
+  const row=one(await tx`select * from erp_private.beneficial_owners where owner_id=${uuid(p.owner_id)} and deleted_at is null for update`);
+  if(p.revision!==undefined&&p.revision!==null&&String(row.revision)!==String(p.revision))fail(409,'This owner record changed after the amendment was proposed. Check the record and propose the amendment again.');
+  const share=number(p.ownership_percentage,0.01,100),ref=text(p.evidence_reference||'',200,false).trim();
+  if(ref.length<5)fail(400,'Say which document supports the new share, for example “CR12 dated 20 Nov 2026”.');
+  const on=date(p.sighted_on),by=text(p.sighted_by||'',120,false).trim();
+  if(!on||on>today())fail(400,'Enter the date the evidence was sighted (not in the future).');if(by.length<2)fail(400,'Say who sighted the evidence.');
+  const others=Number((await tx`select coalesce(sum(coalesce(ownership_percentage,0)),0) t from erp_private.beneficial_owners where client_id=${row.client_id} and deleted_at is null and owner_id<>${row.owner_id}`)[0].t);
+  if(others+share>100.00001)fail(400,`The owners of this client would hold ${Math.round((others+share)*100)/100}%. Their shares cannot add to more than 100%.`);
+  const before=await kycSnapshot(tx,row.client_id),old=Number(row.ownership_percentage||0);
+  await tx`update erp_private.beneficial_owners set ownership_percentage=${share},updated_by=${a.staff_id} where owner_id=${row.owner_id}`;
+  await kycChanged(tx,a,row.client_id,before,['BENEFICIAL_OWNERSHIP'],`Share of ${row.full_name} changed from ${old}% to ${share}%. Evidence: ${ref}; sighted by ${by} on ${on}. ${text(p.change_reason||'',1000,false)}`.trim().slice(0,2000));
+  return {ok:true,owner_id:row.owner_id,from:old,to:share};
  }
  // Step 3: directors, shareholders and trustees as data, the ownership link between entities, and the group profile. The database repeats
  // every rule below (see 20261109260000_ownership_parties.sql); these messages are the friendly versions.
