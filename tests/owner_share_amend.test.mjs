@@ -97,5 +97,5 @@ test('owner share amendments are wired into the screen, rights, catalogue and se
  assert.match(R(V+'owner-batch-actions.ts'),/const KINDS=\['owner_add','owner_share_amend','contact_save'\]/);
  assert.match(R('staff-proposals.mjs'),/data-propose="owner-amend"/);assert.match(R('staff-proposals.mjs'),/\^O\[WA\]-/);
  assert.match(R(V+'proposal-actions.ts'),/Change owner share:/);
- assert.doesNotMatch(R('supabase/migrations/20261214900000_owner_share_amend.sql'),/GRANT[^;]*(INSERT|UPDATE|DELETE)/);
+ assert.doesNotMatch(R('supabase/migrations/20261215000000_owner_share_amend.sql'),/GRANT[^;]*(INSERT|UPDATE|DELETE)/);
 });
