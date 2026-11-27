@@ -1,0 +1,58 @@
+name: Windows offline pilot
+
+on:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/windows-offline-pilot.yml'
+      - 'supabase/functions/staff-workspace-v12/offline-draft-actions.ts'
+      - 'supabase/migrations/*_offline_draft_receipts.sql'
+  push:
+    branches: ['feat/windows-offline-drafts']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-staging:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - name: Check local encryption, recovery and sync
+        run: npm test
+      - name: Build Windows staging installer
+        run: npm run build:windows
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify Windows secure storage with the Electron native module
+        run: npm run test:windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PCL-Nexus-Offline-Staging-unsigned
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-erp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Check scoped sync with full migration replay
+        run: node --test tests/chat_calls.test.mjs tests/migration_history.test.mjs

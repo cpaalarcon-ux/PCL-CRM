@@ -2,13 +2,16 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const html=read('staff-pilot.html'),release=JSON.parse(read('supabase/functions/staff-workspace-v12/release.json')),server=read('supabase/functions/staff-workspace-v12/index.ts'),auth=read('staff-pilot-auth.js');
 
-// One release identity: the page build label and the server release file must be bumped together,
-// so a stale website or a stale server is visible to staff and to the hosted check.
-test('page and server carry the same build label',()=>{
+// Compare the internal build ID independently of the staff-facing release version.
+test('page and server agree on the internal build and the public version',()=>{
  assert.match(release.build,/^\d{4}-\d{2}-\d{2}\.\d+$/);
  assert.equal(html.match(/data-build="([^"]+)"/)?.[1],release.build);
- const labels=[...html.matchAll(/build (\d{4}-\d{2}-\d{2}\.\d+)/g)].map(m=>m[1]);
- assert.ok(labels.length>=2&&labels.every(x=>x===release.build),'header and footer labels match release.json');
+ assert.match(release.version,/^\d+\.\d+\.\d+$/);
+ assert.equal(html.match(/data-version="([^"]+)"/)?.[1],release.version);
+ const labels=[...html.matchAll(/Version (\d+\.\d+\.\d+)/g)].map(m=>m[1]);
+ assert.equal(labels.length,3);
+ assert.ok(labels.every(v=>v===release.version));
+ assert.doesNotMatch(html,/build \d{4}-\d{2}-\d{2}\.\d+/i);
 });
 test('server exposes release_info before authentication and the page checks it without blocking sign-in',()=>{
  assert.match(server,/import release from '\.\/release\.json' with \{type:'json'\}/);

@@ -87,7 +87,7 @@ const server = http.createServer((req, res) => {
     serverBuild = '2000-01-01.1';
     await page.goto(`http://127.0.0.1:${server.address().port}/staff-pilot`);
     await page.locator('#releaseCheck').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#releaseCheck').textContent(), /ERP server is build 2000-01-01\.1/);
+    assert.match(await page.locator('#releaseCheck').textContent(), /A PCL Nexus update is available/);
     assert.equal(await page.locator('#loginForm button[type="submit"]').isDisabled(), false, 'a release mismatch warns but never blocks sign-in');
     assert.equal(await page.getByRole('button', { name: 'Forgot password?' }).isVisible(), false);
     serverBuild = await page.evaluate(() => document.documentElement.dataset.build);
