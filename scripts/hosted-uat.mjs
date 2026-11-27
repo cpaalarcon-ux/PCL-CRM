@@ -24,11 +24,18 @@ async function call(payload,token){
 async function ok(payload,token){const r=await call(payload,token);if(r.status!==200)throw Error(`${payload.action}: HTTP ${r.status} ${r.body.error||''}`);return r.body;}
 async function refused(name,payload,token,pattern){const r=await call(payload,token);record(name,r.status>=400&&r.status<500&&pattern.test(r.body.error||''),`HTTP ${r.status} ${r.body.error||''}`);}
 
-async function pageBuild(){const r=await fetch(PAGE,{cache:'no-store'});const html=await r.text();return html.match(/data-build="([^"]+)"/)?.[1]||null;}
-
 async function identity(){
- let build=null;for(let waited=0;waited<=waitSeconds;waited+=20){build=await pageBuild();if(build===expected)break;console.log(`Waiting for Pages: live page is ${build}, expected ${expected}`);await sleep(20000);}
+ let build=null,followups=false;
+ for(let waited=0;waited<=waitSeconds;waited+=20){
+  const r=await fetch(PAGE,{cache:'no-store'}),html=await r.text();
+  build=html.match(/data-build="([^"]+)"/)?.[1]||null;
+  followups=/src="staff-pilot-auth\.js\?[^"]*&amp;followups=1"/.test(html);
+  if(build===expected&&followups)break;
+  console.log(`Waiting for Pages: live page is ${build}, expected ${expected} with Home Messenger`);
+  if(waited<waitSeconds)await sleep(20000);
+ }
  record('Live page build matches this commit',build===expected,`page ${build}, expected ${expected}`);
+ record('Live page includes the Home Messenger update',followups);
  const server=await call({action:'release_info'});
  record('Live server build matches this commit',server.status===200&&server.body.build===expected,server.status===200?`server ${server.body.build||'unknown'}${server.body.commit?' · commit '+server.body.commit.slice(0,7):''}, expected ${expected}`:`HTTP ${server.status} — the server may predate release_info; deploy staff-workspace-v12`);
  for(const slug of ['staff-workspace-v6','staff-workspace-v7','staff-workspace-v8','staff-workspace-v9','staff-workspace-v10','staff-pilot']){
@@ -120,6 +127,10 @@ try{
  await identity();
  await browserCheck();
  if(await signIn()){
+  for(const role of Object.keys(ROLES)){
+   const response=await call({action:'communication_followup_list'},as(role));
+   record(`${role} can load My Follow-ups`,response.status===200&&Array.isArray(response.body.items),`HTTP ${response.status}`);
+  }
   if(process.env.UAT_CLIENT_ID&&process.env.UAT_PROJECT_ID&&process.env.UAT_PERIOD_ID){
    const base={project_id:process.env.UAT_PROJECT_ID,period_id:process.env.UAT_PERIOD_ID};
    const ledger=await ok({action:'ledger_periods',project_id:base.project_id},as('ASSISTANT')),period=ledger.periods.find(p=>p.period_id===base.period_id);

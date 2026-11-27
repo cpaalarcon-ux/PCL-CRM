@@ -12,6 +12,7 @@ import {salesAmendAction} from './sales-amend-actions.ts';
 import {referenceAction} from './reference-actions.ts';
 import {staffRightsAction} from './staff-rights-actions.ts';
 import {discussionAction} from './discussion-actions.ts';
+import {communicationFollowupAction} from './communication-followup-actions.ts';
 import {discardAttachment,downloadAttachment,readAttachmentUpload,storeAttachment} from './messenger-attachments.ts';
 import {taxPeriodAction} from './tax-period-actions.ts';
 import {improvementAction} from './improvement-actions.ts';
@@ -576,6 +577,14 @@ async function action(id:any,p:any){
   const run=async(p:any):Promise<any>=>{
   const requestArea=areaForStaffAction(String(p.action||''));if(!requestArea)deny();await requireStaffArea(tx,a,requestArea);await requireStaffRight(tx,a,String(p.action||''));
   await requireActionRight(tx,a,p,await loadActorRights());
+  if(String(p.action).startsWith('communication_followup_')){
+   const [deniedAreas,deniedRights]=await Promise.all([restrictedAreas(tx,a.staff_id),loadActorRights()]);
+   const followup=await communicationFollowupAction(tx,a,p,run,async action=>{
+    const area=areaForStaffAction(action),legacy=rightForAction(action);
+    return !!area&&staffAreaCanUse(a.category_code,deniedAreas,area)&&(!legacy||!deniedRights.includes(legacy))&&canUseAction(deniedRights,{action},area);
+   });
+   if(followup!==undefined)return followup;
+  }
   if(isProposableAction(String(p.action||''))&&['ASSISTANT','SUPERVISOR'].includes(a.category_code))return await createProposal(tx,a,p);
   const proposals=await proposalAction(tx,a,p,run);if(proposals!==undefined)return proposals;
   const clientBatch=await clientBatchAction(tx,a,p,run);if(clientBatch!==undefined)return clientBatch;

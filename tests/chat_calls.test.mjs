@@ -2,6 +2,8 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {AccessToken2,ServiceRtc}=require('agora-token/src/AccessToken2');
 const {discussionAction}=await import('../supabase/functions/staff-workspace-v12/discussion-actions.ts');
+const {communicationFollowupAction}=await import('../supabase/functions/staff-workspace-v12/communication-followup-actions.ts');
+const {workspaceAction}=await import('../supabase/functions/staff-workspace-v12/workspace-actions.ts');
 const {defaultStaffAreas,areaForStaffAction,staffAreaCanUse}=await import('../supabase/functions/staff-workspace-v12/staff-access-control.mjs');
 const root=path.resolve(import.meta.dirname,'..'),db=new PGlite(),id=()=>crypto.randomUUID(),F=id(),C=id(),P=id(),actors={};
 const tx=async(parts,...v)=>{const sql=parts.reduce((s,p,i)=>s+p+(i<v.length?'$'+(i+1):''),'');return (await db.query(sql,v)).rows;};tx.json=x=>JSON.stringify(x);tx.array=x=>'{'+x.join(',')+'}';
@@ -134,4 +136,56 @@ test('one-to-one voice and video calls: set-up, answer, decline, missed, busy, p
  await call('PARTNER',{action:'discussion_call_end',call_id:agId,outcome:'hangup'});
  await assert.rejects(()=>token('INTERN'),/not available to your account/);
 
+ await t.test('Messenger follow-ups use the ERP task workflow and keep private sources private',async()=>{
+  const assistant=actors.ASSISTANT.staff_id,assignee=actors.ASSISTANT2.staff_id;
+  const projectAssignment=()=>tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job)
+   values(${P},${assistant},${F},'ASSISTANT')`;
+  await projectAssignment();
+  const channel=(await chat('ASSISTANT',{action:'discussion_open',kind:'Direct',staff_id:actors.PARTNER.staff_id})).channel.channel_id;
+  const body='Private note from the fictitious caller';
+  const link=await chat('ASSISTANT',{action:'discussion_send',channel_id:channel,request_id:crypto.randomUUID(),body});
+  const source={channel_id:channel,message_id:link.message_id};
+  const input={...source,project_id:P,assigned_to:assignee,title:'Respond to KRA notice',
+   summary:'Prepare the response and send it for review.',due_on:'2026-11-27'};
+  const action=(role,name,fields={},denied=[])=>as(role,a=>communicationFollowupAction(tx,a,{action:'communication_followup_'+name,...fields},
+   payload=>workspaceAction(tx,a,payload),async key=>!denied.includes(key)));
+  const read=role=>action(role,'list');
+  await assert.rejects(()=>action('PARTNER','create',input),/unavailable/,'draft work cannot bypass the task gate');
+  await db.exec('set session_replication_role=replica');
+  await tx`update erp_private.projects set status='Active' where project_id=${P}`;
+  await tx`update erp_private.clients set opening_balance_status='No opening balances',
+   opening_balance_note='Fictional client has no opening balances',opening_balance_confirmed_by=${actors.PARTNER.staff_id},opening_balance_confirmed_at=now()
+   where client_id=${C}`;
+  await db.exec('set session_replication_role=origin');
+  const options=await action('ASSISTANT','options',source);
+  assert.equal(options.body,body);
+  assert.equal(options.create,false);
+  assert.equal(options.projects[0].project_id,P);
+  await assert.rejects(()=>action('MANAGER','options',source),/unavailable/);
+  await assert.rejects(()=>action('PARTNER','options',source,['discussion_messages']),/cannot create or request/);
+  await assert.rejects(()=>action('ASSISTANT','create',input),/authorised reviewer/);
+  assert.equal((await read('ASSISTANT')).items.length,0,'a denied write rolls the request back');
+  assert.deepEqual(await action('ASSISTANT','create',{...input,request_only:true}),{requested:true});
+  assert.equal((await read('MANAGER')).items.length,0,'a reviewer outside the conversation cannot read the request');
+  const pending=(await read('PARTNER')).items.find(x=>x.kind==='request');
+  assert.ok(pending.awaiting_review);
+  assert.equal(pending.message_id,source.message_id);
+  await assert.rejects(()=>action('PARTNER','create',{...input,assigned_to:actors.MANAGER.staff_id}),/active Assistants only/);
+  const {task_id}=await action('PARTNER','create',input);
+  assert.ok(task_id);
+  assert.deepEqual(await action('PARTNER','create',input),{existing:true,task_id});
+  assert.equal((await tx`select count(*)::int n from erp_private.tasks where task_name=${input.title}`)[0].n,1);
+  const assigned=(await read('ASSISTANT2')).items.find(x=>x.id===task_id);
+  assert.equal(assigned.title,input.title);
+  assert.equal(assigned.due_on,input.due_on);
+  assert.equal(assigned.message_id,null);
+  assert.equal(assigned.channel_id,null);
+  assert.equal((await tx`select description from erp_private.tasks where task_id=${task_id}`)[0].description,input.summary);
+  assert.equal((await read('PARTNER')).items.some(x=>x.kind==='request'),false);
+  const newer=await chat('ASSISTANT',{action:'discussion_send',channel_id:channel,request_id:crypto.randomUUID(),body:'A later message'});
+  assert.notEqual(newer.message_id,source.message_id);
+  const earlier=await chat('PARTNER',{action:'discussion_messages',channel_id:channel,at_message_id:source.message_id});
+  assert.equal(earlier.messages.at(-1).message_id,source.message_id);
+  await assert.rejects(()=>chat('ASSISTANT2',{action:'discussion_messages',channel_id:channel,at_message_id:source.message_id}),/not available/);
+ });
 });
