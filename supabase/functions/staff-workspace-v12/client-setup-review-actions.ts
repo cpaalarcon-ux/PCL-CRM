@@ -2,11 +2,11 @@ import {fail,uuid,text} from './validation.mjs';
 import {mandatoryState,buildClientTasks,clientConfigurationItems,TASK_ORDER} from './client-setup-tasks-rules.mjs';
 import {clientReadiness} from './work-ready-rules.mjs';
 import {today} from './suite-actions.ts';
-import {REQUIRED_MINIMUM,SECTIONS,SECTION_CODES,SOURCE_KINDS,sourceProblem,submitPlan,decidePlan,sectionState,sectionLabel,milestones} from './setup-review-rules.mjs';
+import {REQUIRED_MINIMUM,SECTIONS,SECTION_CODES,SOURCE_KINDS,sourceProblem,submitPlan,decidePlan,sectionState,sectionLabel,milestones,planApproveReady} from './setup-review-rules.mjs';
 import {attempt} from './owner-batch-actions.ts';
 // Build 2828: deferred review of client set-up sections. The preparer submits and carries on; a Manager or Partner reviews later, all at once.
 // The Chart of Accounts and Opening Trial Balance keep their own blocking approvals; here they are only reported so the whole picture is on one screen.
-const ACTIONS=['client_setup_tasks_read','client_setup_review_read','client_setup_section_submit','client_setup_section_submit_many','client_setup_review_queue','client_setup_section_decide','client_work_ready','client_status_policy_read','client_status_policy_set'];
+const ACTIONS=['client_setup_tasks_read','client_setup_review_read','client_setup_section_submit','client_setup_section_submit_many','client_setup_review_queue','client_setup_section_approve_ready','client_setup_section_decide','client_work_ready','client_status_policy_read','client_status_policy_set'];
 const LEADERS=['PARTNER','MANAGER'];
 
 async function mandatory(tx:any,cid:string){
@@ -107,7 +107,28 @@ export async function clientSetupReviewAction(tx:any,a:any,p:any):Promise<any>{
    byClient.set(r.client_id,x);
   }
   const clients=[...byClient.values()];
-  return {clients,total:clients.reduce((n:number,c:any)=>n+c.sections.length,0)};
+  const sole=!!(await tx`select erp_private.sole_active_partner() as ok`)[0]?.ok;
+  return {clients,total:clients.reduce((n:number,c:any)=>n+c.sections.length,0),sole_partner:sole};
+ }
+
+ // Approve all ready: every pending section that has not been edited since it was sent, and that the signed-in reviewer is allowed to decide, in one action.
+ // It uses the same rules as a single approval (a different Manager or Partner, except your firm's only Partner) and the same insert-only history.
+ // dry_run (the default) changes nothing and lists what would be approved and what is left for a person to look at.
+ if(p.action==='client_setup_section_approve_ready'){
+  if(!LEADERS.includes(a.category_code))fail(403,'A Manager or Partner reviews set-up sections.');
+  const apply=p.dry_run===false;
+  const note=text(p.note||'',1000,false).trim();
+  if(apply&&note.length<10)fail(400,'Record why you are approving these in at least 10 characters.');
+  const sole=!!(await tx`select erp_private.sole_active_partner() as ok`)[0]?.ok;
+  const rows=await tx`select s.section_id,s.client_id,c.company_name,s.section_code,s.content_digest,s.submitted_by,s.source_kind,erp_private.client_setup_section_digest(s.client_id,s.section_code) now_digest from erp_private.client_setup_sections s join erp_private.clients c on c.client_id=s.client_id and c.deleted_at is null where s.status='Pending Review' order by c.company_name,s.section_code limit 2000`;
+  const plan=planApproveReady(rows,{staff_id:a.staff_id,sole});
+  if(!apply)return {ok:true,dry_run:true,ready:plan.ready.length,clients:new Set(plan.ready.map((r:any)=>r.client_id)).size,left:plan.left,sole_partner:sole};
+  for(const r of plan.ready){
+   await tx`update erp_private.client_setup_sections set status='Approved',approved_digest=content_digest,reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${note},unchanged_approval=false where section_id=${r.section_id} and status='Pending Review'`;
+   await tx`insert into erp_private.client_setup_section_events(section_id,client_id,section_code,action,status_after,actor_id,note,digest,source_kind) values(${r.section_id},${r.client_id},${r.section_code},'Approved','Approved',${a.staff_id},${'Approved in bulk (approve all ready): '+note},${r.content_digest},${r.source_kind})`;
+  }
+  await tx`insert into erp_private.audit_events(actor_auth_id,database_role,table_name,action,record_key,after_values) values(${a.auth_user_id},current_user,'client_setup_sections','SETUP_SECTIONS_APPROVED_READY',${crypto.randomUUID()},${tx.json({approved:plan.ready.length,left:plan.left.length})})`;
+  return {ok:true,dry_run:false,approved:plan.ready.length,clients:new Set(plan.ready.map((r:any)=>r.client_id)).size,left:plan.left};
  }
 
 
