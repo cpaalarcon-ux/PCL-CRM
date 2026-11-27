@@ -5,6 +5,7 @@ import {createCalls,callsSupported} from './staff-chat-call.mjs?v=20261126-agora
 // and the existing project / task discussions in one list. Messages stay immutable and private; a System Administrator
 // manages groups and members but never reads a chat they are not in.
 import {observeMessengerThread} from './staff-messenger-thread.mjs?v=20261119-workspace';
+import {openFollowupForm} from './staff-communication-followups.mjs?v=1';
 
 const filters=['All','Unread','Direct','Groups'];
 const fileTypes='.pdf,.csv,.xlsx,.docx,.png,.jpg,.jpeg';
@@ -30,6 +31,7 @@ export function createMessenger(ctx){
 
  const state={open:false,view:'list',tab:'chats',channels:[],selected:null,thread:null,groups:[],directory:[],contacts:[],query:'',filter:'All'};
  let timer=null,callTimer=null,client=null,subscription=null,userSub=null,userToken=null,userOk=false,generation=0,mounted=false,baselined=false,baseTitle=null,unlockBound=false;
+ let sourceMessage=null;
  const prefs=loadPrefs(),beeper=createBeeper(window),calls=createCalls({request,notice,beeper,onChange:()=>paintBadge(),host:()=>panel()?.open?panel():document.body}),viewingId=()=>state.open&&state.view==='thread'&&document.visibilityState==='visible'?state.selected:null;
  const isAdmin=()=>d()?.me?.category_code==='ADMIN',isIntern=()=>d()?.me?.category_code==='INTERN';
  const nairobi='Africa/Nairobi';
@@ -56,7 +58,7 @@ export function createMessenger(ctx){
   const host=document.querySelector('#messenger');if(!host)return;
   if(!host.dataset.ready){
    host.dataset.ready='1';
-   host.innerHTML=`<button type="button" id="messengerButton" class="messenger-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="messengerPanel"><span aria-hidden="true">💬</span> Messenger<span id="messengerBadge" class="messenger-badge" hidden></span></button>`;
+   host.innerHTML=`<button type="button" id="messengerButton" class="messenger-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="messengerPanel"><span aria-hidden="true">💬</span> PCL Messenger<span id="messengerBadge" class="messenger-badge" hidden></span></button>`;
    const dialog=document.createElement('dialog');
    dialog.id='messengerPanel';dialog.className='messenger-panel';dialog.setAttribute('aria-labelledby','messengerTitle');
    dialog.innerHTML=`<header class="messenger-top"><h2 id="messengerTitle">PCL Messenger</h2><div><span id="messengerSound"></span><button type="button" class="messenger-exit" data-msgr="close">Return to ERP</button></div></header><div id="messengerGlobalStatus" class="messenger-global-status" role="alert"></div><div class="messenger-layout" id="messengerLayout"></div>`;
@@ -68,7 +70,7 @@ export function createMessenger(ctx){
  const report=message=>{const status=document.querySelector('#messengerGlobalStatus');if(status)status.textContent=message;};
  function paintBadge(){
   const badge=document.querySelector('#messengerBadge'),button=document.querySelector('#messengerButton');if(!badge||!button)return;
-  const n=unreadTotal();badge.hidden=!n;badge.textContent=n>99?'99+':String(n);button.setAttribute('aria-label',n?`Chat, ${n} unread`:'Chat');button.setAttribute('aria-expanded',String(state.open));
+  const n=unreadTotal();badge.hidden=!n;badge.textContent=n>99?'99+':String(n);button.setAttribute('aria-label',n?`PCL Messenger, ${n} unread`:'PCL Messenger');button.setAttribute('aria-expanded',String(state.open));
   baseTitle??=document.title.replace(/^\(\d+\+?\)\s+/,'');const counted=titleWithCount(baseTitle,n);document.title=calls.ringing()?'📞 Incoming call · '+counted:counted;
  }
  async function refreshList(){
@@ -119,9 +121,10 @@ export function createMessenger(ctx){
   if(!c)return header('Opening conversation','',true)+'<p class="messenger-empty" role="status">Loading messages…</p>';
   const sub=c.kind==='Group'?`Group · ${state.thread.members?.length||0} members`:kindLabel(c);
   return `<div id="messengerThreadHead">${header(label(state.thread.listing||c),sub,true,callButtons(c)+muteButton(c.channel_id))}</div>
+   ${sourceMessage?'<div class="messenger-actions"><button type="button" data-msgr="latest">Jump to latest messages</button></div>':''}
    <div class="messenger-thread-frame"><div class="messenger-messages" id="messengerMessages" tabindex="0" aria-label="Conversation messages"><div id="messengerTimeline"></div></div>
    <button type="button" id="messengerNewMessages" class="messenger-new-messages" data-msgr="bottom" hidden>↓ New messages</button></div>
-   ${state.thread.read_only?'<p class="messenger-note">This conversation is closed and read-only.</p>':`<form id="messengerSend" class="messenger-composer"><div id="messengerAttachments" class="messenger-attachments"></div><div id="messengerMention" class="messenger-mention-list" role="listbox" aria-label="Mention a colleague" hidden></div>
+   ${sourceMessage?'':state.thread.read_only?'<p class="messenger-note">This conversation is closed and read-only.</p>':`<form id="messengerSend" class="messenger-composer"><div id="messengerAttachments" class="messenger-attachments"></div><div id="messengerMention" class="messenger-mention-list" role="listbox" aria-label="Mention a colleague" hidden></div>
    <div class="messenger-compose-row"><button type="button" data-msgr="attach" class="messenger-attach" title="Attach files" aria-label="Attach files">📎</button><button type="button" data-msgr="record" class="messenger-attach" title="Record a voice note" aria-label="Record a voice note">🎙</button><input type="file" id="messengerFiles" aria-label="Choose attachments" multiple accept="${fileTypes}" hidden>
    <textarea name="body" rows="2" maxlength="4000" placeholder="Write a message" aria-label="Message or caption"></textarea><button type="submit" class="messenger-primary" aria-label="Send message">Send</button></div><p id="messengerState" class="messenger-error" role="alert"></p></form>`}`;
  }
@@ -160,7 +163,9 @@ export function createMessenger(ctx){
   return `<div class="messenger-reactions">${list.map(r=>`<button type="button" class="messenger-reaction${r.mine?' mine':''}" data-msgr="react" data-id="${esc(m.message_id)}" data-emoji="${esc(r.emoji)}" aria-pressed="${!!r.mine}" aria-label="${esc(r.emoji)} ${Number(r.count)}. ${esc((r.names||[]).join(', '))}${r.mine?'. Remove your reaction':'. Add your reaction'}" title="${esc((r.names||[]).join(', '))}">${esc(r.emoji)} ${Number(r.count)}</button>`).join('')}</div>`;
  }
  function messageTools(m){
-  return `<div class="messenger-tools"><button type="button" class="messenger-tool" data-msgr="reply" data-id="${esc(m.message_id)}" aria-label="Reply to this message">Reply</button><span class="messenger-react-bar" role="group" aria-label="React to this message">${REACTIONS.map(e=>`<button type="button" class="messenger-tool" data-msgr="react" data-id="${esc(m.message_id)}" data-emoji="${esc(e)}" aria-label="React ${esc(e)}">${esc(e)}</button>`).join('')}</span></div>`;
+  const followup=ctx.canFollowup?.()? `<button type="button" class="messenger-tool" data-msgr="followup" data-id="${esc(m.message_id)}">Create Follow-up</button>`:'';
+  const reply=state.thread.read_only||sourceMessage?'':`<button type="button" class="messenger-tool" data-msgr="reply" data-id="${esc(m.message_id)}" aria-label="Reply to this message">Reply</button><span class="messenger-react-bar" role="group" aria-label="React to this message">${REACTIONS.map(e=>`<button type="button" class="messenger-tool" data-msgr="react" data-id="${esc(m.message_id)}" data-emoji="${esc(e)}" aria-label="React ${esc(e)}">${esc(e)}</button>`).join('')}</span>`;
+  return reply||followup?`<div class="messenger-tools">${reply}${followup}</div>`:'';
  }
  function paintMessages({older=false}={}){
   const timeline=document.querySelector('#messengerTimeline');
@@ -172,7 +177,7 @@ export function createMessenger(ctx){
    const own=m.author_id===me,t=tickFor(m,me,positions);
    const shared=m.shared_kind?`<button type="button" class="messenger-file messenger-record" data-msgr="shared" data-id="${esc(m.message_id)}"><span><b>${esc(m.shared_title|| (m.shared_kind==='task'?'Shared task':'Shared ERP document'))}</b><small>${m.shared_kind==='task'?'Open ERP task':'Open ERP document'}</small></span></button>`:'';
    const existingDocument=m.document_id&&m.file_name?`<button type="button" class="messenger-file" data-msgr="erp-download" data-id="${esc(m.document_id)}" data-name="${esc(m.file_name)}">${esc(m.file_name)}</button>`:'';
-   html+=`<article class="messenger-bubble ${own?'own':''}" data-message-id="${esc(m.message_id)}"><div class="messenger-meta"><b class="messenger-author">${own?'You':esc(m.author_name||'Staff')}</b><small>${esc(clock(m.created_at))}${t?` <span class="messenger-tick ${t.state}" role="img" aria-label="${esc(t.label)}" title="${esc(t.label)}">${t.glyph}</span>`:''}</small></div>${quoteHtml(m)}${m.body?`<p>${bodyHtml(m)}</p>`:''}${shared}${existingDocument}${(m.attachments||[]).map(fileCard).join('')}${reactionChips(m)}${state.thread.read_only?'':messageTools(m)}${m.message_id===lastOwn&&t?`<small class="messenger-tick-label">${esc(t.label)}</small>`:''}</article>`;
+   html+=`<article class="messenger-bubble ${own?'own':''}" data-message-id="${esc(m.message_id)}"><div class="messenger-meta"><b class="messenger-author">${own?'You':esc(m.author_name||'Staff')}</b><small>${esc(clock(m.created_at))}${t?` <span class="messenger-tick ${t.state}" role="img" aria-label="${esc(t.label)}" title="${esc(t.label)}">${t.glyph}</span>`:''}</small></div>${quoteHtml(m)}${m.body?`<p>${bodyHtml(m)}</p>`:''}${shared}${existingDocument}${(m.attachments||[]).map(fileCard).join('')}${reactionChips(m)}${messageTools(m)}${m.message_id===lastOwn&&t?`<small class="messenger-tick-label">${esc(t.label)}</small>`:''}</article>`;
   }
   html=(state.thread.has_older?'<button type="button" class="messenger-older" data-msgr="older">Load earlier messages</button>':'')+(html||'<p class="messenger-empty">No messages yet.</p>');
   if(timeline.dataset.lastHtml===html){if(threadDisplay.isAtBottom())markRead(Number(state.thread.messages.at(-1)?.sequence||0));return;}
@@ -242,18 +247,20 @@ export function createMessenger(ctx){
   }catch{ /* The poll below keeps messages arriving without realtime. */ }
  }
  function markRead(sequence){
+  if(sourceMessage)return;
   const id=state.selected;
   if(!sequence||!id||!state.open||document.visibilityState!=='visible'||markedRead?.id===id&&markedRead.sequence>=sequence)return;
   const marker={id,sequence};markedRead=marker;
   void request({action:'discussion_read',channel_id:id,last_sequence:sequence}).then(refreshList).catch(()=>{if(markedRead===marker)markedRead=null;});
  }
- async function loadThread(id,{before=null,quiet=false}={}){
+ async function loadThread(id,{before=null,quiet=false,at=null}={}){
+  const target=at||(!before?sourceMessage:null);
   if(threadRequest?.id===id)return threadRequest.promise;
   const token=++generation;
   const read=async()=>{
    try{
     const prior=state.thread?.channel?.channel_id===id?state.thread:null;
-    const r=await request({action:'discussion_messages',channel_id:id,before_sequence:before||undefined});
+    const r=await request({action:'discussion_messages',channel_id:id,before_sequence:before||undefined,at_message_id:target||undefined});
     if(token!==generation||!d()||state.selected!==id)return;
     const listing=state.channels.find(c=>c.channel_id===id)||r.channel;
     let members=prior?.members;
@@ -277,10 +284,12 @@ export function createMessenger(ctx){
   const work={id,promise:read()};threadRequest=work;
   try{await work.promise;}finally{if(threadRequest===work)threadRequest=null;}
  }
- async function openChannel(id){
-  if(state.selected===id&&state.thread&&state.view==='thread'&&!pendingShare){focusComposer();return;}
+ async function openChannel(id,messageId=null){
+  if(state.selected===id&&state.thread&&state.view==='thread'&&!pendingShare&&sourceMessage===messageId){focusComposer();return;}
+  sourceMessage=messageId;
+  threadRequest=null;
   state.view='thread';state.selected=id;state.thread=null;paint();calls.prepare();
-  await loadThread(id);
+  await loadThread(id,{at:messageId});
   if(!state.open||!state.thread||state.selected!==id)return;
   if(pendingShare){
    if(state.thread.read_only){report('Choose a conversation that is open for messages.');return;}
@@ -288,7 +297,20 @@ export function createMessenger(ctx){
    if(draft.sending){report('Wait for the current message to finish sending, then choose this conversation again.');return;}
    draft.shared=pendingShare;pendingShare=null;paintComposer();report('');
   }
-  if(state.open&&state.selected===id){await live(id);if(state.open&&state.selected===id)focusComposer();}
+  if(state.open&&state.selected===id){
+   await live(id);
+   if(!state.open||state.selected!==id||sourceMessage!==messageId)return;
+   if(!messageId){focusComposer();return;}
+   const message=[...document.querySelectorAll('#messengerTimeline [data-message-id]')].find(el=>el.dataset.messageId===messageId);
+   if(!message){report('This message could not be found.');return;}
+   message.tabIndex=-1;message.classList.add('messenger-flash');
+   message.scrollIntoView({block:'nearest'});message.focus({preventScroll:true});
+  }
+ }
+ async function createFromMessage(channelId,messageId,followupId,onSaved){
+  const user=d()?.me.staff_id;
+  await openFollowupForm({esc,request,channelId,messageId,followupId,onSaved,
+   isCurrent:()=>!!user&&d()?.me.staff_id===user,openTask:id=>{toggle(false);openTask(id);}});
  }
  function focusComposer(){(currentComposer()?.elements.body||document.querySelector('#messengerMessages'))?.focus({preventScroll:true});}
  function paintComposer(){
@@ -463,7 +485,7 @@ export function createMessenger(ctx){
   }
  }
  async function showList(tab){
-  threadRequest=null;report('');state.view='list';if(tab)state.tab=tab;state.selected=null;state.thread=null;generation++;
+  threadRequest=null;sourceMessage=null;report('');state.view='list';if(tab)state.tab=tab;state.selected=null;state.thread=null;generation++;
   if(subscription){void client?.removeChannel(subscription);subscription=null;}
   paint();
   if(isAdmin()&&state.tab==='groups'){try{state.groups=(await request({action:'discussion_group_overview'})).groups||[];}catch(e){notice(e.message,true);}paintBody();}
@@ -486,6 +508,8 @@ export function createMessenger(ctx){
    paintBody();return;
   }
   if(a==='bottom'){threadDisplay?.toBottom();document.querySelector('#messengerMessages')?.focus({preventScroll:true});return;}
+  if(a==='latest')return openChannel(state.selected);
+  if(a==='followup')return createFromMessage(state.selected,id);
   if(a==='mention-pick'){pickMention(b);return;}
   if(a==='attach'){document.querySelector('#messengerFiles')?.click();return;}
   if(a==='record'){void toggleRecording(b);return;}
@@ -634,7 +658,8 @@ export function createMessenger(ctx){
  }
  function stop(){
   if(timer)window.clearInterval(timer);timer=null;if(callTimer)window.clearInterval(callTimer);callTimer=null;calls.stop();if(userSub)void client?.removeChannel(userSub);userSub=null;userToken=null;userOk=false;generation++;baselined=false;if(baseTitle!==null){document.title=baseTitle;baseTitle=null;}if(subscription)void client?.removeChannel(subscription);subscription=null;
-  threadDisplay?.close();threadDisplay=null;threadRequest=null;markedRead=null;
+  threadDisplay?.close();threadDisplay=null;threadRequest=null;markedRead=null;sourceMessage=null;
+  document.querySelector('.followup-dialog')?.close();
   imageObserver?.disconnect();imageObserver=null;
   for(const image of images.values())void image.then(src=>{if(src)URL.revokeObjectURL(src);},()=>{});
   images.clear();
@@ -644,5 +669,6 @@ export function createMessenger(ctx){
   Object.assign(state,{open:false,view:'list',tab:'chats',channels:[],selected:null,thread:null,groups:[],directory:[],contacts:[],query:'',filter:'All'});picked=new Set();editing=null;
   const host=document.querySelector('#messenger');if(host){host.replaceChildren();delete host.dataset.ready;}
  }
- return {start,stop,open:()=>toggle(true),unread:unreadTotal,isMounted:()=>mounted};
+ return {start,stop,open:()=>toggle(true),unread:unreadTotal,isMounted:()=>mounted,createFromMessage,
+  openMessage:(channel,message)=>{toggle(true);return openChannel(channel,message);}};
 }

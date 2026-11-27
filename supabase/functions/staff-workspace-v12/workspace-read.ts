@@ -1,5 +1,5 @@
 import {effectiveStaffAreas} from './staff-access-control.mjs';
-import {hasVisibleActionGroup} from './staff-action-rights.mjs';
+import {canUseAction,hasVisibleActionGroup} from './staff-action-rights.mjs';
 
 export async function readWorkspaceLanding(tx:any,a:any,requestedFirm?:string){
  const [base]=await tx`select
@@ -31,7 +31,8 @@ export async function readWorkspaceLanding(tx:any,a:any,requestedFirm?:string){
   my_work={open_count:tasks[0]?.open_count??0,overdue_count:tasks[0]?.overdue_count??0,
    tasks:tasks.map(({open_count,overdue_count,...task}:any)=>task)};
  }
- return {me:{staff_id:a.staff_id,login_id:a.login_id,full_name:a.full_name,category_code:a.category_code,allowed_areas},
+ const can_open_messenger=allowed_areas.includes('communications')&&canUseAction(base.denied_rights,{action:'discussion_list'});
+ return {me:{staff_id:a.staff_id,login_id:a.login_id,full_name:a.full_name,category_code:a.category_code,allowed_areas,can_open_messenger},
   uat_client_scope:base.uat_client_scope,firms:base.firms,firm_id,my_work};
 }
 

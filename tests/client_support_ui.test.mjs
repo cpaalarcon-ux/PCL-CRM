@@ -30,7 +30,7 @@ test('services panel: only a Partner sees the change button; the Partner\'s bill
 });
 test('wiring: Communications tab, suite dispatch, server action, rights, area',()=>{
  const su=read('staff-suite.mjs'),server=read('supabase/functions/staff-workspace-v12/client-support-actions.ts'),index=read('supabase/functions/staff-workspace-v12/index.ts');
- assert.match(su,/createClientSupportUI/);assert.match(su,/clientSupport\.handle\(action,id\)/);assert.match(su,/'Client services'/);assert.match(su,/clientSupport\.view\(\)/);
+ assert.match(su,/createClientSupportUI/);assert.match(su,/clientSupport\.handle\(action,id\)/);assert.match(su,/'Client Requests'/);assert.match(su,/clientSupport\.view\(\)/);
  assert.match(index,/clientSupportAction/);
  assert.match(server,/invoiceLines/);assert.match(server,/status='Closed'/);
  assert.doesNotMatch(server,/erp_private\.support_tickets|ticket_replies/,'the staff help desk is not touched');

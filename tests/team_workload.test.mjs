@@ -43,5 +43,5 @@ test('the sidebar follows the agreed layout and rights are unchanged',()=>{
  const nav=fs.readFileSync(path.join(root,'staff-nav.mjs'),'utf8');
  for(const area of ['clients','projects','time_hr','documents','communications','audit','billing_wip','staff_access','settings','leads'])assert.ok(nav.includes(`area:'${area}'`),area);
  assert.match(leads,/Promote to Client/);assert.ok(!/Prepare client/.test(leads));assert.match(leads,/action:'lead_convert'/);
- assert.match(msg,/> Messenger<span id="messengerBadge"/);
+ assert.match(msg,/> PCL Messenger<span id="messengerBadge"/);
 });
