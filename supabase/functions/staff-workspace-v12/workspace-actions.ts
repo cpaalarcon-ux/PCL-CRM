@@ -70,7 +70,7 @@ async function projectHoursPosition(tx:any,pid:string){
  const expected=Math.round(Number(s.h)*100)/100,budget=b?Number(b.budgeted_hours):null;
  return {project_expected_hours:expected,project_budgeted_hours:budget,project_warning:budget!==null&&expected>budget?`The tasks on this project now add up to ${expected} expected hours, more than the project budget of ${budget} hours.`:null};
 }
-export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
+export async function workspaceAction(tx:any,a:any,p:any,{draftOnly=false}={}):Promise<any>{
  if(p.action==='sector_save'){
   if(!['PARTNER','MANAGER','ADMIN'].includes(a.category_code))fail(403,'A Partner, Manager or System Administrator must add sectors.');
   const name=text(p.name,100),parent=p.parent_id?uuid(p.parent_id):null;
@@ -353,14 +353,14 @@ export async function workspaceAction(tx:any,a:any,p:any):Promise<any>{
   return out;
  }
  if(p.action==='timesheet_save'){
-  const v=timeInput(p),tid=p.timesheet_id?uuid(p.timesheet_id):null;
+  const v=timeInput(draftOnly?{...p,status:'Draft'}:p),tid=!draftOnly&&p.timesheet_id?uuid(p.timesheet_id):null;
   const task=one(await tx`select task_id,project_id,assigned_to from erp_private.tasks where task_id=${v.task_id} and deleted_at is null`);
   if(task.assigned_to!==a.staff_id)fail(403,'Log time against your own assigned task.');
   await tx`select pg_advisory_xact_lock(hashtextextended(${a.staff_id+':'+v.work_date},0))`;
   const [total]=await tx`select coalesce(sum(hours),0) hours from erp_private.timesheets where staff_id=${a.staff_id} and work_date=${v.work_date} and deleted_at is null and status<>'Rejected' and timesheet_id<>coalesce(${tid}::uuid,'00000000-0000-0000-0000-000000000000'::uuid)`;
   if(Number(total.hours)+v.hours>24)fail(400,'Total time for a day cannot exceed 24 hours.');
   // Partner time exemption: once a Partner has signed the Partner Time Policy, a Partner's own time is saved approved and locked (flagged auto-approved).
-  const [ex]=a.category_code==='PARTNER'?await tx`select erp_private.partner_time_exempt() ok`:[{ok:false}];
+  const [ex]=!draftOnly&&a.category_code==='PARTNER'?await tx`select erp_private.partner_time_exempt() ok`:[{ok:false}];
   const auto=ex.ok===true,note='Partner time, auto-approved';
   if(tid){const rows=await tx`update erp_private.timesheets set work_date=${v.work_date},hours=${v.hours},description=${v.description},billable=${v.billable},status=${auto?'Approved':v.status},reviewed_by=${auto?a.staff_id:null},reviewed_at=${auto?new Date().toISOString():null},review_note=${auto?note:null},is_auto_approved=${auto}
    where timesheet_id=${tid} and staff_id=${a.staff_id} and task_id=${v.task_id} and revision=${revision(p.revision)} returning timesheet_id`;if(!rows.length)fail(409,'Only your draft or rejected time can be edited. Refresh first.');return {ok:true,auto_approved:auto};}
