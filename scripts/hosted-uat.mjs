@@ -29,7 +29,7 @@ async function identity(){
  for(let waited=0;waited<=waitSeconds;waited+=20){
   const r=await fetch(PAGE,{cache:'no-store'}),html=await r.text();
   build=html.match(/data-build="([^"]+)"/)?.[1]||null;
-  followups=/src="staff-pilot-auth\.js\?[^"]*&amp;followups=1"/.test(html);
+  followups=/src="staff-pilot-auth\.js\?[^"]*&amp;followups=1(?:&amp;[^"]*)?"/.test(html);// the marker may be followed by later cache tokens, so it is not required to be last
   if(build===expected&&followups)break;
   console.log(`Waiting for Pages: live page is ${build}, expected ${expected} with Home Messenger`);
   if(waited<waitSeconds)await sleep(20000);
