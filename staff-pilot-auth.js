@@ -293,7 +293,7 @@
       if (result?.build && pageBuild && result.build !== pageBuild) {
         const element = $('#releaseCheck');
         if (element) {
-          element.textContent = `This page is build ${pageBuild} but the ERP server is build ${result.build}. Refresh the page (Ctrl+Shift+R). If this message stays, tell your ERP Manager before entering any work.`;
+          element.textContent = `A PCL Nexus update is available. Refresh the page (Ctrl+Shift+R). If this message stays, tell your ERP Manager before entering any work.`;
           element.hidden = false;
         }
       }
