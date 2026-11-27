@@ -9,7 +9,7 @@ import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNo
 import {createOnboardingBatchUI} from './staff-onboarding-batch.mjs?v=20261214-ob-v1';
 import {createSetupPipelineUI} from './staff-setup-pipeline.mjs?v=20261125-pipe-v1';
 import {createMonthWorkUI} from './staff-month-work.mjs?v=20261125-month-v1';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2&bulk=20261126-v1';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2&bulk=20261126-v1&names=20261127-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1&rev=20261119-2904&single=20261125-v1';
 import {needsWorkspaceConfirmation,workspaceContext,workspaceRecordMatches,workspaceScopeHash} from './staff-workspace-navigation.mjs?v=20261125-v1';
@@ -289,7 +289,7 @@ async function loadClientMappingReadiness(){if(!isLeader()||clientMappingReadine
 function classifyClients(){
  const list=unclassified(data.clients),rows=structureRows(data);
  if(!list.length){notice('Every client already has a Legal structure and Subcategory.');return;}
- modal('Classify clients',form(classifyTable({clients:list,rows,esc,options}),'Save classifications'),f=>{const items=classifyItems(f);if(!items.length)throw Error('Choose a Legal structure and Subcategory for at least one client.');return request({action:'client_classify_save',items,note:f.get('note')||''});},result=>notice(`${result.classified} client(s) classified.`));
+ modal('Set client type',form(classifyTable({clients:list,rows,esc,options}),'Save classifications'),f=>{const items=classifyItems(f);if(!items.length)throw Error('Choose a Legal structure and Subcategory for at least one client.');return request({action:'client_classify_save',items,note:f.get('note')||''});},result=>notice(`${result.classified} client(s) classified.`));
  bindClassifyTable($('#editor'),rows,options);
 }
 let cardFlags=new Map(),cardWip=new Map(),cardFacts={key:'',at:0,busy:false};
@@ -400,7 +400,7 @@ function clients(){
  if(leaderView&&!clientPage&&!clientPageLoading)void fetchClientPage();
  const rows=leaderView?(clientPage?.rows||[]).map(r=>r.client||byId.get(r.client_id)).filter(Boolean):filtered().clients.filter(c=>!isArchived(c)).sort((a,b)=>String(a.company_name||'').localeCompare(String(b.company_name||'')));
  if(isLeader())void ensureCardFacts(rows.map(c=>c.client_id));
- const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button type="button" data-setup-pipeline>Set-up status</button><button type="button" data-onboarding-batches>Onboarding batches</button>'+'<button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button type="button" data-v3="bulk-setup">Bulk set-up</button><button type="button" data-v3="categories">Service categories</button><button data-v6="sector">+ Add sector</button>'+addClientButton(data)+(canUseAction(data.me?.restricted_rights,{action:'client_onboarding_alloc_read'},'clients')?'<button type="button" data-onb-open>Onboarding allocation</button>':'')+'<button data-suite="import-clients">Import clients from Excel</button></div>':'';
+ const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients title="Who: Partner or Manager. Set the company type for clients that have none.">Set client type (${toClassify})</button>`:'')+'<button type="button" data-setup-pipeline title="Who: Partner or Manager. See how far set-up has got for each client.">See set-up progress</button><button type="button" data-onboarding-batches title="Who: Partner or Manager. Review client batches that were imported.">Review imported client batches</button>'+'<button type="button" data-v3="setup-tasks" title="Who: all staff. What is still missing for each client.">Set-up to-do list</button><button type="button" data-v3="setup-bulk" title="Who: staff with access to the client. Send finished set-up sections to a Manager or Partner for approval.">Send set-up for approval</button><button type="button" data-v3="bulk-setup" title="Who: Partner or Manager. Set up many clients in one go.">Set up many clients at once</button><button type="button" data-v3="categories" title="Who: Partner or Manager. Edit the service categories and practice size.">Manage service categories</button><button data-v6="sector" title="Who: Partner or Manager. Add a business sector to the list.">Add a business sector</button>'+addClientButton(data)+(canUseAction(data.me?.restricted_rights,{action:'client_onboarding_alloc_read'},'clients')?'<button type="button" data-onb-open>Onboarding allocation</button>':'')+'<button data-suite="import-clients" title="Who: Partner or Manager. Add clients from an Excel file.">Add clients from Excel file</button></div>':'';
  const cards=rows.map(c=>{
   const row=meta.get(c.client_id)||null;
   const registerFacts=row?.client?{kyc_verified:c.kyc_verified,has_contact:c.has_contact,tax_verified:row.tax_verified}:undefined;
@@ -416,7 +416,7 @@ function clients(){
  const body=cards.map(x=>x.card).join('');
  const layout=loadViewMode(globalThis.localStorage,'clients')==='cards'?'cards':'list';
  const total=leaderView?clientPage?.total:rows.length;
- return assistantLockBanner(data,esc)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button type="button" data-v3="setup-bulk">Submit set-up for review</button>'+addClientButton(data)+'<button type="button" data-onboarding-batches>Onboarding batches</button></div>'}</div>
+ return assistantLockBanner(data,esc)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks" title="Who: all staff. What is still missing for each client.">Set-up to-do list</button><button type="button" data-v3="setup-bulk" title="Who: staff with access to the client. Send finished set-up sections to a Manager or Partner for approval.">Send set-up for approval</button>'+addClientButton(data)+'<button type="button" data-onboarding-batches title="Who: Partner or Manager. Review client batches that were imported.">Review imported client batches</button></div>'}</div>
   <details class="settings-fold section-space" id="clientRegister" data-preserve-open><summary id="clientRegisterSummary">Client register${Number.isFinite(total)?` <span class="badge info">${total} client${total===1?'':'s'}</span>`: ''}</summary>
    <div class="client-register-${layout}">${viewSwitch(layout,false)}<div class="actions">${structureFilter(structureRows(data),esc)}</div>
     ${leaderView?registerBar(clientQuery,{sectors:(data.sectors||[]).map(x=>x.name),owners:data.staff.filter(x=>['MANAGER','PARTNER'].includes(x.category_code)&&x.access_status!=='Inactive')},esc):''}

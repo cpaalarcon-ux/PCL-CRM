@@ -5,14 +5,14 @@ import {stockMethodChoices,stockCountChoices,stockPolicyStartDate} from './staff
 import {businessActivityChoices,businessActivityName,suggestedIndustryPack} from './staff-business-activities.mjs?v=20261121-coa-v1';
 import {createClientMasterUI} from './staff-client-master.mjs?v=20261121-scope-v1';
 import {createScopeUI} from './staff-engagement-scope.mjs?v=20261121-scope-v1';
-import {createOnboardingAllocUI} from './staff-onboarding-alloc.mjs?v=20261209-onb-v1&screen=20261211-v1';
+import {createOnboardingAllocUI} from './staff-onboarding-alloc.mjs?v=20261209-onb-v1&screen=20261211-v1&names=20261127-v1';
 import {createClientTeamUI} from './staff-client-team.mjs?v=20261212-team-v2';
 import {createUnderstandingUI} from './staff-understanding.mjs?v=20261121-und-v1';
 import {createKycGridUI} from './staff-kyc-grid.mjs?v=20261122-loc-v1';
 import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
 import {createAmlUI} from './staff-aml.mjs?v=20261121-fill-v1';
 import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261121-wiz-v1';
-import {panelHtml,queueHtml,collectSubmit,collectDecisions} from './staff-setup-review.mjs?v=20261116-setupreview-v1&rev=20261119-nav&all=20261126-v1';
+import {panelHtml,queueHtml,collectSubmit,collectDecisions} from './staff-setup-review.mjs?v=20261116-setupreview-v1&rev=20261119-nav&all=20261126-v1&names=20261127-v1';
 import {bulkSubmitHtml,collectBulk,bulkResultHtml,filterRows,tickShown} from './staff-setup-bulk.mjs?v=20261126-v1';
 import {setupChecklistHtml} from './staff-setup-checklist.mjs?v=20261125-checklist-v1';
 import {queueHtml as tasksQueueHtml,queueBody as tasksQueueBody,configurationHtml} from './staff-setup-tasks.mjs?v=20261116-choices-v1';
@@ -62,14 +62,14 @@ export function createImprovementUI(ctx){
  }
  async function setupTasks(){
   const res=await request({action:'client_setup_tasks_read'});
-  show('Client Setup Tasks',tasksQueueHtml(res,{esc}));
+  show('Set-up to-do list',tasksQueueHtml(res,{esc}));
   const host=$('#editorBody'),repaint=()=>{const list=host.querySelector('#setupTaskList');if(list)list.innerHTML=tasksQueueBody(res,{esc,search:host.querySelector('#setupTaskSearch')?.value||'',who:host.querySelector('#setupTaskWho')?.value||''});};
   host.querySelector('#setupTaskSearch')?.addEventListener('input',repaint);host.querySelector('#setupTaskWho')?.addEventListener('change',repaint);
  }
 
  async function setupBulk(){
   const list=(d().clients||[]).filter(c=>c.record_status!=='Archived').slice().sort((x,y)=>String(x.company_name).localeCompare(String(y.company_name)));
-  show('Submit set-up for review',bulkSubmitHtml(list,esc));
+  show('Send set-up for approval',bulkSubmitHtml(list,esc));
   const host=$('#editorBody'),f=host.querySelector('#setupBulkForm'),count=()=>{host.querySelector('#setupBulkCount').textContent=[...f.querySelectorAll('input[name="bulk_client"]')].filter(x=>x.checked).length+' ticked';};
   host.querySelector('#setupBulkSearch')?.addEventListener('input',e=>filterRows(host,e.target.value));
   host.querySelector('#setupBulkAll')?.addEventListener('change',e=>{tickShown(host,e.target.checked);count();});
