@@ -12,6 +12,7 @@ import {salesAmendAction} from './sales-amend-actions.ts';
 import {referenceAction} from './reference-actions.ts';
 import {staffRightsAction} from './staff-rights-actions.ts';
 import {discussionAction} from './discussion-actions.ts';
+import {offlineDraftAction} from './offline-draft-actions.ts';
 import {communicationFollowupAction} from './communication-followup-actions.ts';
 import {discardAttachment,downloadAttachment,readAttachmentUpload,storeAttachment} from './messenger-attachments.ts';
 import {taxPeriodAction} from './tax-period-actions.ts';
@@ -577,6 +578,14 @@ async function action(id:any,p:any){
   const run=async(p:any):Promise<any>=>{
   const requestArea=areaForStaffAction(String(p.action||''));if(!requestArea)deny();await requireStaffArea(tx,a,requestArea);await requireStaffRight(tx,a,String(p.action||''));
   await requireActionRight(tx,a,p,await loadActorRights());
+  if(['task_offline_list','task_offline_apply'].includes(p.action)){
+   if(!IS_STAGING_PROJECT&&Deno.env.get('PCL_OFFLINE_PILOT')!=='true')fail(403,'Offline drafts are not enabled in this workspace.');
+   const areas=await restrictedAreas(tx,a.staff_id),rights=await loadActorRights();
+   return offlineDraftAction(tx,a,p,{hash:sha,can:async request=>{
+    const area=areaForStaffAction(request.action),legacy=rightForAction(request.action);
+    return !!area&&staffAreaCanUse(a.category_code,areas,area)&&(!legacy||!rights.includes(legacy))&&canUseAction(rights,request,area);
+   }});
+  }
   if(String(p.action).startsWith('communication_followup_')){
    const [deniedAreas,deniedRights]=await Promise.all([restrictedAreas(tx,a.staff_id),loadActorRights()]);
    const followup=await communicationFollowupAction(tx,a,p,run,async action=>{

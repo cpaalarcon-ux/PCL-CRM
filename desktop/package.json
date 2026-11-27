@@ -1,0 +1,51 @@
+{
+  "name": "pcl-nexus-offline-staging",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PCL Nexus Windows staging pilot for encrypted offline drafts",
+  "author": "PCL Nexus",
+  "main": "main.cjs",
+  "scripts": {
+    "prestart": "node prepare-package.cjs staging",
+    "start": "electron .",
+    "test": "node --test test/config.test.cjs test/store.test.cjs",
+    "test:windows": "electron test/windows-smoke.cjs",
+    "build:windows": "electron-builder --win nsis --x64 --publish never",
+    "prebuild:windows": "node prepare-package.cjs staging && powershell -NoProfile -File build-icon.ps1",
+    "build:store": "electron-builder --config build-store.cjs --win appx --x64 --publish never",
+    "prebuild:store": "node prepare-package.cjs production && powershell -NoProfile -File build-icon.ps1 -StoreAssets"
+  },
+  "dependencies": {
+    "better-sqlite3-multiple-ciphers": "13.2.0"
+  },
+  "devDependencies": {
+    "electron": "45.5.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.pclnexus.offline.staging",
+    "productName": "PCL Nexus Offline Staging",
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "store.cjs",
+      "sync.cjs",
+      "workspace-config.cjs",
+      "offline.html",
+      "offline.css",
+      "work.js",
+      "workspace.json",
+      "icon.png"
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": true,
+      "icon": "win-icon.png"
+    },
+    "nsis": {
+      "perMachine": false,
+      "allowElevation": false,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
