@@ -58,7 +58,9 @@ export async function discussionAction(tx:any,a:any,p:any,canArea:(area:string)=
   return record;
  }
  if(p.action==='discussion_messages'){
-  const before=p.before_sequence?Math.max(1,Math.trunc(Number(p.before_sequence))):null;
+  const target=p.at_message_id?one(await tx`select sequence::text sequence from erp_private.discussion_messages
+   where channel_id=${c.channel_id} and message_id=${uuid(p.at_message_id)}`):null;
+  const before=target?(BigInt(target.sequence)+1n).toString():p.before_sequence?Math.max(1,Math.trunc(Number(p.before_sequence))):null;
   const [showTasks,showDocuments]=await Promise.all([canArea('projects'),canArea('documents')]);
   const messages=await tx`select m.message_id,m.channel_id,m.sequence,m.author_id,m.body,m.reply_to,m.document_id,m.created_at,s.full_name author_name,d.file_name,
    (case when m.shared_task_id is not null then 'task' when m.shared_document_id is not null then 'document' end) shared_kind,

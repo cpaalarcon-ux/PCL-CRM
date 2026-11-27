@@ -1,4 +1,4 @@
-// Client support services (Communications Hub > Client services): requests a client makes of the firm, such as lifting a KRA agency notice.
+// Client support services (Communications Hub > Client Requests): requests a client makes of the firm, such as lifting a KRA agency notice.
 // Not the internal staff help desk (the Support tab). A billable service gets a DRAFT invoice only when its ticket is closed; the database enforces this
 // (20261110278000_client_support_services.sql). The fee is typed by the person closing the ticket; no rate is stored.
 import {createPhysicalFilesUI} from './staff-physical-files.mjs?v=20261111-physfile-v1';
@@ -46,7 +46,7 @@ export function createClientSupportUI(ctx){
  function view(){
   if(!loaded){queueMicrotask(load);return '<p class="muted">Loading client support tickets…</p>';}
   const me=d().me;
-  return `<div class="section-head"><p>Requests clients make of the firm. This is separate from the internal Support tab, which is for staff IT and system requests.</p>${['INTERN','ADMIN'].includes(me.category_code)?'':button('csup-new','+ New client ticket','','class="primary"')}</div>${ticketsView({tickets,me,button})}${physical.view()}${servicesView({services,me,button})}`;
+  return `<div class="section-head"><p>Requests clients make of the firm. This is separate from the Staff Support tab, which is for staff IT and system requests.</p>${['INTERN','ADMIN'].includes(me.category_code)?'':button('csup-new','+ New client ticket','','class="primary"')}</div>${ticketsView({tickets,me,button})}${physical.view()}${servicesView({services,me,button})}`;
  }
  const refresh=async()=>{loaded=false;await Promise.all([load(),physical.refresh()]);};
  const placeOptions=()=>{
@@ -99,5 +99,13 @@ export function createClientSupportUI(ctx){
   }
   return false;
  }
- return {view,handle,refresh};
+ async function openTicket(id){
+  const {tickets:rows}=await request({action:'client_support_list',ticket_id:id});
+  const ticket=rows[0];
+  if(!ticket)throw Error('This client request is unavailable.');
+  if(!tickets.some(row=>row.ticket_id===id))tickets.push(ticket);
+  else tickets=tickets.map(row=>row.ticket_id===id?ticket:row);
+  modal('Client request CST-'+ticket.ticket_number,`<h3>${esc(ticket.subject)}</h3><p>${esc(ticket.details)}</p>${ticketsView({tickets:[ticket],me:d().me,button})}`);
+ }
+ return {view,handle,refresh,openTicket};
 }
