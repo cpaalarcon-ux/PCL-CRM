@@ -80,6 +80,7 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
   $('#roleLabel').textContent=`${WORKSPACE_ROLES[me.category_code]} · ${me.login_id}`;
   $('#greeting').textContent='My workspace';
   $('#account').innerHTML=`<span>${esc(me.full_name)}</span><button type="button" data-landing-signout>Sign out</button>`;
+  $('#messenger').innerHTML=me.can_open_messenger?'<button type="button" class="messenger-button" data-landing-messenger>PCL Messenger</button>':'';
   $('#firmFilter').replaceChildren(new Option('All authorised firms',''),...firms.map(f=>new Option(`${f.firm_code} · ${f.legal_name}`,f.firm_id)));
   $('#firmFilter').value=firm_id||'';
   $('.firm-picker').hidden=me.category_code==='INTERN';
@@ -90,7 +91,7 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
   $('#nav').innerHTML=areas.map(a=>link(url('view',a.view),`<span class="workspace-area-icon" aria-hidden="true">${a.icon}</span><b>${esc(a.title)}</b><small>${esc(a.desc)}</small>`,`workspace-area-card tone-${a.tone}`)).join('')||'<p class="empty">No workspace areas are assigned to this account.</p>';
   $('#content').innerHTML=paintWork(my_work);
  }
- async function openSection(hash,signOut=false){
+ async function openSection(hash,signOut=false,openMessenger=false){
   if(opening||events.signal.aborted||!session.check())return;
   const sectionStarted=performance.now();
   const route=new URLSearchParams(hash.slice(1));
@@ -100,11 +101,11 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
   changingFirm++;
   pauseActivity();
   setNav(false);
-  notice('Opening workspace area…');
+  notice(openMessenger?'Opening PCL Messenger…':'Opening workspace area…');
   const previousHash=location.hash;
   if(previousHash!==hash)history.pushState(null,'',hash);
   try{
-   await openFullWorkspace({firmId:data.firm_id||'',signOut});
+   await openFullWorkspace({firmId:data.firm_id||'',signOut,openMessenger});
    if(!signOut)recordAreaOpening({started:sectionStarted,role:data.me.category_code,area});
    if(!events.signal.aborted)dispose();
   }catch{
@@ -113,11 +114,11 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
    if(previousHash!==hash)history.replaceState(null,'',previousHash||location.pathname+location.search);
    opening=false;
    watchActivity();
-   notice('This workspace area could not load. You can stay on Home or retry.',true);
+   notice(openMessenger?'PCL Messenger could not load. You can stay on Home or retry.':'This workspace area could not load. You can stay on Home or retry.',true);
    const retry=document.createElement('button');
    retry.type='button';
    retry.textContent='Retry workspace area';
-   retry.onclick=()=>void openSection(hash,signOut);
+   retry.onclick=()=>void openSection(hash,signOut,openMessenger);
    $('#notice').append(' ',retry);
   }
  }
@@ -133,12 +134,13 @@ export async function mountStaffLanding({send,notice,openFullWorkspace,sessionEn
  notice('');
  const options={capture:true,signal:events.signal};
  document.addEventListener('click',event=>{
-  const control=event.target.closest?.('[data-open-workspace],[data-landing-signout],#navToggle,#navBackdrop,#areasHome,#sideNav a[aria-current]');
+  const control=event.target.closest?.('[data-open-workspace],[data-landing-signout],[data-landing-messenger],#navToggle,#navBackdrop,#areasHome,#sideNav a[aria-current]');
   if(!control||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
   event.preventDefault();
   event.stopImmediatePropagation();
   if(control.id==='navToggle'){setNav(!document.body.classList.contains('nav-open'));return;}
   if(control.id==='navBackdrop'){setNav(false);return;}
+  if(control.hasAttribute('data-landing-messenger')){void openSection('#view=home',false,true);return;}
   if(control.id==='areasHome'||control.matches('#sideNav a[aria-current]')){setNav(false);$('#areasLauncher').scrollIntoView?.();return;}
   if(control.hasAttribute('data-landing-signout')){
    if(attendance?.clock_in&&!attendance.clock_out)void openSection('#view=home',true);

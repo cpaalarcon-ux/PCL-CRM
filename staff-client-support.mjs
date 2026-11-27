@@ -99,5 +99,13 @@ export function createClientSupportUI(ctx){
   }
   return false;
  }
- return {view,handle,refresh};
+ async function openTicket(id){
+  const {tickets:rows}=await request({action:'client_support_list',ticket_id:id});
+  const ticket=rows[0];
+  if(!ticket)throw Error('This client request is unavailable.');
+  if(!tickets.some(row=>row.ticket_id===id))tickets.push(ticket);
+  else tickets=tickets.map(row=>row.ticket_id===id?ticket:row);
+  modal('Client request CST-'+ticket.ticket_number,`<h3>${esc(ticket.subject)}</h3><p>${esc(ticket.details)}</p>${ticketsView({tickets:[ticket],me:d().me,button})}`);
+ }
+ return {view,handle,refresh,openTicket};
 }

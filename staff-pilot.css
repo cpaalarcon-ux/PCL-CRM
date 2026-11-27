@@ -847,10 +847,25 @@ html{scroll-padding-top:calc(var(--detail-bar-h,0px) + .5rem)}
 .messenger-reaction{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:1px 8px;font:inherit;font-size:.85em;cursor:pointer;min-height:28px}
 .messenger-reaction.mine{border-color:#0b7a5a;background:rgba(11,122,90,.12);font-weight:600}
 .messenger-tools{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin-top:2px;opacity:0;max-height:0;overflow:hidden;transition:opacity .12s}
-.messenger-bubble:hover .messenger-tools,.messenger-bubble:focus-within .messenger-tools{opacity:1;max-height:48px}
+.messenger-bubble:hover .messenger-tools,.messenger-bubble:focus-within .messenger-tools{opacity:1;max-height:none}
+.messenger-tool[data-msgr="followup"]{min-height:28px;white-space:nowrap}
+.followup-filters{gap:.4rem}
+.followup-filters button[aria-pressed="true"]{background:#e5f1ea;color:#124735;border-color:#398268;font-weight:650}
+.followup-filters span{margin-inline-start:.2rem}
+.followup-items{list-style:none;margin:0;padding:0}
+.followup-row{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) auto;gap:1rem;align-items:center;padding:.85rem 0;border-top:1px solid var(--line)}
+.followup-row>div>span{display:block;color:var(--muted);overflow-wrap:anywhere}
+.followup-row .followup-late{color:#9d2929;font-weight:650}
+.followup-dialog{width:min(34rem,calc(100% - 1.5rem));max-height:90dvh;overflow:auto;padding:1.25rem}
+.followup-dialog form,.followup-dialog label{display:grid;gap:.4rem}
+.followup-dialog form{gap:.75rem}
+.followup-dialog h2,.followup-dialog p{margin:0}
+.followup-source{margin:.5rem 0;max-height:10rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.followup-dialog::backdrop{background:#15251c80}
+@media(max-width:640px){.followup-row{grid-template-columns:1fr;gap:.45rem}.followup-row .actions{flex-wrap:wrap}}
 .messenger-tool{border:0;background:transparent;font:inherit;font-size:.8em;padding:2px 6px;border-radius:6px;cursor:pointer;color:#475569;min-height:28px}
 .messenger-tool:hover,.messenger-tool:focus-visible{background:rgba(15,23,42,.08)}
-@media (hover:none){.messenger-tools{opacity:1;max-height:48px}}
+@media (hover:none){.messenger-tools{opacity:1;max-height:none}}
 .messenger-replying{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:6px 8px;margin-bottom:6px;border-left:3px solid #0b7a5a;background:rgba(11,122,90,.09);border-radius:4px}
 .messenger-replying small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px;color:#475569}
 .messenger-flash{animation:messenger-flash 1.4s ease-out}@keyframes messenger-flash{0%{background:#fef3c7}100%{background:transparent}}

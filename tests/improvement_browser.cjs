@@ -31,7 +31,10 @@ const server=http.createServer((req,res)=>{let f=path.join(siteRoot,decodeURICom
  const page=await browser.newPage({viewport:{width:1440,height:1050}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('https://yfjiculexbzpkvtapudk.supabase.co/**',async route=>{const body=route.request().postDataJSON()||{},a=body.action;calls.push(body);let r={ok:true};
  if(a==='login')r={access_token:'fictional-training-token',refresh_token:'fictional-refresh',expires_at:Date.now()/1000+3600,session_id:'training'};
- if(a==='workspace_landing')r={me:{...data.me,allowed_areas:['clients','projects','time_hr','documents','communications','audit','leads','staff_access','settings','billing_wip']},firms:data.firms,firm_id:null,my_work:{open_count:0,overdue_count:0,tasks:[]}};
+ if(a==='workspace_landing')r={me:{...data.me,can_open_messenger:true,allowed_areas:['clients','projects','time_hr','documents','communications','audit','leads','staff_access','settings','billing_wip']},firms:data.firms,firm_id:null,my_work:{open_count:0,overdue_count:0,tasks:[]}};
+ if(a==='discussion_list')r={channels:[]};
+ if(a==='discussion_call_pending')r={call:null};
+ if(a==='communication_followup_list')r={items:[{kind:'correspondence',id:'test-follow-up',title:'Chase the requested information',company_name:'Example Trading Limited',status:'Waiting',owner:'Fictional Partner',due_on:'2026-10-25',waiting:true,overdue:true,opaque_reference:id(91)}]};
  if(a==='v3_client_mapping_readiness'){await new Promise(resolve=>setTimeout(resolve,300));r=[];}
  if(a==='client_card_flags'||a==='client_card_wip'||a==='client_work_ready')r={rows:[]};
  if(a==='workspace')r=data;if(a==='client_register_page'){
@@ -50,6 +53,10 @@ const server=http.createServer((req,res)=>{let f=path.join(siteRoot,decodeURICom
  });
  await page.goto(`http://127.0.0.1:${server.address().port}/staff-pilot`);await page.fill('[name=login_id]','training.partner');await page.fill('#loginForm [name=password]','fictional-training-only');await page.click('#loginForm button');await page.waitForSelector('#workspace:not([hidden])');
  assert.equal(calls.some(c=>c.action==='workspace'),false,'opening Home does not fetch the full workspace');
+ await page.getByRole('button',{name:'PCL Messenger',exact:true}).click();
+ await page.locator('#messengerPanel[open]').waitFor();
+ assert.equal(await page.evaluate(()=>location.hash),'#view=home','Messenger opens directly from Home');
+ await page.getByRole('button',{name:'Return to ERP'}).click();
  await page.locator('#nav').getByRole('link',{name:'Clients'}).click();await page.waitForSelector('#logout');
  assert.match(await page.locator('#content').innerText(),/Clients/);
  const register=page.locator('#clientRegister');
@@ -149,5 +156,14 @@ const server=http.createServer((req,res)=>{let f=path.join(siteRoot,decodeURICom
  const log=await page.locator('#editorBody').textContent();
  for(const label of ['Sign-in to Home','Open workspace area','Save to updated screen','Typical (p50)','Slow (p95)','New sign-in','First open','Repeat open'])assert.ok(log.includes(label),label);
  assert.deepEqual(errors,[]);
- console.log('PASS Chromium: workspace switching, browser Back, draft protection, scoped records, client setup and purchase mapping.');
+ await page.click('#closeEditor');
+ await page.evaluate(()=>{location.hash='view=communications';});
+ await page.getByRole('heading',{name:'My Follow-ups'}).waitFor();
+ await page.getByRole('button',{name:/Waiting on client 1/}).click();
+ await page.getByText('Chase the requested information',{exact:true}).waitFor();
+ await page.getByRole('button',{name:/Overdue 1/}).focus();
+ await page.keyboard.press('Enter');
+ assert.equal(await page.getByRole('button',{name:/Overdue 1/}).getAttribute('aria-pressed'),'true');
+ assert.deepEqual(errors,[]);
+ console.log('PASS Chromium: Home Messenger, communications queue, workspace switching, browser Back, draft protection, scoped records, client setup and purchase mapping.');
 }finally{await browser.close();server.close();}})().catch(e=>{console.error(e);server.close();process.exitCode=1;});
