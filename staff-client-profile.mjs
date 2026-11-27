@@ -1,7 +1,7 @@
 // Client profile tabs reuse scoped workspace records. Credential details are fetched only when KRA access opens.
 import {workspaceHeader} from './staff-workspace-header.mjs?v=20261119-nav-v1';
 import {docRequestShell} from './staff-doc-requests.mjs?v=20261109-dr-v1';
-import {lifecycleBar,routingCard,lifecycleBadge,commAccessCard,commExternalAllowed} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1&rev=20261119-nav';
+import {lifecycleBar,routingCard,lifecycleBadge,commAccessCard,commExternalAllowed} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1&rev=20261119-nav&status=20261127-v1';
 import {clientSpine,spineHtml} from './staff-setup-spine.mjs?v=20261118-ready-v1';
 import {gatesHtml} from './staff-work-ready.mjs?v=20261118-ready-v1';
 export const PROFILE_TABS=[['overview','Overview'],['contacts','Contacts'],['projects','Projects & Tasks'],['setup','Set-up'],['documents','Documents / KYC'],['activity','Communication & Activity'],['tax','Tax & returns'],['aml','AML scope'],['understanding','Understanding the client']];

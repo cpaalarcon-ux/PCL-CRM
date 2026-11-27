@@ -3,12 +3,16 @@ import {fail,text,uuid,choice} from './validation.mjs';
 // The ERP manages the private call lifecycle. WebRTC exchanges SDP here, while Agora exchanges media using a signed RTC token.
 const env=(k:string)=>(globalThis as any).Deno?.env?.get(k)||'';
 const STAGING_SUPABASE_URL='https://yfjiculexbzpkvtapudk.supabase.co';
+const PRODUCTION_SUPABASE_URL='https://tafrrmcxrsorffkonrxq.supabase.co';
 const AGORA_TOKEN_SECONDS=300;
 function agoraSettings(){
+ const projectUrl=env('SUPABASE_URL');
+ const rollout=env('PCL_AGORA_RTC_ENABLED').trim();
+ const enabled=(projectUrl===STAGING_SUPABASE_URL&&rollout!=='false')
+  ||(projectUrl===PRODUCTION_SUPABASE_URL&&rollout==='true');
  const appId=env('AGORA_APP_ID').trim(),certificate=env('AGORA_APP_CERTIFICATE').trim();
  const validKey=(value:string)=>/^[0-9a-f]{32}$/i.test(value);
- return env('SUPABASE_URL')===STAGING_SUPABASE_URL&&env('PCL_AGORA_RTC_ENABLED')!=='false'&&validKey(appId)&&validKey(certificate)
-  ?{appId,certificate}:null;
+ return enabled&&validKey(appId)&&validKey(certificate)?{appId,certificate}:null;
 }
 const STUN={urls:['stun:stun.cloudflare.com:3478']};
 const sdp=(v:any)=>{const s=text(v,20000);if(s.length<50||!s.startsWith('v=0'))fail(400,'The call set-up data is not valid.');return s;};

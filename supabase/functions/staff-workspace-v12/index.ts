@@ -118,6 +118,7 @@ import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts
 import {clientBatchAction,clientBatchStage} from './client-batch-actions.ts';
 import {onboardingTemplateAction,onboardingTemplateStage} from './onboarding-template-actions.ts';
 import {ownerBatchAction,ownerBatchStage} from './owner-batch-actions.ts';
+import {proposalSelectAction} from './proposal-select-actions.ts';
 import {ownerAmendStage} from './owner-amend-actions.ts';
 import {monthWorkAction} from './month-work-actions.ts';
 import {clientSetupPipelineAction} from './client-setup-pipeline-actions.ts';
@@ -589,6 +590,7 @@ async function action(id:any,p:any){
   const clientBatch=await clientBatchAction(tx,a,p,run);if(clientBatch!==undefined)return clientBatch;
   const onboardingTemplate=await onboardingTemplateAction(tx,a,p,run);if(onboardingTemplate!==undefined)return onboardingTemplate;
   const ownerBatch=await ownerBatchAction(tx,a,p,run);if(ownerBatch!==undefined)return ownerBatch;
+  const selected=await proposalSelectAction(tx,a,p,run);if(selected!==undefined)return selected;
   const monthWork=await monthWorkAction(tx,a,p);if(monthWork!==undefined)return monthWork;
   const setupPipeline=await clientSetupPipelineAction(tx,a,p);if(setupPipeline!==undefined)return setupPipeline;
   const teamQueue=await teamQueueAction(tx,a,p);if(teamQueue!==undefined)return teamQueue;

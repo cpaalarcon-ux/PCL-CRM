@@ -34,4 +34,3 @@ BEGIN
 END;$$;
 REVOKE ALL ON FUNCTION erp_private.chat_call_answer(uuid,text) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION erp_private.chat_call_answer(uuid,text) TO erp_api;
-

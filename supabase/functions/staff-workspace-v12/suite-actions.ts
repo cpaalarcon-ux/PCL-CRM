@@ -158,6 +158,8 @@ export async function suiteAction(tx:any,a:any,p:any):Promise<any>{
   const description=text(p.description,500),net=round(lines.reduce((s,l)=>s+l.net,0)),vat=round(lines.reduce((s,l)=>s+l.vat,0)),reference=text(p.external_reference||'',100,false)||null;
   if(old)return one(await tx`update erp_private.invoices set description=${description},invoice_date=${issued},due_date=${due},lines=${tx.json(lines)},net_amount=${net},vat_amount=${vat},
    external_reference=${reference},service_from=${period.service_from},service_to=${period.service_to},service_months=${period.service_months} where invoice_id=${old.invoice_id} returning invoice_id,revision`);
+  // For a client that is not Active the database asks for a Manager or Partner and a reason, and keeps the reason on the invoice.
+  await tx`select set_config('erp.inactive_invoice_reason',${text(p.inactive_client_reason||'',1000,false)},true)`;
   return one(await tx`insert into erp_private.invoices(request_id,project_id,client_id,firm_id,description,invoice_date,due_date,lines,net_amount,vat_amount,external_reference,service_from,service_to,service_months,created_by)
    values(${rid},${pid},${project.client_id},${project.handling_firm_id},${description},${issued},${due},${tx.json(lines)},${net},${vat},${reference},${period.service_from},${period.service_to},${period.service_months},${a.staff_id}) returning invoice_id`);
  }

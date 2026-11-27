@@ -1,6 +1,6 @@
 import {clearWorkspaceTiming,recordAreaOpening,recordWorkspaceTiming,summarizeWorkspaceTiming,timingRows} from './staff-workspace-timing.mjs?v=20261125-v2';
 let documentKind='Evidence';
-import {addClientButton,proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1&create-client=20261122-v1&batch=20261125-v3&fold=20261125-v1';
+import {addClientButton,proposalsCard,proposeButtons,bindProposals} from './staff-proposals.mjs?v=20261109-kyc-v1&create-client=20261122-v1&batch=20261125-v3&fold=20261125-v1&pick=20261126-v1';
 import {policyCard,otherPoliciesCard,goLiveCard,bindGoLive,policyWarnings,assistantLockBanner,assistantEntryOpen,bindPolicies} from './staff-policies.mjs?v=20261109-dr-v1';
 import {createContentSwap} from './staff-content-swap.mjs?v=20261125-scroll-v1&fold=20261125-v1&single=20261125-v1';
 import {foldRecordLists,observeRecordLists} from './staff-record-lists.mjs?v=20261125-v1';
@@ -9,18 +9,18 @@ import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNo
 import {createOnboardingBatchUI} from './staff-onboarding-batch.mjs?v=20261214-ob-v1';
 import {createSetupPipelineUI} from './staff-setup-pipeline.mjs?v=20261125-pipe-v1';
 import {createMonthWorkUI} from './staff-month-work.mjs?v=20261125-month-v1';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2&bulk=20261126-v1&names=20261127-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1&rev=20261119-2904&single=20261125-v1';
 import {needsWorkspaceConfirmation,workspaceContext,workspaceRecordMatches,workspaceScopeHash} from './staff-workspace-navigation.mjs?v=20261125-v1';
 import {returnLabel,chooseReturn,createReturnStore} from './staff-return-state.mjs?v=20261119-nav-v1';
-import {clientProfile} from './staff-client-profile.mjs?v=20261121-und-v1&rev=20261119-nav&vault=20261122-v1&fold=20261125-v1';
+import {clientProfile} from './staff-client-profile.mjs?v=20261121-und-v1&rev=20261119-nav&vault=20261122-v1&fold=20261125-v1&status=20261127-v1';
 import {createTeamQueueUI} from './staff-team-queue.mjs?v=20261214-tq-v1';
 import {openWorkload,workloadShell} from './staff-workload.mjs?v=20261122-workload-v1';
 import {mountClientVault} from './staff-client-vault.mjs?v=20261122-vault-v1';
 import {paintDocRequests,bindDocRequests} from './staff-doc-requests.mjs?v=20261109-dr-v1';
-import {LIFECYCLE_WORDS,lifecycleForm,isArchived} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1&rev=20261119-nav';
-import {DEFAULT_QUERY,queryToRequest,toolbar as registerBar,pager as registerPager,rowMeta} from './staff-client-register.mjs?v=20261110-taxrole-v3';
+import {STATUS_WORDS,lifecycleForm,isArchived,clientStatus as lifecycleStatus,heldWorkHtml} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1&rev=20261119-nav&status=20261127-v1';
+import {DEFAULT_QUERY,queryToRequest,toolbar as registerBar,pager as registerPager,rowMeta} from './staff-client-register.mjs?v=20261110-taxrole-v3&status=20261127-v1';
 import {createPresenceUI} from './staff-presence.mjs?v=20261109-hol-v1';
 import {validateForm,watchForm,applyServerError,summary as fieldSummary} from './staff-field-errors.mjs?v=20261105-check-v1';
 import {setMyWork,loadMyWorkMode} from './staff-my-work.mjs?v=20261121-coa-v1';
@@ -35,10 +35,10 @@ import {createBell} from './staff-bell.mjs?v=20261109-hol-v1';
 import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261103-idle-timeout-v1';
 import {staffReadRequestUrl} from './staff-read-routing.mjs?v=20261124-mumbai-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
-import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1&team=20261212-v2&fold=20261125-v1&single=20261125-v1&hours=20261126-v2';
+import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1&team=20261212-v2&fold=20261125-v1&single=20261125-v1&hours=20261126-v2&status=20261127-v1';
 import {createMessenger} from './staff-messenger.mjs?v=20261126-agora&followups=1';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
-import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1&imp=20261124-v1&fold=20261125-v1&single=20261125-v1&followups=1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1&imp=20261124-v1&fold=20261125-v1&single=20261125-v1&followups=1&status=20261127-v1';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
 import {ask,createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905&single=20261125-v1';
 import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
@@ -46,7 +46,7 @@ import {uploadChoices} from './staff-pilot-upload.mjs';
 import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {moduleLinks,GROUP_ENGAGEMENTS,GROUP_COMPLIANCE,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge,WORKSPACE_AREAS,WORKSPACE_ROLES as roles} from './staff-nav.mjs?v=20261121-comply-v1&landing=20261125-v1';
 import {statusPolicyCard} from './staff-work-ready.mjs?v=20261118-ready-v1';
-import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261119-tabs-v1&rev=20261119-nav&register=20261125-v1';
+import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261119-tabs-v1&rev=20261119-nav&register=20261125-v1&status=20261127-v1';
 import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261110-taxrole-v3&rev=20261119-nav';
@@ -268,7 +268,7 @@ function home(){if(data.me.category_code==='ADMIN')return `<section class="card"
 
 function bindWorkspaceSearch(){const input=$('#workspaceSearch');if(!input)return;input.oninput=()=>{const q=input.value.trim().toLowerCase(),out=$('#workspaceSearchResults');if(q.length<2){out.replaceChildren();out.hidden=true;return;}const matches=[];
  for(const c of filtered().clients)if((c.company_name+' '+(c.kra_pin||'')).toLowerCase().includes(q))matches.push({text:'Client · '+c.company_name,html:`<button data-view="clients">${esc(c.company_name)}</button>`});
- for(const p of filtered().projects)if(p.project_name.toLowerCase().includes(q))matches.push({text:'Project · '+p.project_name,html:`<button data-search-project="${p.project_id}">${esc(p.project_name)}</button>`});
+ for(const p of filtered().projects)if(!p.client_hold&&p.project_name.toLowerCase().includes(q))matches.push({text:'Project · '+p.project_name,html:`<button data-search-project="${p.project_id}">${esc(p.project_name)}</button>`});
  for(const t of filtered().tasks)if(t.task_name.toLowerCase().includes(q))matches.push({text:'Task · '+t.task_name,html:`<button data-task="${t.task_id}">${esc(t.task_name)}</button>`});
  for(const i of data.suite.invoices||[])if((i.invoice_number+' '+i.description+' '+clientName(i.client_id)).toLowerCase().includes(q))matches.push({text:'Billing invoice',html:`<button data-suite="invoice-view" data-id="${i.invoice_id}">${esc(i.invoice_number||i.description)}</button>`});
  for(const c of data.suite.communications||[])if((c.reference+' '+c.subject).toLowerCase().includes(q))matches.push({text:'Communication',html:`<button data-suite="communication-view" data-id="${c.communication_id}">${esc(c.reference+' · '+c.subject)}</button>`});
@@ -289,7 +289,7 @@ async function loadClientMappingReadiness(){if(!isLeader()||clientMappingReadine
 function classifyClients(){
  const list=unclassified(data.clients),rows=structureRows(data);
  if(!list.length){notice('Every client already has a Legal structure and Subcategory.');return;}
- modal('Classify clients',form(classifyTable({clients:list,rows,esc,options}),'Save classifications'),f=>{const items=classifyItems(f);if(!items.length)throw Error('Choose a Legal structure and Subcategory for at least one client.');return request({action:'client_classify_save',items,note:f.get('note')||''});},result=>notice(`${result.classified} client(s) classified.`));
+ modal('Set client type',form(classifyTable({clients:list,rows,esc,options}),'Save classifications'),f=>{const items=classifyItems(f);if(!items.length)throw Error('Choose a Legal structure and Subcategory for at least one client.');return request({action:'client_classify_save',items,note:f.get('note')||''});},result=>notice(`${result.classified} client(s) classified.`));
  bindClassifyTable($('#editor'),rows,options);
 }
 let cardFlags=new Map(),cardWip=new Map(),cardFacts={key:'',at:0,busy:false};
@@ -400,7 +400,7 @@ function clients(){
  if(leaderView&&!clientPage&&!clientPageLoading)void fetchClientPage();
  const rows=leaderView?(clientPage?.rows||[]).map(r=>r.client||byId.get(r.client_id)).filter(Boolean):filtered().clients.filter(c=>!isArchived(c)).sort((a,b)=>String(a.company_name||'').localeCompare(String(b.company_name||'')));
  if(isLeader())void ensureCardFacts(rows.map(c=>c.client_id));
- const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients>Classify clients (${toClassify})</button>`:'')+'<button type="button" data-setup-pipeline>Set-up status</button><button type="button" data-onboarding-batches>Onboarding batches</button>'+'<button type="button" data-v3="setup-tasks">Client Setup Tasks</button><button type="button" data-v3="bulk-setup">Bulk set-up</button><button type="button" data-v3="categories">Service categories</button><button data-v6="sector">+ Add sector</button>'+addClientButton(data)+(canUseAction(data.me?.restricted_rights,{action:'client_onboarding_alloc_read'},'clients')?'<button type="button" data-onb-open>Onboarding allocation</button>':'')+'<button data-suite="import-clients">Import clients from Excel</button></div>':'';
+ const toClassify=unclassified(rows).length,actions=isLeader()?'<div class="actions">'+(toClassify?`<button data-classify-clients title="Who: Partner or Manager. Set the company type for clients that have none.">Set client type (${toClassify})</button>`:'')+'<button type="button" data-setup-pipeline title="Who: Partner or Manager. See how far set-up has got for each client.">See set-up progress</button><button type="button" data-onboarding-batches title="Who: Partner or Manager. Review client batches that were imported.">Review imported client batches</button>'+'<button type="button" data-v3="setup-tasks" title="Who: all staff. What is still missing for each client.">Set-up to-do list</button><button type="button" data-v3="setup-bulk" title="Who: staff with access to the client. Send finished set-up sections to a Manager or Partner for approval.">Send set-up for approval</button><button type="button" data-v3="bulk-setup" title="Who: Partner or Manager. Set up many clients in one go.">Set up many clients at once</button><button type="button" data-v3="categories" title="Who: Partner or Manager. Edit the service categories and practice size.">Manage service categories</button><button data-v6="sector" title="Who: Partner or Manager. Add a business sector to the list.">Add a business sector</button>'+addClientButton(data)+(canUseAction(data.me?.restricted_rights,{action:'client_onboarding_alloc_read'},'clients')?'<button type="button" data-onb-open>Onboarding allocation</button>':'')+'<button data-suite="import-clients" title="Who: Partner or Manager. Add clients from an Excel file.">Add clients from Excel file</button></div>':'';
  const cards=rows.map(c=>{
   const row=meta.get(c.client_id)||null;
   const registerFacts=row?.client?{kyc_verified:c.kyc_verified,has_contact:c.has_contact,tax_verified:row.tax_verified}:undefined;
@@ -416,7 +416,7 @@ function clients(){
  const body=cards.map(x=>x.card).join('');
  const layout=loadViewMode(globalThis.localStorage,'clients')==='cards'?'cards':'list';
  const total=leaderView?clientPage?.total:rows.length;
- return assistantLockBanner(data,esc)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks">Client Setup Tasks</button>'+addClientButton(data)+'<button type="button" data-onboarding-batches>Onboarding batches</button></div>'}</div>
+ return assistantLockBanner(data,esc)+`<div class="card"><div class="section-head"><h2>Clients</h2>${actions||'<div class="actions"><button type="button" data-v3="setup-tasks" title="Who: all staff. What is still missing for each client.">Set-up to-do list</button><button type="button" data-v3="setup-bulk" title="Who: staff with access to the client. Send finished set-up sections to a Manager or Partner for approval.">Send set-up for approval</button>'+addClientButton(data)+'<button type="button" data-onboarding-batches title="Who: Partner or Manager. Review client batches that were imported.">Review imported client batches</button></div>'}</div>
   <details class="settings-fold section-space" id="clientRegister" data-preserve-open><summary id="clientRegisterSummary">Client register${Number.isFinite(total)?` <span class="badge info">${total} client${total===1?'':'s'}</span>`: ''}</summary>
    <div class="client-register-${layout}">${viewSwitch(layout,false)}<div class="actions">${structureFilter(structureRows(data),esc)}</div>
     ${leaderView?registerBar(clientQuery,{sectors:(data.sectors||[]).map(x=>x.name),owners:data.staff.filter(x=>['MANAGER','PARTNER'].includes(x.category_code)&&x.access_status!=='Inactive')},esc):''}
@@ -919,7 +919,8 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button,a[d
  if(b.dataset.cprofileTab){clientTab=b.dataset.cprofileTab;render();return;}
  if(b.dataset.cregPage){clientQuery.page=Math.max(0,clientQuery.page+(b.dataset.cregPage==='next'?1:-1));clientPage=null;render();return;}
  if(b.dataset.cregClear!==undefined){clearTimeout(searchTimer);if($('#search'))$('#search').value=$('#search').defaultValue;clientQuery=DEFAULT_QUERY();clientPage=null;render();return;}
- if(b.dataset.clientLife){const act=b.dataset.clientLife,cid=b.dataset.id,w=LIFECYCLE_WORDS[act];if(w){const c=data.clients.find(x=>x.client_id===cid);modal(w.title+(c?' · '+c.company_name:''),form(lifecycleForm(act,esc),w.verb),f=>request({action:'client_lifecycle',client_id:cid,lifecycle:act,reason:f.get('reason')}),()=>render(),{successMessage:'Client updated.'});}return;}
+ if(b.dataset.clientStatus){const to=b.dataset.clientStatus,cid=b.dataset.id,w=STATUS_WORDS[to];if(w){const c=data.clients.find(x=>x.client_id===cid)||(clientPage?.rows||[]).map(r=>r.client).find(x=>x?.client_id===cid),from=lifecycleStatus(c);modal(w.title+(c?' · '+c.company_name:''),form(lifecycleForm(to,esc,from),w.verb),f=>request({action:'client_status_set',client_id:cid,status:to,reason:f.get('reason'),old_work:f.get('old_work')||undefined}),r=>{clientPage=null;render();const n=(r?.to_redate||[]).length;if(n)notice(`${n} task${n===1?'':'s'} passed the due date while the client was not Active. Open "Status history and held work" on the client to see them and give new dates.`);},{successMessage:'Client status updated.'});}return;}
+ if(b.dataset.clientHeld){const cid=b.dataset.clientHeld,c=data.clients.find(x=>x.client_id===cid);request({action:'client_held_work',client_id:cid}).then(r=>modal('Status history and held work'+(c?' · '+c.company_name:''),heldWorkHtml(r,esc,shortDate))).catch(e=>notice(e.message||'Could not load the held work.'));return;}
  if(b.dataset.client&&!b.dataset.myReview)editClient(data.clients.find(x=>x.client_id===b.dataset.client));
  if(b.dataset.clientView){navigateWorkspace('clientfile',b.dataset.clientView);return;}
  if(b.dataset.clientAccounts){clientAccountReturn=null;await clientAccountSetup(b.dataset.clientAccounts,{onReturn:null});}

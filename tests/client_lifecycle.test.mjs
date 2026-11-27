@@ -27,38 +27,35 @@ test("client lifecycle and contact routing",async t=>{
  await rejects(()=>life('SUPERVISOR','Pause','Client asked us to stop for now'),/Only a Manager or Partner/);
  await rejects(()=>life('MANAGER','Pause','too short'),/at least 10/);
  await rejects(()=>life('MANAGER','Resume','Client is back with us'),/already Active/);
- await rejects(()=>life('MANAGER','Archive','Closing the file for good'),/Only a Partner can archive/);
+ await rejects(()=>life('MANAGER','Archive','Closing the file for good'),/Only a Partner can make a client Dormant/);
  await life('MANAGER','Pause','Client asked us to stop for now');
  assert.deepEqual(await row().then(x=>[x.s,x.r,x.lr]),['Paused','Lead','Client asked us to stop for now']);
- await rejects(()=>life('MANAGER','Pause','Pausing a second time now'),/Only an Active client/);
+ await rejects(()=>life('MANAGER','Pause','Pausing a second time now'),/already Inactive/);
  await db.exec('alter table erp_private.projects disable trigger projects_guard;alter table erp_private.projects disable trigger zz_opening_gate');// the KYC and engagement-letter gate has its own tests
  // 3. A paused client cannot receive newly activated projects.
  await tx`update erp_private.clients set legal_entity_type='Limited company',entity_evidence='Certificate of incorporation seen',year_end_month=12,year_end_day=31 where client_id=${C}`;
- await rejects(()=>tx`update erp_private.projects set status='Active' where project_id=${P}`,/paused; resume it/);
+ await rejects(()=>tx`update erp_private.projects set status='Active' where project_id=${P}`,/inactive; set it Active/);
  await life('MANAGER','Resume','Client is back and fees are paid');
  assert.equal((await row()).s,'Active');
  await tx`update erp_private.projects set status='Active' where project_id=${P}`;
- // 4. Cancel is a leader action, alerts Partners, and only a Partner can reinstate it.
- await life('MANAGER','Cancel','Client moved to another firm');
- assert.equal((await row()).s,'Cancelled');
- assert.equal((await tx`select count(*)::int n from erp_private.notifications where event_key like ${'client-lifecycle:%'}`)[0].n,2,'both Partners are told of a cancellation');
- await rejects(()=>life('MANAGER','Resume','Client came back to us'),/Only a Partner can reinstate/);
- await life('PARTNER','Resume','Client came back after settling');
- assert.equal((await row()).s,'Active');
- // 5. Archive: Partner only, blocked while a project is Active, nothing is deleted.
- await rejects(()=>life('PARTNER','Archive','Closing the file for good'),/active project/);
- await tx`update erp_private.projects set status='Archived' where project_id=${P}`;
+ // 4. Cancel is retired: Inactive and Dormant cover it.
+ await rejects(()=>life('MANAGER','Cancel','Client moved to another firm'),/no longer used/);
+ // 5. Dormant (archive): Partner only, no longer blocked by active projects, nothing is deleted, Partners are told.
  await rejects(()=>life('PARTNER','Archive','short'),/at least 10/);
  await life('PARTNER','Archive','Dormant for three years now');
  let r=await row();assert.deepEqual([r.r,r.ar,r.acc,r.af],['Archived','Dormant for three years now',false,'Lead']);
- await rejects(()=>life('PARTNER','Pause','Pausing an archived client'),/archived; restore/);
- await rejects(()=>tx`update erp_private.projects set status='Active' where project_id=${P}`,/archived; restore/);
+ assert.equal((await tx`select count(*)::int n from erp_private.notifications where event_key like ${'client-status:%'}`)[0].n,2,'both Partners are told when a client is made Dormant');
+ assert.equal((await tx`select client_hold h from erp_private.projects where project_id=${P}`)[0].h,'Dormant','the active project is archived with the client');
+ await rejects(()=>life('PARTNER','Pause','Pausing an archived client'),/comes back as Active/);
+ await rejects(()=>tx`update erp_private.projects set status='Draft' where project_id=${P}`.then(()=>tx`update erp_private.projects set status='Active' where project_id=${P}`),/dormant; a Partner must set it Active/);
  assert.equal((await tx`select count(*)::int n from erp_private.clients where client_id=${C}`)[0].n,1,'the record is kept');
  await rejects(()=>tx`delete from erp_private.clients where client_id=${C}`,/./);
- await rejects(()=>life('MANAGER','Restore','Client came back to us'),/Only a Partner can archive or restore/);
+ await rejects(()=>life('MANAGER','Restore','Client came back to us'),/Only a Partner can make a client Dormant or bring a Dormant client back/);
  await life('PARTNER','Restore','Client came back to us');
  r=await row();assert.deepEqual([r.r,r.ar],['Lead','']);
- assert.ok((await tx`select count(*)::int n from erp_private.audit_events where record_key=${C}::text`)[0].n>=5,'every change is in the audit trail');
+ assert.equal((await tx`select client_hold h from erp_private.projects where project_id=${P}`)[0].h,null);
+ assert.ok((await tx`select count(*)::int n from erp_private.audit_events where record_key=${C}::text`)[0].n>=4,'every change is in the audit trail');
+ assert.deepEqual((await tx`select from_status f,to_status t from erp_private.client_status_changes where client_id=${C} order by changed_at`).map(x=>x.f+'>'+x.t),['Active>Inactive','Inactive>Active','Active>Dormant','Dormant>Active']);
  // 6. The scheduler skips clients that are not Active.
  const def=(await tx`select pg_get_functiondef('erp_private.run_workspace_scheduler()'::regprocedure) d`)[0].d;
  assert.match(def,/cl\.service_status='Active' AND cl\.record_status<>'Archived'/);

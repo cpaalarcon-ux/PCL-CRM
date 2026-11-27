@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 import {clockText,mediaProblem,endMessage,gatherComplete,callsSupported,loadLouder,saveLouder,LOUD_GAIN} from '../staff-chat-call.mjs';
 import {createBeeper} from '../staff-messenger-alerts.mjs';
 const env={};globalThis.Deno={env:{get:k=>env[k]}};
-const {iceConfig}=await import('../supabase/functions/staff-workspace-v12/call-actions.ts');
+const {callAction,iceConfig}=await import('../supabase/functions/staff-workspace-v12/call-actions.ts');
 
 test('call timer text and plain-language media problems',()=>{
  assert.equal(clockText(0),'0:00');assert.equal(clockText(65.9),'1:05');assert.equal(clockText(3600),'60:00');assert.equal(clockText(-4),'0:00');assert.equal(clockText('x'),'0:00');
@@ -48,6 +48,28 @@ test('connection servers: public server only without a relay account, short-live
  for(const bad of [async()=>({ok:false,status:403}),async()=>{throw new Error('timeout');},async()=>({ok:true,json:async()=>({iceServers:[{urls:['stun:x:3478']}]})})]){
   const r=await iceConfig(bad);assert.equal(r.relay,false);assert.equal(r.relay_error,true);assert.match(r.ice_servers[0].urls[0],/^stun:/);
  }
+});
+
+test('Agora requires a production rollout flag and valid credentials',async t=>{
+ const previousDeno=globalThis.Deno;
+ const settings={SUPABASE_URL:'https://tafrrmcxrsorffkonrxq.supabase.co',AGORA_APP_ID:'a'.repeat(32),AGORA_APP_CERTIFICATE:'b'.repeat(32)};
+ globalThis.Deno={env:{get:key=>settings[key]}};
+ t.after(()=>{globalThis.Deno=previousDeno;});
+ const enabled=async()=>(await callAction(null,null,{action:'discussion_call_config'})).agora;
+
+ assert.equal(await enabled(),false);
+ settings.PCL_AGORA_RTC_ENABLED='true';
+ assert.equal(await enabled(),true);
+ settings.AGORA_APP_CERTIFICATE='invalid';
+ assert.equal(await enabled(),false);
+ settings.AGORA_APP_CERTIFICATE='b'.repeat(32);
+ settings.SUPABASE_URL='https://other.supabase.co';
+ assert.equal(await enabled(),false);
+ settings.SUPABASE_URL='https://yfjiculexbzpkvtapudk.supabase.co';
+ delete settings.PCL_AGORA_RTC_ENABLED;
+ assert.equal(await enabled(),true);
+ settings.PCL_AGORA_RTC_ENABLED='false';
+ assert.equal(await enabled(),false);
 });
 
 test('the chat shows call buttons in one-to-one chats only and makes the call controls available over the messenger and the ERP',()=>{

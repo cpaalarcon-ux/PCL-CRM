@@ -75,5 +75,5 @@ export function createOnboardingAllocUI(ctx){
   paint();
  }
  if(typeof document!=='undefined')document.addEventListener('click',e=>{const b=e.target.closest?.('[data-onb-open]');if(!b)return;e.preventDefault();b.disabled=true;open().catch(err=>notice(err.message,true)).finally(()=>{b.disabled=false;});});
- return {open,mount,button:()=>'<button type="button" data-onb-open>Onboarding allocation</button>'};
+ return {open,mount,button:()=>'<button type="button" data-onb-open title="Who: staff with the onboarding allocation right. Choose who looks after new clients.">Assign staff to new clients</button>'};
 }

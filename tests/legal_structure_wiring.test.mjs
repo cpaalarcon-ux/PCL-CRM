@@ -12,5 +12,5 @@ test('the checklist tells staff what unlocks project, client year and opening TB
 });
 test('the Classify clients screen is routed and offered to Managers and Partners with unclassified clients',()=>{
  assert.match(read(fn+'index.ts'),/client_classify_save'\)return await classifyClientsAction/);
- const pilot=read('staff-pilot.mjs');assert.match(pilot,/data-classify-clients/);assert.match(pilot,/action:'client_classify_save'/);assert.match(pilot,/Classify clients \(\$\{toClassify\}\)/);
+ const pilot=read('staff-pilot.mjs');assert.match(pilot,/data-classify-clients/);assert.match(pilot,/action:'client_classify_save'/);assert.match(pilot,/Set client type \(\$\{toClassify\}\)/);
 });
