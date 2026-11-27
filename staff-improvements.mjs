@@ -13,7 +13,7 @@ import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
 import {createAmlUI} from './staff-aml.mjs?v=20261121-fill-v1';
 import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261121-wiz-v1';
 import {panelHtml,queueHtml,collectSubmit,collectDecisions} from './staff-setup-review.mjs?v=20261116-setupreview-v1&rev=20261119-nav&all=20261126-v1&names=20261127-v1';
-import {bulkSubmitHtml,collectBulk,bulkResultHtml,filterRows,tickShown} from './staff-setup-bulk.mjs?v=20261126-v1&min=20261127-v1';
+import {bulkSubmitHtml,collectBulk,bulkResultHtml,showScreen,tickShown,untickAll,BULK_MAX} from './staff-setup-bulk.mjs?v=20261126-v1&min=20261127-v1&screen=20261127-v1';
 import {setupChecklistHtml} from './staff-setup-checklist.mjs?v=20261125-checklist-v1';
 import {queueHtml as tasksQueueHtml,queueBody as tasksQueueBody,configurationHtml} from './staff-setup-tasks.mjs?v=20261116-choices-v1';
 import {createClientChoicesUI} from './staff-client-choices.mjs?v=20261116-choices-v1';
@@ -71,10 +71,16 @@ export function createImprovementUI(ctx){
   const list=(d().clients||[]).filter(c=>c.record_status!=='Archived').slice().sort((x,y)=>String(x.company_name).localeCompare(String(y.company_name)));
   show('Send set-up for approval',bulkSubmitHtml(list,esc));
   const host=$('#editorBody'),f=host.querySelector('#setupBulkForm'),count=()=>{host.querySelector('#setupBulkCount').textContent=[...f.querySelectorAll('input[name="bulk_client"]')].filter(x=>x.checked).length+' ticked';};
-  host.querySelector('#setupBulkSearch')?.addEventListener('input',e=>filterRows(host,e.target.value));
-  host.querySelector('#setupBulkAll')?.addEventListener('change',e=>{tickShown(host,e.target.checked);count();});
+  const view={page:0},draw=()=>{const r=showScreen(host,{term:host.querySelector('#setupBulkSearch')?.value||'',size:host.querySelector('#setupBulkSize')?.value,page:view.page});view.page=r.page;host.querySelector('#setupBulkRange').textContent=r.total?`Showing ${r.from}-${r.to} of ${r.total}`:'No clients match';host.querySelector('#setupBulkPrev').disabled=r.page<=0;host.querySelector('#setupBulkNext').disabled=r.page>=r.pages-1;host.querySelector('#setupBulkAll').checked=false;};
+  host.querySelector('#setupBulkSearch')?.addEventListener('input',()=>{view.page=0;draw();});
+  host.querySelector('#setupBulkSize')?.addEventListener('change',()=>{view.page=0;draw();});
+  host.querySelector('#setupBulkPrev')?.addEventListener('click',()=>{view.page--;draw();});
+  host.querySelector('#setupBulkNext')?.addEventListener('click',()=>{view.page++;draw();});
+  host.querySelector('#setupBulkAll')?.addEventListener('change',e=>{const skipped=tickShown(host,e.target.checked);count();if(skipped)notice(`Only ${BULK_MAX} clients can be sent at a time, so ${skipped} on this screen were left unticked.`,true);});
+  host.querySelector('#setupBulkNone')?.addEventListener('click',()=>{untickAll(host);host.querySelector('#setupBulkAll').checked=false;count();});
   f?.addEventListener('change',e=>{if(e.target.name==='bulk_client')count();});
-  if(f)f.onsubmit=async e=>{e.preventDefault();const body=collectBulk(f);if(!body.client_ids.length){notice('Tick at least one client.',true);return;}if(!body.sections.length){notice('Tick at least one section.',true);return;}
+  draw();
+  if(f)f.onsubmit=async e=>{e.preventDefault();const body=collectBulk(f);if(!body.client_ids.length){notice('Tick at least one client.',true);return;}if(body.client_ids.length>BULK_MAX){notice(`Choose at most ${BULK_MAX} clients at a time. ${body.client_ids.length} are ticked.`,true);return;}if(!body.sections.length){notice('Tick at least one section.',true);return;}
    try{const out=await request({action:'client_setup_section_submit_many',...body});show('Submitted for review',bulkResultHtml(out,esc));}catch(err){notice(err.message,true);}};
  }
  async function setupQueue(){
