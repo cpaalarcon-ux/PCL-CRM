@@ -135,7 +135,7 @@ const BUCKET='staff-pilot-private';
 // (and PCL_ALLOWED_ORIGINS), otherwise setup links are refused and no browser origin is allowed.
 const IS_STAGING_PROJECT=url==='https://yfjiculexbzpkvtapudk.supabase.co';
 const SITE_ORIGIN=(Deno.env.get('PCL_SITE_ORIGIN')||(IS_STAGING_PROJECT?'https://backend-staging-foundation.pcl-crm.pages.dev':'')).replace(/\/+$/,'');
-const SETUP_BASE=SITE_ORIGIN?SITE_ORIGIN+'/staff-pilot.html':'';
+const SETUP_BASE=SITE_ORIGIN?SITE_ORIGIN+(IS_STAGING_PROJECT?'/staff-pilot.html':'/staff'):'';
 const PARTNER_RECOVERY=partnerRecoveryConfig(name=>Deno.env.get(name),SITE_ORIGIN,IS_STAGING_PROJECT);
 const ORIGINS=(Deno.env.get('PCL_ALLOWED_ORIGINS')||'').split(',').map(x=>x.trim()).filter(Boolean);
 const ORIGIN_LIST:string[]|null=ORIGINS.length?ORIGINS:(IS_STAGING_PROJECT?null:[]);
