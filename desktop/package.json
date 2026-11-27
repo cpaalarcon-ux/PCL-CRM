@@ -1,0 +1,42 @@
+{
+  "name": "pcl-nexus-offline-staging",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PCL Nexus Windows staging pilot for encrypted offline drafts",
+  "author": "PCL Nexus",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/store.test.cjs",
+    "test:windows": "electron test/windows-smoke.cjs",
+    "build:windows": "electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "better-sqlite3-multiple-ciphers": "13.2.0"
+  },
+  "devDependencies": {
+    "electron": "45.5.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.pclnexus.offline.staging",
+    "productName": "PCL Nexus Offline Staging",
+    "files": [
+      "*.cjs",
+      "offline.html",
+      "offline.css",
+      "work.js",
+      "staging.json",
+      "icon.png"
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "perMachine": false,
+      "allowElevation": false,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

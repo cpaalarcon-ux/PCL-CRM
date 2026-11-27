@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; form-action 'none'; base-uri 'none'">
+  <title>PCL Nexus Offline · Staging</title>
+  <link rel="stylesheet" href="./offline.css">
+  <script defer src="./work.js"></script>
+</head>
+<body>
+  <header>
+    <img src="./icon.png" width="42" height="42" alt="">
+    <div><h1>PCL Nexus Offline</h1><small>Staging pilot</small></div>
+    <button type="button" id="open">Open online ERP</button>
+  </header>
+  <main>
+    <p id="message" role="status"></p>
+    <section id="locked" aria-labelledby="sign-in">
+      <h2 id="sign-in">Staff sign-in</h2>
+      <p>Sign in online to load your assigned work and unlock saved drafts on this device.</p>
+      <form id="login">
+        <label>Staff login ID <input name="loginId" autocomplete="username" maxlength="80" required></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" maxlength="128" required></label>
+        <button>Sign in</button>
+      </form>
+    </section>
+    <section id="workspace" aria-labelledby="my-work" hidden>
+      <div class="bar"><div><h2 id="my-work">My Work</h2><p id="snapshot"></p></div>
+        <div class="actions"><button type="button" id="sync">Sync now</button><button type="button" id="signout">Sign out</button></div>
+      </div>
+      <p id="connection" role="status"></p>
+      <form id="draft">
+        <div class="form-field"><label for="assigned-task">Assigned task</label><select id="assigned-task" name="task" required></select></div>
+        <div class="form-field"><label for="draft-kind">Entry type</label><select id="draft-kind" name="kind" required><option value="time">Time draft</option><option value="note">Work note</option></select></div>
+        <fieldset id="time"><legend>Time entry</legend>
+          <label>Work date <input type="date" name="workDate"></label>
+          <label>Hours <input type="number" min="0.01" max="24" step="0.01" name="hours"></label>
+          <label class="check"><input type="checkbox" name="billable"> Billable</label>
+        </fieldset>
+        <label id="description-label">Description <textarea name="description" maxlength="2000" required></textarea></label>
+        <div class="actions"><button id="save">Save on this device</button><button type="button" id="cancel" hidden>Cancel edit</button></div>
+      </form>
+      <section aria-labelledby="draft-list-heading"><h2 id="draft-list-heading">Saved entries</h2><ul id="entries"></ul></section>
+    </section>
+  </main>
+</body>
+</html>
