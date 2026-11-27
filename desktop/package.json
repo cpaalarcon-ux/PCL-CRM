@@ -9,7 +9,8 @@
     "start": "electron .",
     "test": "node --test test/store.test.cjs",
     "test:windows": "electron test/windows-smoke.cjs",
-    "build:windows": "electron-builder --win nsis --x64 --publish never"
+    "build:windows": "electron-builder --win nsis --x64 --publish never",
+    "prebuild:windows": "powershell -NoProfile -File build-icon.ps1"
   },
   "dependencies": {
     "better-sqlite3-multiple-ciphers": "13.2.0"
@@ -31,7 +32,8 @@
     ],
     "win": {
       "target": "nsis",
-      "signAndEditExecutable": true
+      "signAndEditExecutable": true,
+      "icon": "win-icon.png"
     },
     "nsis": {
       "perMachine": false,
