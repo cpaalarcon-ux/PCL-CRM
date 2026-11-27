@@ -9,7 +9,7 @@ import {bankRemovalHtml,isConnectionDrop,connectionDropMessage,alreadyImportedNo
 import {createOnboardingBatchUI} from './staff-onboarding-batch.mjs?v=20261214-ob-v1';
 import {createSetupPipelineUI} from './staff-setup-pipeline.mjs?v=20261125-pipe-v1';
 import {createMonthWorkUI} from './staff-month-work.mjs?v=20261125-month-v1';
-import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2&bulk=20261126-v1&names=20261127-v1&min=20261127-v1&screen=20261127-v1';
+import {createImprovementUI} from './staff-improvements.mjs?v=20261119-drafts2-v1&onb=20261209-onb&screen=20261211-v1&team=20261212-v2&bulk=20261126-v1&names=20261127-v1&min=20261127-v1&screen=20261127-v1&ready=20261127-v1';
 import {createProcedureUI} from './staff-procedures.mjs?v=20261121-folder-v1';
 import {workspaceRoute,taskWorkspace} from './staff-task-workspace.mjs?v=20261119-nav-v1&rev=20261119-2904&single=20261125-v1';
 import {needsWorkspaceConfirmation,workspaceContext,workspaceRecordMatches,workspaceScopeHash} from './staff-workspace-navigation.mjs?v=20261125-v1';

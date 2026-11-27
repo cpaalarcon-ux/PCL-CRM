@@ -28,8 +28,8 @@ export function panelHtml(r,{esc,shortDate}){
 // Everything the Manager has to review, grouped by client, with approve-selected and return-with-comment.
 export function queueHtml(q,{esc,shortDate}){
  if(!q.total)return '<p class="info">No set-up sections are waiting for review.</p>';
- const groups=q.clients.map(c=>`<fieldset class="card"><legend>${esc(c.company_name)} · ${c.sections.length} pending</legend>${c.sections.map(s=>`<label class="obligation-choice"><input type="checkbox" data-pick="${esc(c.client_id)}|${esc(s.code)}"${s.mine?' disabled':''}> <b>${esc(s.label)}</b><small>${esc(s.source_kind||'')} · submitted by ${esc(s.submitted_by_name||'')} ${esc(shortDate(s.submitted_at))}${s.source_note?' · '+esc(s.source_note):''}${s.mine?' · you submitted this, a different Manager or Partner reviews it':''}${s.edited_since_submission?' · <b>edited after it was submitted</b>':''}</small></label><input aria-label="Comment if you return this section" data-return-note="${esc(c.client_id)}|${esc(s.code)}" placeholder="Comment if you return this section" maxlength="1000">`).join('')}</fieldset>`).join('');
- return `<p class="info">${q.total} section${q.total===1?'':'s'} waiting. Approve the ones that are satisfactory in one action, or return specific sections with a comment. The preparer carries on in the meantime.</p>${groups}<div class="actions"><label><input type="checkbox" id="setupPickAll"> Tick every section I can review</label><button type="button" id="setupApprove" class="primary" title="Who: Manager or Partner who did not send these sections.">Approve ticked set-up (Manager or Partner, not the sender)</button><button type="button" id="setupReturn">Return ticked sections with comments</button></div>`;
+ const groups=q.clients.map(c=>`<fieldset class="card"><legend>${esc(c.company_name)} · ${c.sections.length} pending</legend>${c.sections.map(s=>`<label class="obligation-choice"><input type="checkbox" data-pick="${esc(c.client_id)}|${esc(s.code)}"${s.mine&&!q.sole_partner?' disabled':''}> <b>${esc(s.label)}</b><small>${esc(s.source_kind||'')} · submitted by ${esc(s.submitted_by_name||'')} ${esc(shortDate(s.submitted_at))}${s.source_note?' · '+esc(s.source_note):''}${s.mine?(q.sole_partner?' · you submitted this; as your firm’s only Partner you may review it':' · you submitted this, a different Manager or Partner reviews it'):''}${s.edited_since_submission?' · <b>edited after it was submitted</b>':''}</small></label><input aria-label="Comment if you return this section" data-return-note="${esc(c.client_id)}|${esc(s.code)}" placeholder="Comment if you return this section" maxlength="1000">`).join('')}</fieldset>`).join('');
+ return `<p class="info">${q.total} section${q.total===1?'':'s'} waiting. Approve the ones that are satisfactory in one action, or return specific sections with a comment. The preparer carries on in the meantime.</p>${groups}<div class="actions"><button type="button" class="primary" data-v3="setup-approve-ready" title="Approves every section that has not been edited since it was sent, after you check the list.">Approve all ready…</button><label><input type="checkbox" id="setupPickAll"> Tick every section I can review</label><button type="button" id="setupApprove" class="primary" title="Who: Manager or Partner who did not send these sections.">Approve ticked set-up (Manager or Partner, not the sender)</button><button type="button" id="setupReturn">Return ticked sections with comments</button></div>`;
 }
 
 // Collects the ticked sections from the panel into the request body.
@@ -52,4 +52,17 @@ export function collectDecisions(host,outcome){
   const list=by.get(client)||[];list.push({section_code:code,outcome,note});by.set(client,list);
  }
  return [...by.entries()].map(([client_id,decisions])=>({client_id,decisions}));
+}
+
+// Approve all ready (build 2910). The preview lists what would be approved and what is left for a person; nothing is saved until the reviewer ticks the box and confirms.
+export function readyHtml(r,{esc}){
+ const left=r.left||[];
+ const leftList=left.length?`<details open><summary>Left for a person (${left.length})</summary><div class="scroll"><table><thead><tr><th>Client</th><th>Section</th><th>Why</th></tr></thead><tbody>${left.slice(0,200).map(x=>`<tr><td>${esc(x.company_name)}</td><td>${esc(x.label)}</td><td>${esc(x.reason)}</td></tr>`).join('')}</tbody></table></div>${left.length>200?`<p class="muted">Showing 200 of ${left.length}.</p>`:''}</details>`:'';
+ if(!r.ready)return `<p class="info">Nothing is ready to approve.</p>${leftList}`;
+ return `<p class="info"><b>${esc(r.ready)}</b> section${r.ready===1?'':'s'} across <b>${esc(r.clients)}</b> client${r.clients===1?'':'s'} ${r.ready===1?'is':'are'} ready: not edited since ${r.ready===1?'it was':'they were'} sent${r.sole_partner?', including any you sent yourself, as your firm’s only Partner':', and none sent by you'}.</p>${leftList}
+  <label>Why you are approving these (at least 10 characters)<input id="readyNote" maxlength="1000" placeholder="For example: checked against the CR12 and KRA certificates on the physical files"></label>
+  <div class="actions"><label class="check"><input type="checkbox" id="readyConfirm"> I have checked this list</label><button type="button" class="primary" id="readyApply" disabled>Approve ${esc(r.ready)} section${r.ready===1?'':'s'}</button></div>`;
+}
+export function readyDoneHtml(r,{esc}){
+ return `<p class="info">Approved <b>${esc(r.approved)}</b> section${r.approved===1?'':'s'} across ${esc(r.clients)} client${r.clients===1?'':'s'}.${(r.left||[]).length?` ${esc(r.left.length)} left for a person.`:''}</p>`;
 }

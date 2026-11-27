@@ -3,6 +3,7 @@ import {isProposableAction} from './staff-rights-catalog.mjs';
 import {requireAssistantEntryAuthorised} from './policy-actions.ts';
 import {handlingFirmIds,readClientEntry} from './client-entry.ts';
 import {validateNewClientStructure} from './legal-structure-actions.ts';
+import {SECTION_CODES,planApproveOnce} from './setup-review-rules.mjs';
 const deny=():never=>fail(403,'You do not have access to this action.');
 const isLeader=(a:any)=>['PARTNER','MANAGER'].includes(a.category_code);
 const canCheck=(a:any)=>['SUPERVISOR','MANAGER','PARTNER'].includes(a.category_code);
@@ -104,9 +105,25 @@ export async function proposalAction(tx:any,a:any,p:any,replay:(p:any)=>Promise<
    for(const k of ['company_name','kra_pin','primary_sector','branch_location','client_category'])if(blank(applied[k])&&!blank((live as any)[k]))applied[k]=(live as any)[k];
    applied.revision=String(live.revision);
   }
+  // Approve once: a set-up section that was already sent for review, and has not been touched since, is approved together with the change that
+  // this proposal makes to it, because the approver has just seen exactly that change. Digests before and after show which sections the change reached.
+  const secDigests=async()=>{const o:any={};if(!row.client_id)return o;for(const c of SECTION_CODES)o[c]=String((await tx`select erp_private.client_setup_section_digest(${row.client_id}::uuid,${c}) d`)[0].d);return o;};
+  const before=await secDigests();
   const result=await replay({...applied,action:row.action,proposal_applied:row.proposal_id});
+  const settled:string[]=[];
+  if(row.client_id){
+   const after=await secDigests();
+   const sections=await tx`select section_id,section_code,status,content_digest,submitted_by,source_kind from erp_private.client_setup_sections where client_id=${row.client_id} and status='Pending Review' for update`;
+   const open=Number((await tx`select count(*)::int n from erp_private.change_proposals where client_id=${row.client_id} and status in ('Proposed','Checked') and proposal_id<>${row.proposal_id}`)[0].n)>0;
+   const sole=!!(await tx`select erp_private.sole_active_partner() as ok`)[0]?.ok;
+   for(const x of planApproveOnce({before,after,sections,approver:a.staff_id,sole,otherOpenProposals:open})){
+    await tx`update erp_private.client_setup_sections set status='Approved',content_digest=${x.digest},approved_digest=${x.digest},reviewed_by=${a.staff_id},reviewed_at=now(),review_note=${'Approved together with change proposal '+String(row.proposal_id).slice(0,8)},unchanged_approval=false where section_id=${x.section_id} and status='Pending Review'`;
+    await tx`insert into erp_private.client_setup_section_events(section_id,client_id,section_code,action,status_after,actor_id,note,digest,source_kind) values(${x.section_id},${row.client_id},${x.section_code},'Approved','Approved',${a.staff_id},${'Approved together with change proposal '+String(row.proposal_id).slice(0,8)+': '+approvalNote},${x.digest},${x.source_kind})`;
+    settled.push(x.section_code);
+   }
+  }
   await tx`update erp_private.change_proposals set status='Approved',decision_note=${approvalNote},result=${tx.json(JSON.parse(JSON.stringify(result??{ok:true})))} where proposal_id=${row.proposal_id}`;
-  return {ok:true,status:'Approved',applied:result};
+  return {ok:true,status:'Approved',applied:result,sections_approved:settled};
  }
  return undefined;
 }

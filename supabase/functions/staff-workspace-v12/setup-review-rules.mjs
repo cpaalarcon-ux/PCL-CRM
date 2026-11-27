@@ -41,6 +41,38 @@ export function decidePlan(row,outcome,note,currentDigest){
  return {ok:true};
 }
 
+// Approve all ready (build 2910). rows are pending sections with the digest recorded at submission and the digest of the data now.
+// Ready means: nothing was edited since it was sent, and the signed-in reviewer may decide it (maker is not checker, except your firm's only Partner).
+// Everything else is left for a person and listed with the reason, so nothing is approved that the reviewer could not have approved one by one.
+export function planApproveReady(rows,{staff_id,sole=false}){
+ const ready=[],left=[];
+ for(const r of rows||[]){
+  const base={client_id:r.client_id,company_name:r.company_name,section_code:r.section_code,label:sectionLabel(r.section_code)};
+  if(r.content_digest!==r.now_digest)left.push({...base,reason:'Edited after it was sent. Ask the sender to send it again, or return it.'});
+  else if(r.submitted_by===staff_id&&!sole)left.push({...base,reason:'You sent this. A different Manager or Partner reviews it.'});
+  else ready.push({...r,...base});
+ }
+ return {ready,left};
+}
+
+// Approve once (build 2910). A change proposal is approved by a Manager or Partner who is not its proposer. If a set-up section it changes was already
+// sent for review and nobody edited it since, the same approval covers the section. Returns the sections to approve with the digest of what is now on file.
+// Nothing is approved when another proposal for the client is still open (the section could change again), when the data did not change, when the section was
+// edited after it was sent, or when the approver sent the section (unless your firm's only Partner).
+export function planApproveOnce({before,after,sections,approver,sole=false,otherOpenProposals=false}){
+ if(otherOpenProposals)return [];
+ const out=[];
+ for(const s of sections||[]){
+  const c=s.section_code;
+  if(s.status!=='Pending Review'||after?.[c]===undefined||before?.[c]===undefined)continue;
+  if(after[c]===before[c])continue;
+  if(s.content_digest!==before[c])continue;
+  if(s.submitted_by===approver&&!sole)continue;
+  out.push({section_id:s.section_id,section_code:c,source_kind:s.source_kind,digest:after[c]});
+ }
+ return out;
+}
+
 // Display status of one set-up section.
 export function sectionState(row,currentDigest){
  if(!row)return {status:'Draft',changed:false};

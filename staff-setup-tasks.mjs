@@ -37,7 +37,7 @@ export function queueBody(res,{esc=e0,search='',who=''}={}){
 
 export function queueHtml(res,{esc=e0}={}){
  return `<p class="info full">Set-up that is recorded as not finished for each active client, from approved records only. This is separate from the firm-wide approvals in Settings → My approvals. ${esc(res.clients_with_tasks)} of ${esc(res.clients_checked)} active client${res.clients_checked===1?'':'s'} ${res.clients_with_tasks===1?'has':'have'} something open.</p>`+
-  `<div class="actions"><input type="search" id="setupTaskSearch" placeholder="Search client or task" aria-label="Search client set-up tasks" autocomplete="off"><select id="setupTaskWho" aria-label="Filter tasks">${TASK_FILTERS.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select></div><div id="setupTaskList">${queueBody(res,{esc})}</div>`;
+  `<div class="actions"><input type="search" id="setupTaskSearch" placeholder="Search client or task" aria-label="Search client set-up tasks" autocomplete="off"><select id="setupTaskWho" aria-label="Filter tasks">${TASK_FILTERS.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select>${res.leader?'<button type="button" class="primary" data-v3="setup-approve-ready" title="Approves every pending section that has not been edited since it was sent, after you check the list.">Approve all ready…</button>':''}</div><div id="setupTaskList">${queueBody(res,{esc})}</div>`;
 }
 
 // The short Client Configuration list on the client's own set-up screen: only what needs the client's details or confirmation, one specific line each.
