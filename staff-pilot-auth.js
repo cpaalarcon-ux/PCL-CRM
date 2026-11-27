@@ -82,7 +82,7 @@
   }
 
   async function openFullWorkspace(options) {
-    fullWorkspace ??= await import('./staff-pilot.mjs?v=20261114-setupguide-v1&rev=20261119-2906&upd=20261124-v1&swap=20261124-v1&reset=20261122-v1&vault=20261122-v1&create-client=20261122-v1&review=20261122-v1&bulk=20261122-v1&starter=20261210-v1&screen=20261211-v1&routing=20261124-mumbai-v1&landing=20261125-v2&fold=20261125-v1&single=20261125-v1&ownerbatch=20261125-v1&register=20261125-v2&hours=20261126-v2&agora=1&lead=20261127-v1&followups=1&status=20261127-v1&subopt=20261127-v1');
+    fullWorkspace ??= await import('./staff-pilot.mjs?v=20261114-setupguide-v1&rev=20261119-2906&upd=20261124-v1&swap=20261124-v1&reset=20261122-v1&vault=20261122-v1&create-client=20261122-v1&review=20261122-v1&bulk=20261122-v1&starter=20261210-v1&screen=20261211-v1&routing=20261124-mumbai-v1&landing=20261125-v2&fold=20261125-v1&single=20261125-v1&ownerbatch=20261125-v1&register=20261125-v2&hours=20261126-v2&agora=1&lead=20261127-v1&followups=1&status=20261127-v1&subopt=20261127-v1&prior=20261127-v1');
     await fullWorkspace.activateStaffWorkspace(options);
     landing=null;
   }

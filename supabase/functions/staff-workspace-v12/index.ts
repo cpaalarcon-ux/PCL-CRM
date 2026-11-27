@@ -118,6 +118,7 @@ import {createProposal,proposalAction,proposalsRead} from './proposal-actions.ts
 import {clientBatchAction,clientBatchStage} from './client-batch-actions.ts';
 import {onboardingTemplateAction,onboardingTemplateStage} from './onboarding-template-actions.ts';
 import {ownerBatchAction,ownerBatchStage} from './owner-batch-actions.ts';
+import {priorBillingAction,priorBillingStage} from './prior-billing-actions.ts';
 import {proposalSelectAction} from './proposal-select-actions.ts';
 import {ownerAmendStage} from './owner-amend-actions.ts';
 import {monthWorkAction} from './month-work-actions.ts';
@@ -612,6 +613,7 @@ async function action(id:any,p:any){
   const config=await taxConfigAction(tx,a,p);if(config!==undefined)return config;
   const lead=await leadAction(tx,a,p);if(lead!==undefined)return lead;
   const procedure=await procedureAction(tx,a,p,taxAction);if(procedure!==undefined)return procedure;
+  const prior=await priorBillingAction(tx,a,p);if(prior!==undefined)return prior;
   const suite=await suiteAction(tx,a,p);if(suite!==undefined)return suite;
   const dueDate=await dueDateAction(tx,a,p);if(dueDate!==undefined)return dueDate;
   const taxManager=await taxManagerAction(tx,a,p);if(taxManager!==undefined)return taxManager; // before taxAction, which owns the tax_ prefix
@@ -863,6 +865,7 @@ Deno.serve(async(req:Request)=>{
    if(req.headers.get('x-erp-upload-kind')==='reference'){const result=await referenceUpload(req,id);return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='onboarding_template'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'clients');await requireActionRight(tx,a,{action:'onboarding_template_propose'});return onboardingTemplateStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='client_batch'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'clients');await requireActionRight(tx,a,{action:'client_batch_propose'});return clientBatchStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
+   if(req.headers.get('x-erp-upload-kind')==='prior_billing'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'billing_wip');await requireActionRight(tx,a,{action:'prior_billing_stage'});return priorBillingStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='owner_batch'){const form=await req.formData();const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,'clients');await requireActionRight(tx,a,{action:'owner_batch_propose'});return form.get('mode')==='amend'?ownerAmendStage(tx,a,form):ownerBatchStage(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    if(req.headers.get('x-erp-upload-kind')==='master') {const form=await req.formData(),dataset=String(form.get('dataset')||''),area=dataset==='Staff'?'staff_access':'clients';const result=await scoped(id,async(tx,a)=>{await requireStaffArea(tx,a,area);await requireActionRight(tx,a,{action:dataset==='Staff'?'master_staff_import':'client_master_import'});return masterImport(tx,a,form);});return new Response(JSON.stringify(result),{headers});}
    const result=await upload(req,id);return new Response(JSON.stringify(result),{headers});
