@@ -9,7 +9,7 @@ const ids=(v:any)=>{if(!Array.isArray(v)||v.length>500)fail(400,'Ask for 500 cli
 async function readRegisterClients(tx:any,clientIds:string[]){
  if(!clientIds.length)return [];
  return await tx`select c.client_id,c.company_name,c.kra_pin,c.primary_sector,c.branch_location,c.client_category,
-  c.accepts_new_engagements,c.record_status,c.service_status,c.comm_access_level,c.lifecycle_reason,c.lifecycle_changed_at,
+  c.accepts_new_engagements,c.record_status,c.service_status,erp_private.client_status_of(c.service_status,c.record_status) client_status,c.archive_reason,c.archived_at,c.comm_access_level,c.lifecycle_reason,c.lifecycle_changed_at,
   (select m.full_name from erp_private.staff_members m where m.staff_id=c.lifecycle_changed_by) lifecycle_changed_by_name,
   c.archive_reason,c.archived_at,c.doc_request_contact_id,c.report_delivery_contact_id,c.legal_entity_type,
   c.legal_structure,c.legal_subtype,c.legal_structure_note,c.legal_structure_changed_at,
@@ -50,7 +50,7 @@ export async function clientRegisterAction(tx:any,a:any,p:any){
  const days=p.deadline_days===undefined||p.deadline_days===null||p.deadline_days===''?null:Math.trunc(Number(p.deadline_days));
  if(days!==null&&!(days>=0&&days<=365))fail(400,'Next deadline must be between 0 and 365 days.');
  const sector=p.sector?text(p.sector,120,false).trim()||null:null;
- const readPage=(limit:number,offset:number)=>tx`select * from erp_private.client_register(${q},${p.firm_id?uuid(p.firm_id):null}::uuid,${sector},${ONE(p.service_status,['Active','Paused','Cancelled'],'Service status')},${!!p.show_archived},${p.owner_staff_id?uuid(p.owner_staff_id):null}::uuid,${ONE(p.kyc,['complete','outstanding'],'KYC')},${ONE(p.tax,['verified','unverified'],'Tax profile')},${ONE(p.opening,['done','pending'],'Opening balance')},${ONE(p.projects,['none','some'],'Projects')},${days}::integer,${ONE(p.sort,['name','deadline','projects','overdue'],'Sort')||'name'},${limit},${offset})`;
+ const readPage=(limit:number,offset:number)=>tx`select * from erp_private.client_register(${q},${p.firm_id?uuid(p.firm_id):null}::uuid,${sector},${ONE(p.service_status,['Active','Paused','Dormant'],'Client status')},${!!p.show_archived},${p.owner_staff_id?uuid(p.owner_staff_id):null}::uuid,${ONE(p.kyc,['complete','outstanding'],'KYC')},${ONE(p.tax,['verified','unverified'],'Tax profile')},${ONE(p.opening,['done','pending'],'Opening balance')},${ONE(p.projects,['none','some'],'Projects')},${days}::integer,${ONE(p.sort,['name','deadline','projects','overdue'],'Sort')||'name'},${limit},${offset})`;
  const rows=await readPage(size,page*size);
  const total=Number(rows[0]?.total??(page>0?(await readPage(1,0))[0]?.total:0)??0);
  const clients=new Map((await readRegisterClients(tx,rows.map((r:any)=>r.client_id))).map((client:any)=>[client.client_id,client]));

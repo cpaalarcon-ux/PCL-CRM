@@ -54,7 +54,7 @@ const groups=[
 
 // Route families cover the existing submodules that expose multiple screens and RPCs.
 const families=[
- ['clientsetup','clients','Client setup and lifecycle',staff,['client_setup_','client_lifecycle','client_year_rollover_','client_understanding_','client_pf_','client_scope_','bulk_setup_','v3_identity_','v3_activity_','v3_activities_','v3_vat_']],
+ ['clientsetup','clients','Client setup and lifecycle',staff,['client_setup_','client_lifecycle','client_status_set','client_held_work','client_year_rollover_','client_understanding_','client_pf_','client_scope_','bulk_setup_','v3_identity_','v3_activity_','v3_activities_','v3_vat_']],
  ['chart','clients','Chart, accounts and mappings',staff,['v3_client_','v3_category_','v3_bank_','client_routing_','v3_books_pack_']],
  ['stock','clients','Stock and valuation',staff,['v3_stock_']],
  ['compliance','clients','Compliance and due diligence',staff,['aml_','compliance_','kyc_proposal_','client_comm_','client_holder_','licence_','v3_partners_']],
