@@ -174,7 +174,7 @@ export function createSuiteUI(ctx){
    (!isLetter?field('meeting_link','Google Meet / Teams / Zoom link',c.meeting_link||'','url'):'')+select('status','Status',['Open','Waiting','Closed'],c.status||'Open')+area('details',isLetter?'Letter text *':'Details / meeting minutes *',c.details||'',true)+
    `<p class="muted full">${isLetter?'Saving opens the client letter and its private staff QR preview. The QR is not included in the printed client letter and does not apply an electronic signature.':'For a virtual meeting, paste its provider link. This records the communication without sending an invitation.'}</p>`,isLetter?'Save letter':'Save communication'),
    f=>request({action:'communication_save',...val(f),communication_id:id,revision:c.revision,request_id:requestId}),
-   async result=>{if(!isLetter)return;const savedId=id||result.communication_id,saved=s().communications.find(x=>x.communication_id===savedId);if(!saved)throw Error('The letter was saved. Refresh Letters & QR and open it to view the staff QR.');commsTab='Letters';ctx.render();await request({action:'communication_qr',communication_id:savedId});showCommunication(saved);});
+   async result=>{if(!isLetter)return;const savedId=id||result.communication_id,saved=s().communications.find(x=>x.communication_id===savedId);if(!saved)throw Error('The letter was saved. Refresh Letters and open it to view the staff QR.');commsTab='Letters';ctx.render();await request({action:'communication_qr',communication_id:savedId});showCommunication(saved);});
   const frm=$('#editForm'),el=n=>frm.elements[n];
   for(const k of ['client_id','firm_id','signatory_id','channel','status'])el(k).required=true;
   el('details').maxLength=8000;
