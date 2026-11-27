@@ -37,6 +37,7 @@ test('the landing read returns a bounded list of assigned open work within the p
   assert.deepEqual(Object.keys(landing).sort(),['firm_id','firms','me','my_work','uat_client_scope']);
   assert.equal(landing.firms.length,2);
   assert.equal(landing.me.allowed_areas.includes('billing_wip'),false);
+  assert.equal(landing.me.can_open_messenger,true);
   assert.equal(landing.my_work.open_count,7);
   assert.equal(landing.my_work.overdue_count,1);
   assert.equal(landing.my_work.tasks.length,5);
@@ -48,8 +49,9 @@ test('the landing read returns a bounded list of assigned open work within the p
   assert.equal(firmLanding.my_work.overdue_count,0);
   assert.ok(firmLanding.my_work.tasks.every(t=>t.project_name==='Project One'));
   assert.equal((await readWorkspaceLanding(tx,{...actor,category_code:'ADMIN'})).my_work,null);
-  await db.exec("insert into erp_private.staff_right_restrictions values ('my-staff','task.view')");
+  await db.exec("insert into erp_private.staff_right_restrictions values ('my-staff','task.view'),('my-staff','messenger.view')");
   assert.equal((await readWorkspaceLanding(tx,actor)).my_work,null);
+  assert.equal((await readWorkspaceLanding(tx,actor)).me.can_open_messenger,false);
   await db.exec("delete from erp_private.staff_right_restrictions; insert into erp_private.staff_area_restrictions values ('my-staff','projects')");
   const restricted=await readWorkspaceLanding(tx,actor);
   assert.equal(restricted.my_work,null);

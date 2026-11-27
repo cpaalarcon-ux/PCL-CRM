@@ -36,9 +36,9 @@ import {createStaffSession,watchStaffActivity} from './staff-session.mjs?v=20261
 import {staffReadRequestUrl} from './staff-read-routing.mjs?v=20261124-mumbai-v1';
 import {watchSetupLinks,setupExpiryText} from './staff-setup-links.mjs';
 import {createWorkspaceUI} from './staff-workspace-v6.mjs?v=20261119-drafts2-v1&rev=20261119-2906&workload=20261122-v1&bulk=20261122-v1&team=20261212-v2&fold=20261125-v1&single=20261125-v1&hours=20261126-v2';
-import {createMessenger} from './staff-messenger.mjs?v=20261126-agora';
+import {createMessenger} from './staff-messenger.mjs?v=20261126-agora&followups=1';
 import {postMessengerFile} from './staff-messenger-upload.mjs?v=20261119-workspace';
-import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1&imp=20261124-v1&fold=20261125-v1&single=20261125-v1';
+import {createSuiteUI} from './staff-suite.mjs?v=20261119-fixes-v1&rev=20261119-legal&access=20261119-2906&wf=20261206-invoice-review&cn=20261207-credit-notes&rs=20261208-reset&bf=20261210-starter-proposals&review=20261122-v1&bulk=20261122-v1&imp=20261124-v1&fold=20261125-v1&single=20261125-v1&followups=1';
 import {createWorkQueueUI} from './staff-work-queue.mjs?v=20261119-draft-v1&rev=20261119-2903';
 import {ask,createDraftUI,applyFields,TAX_ASIDE_PREFIX} from './staff-drafts.mjs?v=20261119-drafts2-v1&rev=20261119-2905&single=20261125-v1';
 import {watchStickyBar} from './staff-sticky-bar.mjs?v=20261119-sticky-v1';
@@ -995,8 +995,10 @@ async function uploadMessenger(attachment,channelId,options){
   return result;
  }catch(error){session.reject(sessionContext,error);throw error;}
 }
-const messenger=createMessenger({esc,request,notice,uploadMessenger,openTask:id=>navigateWorkspace('task',id),data:()=>data});
-const suite=createSuiteUI({upload,$,esc,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openChartAccount:(code,options)=>v6.openCatalog(code,options),openTask:id=>navigateWorkspace('task',id),navigate:next=>navigateWorkspace(next),currentHash:()=>location.hash,goHash:h=>{history.pushState(null,'',location.pathname+location.search+h);applyWorkspaceRoute();}});
+const messenger=createMessenger({esc,request,notice,uploadMessenger,openTask:id=>navigateWorkspace('task',id),data:()=>data,
+ canFollowup:()=>!!data&&['ASSISTANT','SUPERVISOR','MANAGER','PARTNER'].includes(data.me.category_code)&&canArea('projects')
+  &&['discussion_messages','communication_followup_options','communication_followup_create','task_types_list'].every(action=>canUseAction(data.me.restricted_rights,{action}))});
+const suite=createSuiteUI({upload,$,esc,openMessage:messenger.openMessage,createFromMessage:messenger.createFromMessage,field,select,form,modal,request,load,notice,shortDate,badge,projectName,staffName,clientName,firmName,today,empty,data:()=>data,firm:()=>firm,filtered,render,openChartAccount:(code,options)=>v6.openCatalog(code,options),openTask:id=>navigateWorkspace('task',id),navigate:next=>navigateWorkspace(next),currentHash:()=>location.hash,goHash:h=>{history.pushState(null,'',location.pathname+location.search+h);applyWorkspaceRoute();}});
 bindProposals({esc,field,select,options,form,modal,request,load,notice,data:()=>data,currentFirm:()=>firm});
 bindPolicies({esc,form,modal,request,data:()=>data});
 bindDocRequests({esc,form,field,select,modal,request,data:()=>data,notice,shortDate,today,load});
@@ -1033,15 +1035,16 @@ if(!bootedByLightweightAuth){
  if(!setupWatcher.hasSetup&&session.active)load().catch(e=>signedOut(e.message));
 }
 
-export async function activateStaffWorkspace({firmId='',signOut=false}={}){
+export async function activateStaffWorkspace({firmId='',signOut=false,openMessenger=false}={}){
  if(!session.active)session=createStaffSession({storage:localStorage,send,onEnd:showSignedOut});
  firm=firmId;
  view='home';
  await load({timeoutMs:30000,waitForPresence:signOut});
- if(['Opening your secure workspace…','Opening workspace area…'].includes($('#notice').textContent))notice('');
+ if(['Opening your secure workspace…','Opening workspace area…','Opening PCL Messenger…'].includes($('#notice').textContent))notice('');
  stopWatchingSession?.();
  stopWatchingSession=watchStaffActivity(session);
  if(signOut)presence.requestLogout();
+ if(openMessenger&&messenger.isMounted()){$('#messengerButton')?.focus();messenger.open();}
 }
 
 const communicationReference=hash=>new URLSearchParams(hash.slice(1)).get('communication');
