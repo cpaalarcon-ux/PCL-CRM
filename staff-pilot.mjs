@@ -47,7 +47,7 @@ import {incomingCardHtml} from './staff-incoming.mjs?v=20261110-taxrole-v3';
 import {moduleLinks,GROUP_ENGAGEMENTS,GROUP_COMPLIANCE,readOpen,writeOpen,openForView,badgeView,badgeHtml,rollupBadge,WORKSPACE_AREAS,WORKSPACE_ROLES as roles} from './staff-nav.mjs?v=20261121-comply-v1&landing=20261125-v1';
 import {statusPolicyCard} from './staff-work-ready.mjs?v=20261118-ready-v1';
 import {clientProgress,nextStep,clientStatus,cardStatus,stateCounts,clientCard,chipRow} from './staff-client-cards.mjs?v=20261119-tabs-v1&rev=20261119-nav&register=20261125-v1&status=20261127-v1';
-import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxrole-v3';
+import {structureRows,legalStructureFields,bindLegalStructure,structureLabel,structureFilter,unclassified,classifyTable,bindClassifyTable,classifyItems} from './staff-legal-structure.mjs?v=20261110-taxrole-v3&subopt=20261127-v1';
 import {scheduleChecks,verifiedClientTaxProfile} from './staff-client-obligations.mjs?v=20261106-othertax-v1';
 import {createAuditUI} from './staff-audit.mjs?v=20261110-taxrole-v3&rev=20261119-nav';
 import {createSetupGuideUI} from './staff-setup-guide.mjs?v=20261118-ready-v1';
@@ -288,7 +288,7 @@ function repaintClientCards(){
 async function loadClientMappingReadiness(){if(!isLeader()||clientMappingReadiness||clientMappingReadinessRequest)return;clientMappingReadinessRequest=request({action:'v3_client_mapping_readiness'}).then(rows=>{clientMappingReadiness=new Map(rows.map(x=>[x.client_id,x]));if(view==='clients')repaintClientCards();}).catch(error=>{if(view==='clients')document.querySelectorAll('[data-client-status]').forEach(node=>{if(node.textContent==='Checking…')node.textContent='Status unavailable'});}).finally(()=>{clientMappingReadinessRequest=null;});await clientMappingReadinessRequest;}
 function classifyClients(){
  const list=unclassified(data.clients),rows=structureRows(data);
- if(!list.length){notice('Every client already has a Legal structure and Subcategory.');return;}
+ if(!list.length){notice('Every client already has a Legal structure.');return;}
  modal('Set client type',form(classifyTable({clients:list,rows,esc,options}),'Save classifications'),f=>{const items=classifyItems(f);if(!items.length)throw Error('Choose a Legal structure and Subcategory for at least one client.');return request({action:'client_classify_save',items,note:f.get('note')||''});},result=>notice(`${result.classified} client(s) classified.`));
  bindClassifyTable($('#editor'),rows,options);
 }

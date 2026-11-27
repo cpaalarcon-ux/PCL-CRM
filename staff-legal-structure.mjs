@@ -48,11 +48,11 @@ export function structureFilter(rows,esc){
 }
 
 // Bulk "Classify clients": every client without a complete classification, with the same two dependent dropdowns.
-export const unclassified=clients=>clients.filter(c=>!c.legal_structure||!c.legal_subtype);
+export const unclassified=clients=>clients.filter(c=>!c.legal_structure);
 export function classifyTable({clients,rows,esc,options}){
  const structures=structuresOf(rows);
- return `<p class="info full">Choose the Legal structure and Subcategory from each client’s registration document. Leave a row blank to classify it later. Everything you fill in is saved together, and each client gets its own audit entry.</p>
-  <div class="scroll full"><table><thead><tr><th>Client</th><th>Now</th><th>Legal structure</th><th>Subcategory</th></tr></thead><tbody>${clients.map(c=>`<tr data-classify="${esc(c.client_id)}"><td>${esc(c.company_name)}<small>${esc(c.kra_pin||'KRA PIN missing')}</small></td><td><small>${esc(c.legal_structure?`${c.legal_structure} · subcategory missing`:c.client_category?`Older category: ${c.client_category}`:'Not classified')}</small></td>
+ return `<p class="info full">Choose the Legal structure from each client’s registration document. The Subcategory is optional and can be added later. Leave a row blank to classify it later. Everything you fill in is saved together, and each client gets its own audit entry.</p>
+  <div class="scroll full"><table><thead><tr><th>Client</th><th>Now</th><th>Legal structure</th><th>Subcategory (optional)</th></tr></thead><tbody>${clients.map(c=>`<tr data-classify="${esc(c.client_id)}"><td>${esc(c.company_name)}<small>${esc(c.kra_pin||'KRA PIN missing')}</small></td><td><small>${esc(c.legal_structure?`${c.legal_structure} · subcategory missing`:c.client_category?`Older category: ${c.client_category}`:'Not classified')}</small></td>
    <td><select name="structure_${esc(c.client_id)}" aria-label="Legal structure for ${esc(c.company_name)}">${options(structures,c.legal_structure,'Choose…')}</select></td>
    <td><select name="subtype_${esc(c.client_id)}" aria-label="Subcategory for ${esc(c.company_name)}">${options(subtypesOf(rows,c.legal_structure),'',c.legal_structure?'Choose…':'Choose a structure first')}</select></td></tr>`).join('')}</tbody></table></div>
   <label class="full">Note for the audit trail (optional)<textarea name="note" maxlength="1000" placeholder="For example, classified from the registration certificates on file"></textarea></label>`;
