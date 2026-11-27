@@ -1,12 +1,11 @@
 import {fail,text,uuid,HttpError} from './validation.mjs';
 import {STRUCTURES,pairOk,pairRetired,familyFor} from './legal-structure.mjs';
 const deny=():never=>fail(403,'You do not have access to this action.');
-async function readLegalStructurePair(tx:any,p:any,isNew:boolean,subtypeOptional=false){
+async function readLegalStructurePair(tx:any,p:any,isNew:boolean){
  const structure=p.legal_structure?String(p.legal_structure):null,subtype=p.legal_subtype?String(p.legal_subtype):null;
  if(!structure&&!subtype){if(isNew)fail(400,'Choose the client’s Legal structure and Subcategory.');return null;}
  if(!structure||!STRUCTURES.includes(structure))fail(400,'Choose a Legal structure.');
- if(!subtype&&!subtypeOptional)fail(400,'Choose the Subcategory for this legal structure.');
- if(!subtype){const types=await tx`select structure,subtype,engine_family,retired from erp_private.legal_structure_types`;return {structure,subtype:null,types};}
+ if(!subtype)fail(400,'Choose the Subcategory for this legal structure.');
  const types=await tx`select structure,subtype,engine_family,retired from erp_private.legal_structure_types`;
  if(!pairOk(types,structure,subtype))fail(400,'That subcategory does not belong to the chosen legal structure.');
  return {structure,subtype,types};
@@ -17,14 +16,14 @@ export async function validateNewClientStructure(tx:any,p:any){
 }
 const retiredStructure=()=>fail(400,'That subcategory is retired. Choose Deposit-taking SACCO, Non-withdrawable-deposit-taking SACCO or another current subcategory.');
 // A change to an existing classification requires a Manager or Partner and an audit note. Existing accounting records keep their family.
-export async function applyLegalStructure(tx:any,a:any,cid:string,p:any,isNew:boolean,subtypeOptional=false){
- const pair=await readLegalStructurePair(tx,p,isNew,subtypeOptional);
+export async function applyLegalStructure(tx:any,a:any,cid:string,p:any,isNew:boolean){
+ const pair=await readLegalStructurePair(tx,p,isNew);
  if(!pair)return {changed:false};
  const {structure,subtype,types}=pair;
  const c=(await tx`select legal_structure,legal_subtype,legal_entity_type from erp_private.clients where client_id=${cid} for update`)[0];
  if(!c)deny();
  if(c.legal_structure===structure&&c.legal_subtype===subtype)return {changed:false};
- if(subtype&&pairRetired(types,structure,subtype))retiredStructure();
+ if(pairRetired(types,structure,subtype))retiredStructure();
  const family=familyFor(types,structure,subtype),revising=!!c.legal_structure&&!!c.legal_subtype;
  const note=text(p.legal_structure_reason||'',1000,false);
  if(revising){
@@ -80,9 +79,9 @@ export async function classifyClientsAction(tx:any,a:any,p:any){
   if(!name)fail(403,'A client in the list is not available to your account.');
   const c=(await tx`select legal_structure,legal_subtype from erp_private.clients where client_id=${cid}`)[0];
   if(c?.legal_structure&&c?.legal_subtype)fail(409,`${name} is already classified. Change it from Edit client, with a reason.`);
-  try{const r=await applyLegalStructure(tx,a,cid,{legal_structure:it.legal_structure,legal_subtype:it.legal_subtype,legal_structure_reason:note},false,true);if(r.changed)done++;}
+  try{const r=await applyLegalStructure(tx,a,cid,{legal_structure:it.legal_structure,legal_subtype:it.legal_subtype,legal_structure_reason:note},false);if(r.changed)done++;}
   catch(e:any){if(e instanceof HttpError)throw new HttpError(e.status,`${name}: ${e.message}`);throw e;}
  }
- if(!done)fail(400,'Choose a Legal structure for at least one client.');
+ if(!done)fail(400,'Choose a Legal structure and Subcategory for at least one client.');
  return {ok:true,classified:done};
 }

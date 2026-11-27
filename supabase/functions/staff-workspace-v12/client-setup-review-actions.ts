@@ -23,7 +23,7 @@ const digest=async(tx:any,cid:string,code:string)=>String((await tx`select erp_p
 export const MAX_MANY=100;
 async function sectionHasData(tx:any,cid:string,code:string):Promise<boolean>{
  const n=async(q:any)=>Number((await q)[0]?.n||0)>0;
- if(code==='identity')return !!(await tx`select 1 from erp_private.clients where client_id=${cid} and (legal_entity_type is not null or legal_structure is not null)`).length;
+ if(code==='identity')return !!(await tx`select 1 from erp_private.clients where client_id=${cid} and legal_entity_type is not null`).length;
  if(code==='year_end')return !!(await tx`select 1 from erp_private.clients where client_id=${cid} and year_end_month is not null`).length;
  if(code==='tax')return await n(tx`select (select count(*) from erp_private.client_tax_profiles where client_id=${cid} and deleted_at is null)+(select count(*) from erp_private.client_tax_obligations where client_id=${cid}) n`);
  if(code==='ownership')return await n(tx`select (select count(*) from erp_private.beneficial_owners where client_id=${cid} and deleted_at is null)+(select count(*) from erp_private.client_parties where client_id=${cid})+(select count(*) from erp_private.client_office_holders where client_id=${cid}) n`);
