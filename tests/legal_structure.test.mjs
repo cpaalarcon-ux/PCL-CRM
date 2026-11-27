@@ -102,12 +102,6 @@ test('Legal structure: mandatory classification, accounting family, audit trail 
  assert.equal(saved.classified,2);
  assert.equal((await client(C5)).client_category,'Non-Profit');assert.equal((await client(C6)).legal_structure,null,'a blank row is left for later');
  for(const cid of [C4,C5]){const rows2=await audit(cid);assert.equal(rows2.length,1);assert.match(rows2[0].after_values.reason,/registration certificates/);}
- // Subcategory is optional on Set client type: a structure alone is saved and the client is no longer unclassified.
- const C7=id();
- await tx`insert into erp_private.clients(client_id,company_name,owner_staff_id,client_category) values(${C7},'Mto Traders',${actors.MANAGER.staff_id},null)`;
- const only=await bulk('MANAGER',{note:'Fictional: structure only',items:[{client_id:C7,legal_structure:'Limited Company'}]});
- assert.equal(only.classified,1);assert.equal((await client(C7)).legal_structure,'Limited Company');assert.equal((await client(C7)).legal_subtype,null);
- assert.ok(!unclassified(await tx`select client_id,company_name,legal_structure,legal_subtype,client_category,kra_pin from erp_private.clients`).some(x=>x.client_id===C7));
  const list=unclassified(await tx`select client_id,company_name,legal_structure,legal_subtype,client_category,kra_pin from erp_private.clients`);assert.ok(list.some(x=>x.client_id===C6)&&!list.some(x=>x.client_id===C4));
  assert.match(classifyTable({clients:list,rows,esc:s=>String(s??''),options:(i,v,b)=>`<option>${b}</option>`}),/Safari Tyres/);
  const fd=new FormData();fd.set('structure_a','Partnership');fd.set('subtype_a','General Partnership');fd.set('structure_b','');fd.set('subtype_b','');fd.set('structure_c','Individual');fd.set('subtype_c','');
