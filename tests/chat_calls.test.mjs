@@ -2,6 +2,8 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 const require=createRequire(import.meta.url),{PGlite}=require(require.resolve('@electric-sql/pglite',{paths:[process.env.PCL_TEST_MODULES||process.cwd()]}));
 const {AccessToken2,ServiceRtc}=require('agora-token/src/AccessToken2');
 const {discussionAction}=await import('../supabase/functions/staff-workspace-v12/discussion-actions.ts');
+const {offlineDraftAction}=await import('../supabase/functions/staff-workspace-v12/offline-draft-actions.ts');
+const {createHash}=await import('node:crypto');
 const {communicationFollowupAction}=await import('../supabase/functions/staff-workspace-v12/communication-followup-actions.ts');
 const {workspaceAction}=await import('../supabase/functions/staff-workspace-v12/workspace-actions.ts');
 const {defaultStaffAreas,areaForStaffAction,staffAreaCanUse}=await import('../supabase/functions/staff-workspace-v12/staff-access-control.mjs');
@@ -136,7 +138,7 @@ test('one-to-one voice and video calls: set-up, answer, decline, missed, busy, p
  await call('PARTNER',{action:'discussion_call_end',call_id:agId,outcome:'hangup'});
  await assert.rejects(()=>token('INTERN'),/not available to your account/);
 
- await t.test('Messenger follow-ups use the ERP task workflow and keep private sources private',async()=>{
+ await t.test('Messenger follow-ups use the ERP task workflow and keep private sources private',async t=>{
   const assistant=actors.ASSISTANT.staff_id,assignee=actors.ASSISTANT2.staff_id;
   const projectAssignment=()=>tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job)
    values(${P},${assistant},${F},'ASSISTANT')`;
@@ -181,6 +183,37 @@ test('one-to-one voice and video calls: set-up, answer, decline, missed, busy, p
   assert.ok(task_id);
   assert.deepEqual(await action('PARTNER','create',input),{existing:true,task_id});
   assert.equal((await tx`select count(*)::int n from erp_private.tasks where task_name=${input.title}`)[0].n,1);
+  await t.test('offline draft replays use live assignments and the existing work records',async()=>{
+   const hash=value=>Promise.resolve(createHash('sha256').update(value).digest('hex'));
+   const send=(role,p,can=async()=>true)=>as(role,a=>offlineDraftAction(tx,a,p,{can,hash}));
+   const snapshot=await send('ASSISTANT2',{action:'task_offline_list'});
+   assert.equal(snapshot.staff_id,assignee);
+   assert.deepEqual(snapshot.tasks.map(task=>task.task_id),[task_id]);
+   assert.deepEqual(Object.keys(snapshot.tasks[0]).sort(),['can_note','can_time','due_on','task_id','task_name']);
+   assert.deepEqual((await send('MANAGER',{action:'task_offline_list'})).tasks,[]);
+   const time={action:'task_offline_apply',operation_id:crypto.randomUUID(),task_id,kind:'time',
+    work_date:'2026-11-20',hours:1.25,description:'Fictional work draft',status:'Submitted',staff_id:assistant};
+   await assert.rejects(()=>send('ASSISTANT2',time,async request=>request.action!=='timesheet_save'),/access.*changed/);
+   await assert.rejects(()=>send('MANAGER',time),/no longer assigned/);
+   const saved=await send('ASSISTANT2',time);
+   assert.deepEqual(await send('ASSISTANT2',time),saved);
+   await assert.rejects(()=>send('ASSISTANT2',{...time,hours:2}),/already used for different work/);
+   const [sheet]=await tx`select status,staff_id,hours from erp_private.timesheets where timesheet_id=${saved.timesheet_id}`;
+   assert.deepEqual([sheet.status,sheet.staff_id,Number(sheet.hours)],['Draft',assignee,1.25]);
+   assert.equal((await tx`select count(*)::int n from erp_private.timesheets where task_id=${task_id}`)[0].n,1);
+   assert.equal(await as('MANAGER',async()=>(await tx`select count(*)::int n from erp_private.offline_draft_receipts`)[0].n),0);
+   const [procedure]=await tx`select revision from erp_private.task_procedures where task_id=${task_id}`;
+   assert.ok(procedure,'the existing task procedure owns the note');
+   assert.equal(snapshot.tasks[0].can_note,true);
+   const note={action:'task_offline_apply',operation_id:crypto.randomUUID(),task_id,kind:'note',note:'Check the KRA response before submitting.'};
+   await send('ASSISTANT2',note);
+   await send('ASSISTANT2',note);
+   assert.equal((await tx`select count(*)::int n from erp_private.procedure_events where task_id=${task_id} and action='comment' and message=${note.note}`)[0].n,1);
+   await setClientStatus('Inactive');
+   assert.deepEqual((await send('ASSISTANT2',{action:'task_offline_list'})).tasks,[]);
+   await assert.rejects(()=>send('ASSISTANT2',{...time,operation_id:crypto.randomUUID()}),/no longer assigned/);
+   await setClientStatus('Active');
+  });
   const assigned=(await read('ASSISTANT2')).items.find(x=>x.id===task_id);
   assert.equal(assigned.title,input.title);
   assert.equal(assigned.due_on,input.due_on);

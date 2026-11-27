@@ -1,0 +1,5 @@
+dist/
+dist-store/
+store-assets/
+workspace.json
+win-icon.png

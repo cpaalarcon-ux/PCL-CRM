@@ -1,0 +1,27 @@
+:root{font:16px/1.5 system-ui,sans-serif;color:#143329;background:#f4f8f6}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0}
+header{display:flex;align-items:center;gap:1rem;padding:1rem clamp(1.25rem,4vw,3rem);background:#123e30;color:#fff}
+header div{flex:1}
+h1,h2,p{margin:0 0 .45rem}
+h1{font-size:1.25rem}
+main{max-width:64rem;margin:1.25rem auto;padding:0 1.25rem}
+#locked,#draft,#entries li{background:white;border:1px solid #c0d4ca;border-radius:.65rem;padding:1.25rem}
+#locked{max-width:31rem;margin:1.75rem auto}
+form,label,.form-field{display:grid;gap:.5rem}
+form{gap:.85rem}
+fieldset,.bar,.actions{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+fieldset{margin:0;border:1px solid #8ca99d;border-radius:.35rem}
+.bar{justify-content:space-between}
+.check{display:flex;align-items:center}
+input,textarea,select,button{font:inherit;border:1px solid #4d7465;border-radius:.35rem;padding:.5rem .7rem;color:#123e30;background:#fff}
+textarea{min-height:5rem;resize:vertical}
+button{justify-self:start;cursor:pointer}
+#save,#login button{background:#146147;color:white}
+button:disabled{cursor:default;opacity:.55}
+:focus-visible{outline:3px solid #225fbb;outline-offset:2px}
+#message,#connection{min-height:1.5rem}
+#entries{list-style:none;padding:0;display:grid;gap:.5rem}
+#workspace section{margin-top:1.35rem}
+#entries strong,#entries span{display:block}

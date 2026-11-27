@@ -1,0 +1,75 @@
+name: Windows Store package
+
+on:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/windows-store-package.yml'
+      - 'environments/production.json'
+      - 'supabase/functions/staff-workspace-v12/offline-draft-actions.ts'
+      - 'supabase/migrations/*_offline_draft_receipts.sql'
+  workflow_dispatch:
+    inputs:
+      identity_name:
+        description: Package identity name from Microsoft Partner Center
+        required: true
+        type: string
+      publisher:
+        description: Publisher from Microsoft Partner Center
+        required: true
+        type: string
+      publisher_display_name:
+        description: Publisher display name from Microsoft Partner Center
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package Windows app for Microsoft Store
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      PCL_STORE_IDENTITY_NAME: ${{ github.event_name == 'pull_request' && 'PCLNexus.TestOnly' || inputs.identity_name }}
+      PCL_STORE_PUBLISHER: ${{ github.event_name == 'pull_request' && 'CN=PCL Nexus Test Only' || inputs.publisher }}
+      PCL_STORE_PUBLISHER_DISPLAY_NAME: ${{ github.event_name == 'pull_request' && 'PCL Nexus Test Only' || inputs.publisher_display_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:store
+      - run: npm run test:windows
+      - name: Check the packaged identity and Windows architecture
+        shell: pwsh
+        run: ./test/verify-appx.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event_name == 'pull_request' && 'PCL-Nexus-AppX-test-only' || 'PCL-Nexus-AppX-for-Partner-Center' }}
+          path: desktop/dist-store/*.appx
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-erp:
+    name: Verify offline sync and database migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: node --test tests/chat_calls.test.mjs tests/migration_history.test.mjs
