@@ -22,8 +22,8 @@ export async function communicationFollowupAction(tx:any,a:any,p:any,run:(p:any)
   const [tasks,requests,correspondence,tickets]=await Promise.all([
    canViewTasks?tx`
     select 'task' kind,t.task_id id,t.task_name title,c.company_name,t.status,s.full_name owner,
-     (t.due_at at time zone 'Africa/Nairobi')::date::text due_on,
-     (t.due_at<now()) overdue,
+     case when not t.redate_needed then (t.due_at at time zone 'Africa/Nairobi')::date::text end due_on,
+     (not t.redate_needed and t.due_at<now()) overdue,
      (t.status='Waiting on client' or w.stage in ('Pending client documents','Awaiting client approval')) waiting,
      review.awaiting_review,
      case when ${canDiscuss} and erp_private.discussion_allowed(f.channel_id) then f.message_id end message_id,
@@ -51,6 +51,7 @@ export async function communicationFollowupAction(tx:any,a:any,p:any,run:(p:any)
     from erp_private.communication_followups f join erp_private.projects j using(project_id)
     join erp_private.clients c using(client_id) left join erp_private.staff_members s on s.staff_id=f.requested_by
     where f.task_id is null and j.deleted_at is null and j.status='Active'
+     and j.client_hold is null and erp_private.client_is_active(j.client_id)
      and (${firm}::uuid is null or j.handling_firm_id=${firm})
      and erp_private.discussion_allowed(f.channel_id) and (f.requested_by=${staff} or ${create})
     order by f.requested_due_on,f.followup_id
@@ -88,7 +89,8 @@ export async function communicationFollowupAction(tx:any,a:any,p:any,run:(p:any)
  if(p.action==='communication_followup_options'){
   const [projects,staff,types,pending]=await Promise.all([
    tx`select j.project_id,j.project_name,j.handling_firm_id,c.company_name from erp_private.projects j join erp_private.clients c using(client_id)
-    where j.status='Active' and j.deleted_at is null and (${source.project_id}::uuid is null or j.project_id=${source.project_id})
+    where j.status='Active' and j.deleted_at is null and j.client_hold is null
+     and erp_private.client_is_active(j.client_id) and (${source.project_id}::uuid is null or j.project_id=${source.project_id})
     order by c.company_name,j.project_name,j.project_id`,
    create?tx`select staff_id,full_name,firm_id from erp_private.assignment_candidates() where category_code='ASSISTANT' order by full_name`:[],
    create?tx`select standard_id,label from erp_private.task_type_names() order by label`:[],
@@ -100,7 +102,8 @@ export async function communicationFollowupAction(tx:any,a:any,p:any,run:(p:any)
  }
  const projectId=uuid(p.project_id);
  if(source.project_id&&source.project_id!==projectId)fail(400,'Choose the engagement linked to this conversation.');
- one(await tx`select project_id from erp_private.projects where project_id=${projectId} and status='Active' and deleted_at is null`);
+ one(await tx`select project_id from erp_private.projects where project_id=${projectId} and status='Active'
+  and deleted_at is null and client_hold is null and erp_private.client_is_active(client_id)`);
  await tx`select pg_advisory_xact_lock(hashtextextended(${'communication-followup:'+message+':'+projectId},0))`;
  let entry=(await tx`select followup_id,task_id from erp_private.communication_followups where message_id=${message} and project_id=${projectId}`)[0];
  if(p.followup_id&&entry?.followup_id!==uuid(p.followup_id))fail(403,'This follow-up request is unavailable.');

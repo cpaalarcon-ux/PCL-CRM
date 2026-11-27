@@ -150,6 +150,7 @@ test('one-to-one voice and video calls: set-up, answer, decline, missed, busy, p
   const action=(role,name,fields={},denied=[])=>as(role,a=>communicationFollowupAction(tx,a,{action:'communication_followup_'+name,...fields},
    payload=>workspaceAction(tx,a,payload),async key=>!denied.includes(key)));
   const read=role=>action(role,'list');
+  const setClientStatus=status=>as('PARTNER',()=>tx`select erp_private.client_status_set(${C},${status},'Verify held follow-ups in the test workspace',true)`);
   await assert.rejects(()=>action('PARTNER','create',input),/unavailable/,'draft work cannot bypass the task gate');
   await db.exec('set session_replication_role=replica');
   await tx`update erp_private.projects set status='Active' where project_id=${P}`;
@@ -166,6 +167,11 @@ test('one-to-one voice and video calls: set-up, answer, decline, missed, busy, p
   await assert.rejects(()=>action('ASSISTANT','create',input),/authorised reviewer/);
   assert.equal((await read('ASSISTANT')).items.length,0,'a denied write rolls the request back');
   assert.deepEqual(await action('ASSISTANT','create',{...input,request_only:true}),{requested:true});
+  await setClientStatus('Inactive');
+  assert.equal((await read('PARTNER')).items.length,0,'pending requests leave the queue when a client is held');
+  assert.equal((await action('ASSISTANT','options',source)).projects.length,0);
+  await assert.rejects(()=>action('PARTNER','create',input),/unavailable/);
+  await setClientStatus('Active');
   assert.equal((await read('MANAGER')).items.length,0,'a reviewer outside the conversation cannot read the request');
   const pending=(await read('PARTNER')).items.find(x=>x.kind==='request');
   assert.ok(pending.awaiting_review);
@@ -182,6 +188,13 @@ test('one-to-one voice and video calls: set-up, answer, decline, missed, busy, p
   assert.equal(assigned.channel_id,null);
   assert.equal((await tx`select description from erp_private.tasks where task_id=${task_id}`)[0].description,input.summary);
   assert.equal((await read('PARTNER')).items.some(x=>x.kind==='request'),false);
+  await tx`update erp_private.tasks set due_at=now()-interval '2 days' where task_id=${task_id}`;
+  assert.equal((await read('ASSISTANT2')).items.find(x=>x.id===task_id).overdue,true);
+  await setClientStatus('Inactive');
+  assert.ok(!(await read('ASSISTANT2')).items.some(x=>x.id===task_id),'assigned follow-up tasks leave the queue while held');
+  await setClientStatus('Active');
+  const resumed=(await read('ASSISTANT2')).items.find(x=>x.id===task_id);
+  assert.deepEqual([resumed.due_on,resumed.overdue],[null,false],'resumed work stays out of due-date queues until it is re-dated');
   const newer=await chat('ASSISTANT',{action:'discussion_send',channel_id:channel,request_id:crypto.randomUUID(),body:'A later message'});
   assert.notEqual(newer.message_id,source.message_id);
   const earlier=await chat('PARTNER',{action:'discussion_messages',channel_id:channel,at_message_id:source.message_id});
