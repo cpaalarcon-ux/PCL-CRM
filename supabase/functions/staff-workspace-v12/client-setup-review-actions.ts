@@ -2,7 +2,7 @@ import {fail,uuid,text} from './validation.mjs';
 import {mandatoryState,buildClientTasks,clientConfigurationItems,TASK_ORDER} from './client-setup-tasks-rules.mjs';
 import {clientReadiness} from './work-ready-rules.mjs';
 import {today} from './suite-actions.ts';
-import {SECTIONS,SECTION_CODES,SOURCE_KINDS,sourceProblem,submitPlan,decidePlan,sectionState,sectionLabel,milestones} from './setup-review-rules.mjs';
+import {REQUIRED_MINIMUM,SECTIONS,SECTION_CODES,SOURCE_KINDS,sourceProblem,submitPlan,decidePlan,sectionState,sectionLabel,milestones} from './setup-review-rules.mjs';
 import {attempt} from './owner-batch-actions.ts';
 // Build 2828: deferred review of client set-up sections. The preparer submits and carries on; a Manager or Partner reviews later, all at once.
 // The Chart of Accounts and Opening Trial Balance keep their own blocking approvals; here they are only reported so the whole picture is on one screen.
@@ -62,6 +62,8 @@ export async function clientSetupReviewAction(tx:any,a:any,p:any):Promise<any>{
   for(const id of ids){
    const c=(await tx`select client_id,company_name from erp_private.clients where client_id=${id} and deleted_at is null and record_status<>'Archived'`)[0];
    if(!c){held.push({client_id:id,name:'Client',reason:'This client is not available to your account.'});continue;}
+   const lacking:string[]=[];for(const code of REQUIRED_MINIMUM)if(!(await sectionHasData(tx,id,code)))lacking.push(sectionLabel(code));
+   if(lacking.length){held.push({client_id:id,name:c.company_name,reason:`The minimum is not met, nothing was sent. Still missing: ${lacking.join(', ')}.`});continue;}
    const have:any[]=[];
    for(const item of list){if(await sectionHasData(tx,id,String(item.section_code)))have.push(item);else skipped.push({client_id:id,name:c.company_name,section:sectionLabel(String(item.section_code)),reason:'Nothing recorded yet'});}
    if(!have.length)continue;

@@ -13,7 +13,7 @@ import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
 import {createAmlUI} from './staff-aml.mjs?v=20261121-fill-v1';
 import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261121-wiz-v1';
 import {panelHtml,queueHtml,collectSubmit,collectDecisions} from './staff-setup-review.mjs?v=20261116-setupreview-v1&rev=20261119-nav&all=20261126-v1&names=20261127-v1';
-import {bulkSubmitHtml,collectBulk,bulkResultHtml,filterRows,tickShown} from './staff-setup-bulk.mjs?v=20261126-v1';
+import {bulkSubmitHtml,collectBulk,bulkResultHtml,filterRows,tickShown} from './staff-setup-bulk.mjs?v=20261126-v1&min=20261127-v1';
 import {setupChecklistHtml} from './staff-setup-checklist.mjs?v=20261125-checklist-v1';
 import {queueHtml as tasksQueueHtml,queueBody as tasksQueueBody,configurationHtml} from './staff-setup-tasks.mjs?v=20261116-choices-v1';
 import {createClientChoicesUI} from './staff-client-choices.mjs?v=20261116-choices-v1';
