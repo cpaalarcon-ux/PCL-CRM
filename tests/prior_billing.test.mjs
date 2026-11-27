@@ -53,7 +53,7 @@ test('billing from the previous system: checked, staged by Finance, approved by 
  const end=new Date(Date.now()+200*86400000).toISOString().slice(0,10);
  await as('PARTNER',()=>tx`select erp_private.staff_right_grant(${M}::uuid,'FINANCE','Fictional reason: keeps the firm billing records',${end}::date)`);
  const book=async rows=>{const wb=new ExcelJS.Workbook(),ws=wb.addWorksheet('Prior billing');ws.addRow(H);for(const r of rows)ws.addRow(line(r));return Buffer.from(await wb.xlsx.writeBuffer());};
- const stage=async(role,rows,name='fictional_prior_billing.xlsx')=>{const f=new FormData();f.set('file',new File([await book(rows)],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));return as(role,a=>priorBillingStage(tx,a,f));};
+ const stage=async(role,rows,name='fictional_prior_billing.xlsx')=>{const bytes=Buffer.isBuffer(rows)?rows:await book(rows),f=new FormData();f.set('file',new File([bytes],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));return as(role,a=>priorBillingStage(tx,a,f));};
  const good=[L('Invoice','INV/T/001','uat fictional alpha ltd',11600,{amount_still_due:1600}),L('Invoice','INV/T/002','UAT Fictional Alpha Ltd',5800),L('Credit note','RINV/T/001','UAT Fictional Alpha Ltd',5800,{reverses_invoice:'INV/T/002'}),L('Payment','PAY/T/001','UAT Fictional Alpha Ltd',10000),L('Invoice','INV/T/003','UAT Fictional Beta',2320,{amount_still_due:2320})];
  const docs=async()=>(await tx`select count(*)::int n from erp_private.prior_billing_documents`)[0].n;
 
@@ -63,8 +63,9 @@ test('billing from the previous system: checked, staged by Finance, approved by 
  assert.equal(failed.status,'VALIDATION_FAILED');assert.match(failed.errors[0].message,/No client named/);assert.equal((await tx`select count(*)::int n from erp_private.prior_billing_batches`)[0].n,0);
 
  // 2. A clean file is staged. Nothing is under the clients yet, and the same file cannot be staged twice.
- const st=await stage('MANAGER',good);assert.equal(st.status,'STAGED');assert.match(st.batch_ref,/^PB-\d{8}-[0-9A-F]{6}$/);assert.equal(st.summary.still_due,3920);
- assert.equal(await docs(),0);await assert.rejects(()=>stage('MANAGER',good),/already staged/);
+ const goodFile=await book(good);
+ const st=await stage('MANAGER',goodFile);assert.equal(st.status,'STAGED');assert.match(st.batch_ref,/^PB-\d{8}-[0-9A-F]{6}$/);assert.equal(st.summary.still_due,3920);
+ assert.equal(await docs(),0);await assert.rejects(()=>stage('MANAGER',goodFile),/already staged/);
  const list=await act('MANAGER2',{action:'prior_billing_batches'});assert.equal(list.batches[0].status,'Staged');assert.equal(list.can_stage,false);assert.equal(list.can_decide,false);
  for(const r of ['SUPERVISOR','ASSISTANT'])await assert.rejects(()=>act(r,{action:'prior_billing_batches'}),/do not have access/);
 
@@ -72,7 +73,7 @@ test('billing from the previous system: checked, staged by Finance, approved by 
  const decide=(role,decision,note='')=>act(role,{action:'prior_billing_decide',batch_ref:st.batch_ref,decision,note});
  for(const r of ['MANAGER','MANAGER2','SUPERVISOR'])await assert.rejects(()=>decide(r,'Approve'),/Only a Partner/);await assert.rejects(()=>decide('MANAGER2','Discard','Staged by mistake today'),/Only a Partner/);await assert.rejects(()=>decide('PARTNER','Discard','short'),/at least 10 characters/);
  const done=await decide('PARTNER','Approve','Agreed to the Odoo aged list');assert.deepEqual([done.status,done.documents],['Loaded',5]);assert.equal(await docs(),5);
- await assert.rejects(()=>decide('PARTNER','Approve'),/already loaded/);await assert.rejects(()=>stage('MANAGER',good),/already loaded/);
+ await assert.rejects(()=>decide('PARTNER','Approve'),/already loaded/);await assert.rejects(()=>stage('MANAGER',goodFile),/already loaded/);
  // The same documents cannot come in again from a different file.
  const again=await stage('MANAGER',[L('Invoice','inv/t/001','UAT Fictional Alpha Ltd',11600)],'another.xlsx');assert.equal(again.status,'VALIDATION_FAILED');assert.match(again.errors[0].message,/already loaded/);
 
