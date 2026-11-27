@@ -50,6 +50,7 @@ export async function broughtForward(tx:any,i:any){
  return round(Number(r?.bf||0));
 }
 export async function suiteRead(tx:any){const [r]=await tx`select jsonb_build_object(
+ 'prior_billing_available',to_regclass('erp_private.prior_billing_documents') is not null,
  'leads',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.leads where deleted_at is null order by created_at desc)x),
  'rates',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.tax_rates where deleted_at is null order by effective_from desc limit 300)x),
  'tax_profiles',(select coalesce(jsonb_agg(x),'[]') from (select * from erp_private.client_tax_profiles where deleted_at is null order by effective_from desc)x),
