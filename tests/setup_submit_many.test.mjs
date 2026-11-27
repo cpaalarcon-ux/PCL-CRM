@@ -20,20 +20,28 @@ test('set-up sections are submitted without blocking and reviewed later in one a
  await tx`insert into erp_private.projects(project_id,client_id,handling_firm_id,project_name,service_code,owner_staff_id) values(${PT},${C},${F},'Fictional books','TAX-COMP',${actors.PREP.staff_id}),(${PA},${C},${F},'Fictional audit','AUD-STAT',${actors.PREP.staff_id})`;
  for(const p of [PT,PA])for(const r of ['PREP','REV','ASST'])await tx`insert into erp_private.project_assignments(project_id,staff_id,handling_firm_id,role_on_job) values(${p},${actors[r].staff_id},${F},'MANAGER')`;
  await readyForLedger(tx,C);
+ await tx`insert into erp_private.beneficial_owners(client_id,full_name,identity_reference,ownership_percentage,control_basis,created_by) values(${C},'Fictional Owner','Not recorded: identity document not yet sighted',100,'Director',${actors.PREP.staff_id})`;
+ await tx`insert into erp_private.client_contacts(client_id,full_name,role_in_decision) values(${C},'Fictional Contact','Decision Maker')`;
+ await tx`insert into erp_private.client_field_facts(client_id,field_key,value,source_kind,recorded_by) values(${C},'registration_number','CPR/2015/123456','Client statement',${actors.PREP.staff_id})`;
  const C2=id();
  await tx`insert into erp_private.clients(client_id,company_name,kra_pin,primary_sector,branch_location,owner_staff_id) values(${C2},'UAT EMPTY CLIENT LIMITED','P000000999Z','Wholesale & Retail','Nairobi',${actors.PREP.staff_id})`;
  await tx`insert into erp_private.client_firm_links(client_id,firm_id) values(${C2},${F})`;
  const many=(r,p)=>as(r,a=>clientSetupReviewAction(tx,a,{action:'client_setup_section_submit_many',...p}));
  const sub=(code,kind='BRS',note='')=>({section_code:code,source_kind:kind,source_note:note});
  await t.test('several clients are submitted together; sections with nothing recorded are skipped',async()=>{
-  const out=await many('ASST',{client_ids:[C,C2],sections:[sub('identity'),sub('year_end','KRA'),sub('ownership'),sub('activities','KRA')]});
+  const out=await many('PREP',{client_ids:[C,C2],sections:[sub('identity'),sub('year_end','KRA'),sub('ownership'),sub('activities','KRA')]});
   assert.ok(out.submitted.some(x=>x.client_id===C&&x.section==='Client identification and legal structure'),'the client with identity data is submitted');
   assert.ok(!out.submitted.some(x=>x.client_id===C2),'a client outside the Assistant\'s access submits nothing');
-  assert.ok(out.skipped.some(x=>x.client_id===C&&x.section==='Directors, partners and ownership'),'an empty ownership section is listed as skipped');
   assert.ok(out.skipped.some(x=>x.client_id===C&&x.section==='Business activities and sector'),'an empty list section is skipped too');
-  assert.equal(out.held.length,1);assert.match(out.held[0].reason,/not available to your account/);
+  assert.equal(out.held.length,1);assert.match(out.held[0].reason,/minimum is not met|not available to your account/);
   const rows=await tx`select client_id,section_code,status from erp_private.client_setup_sections order by section_code`;
-  assert.ok(rows.every(r=>r.status==='Pending Review'));assert.ok(!rows.some(r=>r.client_id===C2));assert.ok(!rows.some(r=>r.section_code==='ownership'||r.section_code==='activities'));
+  assert.ok(rows.every(r=>r.status==='Pending Review'));assert.ok(!rows.some(r=>r.client_id===C2));assert.ok(rows.some(r=>r.section_code==='ownership'));assert.ok(!rows.some(r=>r.section_code==='activities'));
+ });
+ await t.test('a client below the minimum is held back and nothing is sent for it',async()=>{
+  const out=await many('PARTNER',{client_ids:[C2],sections:[sub('identity'),sub('contacts','Client document')]});
+  assert.equal(out.submitted.length,0);assert.equal(out.held.length,1);
+  assert.match(out.held[0].reason,/minimum is not met.*Client identification and legal structure.*BRS registration details.*Directors, partners and ownership.*Contact details/);
+  assert.equal((await tx`select 1 from erp_private.client_setup_sections where client_id=${C2}`).length,0);
  });
  await t.test('limits, source rule and access',async()=>{
   await assert.rejects(()=>many('ASST',{client_ids:[],sections:[sub('identity')]}),/Tick the clients/);

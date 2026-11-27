@@ -13,6 +13,8 @@ export const SECTIONS=[
  {code:'engagement',label:'Engagement and assigned personnel',hint:'Who is assigned. Engagement acceptance and authorisation are separate controls and are not waived by this review.'}
 ];
 export const SECTION_CODES=SECTIONS.map(s=>s.code);
+// The least a client must have recorded before any of its sections can be sent for approval in bulk.
+export const REQUIRED_MINIMUM=['identity','registration','ownership','contacts'];
 export const SOURCE_KINDS=['BRS','KRA','Permanent file','Client document','Other approved source'];
 export const STATUSES=['Draft','Pending Review','Approved','Correction Required','Blocked'];
 export const sectionLabel=code=>SECTIONS.find(s=>s.code===code)?.label||code;
