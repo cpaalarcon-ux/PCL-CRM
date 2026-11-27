@@ -148,7 +148,7 @@ test('one-to-one voice and video calls: set-up, answer, decline, missed, busy, p
   const link=await chat('ASSISTANT',{action:'discussion_send',channel_id:channel,request_id:crypto.randomUUID(),body});
   const source={channel_id:channel,message_id:link.message_id};
   const input={...source,project_id:P,assigned_to:assignee,title:'Respond to KRA notice',
-   summary:'Prepare the response and send it for review.',due_on:'2026-11-27'};
+   summary:'Prepare the response and send it for review.',due_on:new Date(Date.now()+7*864e5).toISOString().slice(0,10)};// a date a week ahead, so the test does not depend on the day it runs
   const action=(role,name,fields={},denied=[])=>as(role,a=>communicationFollowupAction(tx,a,{action:'communication_followup_'+name,...fields},
    payload=>workspaceAction(tx,a,payload),async key=>!denied.includes(key)));
   const read=role=>action(role,'list');
