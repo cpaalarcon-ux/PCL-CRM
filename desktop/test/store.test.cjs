@@ -41,8 +41,12 @@ test('drafts persist encrypted across restarts and a different key cannot read t
 });
 
 test('a lost reply retries the same operation and a blocked draft does not block unrelated work',async t=>{
-  const store=connectStore(path.join(temp(t),'work.db'),key());
-  t.after(()=>store.close());
+  const folder=fs.mkdtempSync(path.join(os.tmpdir(),'pcl-drafts-'));
+  const store=connectStore(path.join(folder,'work.db'),key());
+  t.after(()=>{
+    store.close();
+    fs.rmSync(folder,{recursive:true,force:true});
+  });
   const id=store.save(draft);
   const second=store.save({...draft,task_id:randomUUID()});
   const sent=[];
