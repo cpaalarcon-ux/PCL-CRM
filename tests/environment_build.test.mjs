@@ -48,10 +48,17 @@ test('production output carries the production project and not one trace of stag
   }
   const headers = fs.readFileSync(path.join(dist, '_headers'), 'utf8');
   assert.match(headers, new RegExp(`connect-src https://${FAKE.project_ref}\\.supabase\\.co wss://${FAKE.project_ref}\\.supabase\\.co`));
-  assert.match(fs.readFileSync(path.join(dist, 'staff-pilot.html'), 'utf8'), new RegExp(`connect-src https://${FAKE.project_ref}\\.supabase\\.co`));
+  assert.match(fs.readFileSync(path.join(dist, 'staff.html'), 'utf8'), new RegExp(`connect-src https://${FAKE.project_ref}\\.supabase\\.co`));
   assert.match(fs.readFileSync(path.join(dist, 'staff-pilot.mjs'), 'utf8'), new RegExp(`https://${FAKE.project_ref}\\.supabase\\.co/functions/v1/staff-workspace-v12`));
   assert.match(fs.readFileSync(path.join(dist, 'staff-messenger.mjs'), 'utf8'), new RegExp(FAKE.publishable_key));
-  assert.equal(fs.readFileSync(path.join(dist, '_redirects'), 'utf8').trim(), '/ /staff-pilot 302');
+  const staffHeaders = headers.split('\n\n').find(block => block.startsWith('/staff\n'));
+  assert.ok(staffHeaders, 'the live route has its own headers');
+  assert.match(staffHeaders, /Cache-Control: no-store/);
+  assert.match(staffHeaders, /Referrer-Policy: no-referrer/);
+  assert.match(staffHeaders, /frame-ancestors 'none'/);
+  assert.equal(fs.readFileSync(path.join(dist, '_redirects'), 'utf8').trim(), '/ /staff 302');
+  assert.match(fs.readFileSync(path.join(dist, '404.html'), 'utf8'), /<a href="\/staff">/);
+  assert.match(fs.readFileSync(path.join(dist, 'staff-communication-qr.mjs'), 'utf8'), /new URL\('\/staff',origin\)/);
 });
 
 test('the built site publishes only the staff app, never SQL, tests, notes or the old browser-local preview', () => {
@@ -60,13 +67,14 @@ test('the built site publishes only the staff app, never SQL, tests, notes or th
   for (const bad of ['index.html', 'app.js', 'database_schema.sql', 'README.md', 'package.json'])
     assert.ok(!rel.includes(bad), `${bad} must not be published`);
   assert.ok(!rel.some(f => /^(supabase|tests|archive|scripts|node_modules|environments)\//.test(f)), 'no source folders are published');
-  assert.ok(rel.includes('staff-pilot.html') && rel.includes('staff-pilot.mjs') && rel.includes('_headers'));
+  assert.ok(rel.includes('staff.html') && rel.includes('staff-pilot.mjs') && rel.includes('_headers'));
+  assert.ok(!rel.includes('staff-pilot.html'), 'the old production URL has no published page');
 });
 
 test('staging labels and the test warning appear only on the staging workspace', () => {
   const stagingPage = fs.readFileSync(path.join(root, 'staff-pilot.html'), 'utf8');
-  const productionPage = fs.readFileSync(path.join(root, outName, 'staff-pilot.html'), 'utf8');
-  for (const warning of [/Staging workspace/, /staff UAT/, /STAGING · UAT IN PROGRESS/, /DO NOT FILE OR SEND/i]) {
+  const productionPage = fs.readFileSync(path.join(root, outName, 'staff.html'), 'utf8');
+  for (const warning of [/Staging workspace/, /staff UAT/, /STAGING · UAT IN PROGRESS/, /DO NOT FILE OR SEND/i, /Isolated UAT data/, /approved staging test clients only/]) {
     assert.match(stagingPage, warning);
     assert.doesNotMatch(productionPage, warning);
   }
@@ -116,6 +124,7 @@ test('the server takes its setup-link address from settings and falls back to st
   assert.match(src, /Deno\.env\.get\('PCL_ALLOWED_ORIGINS'\)/);
   assert.match(src, /IS_STAGING_PROJECT\?'https:\/\/backend-staging-foundation\.pcl-crm\.pages\.dev':''/, 'staging address only as the staging default');
   assert.match(src, /if\(!SETUP_BASE\)fail\(503/, 'no setup link is issued without a configured address');
+  assert.match(src, /IS_STAGING_PROJECT\?'\/staff-pilot\.html':'\/staff'/, 'new production links use the live staff route');
   const loose = src.split('\n').filter(l => l.includes('backend-staging-foundation') && !l.includes('IS_STAGING_PROJECT?'));
   assert.deepEqual(loose, [], 'no other staging address in the server');
 });
