@@ -49,7 +49,7 @@ test('the panel and queue show status, source and what is mandatory',()=>{
  assert.equal((html.match(/name="pick_/g)||[]).length,8,'the approved, unchanged section cannot be submitted again but the changed one can');
  assert.match(statusBadge('Pending Review',esc),/info/);
  const q=queueHtml({total:2,clients:[{client_id:'c1',company_name:'Fictional Ltd',sections:[{code:'identity',label:'Client identification and legal structure',source_kind:'BRS',submitted_by_name:'Staff A',submitted_at:'2026-11-15',mine:false,edited_since_submission:true},{code:'tax',label:'KRA PIN and tax obligations',source_kind:'KRA',submitted_by_name:'Me',submitted_at:'2026-11-15',mine:true,edited_since_submission:false}]}]},{esc,shortDate});
- assert.match(q,/Approve ticked sections/);assert.match(q,/edited after it was submitted/);assert.match(q,/disabled/);assert.match(queueHtml({total:0,clients:[]},{esc,shortDate}),/No set-up sections are waiting/);
+ assert.match(q,/Approve ticked set-up/);assert.match(q,/edited after it was submitted/);assert.match(q,/disabled/);assert.match(queueHtml({total:0,clients:[]},{esc,shortDate}),/No set-up sections are waiting/);
 });
 test('ticked sections become requests; decisions are grouped by client',()=>{
  const els=[{checked:true,name:'pick_identity'},{checked:false,name:'pick_tax'}],form={querySelectorAll:()=>els,elements:{namedItem:n=>n==='source_note'?{value:'BRS search 12 Nov'}:n==='source_identity'?{value:'BRS'}:null}};
