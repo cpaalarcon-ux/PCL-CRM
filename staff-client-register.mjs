@@ -7,7 +7,7 @@ const pick=(key,label,list,cur,esc)=>`<label>${esc(label)} <select data-creg="${
 export function toolbar(q,{sectors=[],owners=[]},esc){
  const n=filterCount(q);
  return `<div class="reg-bar" id="clientRegisterBar" role="group" aria-label="Client register filters">`+
-  pick('service','Service status',[['Active','Active'],['Paused','Paused'],['Cancelled','Cancelled']],q.service,esc)+
+  `<fieldset class="reg-tabs" aria-label="Client status"><legend>Client status</legend>${[['','Active and Inactive'],['Active','Active'],['Paused','Inactive'],['Dormant','Dormant archive']].map(([v,t])=>`<label><input type="radio" name="cregStatus" data-creg="service" value="${v}"${String(q.service||'')===v?' checked':''}> ${t}</label>`).join('')}</fieldset>`+
   pick('owner','Assigned manager',owners.map(o=>[o.staff_id,o.full_name]),q.owner,esc)+
   pick('sector','Sector',sectors.map(s=>[s,s]),q.sector,esc)+
   pick('kyc','KYC',[['complete','Complete'],['outstanding','Outstanding']],q.kyc,esc)+
@@ -16,7 +16,6 @@ export function toolbar(q,{sectors=[],owners=[]},esc){
   pick('projects','Active projects',[['none','None'],['some','One or more']],q.projects,esc)+
   pick('deadline','Next deadline',[['7','Within 7 days'],['14','Within 14 days'],['30','Within 30 days']],q.deadline==null?'':q.deadline,esc)+
   `<label>Sort by <select data-creg="sort">${[['name','Name'],['deadline','Next deadline'],['projects','Most active projects'],['overdue','Most overdue tasks']].map(([v,t])=>`<option value="${v}"${q.sort===v?' selected':''}>${t}</option>`).join('')}</select></label>`+
-  `<label><input type="checkbox" data-creg="archived"${q.archived?' checked':''}> Show archived</label>`+
   `<button type="button" data-creg-clear${n?'':' disabled'}>Clear filters${n?` (${n})`:''}</button></div>`;
 }
 export function pager(page,esc){

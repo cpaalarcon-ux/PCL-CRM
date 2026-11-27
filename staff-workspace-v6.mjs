@@ -113,7 +113,8 @@ export function createWorkspaceUI(ctx){
   return kanban(groupColumns(tasks,stageOf,['Not started','Pending client documents','In progress','Pending supervisor review','Awaiting client approval','Ready to file','Filed - pending payment'],false),card,esc);
  }
  function projects(){
-  const list=ctx.filtered().projects;
+  // Projects of a client that is not Active are on hold: they are left out here and read from the client's own page.
+  const list=ctx.filtered().projects.filter(p=>!p.client_hold);
    syncProjectCaches();if(ctx.firm()&&workFirm&&workFirm!==ctx.firm())workFirm='';
    if(selected&&!projectDetailsLoaded.has(selected)&&!projectDetailsErrors.has(selected)){
     const known=(d().projects||[]).some(x=>x.project_id===selected),needsDetail=projectNeedsDetail.has(selected)||!known||(d().tasks||[]).length>=1000;
@@ -258,7 +259,7 @@ const workCards=`<div class="work-board">
   for(const n of ['client_id','firm_id','service_code','frequency','pack','assigned_to','reviewer_id'])el(n).required=true;
  }
  function newTask(defaults={}){
-  modal('Create task',form(select('project_id','Project *',d().projects.filter(p=>p.status!=='Archived').map(p=>[p.project_id,p.project_name]),defaults.project_id||selected)+field('task_name','Task name *',defaults.task_name||'','text','required maxlength="200"')+select('assigned_to','Assign to an Assistant *',[])+`<label>Task type *<select name="task_type_id" data-task-types><option value="">Loading…</option></select></label>`+(seesHours()?field('expected_hours','Expected hours (leave blank to use the task type)','','number','min="0.25" max="2000" step="0.25"'):'')+field('due_date','Due date · 5:00 PM EAT *',today(),'date','required')+`<label class="full">Instructions<textarea name="description" maxlength="2000">${esc(defaults.description||'')}</textarea></label><label><input type="checkbox" name="requires_document">Requires a document upload</label>`),f=>request({...Object.fromEntries(f),action:'task_create',requires_document:f.has('requires_document')}));
+  modal('Create task',form(select('project_id','Project *',d().projects.filter(p=>p.status!=='Archived'&&!p.client_hold).map(p=>[p.project_id,p.project_name]),defaults.project_id||selected)+field('task_name','Task name *',defaults.task_name||'','text','required maxlength="200"')+select('assigned_to','Assign to an Assistant *',[])+`<label>Task type *<select name="task_type_id" data-task-types><option value="">Loading…</option></select></label>`+(seesHours()?field('expected_hours','Expected hours (leave blank to use the task type)','','number','min="0.25" max="2000" step="0.25"'):'')+field('due_date','Due date · 5:00 PM EAT *',today(),'date','required')+`<label class="full">Instructions<textarea name="description" maxlength="2000">${esc(defaults.description||'')}</textarea></label><label><input type="checkbox" name="requires_document">Requires a document upload</label>`),f=>request({...Object.fromEntries(f),action:'task_create',requires_document:f.has('requires_document')}));
   const f=$('#editForm');f.elements.project_id.required=true;f.elements.assigned_to.required=true;const saveBtn=f.querySelector('button[type="submit"]'),syncSave=()=>{if(saveBtn)saveBtn.disabled=!f.elements.assigned_to.value;};f.elements.assigned_to.addEventListener('change',syncSave);f.elements.project_id.onchange=()=>{const p=d().projects.find(p=>p.project_id===f.elements.project_id.value);f.elements.assigned_to.innerHTML=opts(candidates(p?.handling_firm_id).filter(s=>s.category_code==='ASSISTANT').map(s=>[s.staff_id,s.full_name]),'');syncSave();};f.elements.project_id.onchange();fillTaskTypes(f);
  }
  async function escalate(id){

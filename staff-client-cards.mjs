@@ -1,4 +1,4 @@
-import {lifecycleBadge} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1&rev=20261119-nav';
+import {lifecycleBadge} from './staff-client-lifecycle.mjs?v=20261109-ptm-v1&rev=20261119-nav&status=20261127-v1';
 import {identityChecks,clientSpine} from './staff-setup-spine.mjs?v=20261118-ready-v1&register=20261125-v1';
 import {gateAction,gateReasons,progressBar} from './staff-work-ready.mjs?v=20261118-ready-v1';
 // Client list as cards: three set-up pillars, one computed next step, one status badge.
