@@ -5,6 +5,7 @@ import {clientChoicesAction} from './client-choices-actions.ts';
 import {serviceTemplateAction} from './service-template-actions.ts';
 import {requireProjectSetup} from './workspace-actions.ts';
 import {requireRightChart} from './legal-structure-actions.ts';
+import {clientChartAction} from './client-chart.ts';
 // Build 2842: bulk client set-up. One choice is applied to many clients. Every row goes through the existing single-client action inside its own savepoint, so a row that passes
 // is applied exactly as if a Manager had done it by hand, a row that fails changes nothing and is listed with its reason, and independent review is unchanged (a bulk run approves
 // nothing and posts nothing). The preview runs the same checks and writes nothing. The audit record is in bulk_setup_runs and bulk_setup_rows (20261118100000_bulk_setup.sql).
@@ -45,6 +46,20 @@ async function runRow(tx:any,a:any,common:any,row:any,keep:boolean){
   if(!r.ok)return r;
   const o=r.out||{};return {ok:true,out:{record_ref:String(o.setup_id||''),note:o.released?`${o.tasks_created||0} task${o.tasks_created===1?'':'s'} created`:'Waiting: '+(o.waiting_reason||'the project is not ready for tasks yet')}};
  }
+ if(common.operation==='CHART_PROPOSE'){
+  // The same proposal a preparer makes by hand: it needs a confirmed legal entity, at least one approved activity and no accounts in use outside the proposed chart.
+  const r=await attempt(tx,keep,t=>clientChartAction(t,a,{action:'v3_client_chart_propose',client_id:c.client_id,effective_from:common.effective_from,note:common.note||'Prepared in bulk'}));
+  if(!r.ok)return r;
+  return {ok:true,out:{record_ref:String(r.out?.version_id||''),note:keep?'Chart is waiting for review':'A draft chart would be created'}};
+ }
+ if(common.operation==='CHART_APPROVE'){
+  // The same review a Manager or Partner makes by hand: a different person from the preparer, a check first for an Assistant's chart, and the stock-settings reason when they are incomplete.
+  const d=(await tx`select version_id,revision from erp_private.client_chart_versions where client_id=${c.client_id} and status='Draft' order by prepared_at desc limit 1`)[0];
+  if(!d)return {ok:false,reason:'No chart is waiting for review for this client.'};
+  const r=await attempt(tx,keep,t=>clientChartAction(t,a,{action:'v3_client_chart_review',version_id:d.version_id,revision:String(d.revision),status:'Approved',review_note:common.review_note,books_pack_reviewed:keep?common.books_pack_reviewed:true}));
+  if(!r.ok)return r;
+  return {ok:true,out:{record_ref:String(d.version_id),note:keep?'Chart approved':'Would be approved'}};
+ }
  const r=await attempt(tx,keep,t=>clientChoicesAction(t,a,{action:'client_setup_returns_choose',client_id:c.client_id,return_code:row.input.return_code,effective_from:common.effective_from,note:common.note}));
  if(!r.ok)return r;
  return {ok:true,out:{record_ref:String(r.out?.selection_id||(keep?'':'preview')),note:keep?null:'Would be chosen'}};
@@ -81,6 +96,7 @@ export async function bulkSetupAction(tx:any,a:any,p:any):Promise<any>{
  }
  // bulk_setup_apply: every row is checked again as it is applied; the preview is never trusted.
  if(p.confirm!==true)fail(400,'Check the preview and confirm before applying.');
+ if(common.operation==='CHART_APPROVE'&&!common.books_pack_reviewed)fail(400,'Confirm that you reviewed the Books set-up pack (stock settings, stock categories and VAT categories) for these charts before approving.');
  await tx`select pg_advisory_xact_lock(hashtextextended(${a.staff_id+':bulk-setup'},0))`;
  const results=[];
  for(const row of rows){const r=await runRow(tx,a,common,row,true);results.push(verdict(row,r.ok,r.ok?r.out:{reason:r.reason}));}

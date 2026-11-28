@@ -5,8 +5,11 @@ import {RETURNS,RETURN_CODES} from './export-profile-rules.mjs';
 export const MAX_ROWS=200;
 export const OPERATIONS=Object.freeze({
  ENGAGEMENT:'Set up a service for several clients (from an approved service template)',
- PAYROLL_RETURNS:'Choose the payroll returns several clients file (NSSF, SHIF, PAYE P10)'
+ PAYROLL_RETURNS:'Choose the payroll returns several clients file (NSSF, SHIF, PAYE P10)',
+ CHART_PROPOSE:'Prepare the client chart of accounts for several clients',
+ CHART_APPROVE:'Approve the waiting client charts of accounts (a different Manager or Partner from the preparer)'
 });
+export const CHART_ITEM='Client chart of accounts';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE=/^\d{4}-\d{2}-\d{2}$/;
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
@@ -31,6 +34,17 @@ export function expandRun(p){
   if(!isId(p.responsible_staff)||!isId(p.reviewer_staff))return {problem:'Choose the responsible person and the reviewer.'};
   common={operation:op,template_id:p.template_id,service_code:clean(p.service_code),period_start:from,period_end:to,scope,responsible_staff:p.responsible_staff,reviewer_staff:p.reviewer_staff};
   items=[clean(p.service_code)];
+ }else if(op==='CHART_PROPOSE'){
+  const from=clean(p.effective_from),note=clean(p.note);
+  if(!validDate(from))return {problem:'Choose the date the charts apply from.'};
+  if(note.length>500)return {problem:'The note is too long (500 characters at most).'};
+  common={operation:op,effective_from:from,note:note||null};
+  items=[CHART_ITEM];
+ }else if(op==='CHART_APPROVE'){
+  const note=clean(p.review_note);
+  if(note.length<10||note.length>2000)return {problem:'Write why you are approving these charts, in at least 10 characters.'};
+  common={operation:op,review_note:note,books_pack_reviewed:p.books_pack_reviewed===true};
+  items=[CHART_ITEM];
  }else{
   const codes=[...new Set((Array.isArray(p.return_codes)?p.return_codes:[]).map(clean))];
   if(!codes.length||codes.some(c=>!RETURNS[c]))return {problem:'Choose at least one return.'};
@@ -56,7 +70,8 @@ export function expandRun(p){
     const resp=r.responsible_staff||common.responsible_staff,rev=r.reviewer_staff||common.reviewer_staff;
     if(!isId(resp)||!isId(rev)){rows.push({...base,problem:'The responsible person or reviewer reference is not valid.'});continue;}
     rows.push({...base,input:{client_id:cid,firm_id:firm,responsible_staff:resp,reviewer_staff:rev}});
-   }else rows.push({...base,input:{client_id:cid,return_code:item}});
+   }else if(op==='PAYROLL_RETURNS')rows.push({...base,input:{client_id:cid,return_code:item}});
+   else rows.push({...base,input:{client_id:cid}});
   }
  }
  return {common,rows};

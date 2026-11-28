@@ -6,6 +6,8 @@ const e0=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 export function buildPayload(state){
  const rows=(state.selected||[]).map(c=>({client_id:c.client_id,client_label:c.client_label||null,...(c.firm_id?{firm_id:c.firm_id}:{})}));
  if(state.operation==='ENGAGEMENT')return {operation:'ENGAGEMENT',template_id:state.template_id,service_code:state.service_code,period_start:state.period_start,period_end:state.period_end,scope:state.scope,responsible_staff:state.responsible_staff,reviewer_staff:state.reviewer_staff,rows};
+ if(state.operation==='CHART_PROPOSE')return {operation:'CHART_PROPOSE',effective_from:state.effective_from,note:state.note||'',rows};
+ if(state.operation==='CHART_APPROVE')return {operation:'CHART_APPROVE',review_note:state.review_note||'',books_pack_reviewed:state.books_pack_reviewed===true,rows};
  return {operation:'PAYROLL_RETURNS',return_codes:state.return_codes||[],effective_from:state.effective_from,note:state.note||'',rows};
 }
 // A preview counts only for exactly what was previewed: change anything and the apply button switches off again.
@@ -31,6 +33,15 @@ export function optionsHtml(opts,{esc=e0}={}){
    <label>First day it applies<input type="date" name="effective_from" required></label><label>Note (optional)<input name="note" maxlength="500"></label>
    <p class="muted full">A return can be chosen only when a firm export profile for it is published in Settings. A client that already has the return chosen is listed below as skipped.</p>
   </fieldset>
+  <fieldset class="full" data-op="CHART_PROPOSE" hidden><legend>Client chart of accounts: prepare</legend>
+   <label>Chart applies from<input type="date" name="effective_from" required></label><label>Note (optional)<input name="note" maxlength="500"></label>
+   <p class="muted full">Each chart is made from the client's confirmed legal entity, approved activities, tax profile and industry packs, as on the client's own screen, and waits for review. A client with no approved activity, no confirmed entity type, or a chart already waiting is listed below with the reason.</p>
+  </fieldset>
+  <fieldset class="full" data-op="CHART_APPROVE" hidden><legend>Client chart of accounts: approve</legend>
+   <label class="full">Why you are approving (at least 10 characters)<input name="review_note" required minlength="10" maxlength="2000"></label>
+   <label class="check full"><input type="checkbox" name="books_pack_reviewed"> I have reviewed the Books set-up pack (stock settings, stock categories and VAT categories) for these clients</label>
+   <p class="muted full">Only a Manager or Partner who did not prepare the chart can approve it. A chart prepared by an Assistant needs a check first. A client whose stock settings are incomplete is listed below: approve that chart on its own, with a reason.</p>
+  </fieldset>
   <div class="full"><label>Find a client<input type="search" id="bulkSearch" placeholder="Type part of a name"></label>
    <div class="actions"><button type="button" data-bulk="all">Tick all shown</button><button type="button" data-bulk="none">Clear ticks</button><span id="bulkCount" class="muted"></span></div>
    <div class="scroll" id="bulkClients">${clientRows(opts.clients||[],{esc})}</div></div>
@@ -52,7 +63,7 @@ export function resultsHtml(res,{esc=e0}={}){
  const word=res.applied?'applied':'ready to apply';
  const line=r=>`<tr data-outcome="${esc(r.outcome)}"><td>${esc(r.client_label||'Client not available')}</td><td>${esc(r.item)}</td><td>${r.outcome==='Applied'?'<span class="badge ok">Applied</span>':'<span class="badge ok">Ready</span>'}${r.note?`<small>${esc(r.note)}</small>`:''}</td></tr>`;
  const ex=r=>`<tr data-outcome="Skipped"><td>${esc(r.client_label||'Client not available')}</td><td>${esc(r.item)}</td><td>${esc(r.reason)}</td></tr>`;
- return `<div class="notice ${s.skipped?'warn':'info'}" id="bulkSummary" role="status"><b>${esc(s.total)} row${s.total===1?'':'s'} checked: ${esc(s.ready)} ${word}, ${esc(s.skipped)} not.</b>${res.applied?' Each client has its own record in the audit trail. Nothing was approved or posted.':' Nothing has been changed yet.'}</div>
+ return `<div class="notice ${s.skipped?'warn':'info'}" id="bulkSummary" role="status"><b>${esc(s.total)} row${s.total===1?'':'s'} checked: ${esc(s.ready)} ${word}, ${esc(s.skipped)} not.</b>${res.applied?' Each client has its own record in the audit trail. Nothing was posted.':' Nothing has been changed yet.'}</div>
   ${good.length?`<h3>${res.applied?'Applied':'Ready'} (${good.length})</h3><div class="scroll"><table id="bulkReady"><thead><tr><th>Client</th><th>Item</th><th>Result</th></tr></thead><tbody>${good.map(line).join('')}</tbody></table></div>`:''}
   ${bad.length?`<h3>Exceptions: not ${res.applied?'applied':'ready'} (${bad.length})</h3><p class="muted">Fix the reason and run these again on their own; they did not stop the others.</p><div class="scroll"><table id="bulkExceptions"><thead><tr><th>Client</th><th>Item</th><th>Why</th></tr></thead><tbody>${bad.map(ex).join('')}</tbody></table></div>`:''}`;
 }
@@ -72,7 +83,7 @@ export function createBulkSetupUI(ctx){
  const picked=()=>[...host().querySelectorAll('[data-bulk-pick]:checked')].map(x=>{const id=x.dataset.bulkPick,c=opts.clients.find(y=>y.client_id===id),firm=host().querySelector(`[data-bulk-firm="${id}"]`)?.value||'';return {client_id:id,client_label:c?.company_name||null,firm_id:firm||(c?.firms?.length===1?c.firms[0].firm_id:'')};});
  function state(){
   const f=new FormData(host().querySelector('#bulkForm')),o=f.get('operation')||'';
-  return {operation:o,template_id:f.get('template_id')||'',service_code:f.get('service_code')||'',period_start:f.get('period_start')||'',period_end:f.get('period_end')||'',scope:f.get('scope')||'',responsible_staff:f.get('responsible_staff')||'',reviewer_staff:f.get('reviewer_staff')||'',return_codes:f.getAll('return_codes'),effective_from:f.get('effective_from')||'',note:f.get('note')||'',selected:picked()};
+  return {operation:o,template_id:f.get('template_id')||'',service_code:f.get('service_code')||'',period_start:f.get('period_start')||'',period_end:f.get('period_end')||'',scope:f.get('scope')||'',responsible_staff:f.get('responsible_staff')||'',reviewer_staff:f.get('reviewer_staff')||'',return_codes:f.getAll('return_codes'),effective_from:f.get('effective_from')||'',note:f.get('note')||'',review_note:f.get('review_note')||'',books_pack_reviewed:f.get('books_pack_reviewed')==='on',selected:picked()};
  }
  const sync=()=>{const h=host(),o=h.querySelector('[name=operation]').value;
   for(const fs of h.querySelectorAll('fieldset[data-op]')){const on=fs.dataset.op===o;fs.hidden=!on;for(const i of fs.querySelectorAll('input,select,textarea'))i.disabled=!on;}

@@ -23,7 +23,7 @@ test('a run is checked as a whole first: a request-level problem stops it, a row
  // Payroll returns expand to one row per client and return, in the fixed order.
  const p=expandRun({operation:'PAYROLL_RETURNS',return_codes:['SHIF','NSSF','NSSF'],effective_from:'2026-01-01',note:' a  note ',rows:[{client_id:U(9)},{client_id:U(8)}]});
  assert.deepEqual(p.rows.map(x=>x.key),['NSSF','SHIF','NSSF','SHIF']);assert.equal(p.common.note,'a note');assert.deepEqual(p.common.return_codes,['NSSF','SHIF']);
- assert.equal(Object.keys(OPERATIONS).length,2);
+ assert.equal(Object.keys(OPERATIONS).length,4);
 });
 
 test('verdicts and the summary: every skipped row has a reason, and exceptions are listed apart',()=>{
@@ -46,7 +46,7 @@ test('the screen: one payload shape, the preview counts only for what was previe
  const res={applied:false,results:[{row_no:1,client_label:'Alpha',item:'NSSF',outcome:'Ready',note:'Would be chosen'},{row_no:2,client_label:'Be<ta>',item:'NSSF',outcome:'Skipped',reason:'Already chosen <x>'}],summary:{total:2,ready:1,skipped:1}};
  const out=resultsHtml(res);assert.match(out,/id="bulkReady"/);assert.match(out,/id="bulkExceptions"/);assert.match(out,/Nothing has been changed yet/);assert.doesNotMatch(out,/<ta>|<x>/);
  assert.ok(out.indexOf('bulkReady')<out.indexOf('bulkExceptions'),'what passed comes first, the exceptions are their own list');
- const done=resultsHtml({...res,applied:true,results:[{...res.results[0],outcome:'Applied'},res.results[1]]});assert.match(done,/audit trail/);assert.match(done,/Nothing was approved or posted/);
+ const done=resultsHtml({...res,applied:true,results:[{...res.results[0],outcome:'Applied'},res.results[1]]});assert.match(done,/audit trail/);assert.match(done,/Nothing was posted/);
  assert.match(resultsHtml({applied:false,results:[res.results[1]],summary:{total:1,ready:0,skipped:1}}),/not ready/);assert.doesNotMatch(resultsHtml({applied:false,results:[res.results[1]],summary:{total:1,ready:0,skipped:1}}),/id="bulkReady"/);
  assert.match(runsHtml({runs:[]}),/No bulk run/);assert.match(runsHtml({runs:[{run_id:U(1),created_at:'2026-11-16T10:00:00Z',operation_label:'Returns',created_by_name:'M',applied_count:3,skipped_count:1}]}),/data-bulk="run"/);
  assert.match(runHtml({run:{operation_label:'Returns',created_at:'2026-11-16T10:00:00Z',created_by_name:'M'},rows:[{row_no:1,client_label:'A',item:'NSSF',outcome:'Applied',record_ref:U(1)},{row_no:2,client_label:'B',item:'NSSF',outcome:'Skipped',reason:'Why'}],summary:{total:2,applied:1,skipped:1}}),/Record 00000000/);
@@ -58,7 +58,8 @@ test('wiring: action routed, leaders only, one audit record per row, insert-only
  const act=rd(fx+'bulk-setup-actions.ts');assert.match(act,/LEADERS=\['PARTNER','MANAGER'\]/);assert.match(act,/A Manager or Partner sets up several clients at once/);
  assert.match(act,/savepoint/,'each row is its own savepoint');assert.match(act,/class Rollback/,'the preview rolls back the same work');
  assert.match(act,/clientChoicesAction\(t,a,\{action:'client_setup_returns_choose'/);assert.match(act,/serviceTemplateAction\(t,a,\{action:'engagement_setup_apply'/);
- assert.doesNotMatch(act.replace(/\/\/[^\n]*/g,''),/update erp_private\.|delete from|_approve|_decide|_publish/i,'a bulk run approves nothing and edits nothing');
+ assert.doesNotMatch(act.replace(/\/\/[^\n]*/g,''),/update erp_private\.|delete from|_decide|_publish/i,'a bulk run edits nothing directly');
+ assert.match(act,/clientChartAction\(t,a,\{action:'v3_client_chart_review'/,'the only approval is the single-client chart review, row by row');assert.doesNotMatch(act.replace(/\/\/[^\n]*/g,''),/v3_client_chart_review[\s\S]{0,40}status:'Returned'/);
  const m=rd('supabase/migrations/20261118100000_bulk_setup.sql');
  assert.match(m,/GRANT SELECT,INSERT ON erp_private\.bulk_setup_runs TO erp_api/);assert.match(m,/GRANT SELECT,INSERT ON erp_private\.bulk_setup_rows TO erp_api/);assert.doesNotMatch(m,/GRANT[^;]*UPDATE/);
  assert.match(m,/FORCE ROW LEVEL SECURITY/);assert.equal((m.match(/EXECUTE FUNCTION erp_private\.bulk_setup_immutable\(\)/g)||[]).length,2);assert.equal((m.match(/EXECUTE FUNCTION erp_private\.log_change/g)||[]).length,2);
@@ -69,4 +70,24 @@ test('wiring: action routed, leaders only, one audit record per row, insert-only
  assert.match(rd(fx+'release.json'),/2026-11-19\.2906/);assert.match(rd('staff-pilot.html'),/data-build="2026-11-19\.2906"/);
  // The latent project-creation defect found by this build stays fixed: no `returning` on the project insert.
  assert.doesNotMatch(rd(fx+'service-template-actions.ts'),/insert into erp_private\.projects[^`]*returning project_id/);
+});
+
+test('bulk charts: the two new operations are checked before any row is read',()=>{
+ const rows=[{client_id:'11111111-1111-4111-8111-111111111111',client_label:'A'},{client_id:'22222222-2222-4222-8222-222222222222',client_label:'B'}];
+ assert.match(expandRun({operation:'CHART_PROPOSE',effective_from:'',rows}).problem,/date the charts apply/);
+ assert.match(expandRun({operation:'CHART_PROPOSE',effective_from:'2026-02-30',rows}).problem,/date the charts apply/);
+ const ok=expandRun({operation:'CHART_PROPOSE',effective_from:'2026-01-01',note:' Prepared in bulk ',rows});
+ assert.equal(ok.rows.length,2);assert.equal(ok.common.note,'Prepared in bulk');assert.equal(ok.rows[0].item,'Client chart of accounts');assert.equal(ok.rows[0].input.client_id,rows[0].client_id);
+ assert.match(expandRun({operation:'CHART_APPROVE',review_note:'short',rows}).problem,/at least 10 characters/);
+ const ap=expandRun({operation:'CHART_APPROVE',review_note:'Checked against the activities and tax profile',rows});
+ assert.equal(ap.common.books_pack_reviewed,false,'the Books set-up pack must be confirmed by a true value, never assumed');
+ assert.equal(expandRun({operation:'CHART_APPROVE',review_note:'Checked against the activities and tax profile',books_pack_reviewed:true,rows}).common.books_pack_reviewed,true);
+ assert.equal(expandRun({operation:'CHART_PROPOSE',effective_from:'2026-01-01',rows:[rows[0],rows[0]]}).rows[1].problem.includes('more than once'),true);
+});
+test('bulk charts: the screen builds the right request for each chart operation',async()=>{
+ const {buildPayload}=await import('../staff-bulk-setup.mjs');
+ const sel=[{client_id:'c1',client_label:'A',firm_id:''}];
+ assert.deepEqual(buildPayload({operation:'CHART_PROPOSE',effective_from:'2026-01-01',note:'n',selected:sel}),{operation:'CHART_PROPOSE',effective_from:'2026-01-01',note:'n',rows:[{client_id:'c1',client_label:'A'}]});
+ const a=buildPayload({operation:'CHART_APPROVE',review_note:'Checked it all',books_pack_reviewed:false,selected:sel});
+ assert.equal(a.operation,'CHART_APPROVE');assert.equal(a.books_pack_reviewed,false);assert.equal(a.review_note,'Checked it all');
 });
