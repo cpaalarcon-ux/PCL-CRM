@@ -23,7 +23,7 @@ test('a run is checked as a whole first: a request-level problem stops it, a row
  // Payroll returns expand to one row per client and return, in the fixed order.
  const p=expandRun({operation:'PAYROLL_RETURNS',return_codes:['SHIF','NSSF','NSSF'],effective_from:'2026-01-01',note:' a  note ',rows:[{client_id:U(9)},{client_id:U(8)}]});
  assert.deepEqual(p.rows.map(x=>x.key),['NSSF','SHIF','NSSF','SHIF']);assert.equal(p.common.note,'a note');assert.deepEqual(p.common.return_codes,['NSSF','SHIF']);
- assert.equal(Object.keys(OPERATIONS).length,4);
+ assert.equal(Object.keys(OPERATIONS).length,8);
 });
 
 test('verdicts and the summary: every skipped row has a reason, and exceptions are listed apart',()=>{
@@ -40,7 +40,7 @@ test('the screen: one payload shape, the preview counts only for what was previe
  const pr=buildPayload({operation:'PAYROLL_RETURNS',return_codes:['NSSF'],effective_from:'2026-01-01',note:'',selected:sel});assert.deepEqual(Object.keys(pr),['operation','return_codes','effective_from','note','rows']);
  assert.notEqual(payloadKey(p),payloadKey({...p,scope:'Changed scope entirely here.'}),'a changed choice makes the preview stale');
  const opts={note:'Each client is checked on its own.',max_rows:200,operations:[{code:'ENGAGEMENT',label:'Service'},{code:'PAYROLL_RETURNS',label:'Returns'}],templates:[{template_id:U(1),name:'<b>Tax</b>',version:2,services:[{service_code:'TAX-COMP',service_name:'Tax'}]}],staff:[{staff_id:U(2),full_name:'A "Q" <i>',category_code:'MANAGER'},{staff_id:U(2),full_name:'A "Q" <i>',category_code:'MANAGER'}],returns:[{return_code:'NSSF',label:'NSSF monthly return'}],clients:[{client_id:U(9),company_name:'Alpha <script>',firms:[{firm_id:U(4),legal_name:'F1'},{firm_id:U(5),legal_name:'F2'}]},{client_id:U(8),company_name:'Beta',firms:[]}]};
- const html=optionsHtml(opts);assert.doesNotMatch(html,/<script>|<b>Tax<\/b>|<i>/);assert.match(html,/&lt;script&gt;/);assert.equal((html.match(/value="00000000-0000-4000-8000-000000000002"/g)||[]).length,2,'a person listed twice is offered once in each list');
+ const html=optionsHtml(opts);assert.doesNotMatch(html,/<script>|<b>Tax<\/b>|<i>/);assert.match(html,/&lt;script&gt;/);assert.equal((html.match(/value="00000000-0000-4000-8000-000000000002"/g)||[]).length,3,'a person listed twice is offered once in each of the three people lists');
  assert.match(html,/data-bulk-firm="00000000-0000-4000-8000-000000000009"/,'a client with two firms asks which');assert.match(html,/Not linked/);assert.match(html,/Up to 200 clients/);
  assert.match(clientRows(opts.clients,{search:'beta'}),/Beta/);assert.doesNotMatch(clientRows(opts.clients,{search:'beta'}),/Alpha/);assert.match(clientRows(opts.clients,{search:'zzz'}),/No client matches/);
  const res={applied:false,results:[{row_no:1,client_label:'Alpha',item:'NSSF',outcome:'Ready',note:'Would be chosen'},{row_no:2,client_label:'Be<ta>',item:'NSSF',outcome:'Skipped',reason:'Already chosen <x>'}],summary:{total:2,ready:1,skipped:1}};

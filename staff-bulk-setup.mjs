@@ -6,6 +6,9 @@ const e0=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 export function buildPayload(state){
  const rows=(state.selected||[]).map(c=>({client_id:c.client_id,client_label:c.client_label||null,...(c.firm_id?{firm_id:c.firm_id}:{})}));
  if(state.operation==='ENGAGEMENT')return {operation:'ENGAGEMENT',template_id:state.template_id,service_code:state.service_code,period_start:state.period_start,period_end:state.period_end,scope:state.scope,responsible_staff:state.responsible_staff,reviewer_staff:state.reviewer_staff,rows};
+ if(state.operation==='ENGAGEMENT_ACTIVATE'||state.operation==='KYC_VERIFY')return {operation:state.operation,review_note:state.review_note||'',rows};
+ if(state.operation==='SECTIONS_SEND')return {operation:'SECTIONS_SEND',source_kind:state.source_kind||'',source_note:state.source_note||'',rows};
+ if(state.operation==='ENGAGEMENT_TEAM')return {operation:'ENGAGEMENT_TEAM',team_staff:state.team_staff||'',rows};
  if(state.operation==='CHART_PROPOSE')return {operation:'CHART_PROPOSE',effective_from:state.effective_from,note:state.note||'',rows};
  if(state.operation==='CHART_APPROVE')return {operation:'CHART_APPROVE',review_note:state.review_note||'',books_pack_reviewed:state.books_pack_reviewed===true,rows};
  return {operation:'PAYROLL_RETURNS',return_codes:state.return_codes||[],effective_from:state.effective_from,note:state.note||'',rows};
@@ -32,6 +35,23 @@ export function optionsHtml(opts,{esc=e0}={}){
    <div class="full">${(opts.returns||[]).map(r=>`<label class="check"><input type="checkbox" name="return_codes" value="${esc(r.return_code)}"> ${esc(r.label)}</label>`).join(' ')}</div>
    <label>First day it applies<input type="date" name="effective_from" required></label><label>Note (optional)<input name="note" maxlength="500"></label>
    <p class="muted full">A return can be chosen only when a firm export profile for it is published in Settings. A client that already has the return chosen is listed below as skipped.</p>
+  </fieldset>
+  <fieldset class="full" data-op="ENGAGEMENT_ACTIVATE" hidden><legend>Activate draft engagements</legend>
+   <label class="full">Why you are activating (at least 10 characters)<input name="review_note" required minlength="10" maxlength="2000"></label>
+   <p class="muted full">Every draft engagement of each ticked client goes through the normal activation. One that is missing verified KYC, enhanced due diligence approval, a verified signed letter or a posted opening TB is listed below with the missing item.</p>
+  </fieldset>
+  <fieldset class="full" data-op="KYC_VERIFY" hidden><legend>Verify KYC files</legend>
+   <label class="full">Why you are verifying (at least 10 characters)<input name="review_note" required minlength="10" maxlength="2000"></label>
+   <p class="muted full">The normal verification applies: you cannot verify a file you last edited, and missing or expired evidence stops that client. A client that needs enhanced due diligence is left for its own screen.</p>
+  </fieldset>
+  <fieldset class="full" data-op="SECTIONS_SEND" hidden><legend>Send set-up for approval</legend>
+   <label>Where the information came from<select name="source_kind" required><option value="">Choose</option>${['BRS','KRA','Permanent file','Client document','Other approved source'].map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join('')}</select></label>
+   <label>Note (optional)<input name="source_note" maxlength="500"></label>
+   <p class="muted full">Sections with something recorded are sent. A client that does not meet the minimum is listed below with what is missing. Nothing is approved here.</p>
+  </fieldset>
+  <fieldset class="full" data-op="ENGAGEMENT_TEAM" hidden><legend>Add a person to engagement teams</legend>
+   ${sel('team_staff','Person to add',staff.map(s=>[s.staff_id,`${s.full_name} (${String(s.category_code).toLowerCase()})`]),'Choose')}
+   <p class="muted full">The person is added to every open engagement of each ticked client, if they are eligible for that firm. Others are listed below.</p>
   </fieldset>
   <fieldset class="full" data-op="CHART_PROPOSE" hidden><legend>Client chart of accounts: prepare</legend>
    <label>Chart applies from<input type="date" name="effective_from" required></label><label>Note (optional)<input name="note" maxlength="500"></label>
@@ -83,7 +103,7 @@ export function createBulkSetupUI(ctx){
  const picked=()=>[...host().querySelectorAll('[data-bulk-pick]:checked')].map(x=>{const id=x.dataset.bulkPick,c=opts.clients.find(y=>y.client_id===id),firm=host().querySelector(`[data-bulk-firm="${id}"]`)?.value||'';return {client_id:id,client_label:c?.company_name||null,firm_id:firm||(c?.firms?.length===1?c.firms[0].firm_id:'')};});
  function state(){
   const f=new FormData(host().querySelector('#bulkForm')),o=f.get('operation')||'';
-  return {operation:o,template_id:f.get('template_id')||'',service_code:f.get('service_code')||'',period_start:f.get('period_start')||'',period_end:f.get('period_end')||'',scope:f.get('scope')||'',responsible_staff:f.get('responsible_staff')||'',reviewer_staff:f.get('reviewer_staff')||'',return_codes:f.getAll('return_codes'),effective_from:f.get('effective_from')||'',note:f.get('note')||'',review_note:f.get('review_note')||'',books_pack_reviewed:f.get('books_pack_reviewed')==='on',selected:picked()};
+  return {operation:o,template_id:f.get('template_id')||'',service_code:f.get('service_code')||'',period_start:f.get('period_start')||'',period_end:f.get('period_end')||'',scope:f.get('scope')||'',responsible_staff:f.get('responsible_staff')||'',reviewer_staff:f.get('reviewer_staff')||'',return_codes:f.getAll('return_codes'),effective_from:f.get('effective_from')||'',note:f.get('note')||'',review_note:f.get('review_note')||'',books_pack_reviewed:f.get('books_pack_reviewed')==='on',source_kind:f.get('source_kind')||'',source_note:f.get('source_note')||'',team_staff:f.get('team_staff')||'',selected:picked()};
  }
  const sync=()=>{const h=host(),o=h.querySelector('[name=operation]').value;
   for(const fs of h.querySelectorAll('fieldset[data-op]')){const on=fs.dataset.op===o;fs.hidden=!on;for(const i of fs.querySelectorAll('input,select,textarea'))i.disabled=!on;}

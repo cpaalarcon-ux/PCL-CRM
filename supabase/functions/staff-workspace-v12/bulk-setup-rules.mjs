@@ -2,14 +2,20 @@
 // One set-up choice is applied to many clients. Each row is checked on its own through the same single-client rules (the server calls the existing action per row,
 // inside a savepoint), so a row that passes here is applied exactly as if it had been done by hand, and a row that fails never blocks the others.
 import {RETURNS,RETURN_CODES} from './export-profile-rules.mjs';
+import {sourceProblem} from './setup-review-rules.mjs';
 export const MAX_ROWS=200;
 export const OPERATIONS=Object.freeze({
  ENGAGEMENT:'Set up a service for several clients (from an approved service template)',
  PAYROLL_RETURNS:'Choose the payroll returns several clients file (NSSF, SHIF, PAYE P10)',
  CHART_PROPOSE:'Prepare the client chart of accounts for several clients',
- CHART_APPROVE:'Approve the waiting client charts of accounts (a different Manager or Partner from the preparer)'
+ CHART_APPROVE:'Approve the waiting client charts of accounts (a different Manager or Partner from the preparer)',
+ ENGAGEMENT_ACTIVATE:'Activate the draft engagements of several clients (KYC, letter and opening TB must be ready)',
+ KYC_VERIFY:'Verify the KYC files of several clients (a different Manager or Partner from the last editor)',
+ SECTIONS_SEND:'Send the set-up sections of several clients for approval (the minimum must be met)',
+ ENGAGEMENT_TEAM:'Add one person to the engagement team of several clients'
 });
 export const CHART_ITEM='Client chart of accounts';
+export const ITEMS=Object.freeze({ENGAGEMENT_ACTIVATE:'Draft engagements',KYC_VERIFY:'KYC file',SECTIONS_SEND:'Set-up sections',ENGAGEMENT_TEAM:'Engagement team'});
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE=/^\d{4}-\d{2}-\d{2}$/;
 const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
@@ -45,6 +51,20 @@ export function expandRun(p){
   if(note.length<10||note.length>2000)return {problem:'Write why you are approving these charts, in at least 10 characters.'};
   common={operation:op,review_note:note,books_pack_reviewed:p.books_pack_reviewed===true};
   items=[CHART_ITEM];
+ }else if(op==='ENGAGEMENT_ACTIVATE'||op==='KYC_VERIFY'){
+  const note=clean(p.review_note);
+  if(note.length<10||note.length>2000)return {problem:'Write why you are doing this, in at least 10 characters.'};
+  common={operation:op,review_note:note};
+  items=[ITEMS[op]];
+ }else if(op==='SECTIONS_SEND'){
+  const kind=clean(p.source_kind),note=clean(p.source_note).slice(0,500);
+  const problem=sourceProblem(kind,note);if(problem)return {problem};
+  common={operation:op,source_kind:kind,source_note:note};
+  items=[ITEMS[op]];
+ }else if(op==='ENGAGEMENT_TEAM'){
+  if(!isId(p.team_staff))return {problem:'Choose the person to add to the engagement teams.'};
+  common={operation:op,team_staff:p.team_staff};
+  items=[ITEMS[op]];
  }else{
   const codes=[...new Set((Array.isArray(p.return_codes)?p.return_codes:[]).map(clean))];
   if(!codes.length||codes.some(c=>!RETURNS[c]))return {problem:'Choose at least one return.'};
