@@ -19,7 +19,9 @@ function setKind() {
   const task=state?.tasks.find(row=>row.task_id===fields.task.value);
   fields.kind.options[0].disabled=!task?.can_time;
   fields.kind.options[1].disabled=!task?.can_note;
-  if (fields.kind.selectedOptions[0]?.disabled) fields.kind.value=task?.can_time?'time':task?.can_note?'note':'';
+  if (!fields.kind.value||fields.kind.selectedOptions[0]?.disabled) {
+    fields.kind.value=task?.can_time?'time':task?.can_note?'note':'';
+  }
   const isTime=fields.kind.value==='time';
   element('time').hidden=!isTime;
   fields.workDate.required=fields.hours.required=isTime;
