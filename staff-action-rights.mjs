@@ -21,6 +21,7 @@ const groups=[
  ['fee','billing_wip','Recurring fees',leaders,{view:[],create:['fee_schedule_add'],edit:['fee_schedule_state'],generate:['fee_schedule_generate_due']},{create:partner}],
  ['wip','billing_wip','Budgets and WIP',leaders,{view:['wip_report','client_card_wip','metrics_wip','metrics_realization','metrics_summary'],create:['budget_add'],edit:['staff_rate_add']},{create:partner,edit:partner}],
  ['statement','billing_wip','Statements',leaders,{view:['statement']}],
+ ['priorbilling','billing_wip','Billing from the previous system',leaders,{view:['prior_billing_batches','prior_billing_client'],create:['prior_billing_stage','prior_receipt_add'],approve:['prior_billing_decide'],reverse:['prior_receipt_reverse']},{approve:['PARTNER']}],
  ['journal','projects','Journals and opening balances',staff,{
   view:['ledger_journal_read','ledger_account_read'],
   create:['ledger_journal_save','ledger_import_commit','ledger_generate_sources','ledger_period_import_create','ledger_payroll_create','ledger_payroll_journal_create','ledger_depreciation_create','ledger_stock_propose','ledger_withholding_create','ledger_supplier_build'],
