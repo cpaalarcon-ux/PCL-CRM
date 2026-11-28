@@ -6,6 +6,10 @@ import {serviceTemplateAction} from './service-template-actions.ts';
 import {requireProjectSetup} from './workspace-actions.ts';
 import {requireRightChart} from './legal-structure-actions.ts';
 import {clientChartAction} from './client-chart.ts';
+import {engagementAction} from './engagement-actions.ts';
+import {clientSetupReviewAction} from './client-setup-review-actions.ts';
+import {SECTION_CODES} from './setup-review-rules.mjs';
+import {assign} from './workspace-actions.ts';
 // Build 2842: bulk client set-up. One choice is applied to many clients. Every row goes through the existing single-client action inside its own savepoint, so a row that passes
 // is applied exactly as if a Manager had done it by hand, a row that fails changes nothing and is listed with its reason, and independent review is unchanged (a bulk run approves
 // nothing and posts nothing). The preview runs the same checks and writes nothing. The audit record is in bulk_setup_runs and bulk_setup_rows (20261118100000_bulk_setup.sql).
@@ -45,6 +49,37 @@ async function runRow(tx:any,a:any,common:any,row:any,keep:boolean){
   const r=await attempt(tx,true,t=>serviceTemplateAction(t,a,{action:'engagement_setup_apply',...base,confirm:true}));
   if(!r.ok)return r;
   const o=r.out||{};return {ok:true,out:{record_ref:String(o.setup_id||''),note:o.released?`${o.tasks_created||0} task${o.tasks_created===1?'':'s'} created`:'Waiting: '+(o.waiting_reason||'the project is not ready for tasks yet')}};
+ }
+ if(common.operation==='ENGAGEMENT_ACTIVATE'){
+  const ps=await tx`select project_id,project_name from erp_private.projects where client_id=${c.client_id} and status='Draft' and deleted_at is null order by created_at`;
+  if(!ps.length)return {ok:false,reason:'This client has no draft engagement to activate.'};
+  let done=0;const fails:string[]=[];
+  for(const x of ps){const r=await attempt(tx,keep,t=>engagementAction(t,a,{action:'engagement_activate',project_id:x.project_id}));if(r.ok)done++;else fails.push(`${x.project_name}: ${r.reason}`);}
+  if(!done)return {ok:false,reason:fails[0]+(fails.length>1?` (and ${fails.length-1} more engagement${fails.length>2?'s':''})`:'')};
+  return {ok:true,out:{record_ref:String(ps[0].project_id),note:`${done} activated`+(fails.length?`; ${fails.length} left: ${fails[0]}`:'')}};
+ }
+ if(common.operation==='KYC_VERIFY'){
+  const k=(await tx`select revision,verified_by,is_pep,risk_rating from erp_private.client_compliance where client_id=${c.client_id}`)[0];
+  if(!k)return {ok:false,reason:'This client has no KYC file yet.'};
+  if(k.verified_by)return {ok:false,reason:'This KYC file is already verified.'};
+  if(k.is_pep||k.risk_rating==='High')return {ok:false,reason:'Enhanced due diligence applies. Verify this file on its own and have the Engagement Partner or MLRO approve it.'};
+  const r=await attempt(tx,keep,t=>engagementAction(t,a,{action:'compliance_verify',client_id:c.client_id,revision:String(k.revision)}));
+  if(!r.ok)return r;return {ok:true,out:{record_ref:String(c.client_id),note:'Verified'}};
+ }
+ if(common.operation==='SECTIONS_SEND'){
+  const r=await attempt(tx,keep,t=>clientSetupReviewAction(t,a,{action:'client_setup_section_submit_many',client_ids:[c.client_id],sections:SECTION_CODES.map((code:string)=>({section_code:code,source_kind:common.source_kind,source_note:common.source_note}))}));
+  if(!r.ok)return r;
+  const o=r.out||{};if((o.held||[]).length)return {ok:false,reason:o.held[0].reason};
+  if(!(o.submitted||[]).length)return {ok:false,reason:'Nothing to send: every section is empty or already sent.'};
+  return {ok:true,out:{record_ref:String(c.client_id),note:`${o.submitted.length} section${o.submitted.length===1?'':'s'} sent`}};
+ }
+ if(common.operation==='ENGAGEMENT_TEAM'){
+  const ps=await tx`select project_id,project_name,handling_firm_id from erp_private.projects where client_id=${c.client_id} and status in ('Draft','Active') and deleted_at is null order by created_at`;
+  if(!ps.length)return {ok:false,reason:'This client has no open engagement.'};
+  let done=0;const fails:string[]=[];
+  for(const x of ps){const r=await attempt(tx,keep,t=>assign(t,x.project_id,x.handling_firm_id,common.team_staff));if(r.ok)done++;else fails.push(`${x.project_name}: ${r.reason}`);}
+  if(!done)return {ok:false,reason:fails[0]};
+  return {ok:true,out:{record_ref:String(ps[0].project_id),note:`Added to ${done} engagement${done===1?'':'s'}`+(fails.length?`; ${fails.length} left: ${fails[0]}`:'')}};
  }
  if(common.operation==='CHART_PROPOSE'){
   // The same proposal a preparer makes by hand: it needs a confirmed legal entity, at least one approved activity and no accounts in use outside the proposed chart.
