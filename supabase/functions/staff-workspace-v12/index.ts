@@ -52,6 +52,7 @@ setPhysicalPdfLib(PDFLib);
 import {taxAction} from './tax-review-actions.ts';
 import {engagementAction} from './engagement-actions.ts';
 import {engagementLetterAction} from './engagement-letter-actions.ts';
+import {onboardingRunAction} from './onboarding-run-actions.ts';
 import {aupAction} from './aup-actions.ts';
 import {kraAction} from './kra-actions.ts';
 import {incomingAction} from './incoming-actions.ts';
@@ -627,6 +628,7 @@ async function action(id:any,p:any){
   const taxManager=await taxManagerAction(tx,a,p);if(taxManager!==undefined)return taxManager; // before taxAction, which owns the tax_ prefix
   const credit=await creditAction(tx,a,p);if(credit!==undefined)return credit; // before taxAction, which owns the tax_ prefix and rejects unknown tax_ actions
   const tax=await taxAction(tx,a,p);if(tax!==undefined)return tax;
+  const onboardingRun=await onboardingRunAction(tx,a,p);if(onboardingRun!==undefined)return onboardingRun;
   const letters=await engagementLetterAction(tx,a,p);if(letters!==undefined)return letters;
   const engagement=await engagementAction(tx,a,p);if(engagement!==undefined)return engagement;
   const aup=await aupAction(tx,a,p);if(aup!==undefined)return aup;

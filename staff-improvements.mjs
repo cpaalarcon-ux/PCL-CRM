@@ -12,13 +12,14 @@ import {createKycGridUI} from './staff-kyc-grid.mjs?v=20261122-loc-v1';
 import {createComplianceUI} from './staff-compliance.mjs?v=20261121-comply-v1';
 import {createAmlUI} from './staff-aml.mjs?v=20261121-fill-v1';
 import {createServiceSetupUI} from './staff-service-setup.mjs?v=20261121-wiz-v1';
+import {runHtml} from './staff-onboarding-run.mjs?v=20261128-v1';
 import {lettersHtml,linkHtml,linkDoneHtml} from './staff-engagement-letters.mjs?v=20261128-v1';
 import {panelHtml,queueHtml,collectSubmit,collectDecisions,readyHtml,readyDoneHtml} from './staff-setup-review.mjs?v=20261116-setupreview-v1&rev=20261119-nav&all=20261126-v1&names=20261127-v1&ready=20261127-v1';
 import {bulkSubmitHtml,collectBulk,bulkResultHtml,showScreen,tickShown,untickAll,BULK_MAX} from './staff-setup-bulk.mjs?v=20261126-v1&min=20261127-v1&screen=20261127-v1';
 import {setupChecklistHtml} from './staff-setup-checklist.mjs?v=20261125-checklist-v1';
 import {queueHtml as tasksQueueHtml,queueBody as tasksQueueBody,configurationHtml} from './staff-setup-tasks.mjs?v=20261116-choices-v1';
 import {createClientChoicesUI} from './staff-client-choices.mjs?v=20261116-choices-v1';
-import {createBulkSetupUI} from './staff-bulk-setup.mjs?v=20261116-dates-v1&rev=20261119-nav&charts=20261128-v1&ops=20261128-v1';
+import {createBulkSetupUI} from './staff-bulk-setup.mjs?v=20261116-dates-v1&rev=20261119-nav&charts=20261128-v1&ops=20261128-v1&run=20261128-v1';
 import {createServiceCategoriesUI} from './staff-service-categories.mjs?v=20261116-dates-v1';
 import {nextSetupStep} from './staff-setup-order.mjs?v=20261119-stock-v1';
 import {booksPackHtml,booksGapBanner,approvalModalHtml,bindReasonGate,missingItems,BOOKS_PACK_CONFIRM} from './staff-books-pack.mjs?v=20261119-stock-v1';
@@ -75,6 +76,15 @@ export function createImprovementUI(ctx){
   const sync=()=>{if(go)go.disabled=!(ok?.checked&&String(note?.value||'').trim().length>=10);};
   ok?.addEventListener('change',sync);note?.addEventListener('input',sync);
   if(go)go.onclick=async()=>{go.disabled=true;try{const out=await request({action:'client_setup_section_approve_ready',dry_run:false,note:note.value});show('Approve all ready',readyDoneHtml(out,{esc}));notice('Approved.');}catch(err){notice(err.message,true);go.disabled=false;}};
+ }
+
+ async function onboardingRun(){
+  const r=await request({action:'client_setup_onboarding_run'});
+  show('Onboarding run',runHtml(r,{esc}));
+  $('#editorBody').querySelectorAll('[data-run-go]').forEach(b=>b.onclick=async()=>{
+   const go=b.dataset.runGo,op=b.dataset.runOp||'';
+   if(go==='setup-bulk')await setupBulk();else if(go==='setup-approve-ready')await setupApproveReady();else if(go==='engagement-letters')await engagementLetters();else if(go==='bulk-setup')await bulk.open(op);
+  });
  }
 
  async function engagementLetters(state=''){
@@ -225,7 +235,7 @@ function period(){const id=clientData.client.client_id;show('Add verified report
  function readiness(pid){show('KRA return export readiness',form(select('kind','Return type',['VAT3','IT1','IT2P','IT2C','P10'])+field('starts_on','Period start *','','date','required')+field('ends_on','Period end *','','date','required'),'Check readiness'),send('v3_export_readiness',{project_id:pid}),r=>show('Return export readiness',`<p class="info">${esc(r.label)}</p><ul>${r.issues.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><p>No portal submission or KRA import file has been generated.</p>`));}
  document.addEventListener('click',async e=>{const b=e.target.closest('[data-v3]');if(!b)return;b.disabled=true;try{const a=b.dataset.v3,id=b.dataset.id;
   if(['identity','vat-cats','activity','period','partners','stock-policy','stock-policy-step'].includes(a)&&clientData?.client?.client_id!==id)await loadClient(id);
-  if(a==='team'){await team.open(id,b.dataset.project||'');}if(a==='client')await client(id);if(a==='setup-review')await setupReview(id);if(a==='setup-queue')await setupQueue();if(a==='setup-approve-ready')await setupApproveReady();if(a==='setup-bulk')await setupBulk();if(a==='engagement-letters')await engagementLetters();if(a==='setup-tasks')await setupTasks();if(a==='bulk-setup')await bulk.open();if(a==='categories')await categories.open();if(a==='returns')await choices.returns(id);if(a==='exceptions')await choices.exceptions(id);if(a==='skip-step')await afterStep(id,b.dataset.key);if(a==='master')await grid.open(id);if(a==='master-list')await master.open(id);if(a==='aml')await aml.open(id);if(a==='aml-queue')await aml.openOverview();if(a==='setup')await setup.open(id);if(master.isAction(a))await master.handle(a,id,b.dataset.key);if(a==='identity')identity();if(a==='vat-cats')vatCats();if(a==='chart')await chart(id);if(a==='activity')activity();if(a==='activity-review')reviewActivity(id);if(a==='period')period();if(a==='partners')partners();if(a==='stock-policy')policy();if(a==='stock-policy-step')policy({step:true});if(a==='project')await project(id);if(a==='stock-vat')stockVat();if(a==='stock-new')stockNew();if(a==='stock-open')await stockOpen(b.dataset.project,id);if(a==='stock-edit')stockEdit();
+  if(a==='team'){await team.open(id,b.dataset.project||'');}if(a==='client')await client(id);if(a==='setup-review')await setupReview(id);if(a==='setup-queue')await setupQueue();if(a==='setup-approve-ready')await setupApproveReady();if(a==='setup-bulk')await setupBulk();if(a==='onboarding-run')await onboardingRun();if(a==='engagement-letters')await engagementLetters();if(a==='setup-tasks')await setupTasks();if(a==='bulk-setup')await bulk.open(b.dataset.op||'');if(a==='categories')await categories.open();if(a==='returns')await choices.returns(id);if(a==='exceptions')await choices.exceptions(id);if(a==='skip-step')await afterStep(id,b.dataset.key);if(a==='master')await grid.open(id);if(a==='master-list')await master.open(id);if(a==='aml')await aml.open(id);if(a==='aml-queue')await aml.openOverview();if(a==='setup')await setup.open(id);if(master.isAction(a))await master.handle(a,id,b.dataset.key);if(a==='identity')identity();if(a==='vat-cats')vatCats();if(a==='chart')await chart(id);if(a==='activity')activity();if(a==='activity-review')reviewActivity(id);if(a==='period')period();if(a==='partners')partners();if(a==='stock-policy')policy();if(a==='stock-policy-step')policy({step:true});if(a==='project')await project(id);if(a==='stock-vat')stockVat();if(a==='stock-new')stockNew();if(a==='stock-open')await stockOpen(b.dataset.project,id);if(a==='stock-edit')stockEdit();
   if(a==='stock-submit'){const {pid,record:c}=stockData;await request({action:'v3_stock_submit',project_id:pid,control_id:c.control_id,revision:c.revision});await stockOpen(pid,c.control_id);}
   if(a==='stock-review'){const {pid,record:c}=stockData;show('Independent stock review',form(select('status','Decision',['Approved','Returned'],'Returned')+area('review_note','Review conclusion and evidence')+select('variance_evidence_id','Independent variance evidence if applicable',docs(pid))+'<p class="info full">Approval retains the source snapshot. A margin estimate remains provisional after approval and cannot certify annual stock.</p>'),send('v3_stock_review',{project_id:pid,control_id:c.control_id,revision:c.revision}),()=>stockOpen(pid,c.control_id));}
   if(a==='category-decide')await categoryDecide(id);if(a==='bank')await bank(b.dataset.project,id);if(a==='bank-defer')bankDefer();if(a==='bank-add')bankAdd();

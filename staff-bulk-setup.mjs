@@ -112,10 +112,10 @@ export function createBulkSetupUI(ctx){
   h.querySelector('#bulkCount').textContent=picked().length+' ticked';
   const apply=h.querySelector('[data-bulk="apply"]');if(apply){const ok=previewed&&previewed.key===payloadKey(buildPayload(state()))&&previewed.ready>0;apply.disabled=!ok;const box=h.querySelector('#bulkConfirm');if(box){box.disabled=!ok;if(!ok)box.checked=false;}}
  };
- async function open(){
+ async function open(preset=''){
   opts=await request({action:'bulk_setup_options'});previewed=null;
   show('Bulk client set-up',optionsHtml(opts,{esc}));
-  const h=host();sync();
+  const h=host();if(preset&&opts.operations.some(o=>o.code===preset))h.querySelector('[name=operation]').value=preset;sync();
   h.oninput=ev=>{if(ev.target.id==='bulkSearch'){h.querySelector('#bulkClients').innerHTML=clientRows(opts.clients,{esc,search:ev.target.value});}sync();};
   h.onchange=sync;
   h.onclick=async ev=>{const b=ev.target.closest('[data-bulk]');if(!b)return;const k=b.dataset.bulk;
