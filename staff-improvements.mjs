@@ -17,7 +17,7 @@ import {bulkSubmitHtml,collectBulk,bulkResultHtml,showScreen,tickShown,untickAll
 import {setupChecklistHtml} from './staff-setup-checklist.mjs?v=20261125-checklist-v1';
 import {queueHtml as tasksQueueHtml,queueBody as tasksQueueBody,configurationHtml} from './staff-setup-tasks.mjs?v=20261116-choices-v1';
 import {createClientChoicesUI} from './staff-client-choices.mjs?v=20261116-choices-v1';
-import {createBulkSetupUI} from './staff-bulk-setup.mjs?v=20261116-dates-v1&rev=20261119-nav';
+import {createBulkSetupUI} from './staff-bulk-setup.mjs?v=20261116-dates-v1&rev=20261119-nav&charts=20261128-v1';
 import {createServiceCategoriesUI} from './staff-service-categories.mjs?v=20261116-dates-v1';
 import {nextSetupStep} from './staff-setup-order.mjs?v=20261119-stock-v1';
 import {booksPackHtml,booksGapBanner,approvalModalHtml,bindReasonGate,missingItems,BOOKS_PACK_CONFIRM} from './staff-books-pack.mjs?v=20261119-stock-v1';
